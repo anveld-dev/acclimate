@@ -1,18 +1,15 @@
+import { privateDirectory } from './private-state.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, open, readdir, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { TaskExecutionError } from '../compare.js';
-import type { BundleFile, BundlePayload, Comparison, ComparisonRequest, EvaluationDescriptor, VerifiedVersion } from '../types.js';
+import type { BundleFile, BundlePayload, VerifiedVersion } from '../types.js';
 import { DeliveryError, validatePayload } from '../validation.js';
-import { analyzeComparison, policyAnalysisMetric, type MetricAnalysis } from './analysis.js';
-import { parseCommandJson } from './cli-intents.js';
-import type { CaseSelection, RunControls, RunSummary } from './controls.js';
-import { runWarnings, selectedCaseIds } from './controls.js';
+import type { CaseSelection } from './controls.js';
+import { selectedCaseIds } from './controls.js';
 import { assertEvaluationOutput, captureDefinition, OutputValidationError } from './definition.js';
 import { CallbackCancelled, EvaluationError } from './errors.js';
-import { checkComparison, parseEvaluationPolicy, type PolicyVerdict } from './policy.js';
-import { atomicPrivateWrite, privateDirectory } from './private-state.js';
-import { reportedUsage, runTrials, type TrialArtifact } from './trials.js';
+import { reportedUsage } from './trials.js';
 import type { EvaluationApp, ExecutionContext } from './types.js';
 
 /**
@@ -199,87 +196,6 @@ export function localVersion(payload: BundlePayload, parent?: VerifiedVersion): 
 }
 
 /** Resolve the deepest existing ancestor so private-directory checks see a real path. */
-async function canonicalTarget(target: string): Promise<string> {
-  let current = path.resolve(target);
-  const missing: string[] = [];
-  while (true) {
-    try {
-      return path.join(await realpath(current), ...missing.reverse());
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      const parent = path.dirname(current);
-      if (parent === current) throw error;
-      missing.push(path.basename(current));
-      current = parent;
-    }
-  }
-}
-
-export async function createLocalRunDirectory(out?: string, base = process.cwd()): Promise<string> {
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
-  const target = await canonicalTarget(
-    out ? path.resolve(base, out) : path.join(base, '.acclimate', 'local', `${stamp}-${randomUUID().slice(0, 8)}`),
-  );
-  try {
-    const existing = await readdir(target);
-    if (existing.length) throw new LocalRunError(`${target} is not empty. Choose a new --out folder.`, '--out');
-  } catch (error) {
-    if (error instanceof LocalRunError) throw error;
-  }
-  try {
-    await privateDirectory(target);
-  } catch {
-    throw new LocalRunError(
-      `Cannot create a private folder at ${target}. It must be owned by you with mode 0700; choose another --out folder.`,
-      '--out',
-    );
-  }
-  return target;
-}
-
-export interface LocalDiagnostic {
-  caseId: string;
-  repetition: number;
-  side: 'parent' | 'candidate';
-  phase: 'execute' | 'grade' | 'output';
-  /** Developer-facing detail. Local only: the service never receives it. */
-  detail: string;
-}
-
-export interface LocalComparisonOptions {
-  app: EvaluationApp<any, any, any>;
-  parent: BundlePayload;
-  candidate: BundlePayload;
-  /** Required exactly when the definition's execution is `live`. */
-  allowLive?: boolean;
-  controls?: RunControls;
-  signal?: AbortSignal;
-  /** A private, empty folder for job directories and artifacts. */
-  directory: string;
-}
-
-export interface LocalComparisonResult {
-  schemaVersion: 1;
-  authoritative: false;
-  descriptor: EvaluationDescriptor;
-  versions: { parent: VerifiedVersion['version']; candidate: VerifiedVersion['version'] };
-  comparison: Comparison;
-  binding: {
-    parentVersionId: string;
-    candidateVersionId: string;
-    parentDigest: string;
-    candidateDigest: string;
-    requestId: string;
-    attemptId: string;
-    comparisonId: string;
-    submitter: string;
-  };
-  summary: RunSummary;
-  callbacksStarted: number;
-  diagnostics: LocalDiagnostic[];
-  warnings: string[];
-}
-
 function describeError(error: unknown): string {
   try {
     if (error instanceof Error) {
@@ -311,194 +227,6 @@ function assertLive(app: EvaluationApp<any, any, any>, allowLive: boolean | unde
  * Run the service comparison's trial schedule on two local payloads. Nothing
  * contacts the service, and the result is never release evidence.
  */
-export async function runLocalComparison(options: LocalComparisonOptions): Promise<LocalComparisonResult> {
-  assertLive(options.app, options.allowLive);
-  const captured = captureDefinition(options.app);
-  validatePayload(options.parent);
-  validatePayload(options.candidate);
-  const parent = localVersion(options.parent);
-  const candidate = localVersion(options.candidate, parent);
-  const requestId = randomUUID(),
-    attemptId = randomUUID();
-  const directory = options.directory;
-  let callbacksStarted = 0;
-  const diagnostics: LocalDiagnostic[] = [];
-  const armOf = async (jobDirectory: string) =>
-    JSON.parse(await readFile(path.join(jobDirectory, 'binding.json'), 'utf8')) as {
-      caseId: string;
-      repetition: number;
-      side: 'parent' | 'candidate';
-    };
-  const { results, summary } = await runTrials({
-    captured,
-    requestId,
-    attemptId,
-    versions: [parent, candidate],
-    jobsRoot: path.join(directory, 'jobs'),
-    signal: options.signal ?? new AbortController().signal,
-    controls: options.controls,
-    captureCallbackErrors: true,
-    hooks: {
-      checkpoint: async () => undefined,
-      assertOwned: () => undefined,
-      writeArtifact: async (identity, value): Promise<TrialArtifact> => {
-        const body = JSON.stringify({ schemaVersion: 1, identity, value });
-        const sha256 = createHash('sha256').update(body).digest('hex');
-        // Identical artifacts share one content-addressed file.
-        await atomicPrivateWrite(path.join(directory, 'artifacts', `${sha256}.json`), body + '\n');
-        return { sha256, bytes: Buffer.byteLength(body) };
-      },
-      discardArtifacts: async () => undefined,
-      recordOutputError: async (jobDirectory, error) => {
-        const file = path.join(jobDirectory, 'output-validation.json');
-        await atomicPrivateWrite(file, JSON.stringify({ field: error.field, reason: error.reason }));
-        diagnostics.push({ ...(await armOf(jobDirectory)), phase: 'output', detail: `${error.field}: ${error.reason}` });
-        return file;
-      },
-      saveCallbackError: async (jobDirectory, phase, error) => {
-        const detail = describeError(error);
-        const file = path.join(jobDirectory, 'callback-error.json');
-        await atomicPrivateWrite(file, JSON.stringify({ phase, detail }) + '\n');
-        diagnostics.push({ ...(await armOf(jobDirectory)), phase, detail });
-        return file;
-      },
-      isFatal: () => false,
-      onCallbackStarted: () => {
-        callbacksStarted++;
-      },
-    },
-  });
-  const descriptor = captured.descriptor;
-  const request: ComparisonRequest = {
-    parentVersionId: parent.version.id,
-    candidateVersionId: candidate.version.id,
-    parentDigest: parent.version.digest,
-    candidateDigest: candidate.version.digest,
-    datasetRevision: descriptor.datasetRevision,
-    graderRevision: descriptor.graderRevision,
-    runtime: { ...descriptor.runtime },
-    evaluation: { requestId, attemptId },
-    expectedCases: descriptor.expectedCases.map((key) => ({ ...key })),
-    results,
-  };
-  const comparison: Comparison = {
-    ...request,
-    id: randomUUID(),
-    complete: results.every((pair) =>
-      [pair.parent, pair.candidate].every(
-        (outcome) => outcome.gradingStatus === 'scored' && outcome.executionStatus !== 'infrastructure_failed',
-      ),
-    ),
-    submitter: 'local',
-    createdAt: new Date().toISOString(),
-  };
-  diagnostics.sort((a, b) => (a.caseId < b.caseId ? -1 : a.caseId > b.caseId ? 1 : a.repetition - b.repetition));
-  return {
-    schemaVersion: 1,
-    authoritative: false,
-    descriptor: structuredClone(descriptor),
-    versions: { parent: parent.version, candidate: candidate.version },
-    comparison,
-    binding: {
-      parentVersionId: parent.version.id,
-      candidateVersionId: candidate.version.id,
-      parentDigest: parent.version.digest,
-      candidateDigest: candidate.version.digest,
-      requestId,
-      attemptId,
-      comparisonId: comparison.id,
-      submitter: 'local',
-    },
-    summary,
-    callbacksStarted,
-    diagnostics,
-    warnings: runWarnings(summary, { parent: parent.version.digest, candidate: candidate.version.digest }),
-  };
-}
-
-export type LocalScores = Pick<MetricAnalysis, 'counts' | 'summary' | 'cases' | 'evidenceGaps'>;
-
-/** Score a local comparison and, when supplied, apply a policy as advice only. */
-export function scoreLocalComparison(
-  result: LocalComparisonResult,
-  policyText?: string,
-): { scores: LocalScores; policy: (PolicyVerdict & { advisory: true }) | null } {
-  const policy = policyText === undefined ? null : parseEvaluationPolicy(policyText, result.descriptor);
-  const evidence = {
-    comparison: result.comparison,
-    expectedDescriptor: result.descriptor,
-    expectedBinding: result.binding,
-  };
-  const metric = policy?.policy.metric;
-  const [analysis] = analyzeComparison({
-    ...evidence,
-    metrics: metric ? [policyAnalysisMetric(metric)] : undefined,
-  }).metrics;
-  const scores: LocalScores = {
-    counts: analysis.counts,
-    summary: analysis.summary,
-    cases: analysis.cases,
-    ...(analysis.evidenceGaps ? { evidenceGaps: analysis.evidenceGaps } : {}),
-  };
-  if (!policy) return { scores, policy: null };
-  const verdict = checkComparison({ ...evidence, policy: policy.policy, policyDigest: policy.sha256 });
-  return { scores, policy: { ...verdict, advisory: true } };
-}
-
-export const LOCAL_NOTICE =
-  'Local comparison: not a release receipt. The service did not verify these versions, this evidence or this policy result. Run compare against the service to gate a release.';
-
-/** The report written beside local artifacts. It is never accepted as release evidence. */
-export function localReport(
-  result: LocalComparisonResult,
-  scored: ReturnType<typeof scoreLocalComparison>,
-  sources: { parent: LocalPayload; candidate: LocalPayload },
-  directory: string,
-) {
-  return {
-    schemaVersion: 1,
-    kind: 'acclimate.local-comparison',
-    authoritative: false,
-    releaseReceipt: false,
-    notice: LOCAL_NOTICE,
-    createdAt: result.comparison.createdAt,
-    descriptor: result.descriptor,
-    parent: { ...result.versions.parent, source: sources.parent.source, form: sources.parent.form },
-    candidate: { ...result.versions.candidate, source: sources.candidate.source, form: sources.candidate.form },
-    run: result.summary,
-    callbacksStarted: result.callbacksStarted,
-    scores: scored.scores,
-    policy: scored.policy,
-    warnings: result.warnings,
-    diagnostics: result.diagnostics,
-    comparison: result.comparison,
-    replay: {
-      description:
-        'Local evidence cannot be uploaded: the service only accepts results produced under an attempt it issued for versions it stores. Replay the same candidate against the service instead. The service compares it with the current parent on its channel; check that the digest of that parent matches parent.digest to reproduce this comparison.',
-      candidatePayload: path.join(directory, 'candidate.payload.json'),
-      command: `compare --config CONFIG --bundle BUNDLE_ID --channel CHANNEL --payload ${path.join(directory, 'candidate.payload.json')} --name RUN_NAME`,
-      parentDigest: result.versions.parent.digest,
-    },
-  };
-}
-
-export async function writeLocalReport(
-  directory: string,
-  report: ReturnType<typeof localReport>,
-  sources: { parent: LocalPayload; candidate: LocalPayload },
-): Promise<string> {
-  await atomicPrivateWrite(path.join(directory, 'parent.payload.json'), JSON.stringify(sources.parent.payload, null, 2) + '\n');
-  await atomicPrivateWrite(
-    path.join(directory, 'candidate.payload.json'),
-    JSON.stringify(sources.candidate.payload, null, 2) + '\n',
-  );
-  const file = path.join(directory, 'local-report.json');
-  await atomicPrivateWrite(file, JSON.stringify(report, null, 2) + '\n');
-  return file;
-}
-
-/* ------------------------------------------------------------------ try --- */
-
 export interface TryIssue {
   severity: 'error' | 'warning';
   field: string;
@@ -611,7 +339,7 @@ export function inspectGrade(value: unknown): TryIssue[] {
     issues.push({
       severity: 'warning',
       field: 'reward',
-      message: `${result.reward} is outside 0–1. Comparisons accept any finite reward, but thresholds and connected-learning policies expect 0–1.`,
+      message: `${result.reward} is outside 0–1. Use a score in 0–1 for a normalized scale.`,
     });
   if (result.explanation !== undefined) inspectJson(result.explanation, 'explanation', issues);
   return issues;
@@ -744,15 +472,81 @@ export async function tryEvaluation(options: TryOptions): Promise<TryResult> {
 }
 
 /** Read a policy file for local advice. */
-export async function readLocalText(target: string, limit = 2 * 1024 * 1024): Promise<string> {
-  const handle = await open(path.resolve(target), 'r').catch(() => {
-    throw new LocalRunError(`Cannot read ${target}.`);
-  });
+/** JSON.parse accepts duplicate object members; closed command inputs do not. */
+function parseCommandJson(text: string): unknown {
+  let position = 0;
+  const whitespace = () => {
+    while (/\s/.test(text[position] ?? '') && position < text.length) position++;
+  };
+  const string = (): string => {
+    whitespace();
+    const begin = position;
+    if (text[position++] !== '"') throw new Error();
+    while (position < text.length) {
+      const item = text[position++];
+      if (item === '\\') {
+        position++;
+        continue;
+      }
+      if (item === '"') return JSON.parse(text.slice(begin, position));
+    }
+    throw new Error();
+  };
+  const value = (depth: number): void => {
+    if (depth > 64) throw new Error();
+    whitespace();
+    if (text[position] === '{') {
+      position++;
+      whitespace();
+      const keys = new Set<string>();
+      if (text[position] === '}') {
+        position++;
+        return;
+      }
+      while (true) {
+        const key = string();
+        if (keys.has(key)) throw new Error();
+        keys.add(key);
+        whitespace();
+        if (text[position++] !== ':') throw new Error();
+        value(depth + 1);
+        whitespace();
+        const delimiter = text[position++];
+        if (delimiter === '}') return;
+        if (delimiter !== ',') throw new Error();
+      }
+    }
+    if (text[position] === '[') {
+      position++;
+      whitespace();
+      if (text[position] === ']') {
+        position++;
+        return;
+      }
+      while (true) {
+        value(depth + 1);
+        whitespace();
+        const delimiter = text[position++];
+        if (delimiter === ']') return;
+        if (delimiter !== ',') throw new Error();
+      }
+    }
+    if (text[position] === '"') {
+      string();
+      return;
+    }
+    const match = /^(?:true|false|null|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)/.exec(
+      text.slice(position),
+    );
+    if (!match) throw new Error();
+    position += match[0].length;
+  };
   try {
-    const info = await handle.stat();
-    if (!info.isFile() || info.size > limit) throw new LocalRunError(`${target} must be a file of at most ${limit} bytes.`);
-    return new TextDecoder('utf-8', { fatal: true }).decode(await handle.readFile());
-  } finally {
-    await handle.close();
+    value(0);
+    whitespace();
+    if (position !== text.length) throw new Error();
+    return JSON.parse(text);
+  } catch {
+    throw new EvaluationError('config.schema');
   }
 }

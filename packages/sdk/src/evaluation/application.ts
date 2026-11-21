@@ -1,6 +1,5 @@
 import type { EvaluationManifestInput } from './manifest.js';
 import type { EvaluationCase, EvaluationDefinition, Json, JsonOutputCheck } from './types.js';
-import type { ReviewMapper } from './artifacts.js';
 
 /**
  * The exports an application module provides to acclimate-eval. Export them by name, or
@@ -24,7 +23,6 @@ export interface ApplicationAdapter<I = Json, E = Json, O = Json>
   compatibilityTarget?: EvaluationDefinition<I, E, O>['compatibilityTarget'];
   grader?: EvaluationManifestInput['grader'];
   runtime?: Partial<EvaluationManifestInput['runtime']>;
-  toReviewArtifact?: ReviewMapper;
   /**
    * `'live'` (default) requires --live because callbacks call models. Use `'model-free'`
    * for deterministic adapters that need no authorization.

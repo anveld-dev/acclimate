@@ -37,7 +37,7 @@ Set `harness` in `native.json` to `codex` (the default), `claude`, `pi`, `cursor
 | `pi` | `runPiTask` | tools read/edit/write/bash/grep/find/ls, in-memory session and settings | `provider/model-id` |
 | `replay` | `runReplayTask` | applies `replay` file edits, no model | none |
 
-To compare harnesses, list them: `"harnesses": ["codex", "claude"]`. Every case then runs once per harness and the harness becomes part of the case key, for example `request-scoped-retry@claude`, with `input.harness` set. Each pair still compares parent and candidate on the same harness. To aggregate per harness, group the comparison's pairs by the `@<harness>` suffix of their case IDs. Use `models` (for example `{"codex": "…", "claude": "…"}`) when the harnesses need different model values.
+To test multiple harnesses, list them: `"harnesses": ["codex", "claude"]`. Every case then runs once per harness and the harness becomes part of the case key, for example `request-scoped-retry@claude`, with `input.harness` set. Each pair still compares parent and candidate on the same harness. To aggregate per harness, group the comparison's pairs by the `@<harness>` suffix of their case IDs. Use `models` (for example `{"codex": "…", "claude": "…"}`) when the harnesses need different model values.
 
 ### Add your own harness
 
@@ -99,28 +99,21 @@ Relative paths for `sourceRoot`, `stateRoot` and `replay` resolve from the start
 | `inheritHome` | `true` keeps your real HOME and harness config instead of an isolated one (not recommended). |
 | `deploymentRevision` | A nonsecret label for model or host changes outside these files. |
 
-Each case may set `repetitions` (default 1) to run the pair several times; the evaluator stores each repetition as its own pair, which the uncertainty and quality policies use.
+Check a bundle payload before a live run with `node native.mjs check-bundle payload.json`.
 
-Check a candidate payload against your harnesses before a live run: `node native.mjs check-bundle payload.json` prints each compatibility issue with its rule.
-
-Run the following from the extracted starter:
+From the extracted starter, set `ACCLIMATE_NATIVE_CONFIG` and configure a private state root as shown above.
 
 ```sh
-cd "$app"
-state=/absolute/private/native-evaluator
-mkdir -p -m 700 "$state" "$state/workspaces" "$state/artifacts"
-export TMPDIR="$state/workspaces"
-
 ./node_modules/.bin/acclimate-eval describe
-./node_modules/.bin/acclimate-eval doctor --config "$EVALUATOR_CONFIG" --handoff handoff.json
-./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff handoff.json --live
+./node_modules/.bin/acclimate-eval doctor --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID"
+./node_modules/.bin/acclimate-eval try --payload payload.json --live
 ```
 
-Use the public `describe` output in the console to create the evaluation request before running `doctor` or `compare`. The installed CLI loads the named `cases`, `execute` and `grade` exports. Only the live comparison launches Codex. Supply your application’s approved authentication and run the worker in the sandbox you use for executing candidate code.
+The installed CLI loads `cases`, `execute`, and `grade`. Supply your application's authentication and run live callbacks in the environment you use to execute and grade agent changes.
 
-Every CLI invocation freezes the listed files. The descriptor binds their captured bytes and mode bits, the model, harness implementation, application module, lockfile, Node runtime, file policies and timeouts. The grader identity includes the frozen inputs, test selection and grading implementation. Changing these inputs requires a fresh evaluation request. If model deployment or host configuration changes independently of these files, give that deployment a new nonsecret `deploymentRevision` in `native.json`. Credential values stay out of the descriptor. Optional `approvedMemoryPaths`, `turnTimeoutMs` and `testTimeoutMs` configure the effective job and are included in its revision.
+Every CLI invocation freezes the listed files. The descriptor binds their captured bytes and mode bits, the model, harness implementation, application module, lockfile, Node runtime, file policies and timeouts. The grader identity includes the frozen inputs, test selection and grading implementation. If model deployment or host configuration changes independently of these files, give that deployment a new nonsecret `deploymentRevision` in `native.json`. Credential values stay out of the descriptor. Optional `approvedMemoryPaths`, `turnTimeoutMs` and `testTimeoutMs` configure the effective job and are included in its revision.
 
-The default grader reconstructs a fresh tree from frozen inputs and digest-verified solution files. It reruns `node --test` and returns zero if any test fails or a protected file changed. For projects with additional dependencies, customize `grade` in `application.mjs` to run the same isolated test environment you use in CI and bind its dependency lock or image digest. Regrading reads the retained solution and original snapshot for that request.
+The default grader reconstructs a fresh tree from frozen inputs and digest-verified solution files. It reruns `node --test` and returns zero if any test fails or a protected file changed. For projects with additional dependencies, customize `grade` in `application.mjs` to run the same isolated test environment you use in CI and bind its dependency lock or image digest. Regrading reads the retained solution and original snapshot from the local run.
 
 The grader runs `node --test --test-reporter=tap` in its own process group with an empty environment, and kills the group when `testTimeoutMs` expires or the evaluator cancels. Its explanation reports `outcome` (`passed`, `failed` or `test_timeout`), per-test counts (`tests.total`, `passed`, `failed`, `cancelled`, `skipped`, `todo`), `protectedChanges`, `undeclaredChanges` and the path of the retained TAP log. Up to 256 KiB of TAP output is kept privately under `artifacts/<jobId>/grading/`. To grade in a container, use `containerTestRunner` from `container-grader.mjs` and pin the image digest.
 

@@ -52,6 +52,10 @@ with tempfile.TemporaryDirectory(prefix="acclimate-python-package-") as temporar
             "-I",
             "-c",
             "from acclimate import AcclimateClient, resolve_and_cache, prepare_files; "
+            "from acclimate.learning import held_out_digest, openai, OpenAIHttpError; "
+            "assert callable(AcclimateClient.get_learning_work); "
+            "assert openai('fixture').model == 'fixture' and issubclass(OpenAIHttpError, Exception); "
+            "assert held_out_digest([]).startswith('sha256:'); "
             "from importlib.metadata import version; from pathlib import Path; import tempfile, os; "
             f"assert version('acclimate-sdk') == {package_version!r}; "
             "bundle={'version':{'id':'v1','bundleId':'b','parentVersionId':None,'digest':'sha256:test','createdAt':'now'},'payload':{'schemaVersion':1,'files':[{'path':'instructions.md','kind':'instruction','text':'Installed wheel content.'}]},'stale':False,'resolvedAt':0}; "

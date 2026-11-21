@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify evaluator/policy/artifact/CLI imports from an installed external wheel."""
+"""Verify the installed external wheel and its evaluator starter."""
 if not __debug__:
     raise RuntimeError('Wheel verification requires Python assertions; remove -O/PYTHONOPTIMIZE')
 
@@ -17,7 +17,6 @@ import os
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--wheel', required=True, type=Path)
 parser.add_argument('--starter', required=True, type=Path)
-parser.add_argument('--analysis-fixtures', type=Path)
 args = parser.parse_args()
 clean_env = {key: value for key, value in os.environ.items()
              if key not in ('PYTHONPATH', 'PYTHONHOME') and not key.startswith(('ACCLIMATE_', 'CONSOLE_'))}
@@ -30,14 +29,13 @@ with tempfile.TemporaryDirectory(prefix='acclimate-wheel-dx-') as temporary:
     app = directory / 'app'
     shutil.copytree(args.starter, app, ignore=shutil.ignore_patterns('__pycache__', '*.pyc', 'node_modules'))
     subprocess.run([str(python), '-I', '-c',
-                    'from acclimate.evaluation import define_evaluation,preflight_evaluation,run_evaluation; '
+                    'from importlib.util import find_spec; '
+                    'from acclimate.evaluation import define_evaluation,preflight_evaluation; '
                     'from acclimate.evaluation_cli import evaluation_main; '
-                    'from acclimate.evaluation_policy import check_comparison; '
-                    'from acclimate.evaluation_artifacts import export_review_evidence,verify_review_export; '
-                    'from acclimate.evaluation_analysis import analyze_comparison; '
                     'from acclimate.evaluation_manifest import create_evaluation_manifest,restore_evaluation_manifest; '
-                    'from acclimate import EvaluationProgressReporter; '
-                    'assert all(callable(x) for x in (define_evaluation,preflight_evaluation,run_evaluation,evaluation_main,check_comparison,export_review_evidence,verify_review_export,analyze_comparison,create_evaluation_manifest,restore_evaluation_manifest,EvaluationProgressReporter))'],
+                    'assert all(callable(x) for x in (define_evaluation,preflight_evaluation,evaluation_main,create_evaluation_manifest,restore_evaluation_manifest)); '
+                    'assert all(find_spec("acclimate." + name) is None for name in '
+                    '("evaluation_policy", "evaluation_artifacts", "evaluation_analysis", "evaluation_plan", "evaluation_progress", "evaluation_async", "_student_t"))'],
                    cwd=directory, check=True)
     clean_env['ACCLIMATE_EVALUATOR_CASES'] = install_test_application(app, 'python')
     described = subprocess.run([str(python), 'acclimate_eval.py', 'describe'], cwd=app, check=True,
@@ -56,26 +54,4 @@ with tempfile.TemporaryDirectory(prefix='acclimate-wheel-dx-') as temporary:
     assert descriptor['runtime']['execution'] == 'live'
     assert len(descriptor['expectedCases']) == 2
     assert '"expected"' not in described.stdout and 'evaluatorToken' not in described.stdout
-    subprocess.run([str(python), '-m', 'unittest', 'discover', '-s', 'test', '-v'], cwd=app, env=clean_env, check=True)
-    if args.analysis_fixtures:
-        fixture = json.loads(args.analysis_fixtures.read_text())
-        # Vector 0's expected result is computed on the shared input with its patches applied.
-        for patch in fixture['vectors'][0]['patches']:
-            target = fixture['input']
-            for segment in patch['path'][:-1]:
-                target = target[segment]
-            if patch.get('remove'):
-                del target[patch['path'][-1]]
-            else:
-                target[patch['path'][-1]] = patch['value']
-        paths = []
-        for key in ('comparison', 'expectedDescriptor', 'expectedBinding'):
-            filename = directory / (key + '.json')
-            filename.write_text(json.dumps(fixture['input'][key]))
-            paths.append(str(filename))
-        config = directory / 'analysis-config.json'
-        config.write_text(json.dumps({key:fixture['input'][key] for key in ('metrics','observations','uncertainty')}))
-        paths.append(str(config))
-        checked = subprocess.run([str(python),str(app/'analyze.py'),*paths],cwd=directory,env=clean_env,check=True,capture_output=True,text=True)
-        assert json.loads(checked.stdout) == fixture['vectors'][0]['expected']['result']
-    print('Installed Python evaluator/CLI/policy/artifact imports, and app-owned public descriptor passed.')
+    print('Installed Python evaluator and CLI imports passed. Removed modules are absent.')

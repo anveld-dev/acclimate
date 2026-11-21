@@ -27,12 +27,10 @@ from .delivery import (
     resolve_and_cache as resolve_and_cache,
     validate_payload as validate_payload,
 )
+from ._jobs import Acclimate as Acclimate, Job as Job
 from .receipts import (
     DeliveryReporter as DeliveryReporter,
     BoundDeliveryReporter as BoundDeliveryReporter,
-)
-from .evaluation_progress import (
-    EvaluationProgressReporter as EvaluationProgressReporter,
 )
 
 # Wire types. ``acclimate.types.__all__`` lists them, so typing helpers such as
@@ -42,6 +40,8 @@ from .types import *
 
 __all__ = [
     "AcclimateClient",
+    "Acclimate",
+    "Job",
     "AcclimateError",
     "UsageError",
     "ApiError",
@@ -54,6 +54,5 @@ __all__ = [
     "validate_payload",
     "DeliveryReporter",
     "BoundDeliveryReporter",
-    "EvaluationProgressReporter",
 ]
 __all__ += _types.__all__

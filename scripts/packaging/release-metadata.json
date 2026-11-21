@@ -49,10 +49,6 @@
       "file": "acclimate-python-evaluation-starter-0.1.0.tgz"
     },
     {
-      "name": "ci",
-      "file": "acclimate-ci-starter-0.1.0.tgz"
-    },
-    {
       "name": "native-repository",
       "file": "acclimate-native-repository-starter-0.1.0.tgz"
     }
@@ -61,18 +57,13 @@
     "node": ">=22.22.0",
     "python": ">=3.11",
     "platform": "Linux or macOS (POSIX)",
-    "durableTypeScript": "Node >=22.22.0 and python3 with fcntl",
     "storage": "Owner-only local persistent filesystem with flock, atomic rename and fsync"
   },
-  "capabilities": [
-    "evaluation-capabilities-v1",
-    "retained-evaluation-operations-v1"
-  ],
   "nativePeers": {
+    "@openai/codex-sdk": "0.169.0",
     "@anthropic-ai/claude-agent-sdk": "0.3.325",
     "@earendil-works/pi-coding-agent": "1.5.2",
-    "@cursor/sdk": "1.3.1",
-    "@openai/codex-sdk": "0.169.0"
+    "@cursor/sdk": "1.3.1"
   },
   "publication": "Operator-distributed artifacts; no registry or download endpoint implied"
 }

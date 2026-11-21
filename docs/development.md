@@ -1,6 +1,6 @@
 # Run Acclimate locally
 
-If you already have a workspace, start with [Connect an existing agent](getting-started.md) and the [installed evaluator starter](../examples/evaluation-starter/README.md). This document covers developing and operating the service. Operators provision evaluator access using the [evaluator runbook](evaluator-operations.md).
+If you already have a workspace, start with [Connect an existing agent](getting-started.md). This document covers developing and operating the service.
 
 The first implementation is a Rust HTTP service, a TypeScript delivery SDK, and native preparation plugins. The app runs the agent. Start with PostgreSQL and the delivery example; model calls are optional.
 
@@ -8,7 +8,7 @@ The first implementation is a Rust HTTP service, a TypeScript delivery SDK, and 
 
 There is one production identity path, including during development. PostgreSQL 16 stores all service data. The console uses Keycloak through OIDC and HTTPS; browser users need verified sessions and workspace membership. Machine SDK credentials stay separate.
 
-For laptop evaluation or development, run `npm run local:up` from the checkout. The [local stack guide](../apps/docs/content/docs/get-started/run-locally.mdx) covers prerequisites, Caddy's local CA, the bootstrap login, and evaluator access.
+For laptop development, run `npm run local:up` from the checkout. The [local stack guide](../apps/docs/content/docs/get-started/run-locally.mdx) covers prerequisites, Caddy's local CA and the bootstrap login.
 
 Use the [deployment guide](../deploy/README.md) for production hosting and required private configuration. The [console guide](../apps/console/README.md) lists identity settings. Builds need no runtime credentials:
 
@@ -66,52 +66,16 @@ Python 3.11+ is required. Run `python -m pip wheel --no-deps --wheel-dir artifac
 
 Existing cache/preparation roots must already be private and owned by the current user. Both SDKs reject unsafe existing directories instead of changing their permissions.
 
-## Try the improvement loop
-
-Use the [installed-app evaluator](../examples/evaluation-starter/README.md) to compare two immutable bundle versions on your private cases. For the checkout's Codex integration, use the [native review command](../examples/evaluation/README.md).
-
-The service proposer is disabled by default. An authorized request is recorded and then fails clearly if no provider is configured. To enable it, set `ACCLIMATE_MODEL_ENDPOINT` to a full OpenAI-compatible chat-completions URL, `ACCLIMATE_MODEL_TOKEN`, and `ACCLIMATE_MODEL=gpt-6.2-sol` to have Sol draft candidates. Use any model name your endpoint accepts. The service trims the name and requires 1–256 UTF-8 bytes with no control characters. This setting only selects the service proposer. The app selects the runtime model used to evaluate each candidate. The proposer returns bounded JSON containing `schemaVersion:1`, `edits:[{path,oldText,newText}]` and `rationale`. Exact original-text anchors must be unique and nonoverlapping; only text at existing allowed paths can change. The proposer permits three attempts, a 60-second call deadline, 32KiB edit content and a 256KiB transport envelope, with an 8192 completion-token request cap. Large unchanged bundle files do not need to be echoed. Model attempts are bounded, may still incur cost after a timeout, and never run tools.
-
-An administrator seeds a new bundle and enrolls a connection with committed evaluation fixtures. The connected worker screens each change, checks development and audit evidence, and updates only that connection. Each job resolves its enrolled channel once. [Connected learning](../contracts/learning.md)
-
-## Request a service-generated edit
-
-With the service's proposer configured, use `npm run example:improve -- run-service --live`. The service requests and persists the candidate; the app makes up to four Luna calls to compare it on the saved cases. This path stops before promotion. `run --live` remains the separate direct-author example.
-
-The operator CLI supports `request-proposal`, `proposal`, `review`, and `history`. [Operator commands](../tools/operator/README.md)
-
-## Run a real improvement review
-
-Set the service URL, token, scope, workspace, bundle and channel as above, plus `ACCLIMATE_SKILL_PATH=skills/retry-review/SKILL.md`. Then run:
-
-```sh
-npm run example:improve -- run --live
-```
-
-This authorizes one `gpt-6.2-sol` draft and up to four `gpt-6-luna` reviews across two saved cases and both bundle versions. The app uses the Codex SDK and publishes through `createVersion`. Set `ACCLIMATE_CODEX_MODEL` to override the review model with `gpt-5.6-luna`. The grader is separate from version identity. The private output directory contains both payloads, a before/after skill artifact, per-case responses and `summary.json`. Review those files; no candidate is promoted automatically.
-
-Open the saved summary to inspect the compared versions and their results. Standalone comparisons provide advisory evidence. Enroll the application to enable automatic release decisions.
-
-For a disposable end-to-end qualification, `EVALUATION_TEST_DATABASE_URL=... python scripts/qualify-improvement.py --live` starts the service against the disposable database, verifies Python delivery, runs the Sol draft and Luna reviews, and stops the service. Evidence is retained privately for review.
-
-## Qualify the whole roadmap
-
-`npm run qualify:full-roadmap -- --output /new/private/evidence` starts an isolated service, verifies the app-owned comparison, and checks that the source history still contains the seed. The connected-learning qualification exercises actual rollout and rollback.
-
-See [Full qualification](../scripts/full-roadmap/README.md) and [Deploy and restore](../deploy/README.md). Production model credentials, TLS, hosting and retention remain operator choices. External provider, OIDC, HTTPS and container status is recorded separately in the [qualification ledger](architecture/productization/remediation/shipping-evidence.md). Run the opt-in external harness only against explicitly configured qualification resources.
-
 ## Checks
 
 Use a disposable database. The tests create records and apply migrations; do not point them at a production database.
 
 ```sh
+npm run lint
 npm run typecheck
 npm test
 npm run build
 npm run pack:verify
-npm run test:improvement
-npm run test:operator
-npm run test:full-roadmap
 PYTHONPATH=python python -m unittest discover -s python/tests -v
 python scripts/check-python-package.py
 cargo fmt --check
@@ -123,9 +87,7 @@ npm run test:e2e -- --pg-bin /path/to/postgresql/bin
 
 Plain `cargo test` reports tests that need PostgreSQL as ignored. The Rust test runner above provisions an isolated database and executes the full suite, including those tests.
 
-The process-level test uses a local fixture model server. It checks publish/cache/prepare, bounded proposal edits, comparison recording, promotion, denial, rollback, and restart persistence without paid calls. `npm run test:codex` is the separate live Luna-only check: it asks for random values stored only in prepared resources. It does not claim a direct SDK discovery event or cover resumed sessions.
-
-Run `python3 scripts/productization/connected_learning.py` to qualify service-managed learning against disposable PostgreSQL and a deterministic proposer. It exercises bound evaluator fixtures, delayed corrections, policy selection, release and connection-scoped delivery. Its field fixtures submit verdicts after a successor has shipped, evaluate an inherited regression against a validated control, and check the restored revision. The operator fixture restores a reviewed version on a stopped connection and refreshes it from the source channel. Previously pinned jobs retain their original bytes. Use `--pg-bin` to point at the installed PostgreSQL binaries.
+The process-level test checks publication, cache and preparation, release, authorization, rollback and restart persistence. `npm run test:codex` is the separate live Luna-only check: it asks for random values stored only in prepared resources. It does not claim a direct SDK discovery event or cover resumed sessions.
 
 Back up the database before production use, use dump/restore tools matching the server major version, test restoring it, choose retention for private evidence, and keep provider access with its operator. Production configuration is mandatory. Isolated acceptance evidence still does not prove that a particular public deployment or identity provider is ready.
 
@@ -143,7 +105,7 @@ The SDK release pass added isolated TypeScript tarball consumers, an isolated Py
 The completed release pass ran 12 Rust tests, 28 default TypeScript tests, 5 improvement-workflow tests and 5 Python tests. Strict builds/lint/type checks, external package consumers, process restart/ownership checks, and `npm audit` passed. Eight live `gpt-6-luna` turns covered the three-session qualification and five-turn improvement workflow. The latter recorded complete evidence and left its channel unchanged. A private retained copy is under `artifacts/qualification-2026-11-13/`; those IDs belong to the disposable test service, not a production channel.
 
 
-The full-roadmap pass adds service-generated Luna evidence, the actual operator review/release/rollback path, Cursor preparation, scoped history in both SDKs, and matching-version backup/restore tests. The [acceptance ledger](implementation/full-roadmap.md) is the current status; earlier milestones above remain historical evidence.
+The full-roadmap pass adds service-generated Luna evidence, the actual operator review/release/rollback path, Cursor preparation, scoped history in both SDKs, and matching-version backup/restore tests. The [acceptance ledger](implementation/full-roadmap.md) records that historical milestone.
 
 ## Behavior tests
 

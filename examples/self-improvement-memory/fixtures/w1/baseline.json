@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "kind": "instruction",
+      "text": "Answer LLM CLI support requests for version 0.38 using this harness as the version-specific reference. Return only a JSON object with an argv array of strings beginning with llm. Do not execute the suggested command.\n"
+    },
+    {
+      "path": "context.md",
+      "kind": "memory",
+      "text": "LLM uses Click. Its subcommands sometimes have their own help and options. An argument vector stores each argument as a separate string, without shell quoting.\n"
+    }
+  ]
+}

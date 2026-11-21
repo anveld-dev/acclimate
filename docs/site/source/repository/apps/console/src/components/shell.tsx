@@ -246,7 +246,6 @@ export function Shell({ children }: { children: ReactNode }) {
   useBackgroundRefresh(() => router.invalidate(), {
     enabled:
       Boolean(nav?.workspaceId) &&
-      view !== 'changes' &&
       view !== 'members' &&
       !loading &&
       !hasPendingChanges,
@@ -404,15 +403,17 @@ export function Shell({ children }: { children: ReactNode }) {
                       </Button>
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
-                  <TooltipContent
-                    side="right"
-                    sideOffset={10}
-                    hidden={workspaceMenuOpen}
-                    className="workspace-rail-tooltip"
-                  >
-                    <span className="font-medium">Workspaces</span>
-                    <span className="opacity-75">{nav?.workspaceName ?? 'Choose a workspace'}</span>
-                  </TooltipContent>
+                  {!railExpanded && (
+                    <TooltipContent
+                      side="right"
+                      sideOffset={10}
+                      hidden={workspaceMenuOpen}
+                      className="workspace-rail-tooltip"
+                    >
+                      <span className="font-medium">Workspaces</span>
+                      <span className="opacity-75">{nav?.workspaceName ?? 'Choose a workspace'}</span>
+                    </TooltipContent>
+                  )}
                 </Tooltip>
                 <DropdownMenuContent
                   side="right"

@@ -4,12 +4,6 @@ from playwright.sync_api import expect
 
 
 def open_details(page, name):
-    if name == 'Draft details':
-        return open_draft_details(page)
-    if name == 'Saved snapshot history':
-        dialog = open_draft_details(page)
-        expect(dialog.get_by_role('heading', name=name, exact=True)).to_be_visible()
-        return dialog
     trigger=page.locator('[data-slot=disclosure-trigger]').filter(has_text=re.compile(r'^\s*'+re.escape(name)+r'\s*$'))
     if trigger.count()==0:
         trigger=page.locator('[data-slot=disclosure-trigger]').filter(has_text=name)
@@ -71,35 +65,6 @@ def open_files(page):
     if toggle.count() and toggle.is_visible() and toggle.get_attribute('aria-expanded')=='false':
         toggle.click()
         expect(toggle).to_have_attribute('aria-expanded', 'true')
-
-
-def open_draft_details(page):
-    dialog = page.get_by_role('dialog', name='Draft details', exact=True)
-    if not dialog.count():
-        page.get_by_role('button', name='Draft details', exact=True).click()
-    expect(dialog).to_be_visible()
-    page.wait_for_function('element => element.contains(document.activeElement)', arg=dialog.element_handle())
-    return dialog
-
-
-def close_draft_details(page):
-    dialog = page.get_by_role('dialog', name='Draft details', exact=True)
-    if dialog.count():
-        page.keyboard.press('Escape')
-        expect(dialog).to_have_count(0)
-        expect(page.get_by_role('button', name='Draft details', exact=True)).to_be_focused()
-
-
-def draft_action(page, name):
-    """Reach a secondary action through the real narrow-screen draft menu."""
-    for role in ('link', 'button'):
-        control=page.get_by_role(role, name=name, exact=True)
-        if control.count() and control.is_visible():
-            return control
-    page.get_by_role('button', name='Draft actions', exact=True).click()
-    item=page.get_by_role('menuitem', name=name, exact=True)
-    expect(item).to_be_visible()
-    return item
 
 
 def workspace_menu(page):

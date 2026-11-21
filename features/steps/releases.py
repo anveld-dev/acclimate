@@ -1,49 +1,80 @@
 from behave import given, when, then
 
 
-@given('the saved snapshot has complete matching evidence')
-def evaluated(context):
+@given('I have uploaded a version containing "{text}"')
+def upload_version(context, text):
+    context.world.upload_version(text)
+
+
+@given('I released the uploaded version')
+@when('I released the uploaded version')
+def release_uploaded_version(context):
+    context.world.manual_release()
+
+
+@when('I try to release without a reason')
+def missing_reason(context):
     w = context.world
-    w.request_evaluation()
-    w.start_attempt()
-    w.comparison()
-    w.finish()
-    w.evaluated_snapshot = dict(w.draft['snapshotVersion'])
+    w.call('POST', w.channel + '/releases', dict(
+        versionId=w.uploaded_version['id'], expectedRevision=w.original['revision']), expected=400)
 
 
-@when('I submit that evidence to the retired draft publication endpoint')
-def retired_publish(context):
+@then('publication is rejected')
+def publication_rejected(context):
+    assert context.world.last_status == 400
+
+
+@given("I roll back to the original version with a reason")
+@when('I roll back to the original version with a reason')
+def rollback(context):
     w = context.world
-    w.call('POST', w.draft_path + '/publish', dict(expectedGeneration=w.draft['generation'],
-           expectedRevision=w.original['revision'], comparisonId=w.report['id']), expected=404)
+    w.rolled_back = w.manual_release(w.original['version'], reason='Operator rolled back this release.')
 
 
-@when('I submit a direct release for the saved snapshot on the original channel')
-def blocked_release(context):
+@then('future applications resolve the original content at a new revision')
+def original_at_new_revision(context):
     w = context.world
-    error = w.call('POST', w.channel + '/releases', dict(versionId=w.draft['snapshotVersion']['id'],
-                   expectedRevision=w.original['revision'], unevaluatedReason='Manual change'), expected=409)
-    assert error['error']['code'] == 'connected_learning_required'
+    result = w.call('GET', w.channel)
+    assert result['version'] == w.original['version']
+    assert result['revision'] == '3'
 
 
-@when('I try to seed the bundle again under another channel name')
-def second_channel(context):
+@then('rollback appears in release history')
+def recorded_rollback(context):
     w = context.world
-    error = w.call('POST', w.bundle + '/channels/other/releases', dict(versionId=w.original['version']['id'],
-                   expectedRevision='0', unevaluatedReason='Another seed'), expected=409)
-    assert error['error']['code'] == 'connected_learning_required'
+    latest = w.call('GET', w.channel + '/releases')['items'][0]
+    assert latest['unevaluatedReason'] == 'Operator rolled back this release.'
+    assert latest['previousVersionId'] == w.uploaded_version['id']
 
 
-@when('an application resolves the source without a connection')
-def missing_connection(context):
+@when('I browse release history one revision at a time')
+def release_pages(context):
     w = context.world
-    error = w.call('GET', w.channel, expected=409)
-    assert error['error']['code'] == 'connected_learning_required'
+    before = None
+    w.decisions = []
+    for _ in range(10):
+        page = w.call('GET', w.channel + '/releases?limit=1' + ('&beforeRevision=' + before if before else ''))
+        w.decisions.extend(page['items'])
+        before = page['nextBeforeRevision']
+        if not before: break
+    assert before is None
 
 
-@then('the source release history contains only the original seed')
-def only_seed(context):
+@then('all {count:d} release decisions are returned once')
+def every_release(context, count):
+    decisions = context.world.decisions
+    assert len(decisions) == count
+    assert [item['revision'] for item in decisions] == ['3', '2', '1']
+    assert len({item['id'] for item in decisions}) == count
+
+
+@when('a read-only application tries to release the uploaded version')
+def viewer(context):
     w = context.world
-    release, = w.call('GET', w.channel + '/releases')['items']
-    assert release['version'] == w.original['version'] and release['revision'] == w.original['revision']
-    assert w.call('GET', w.draft_path)['status'] == 'open'
+    w.call('POST', w.channel + '/releases', dict(versionId=w.uploaded_version['id'], expectedRevision=w.original['revision'], unevaluatedReason='Not authorized.'), actor='viewer', expected=403)
+
+
+@then('applications still resolve the original release')
+def unchanged_release(context):
+    w = context.world
+    assert w.call('GET', w.channel) == w.original

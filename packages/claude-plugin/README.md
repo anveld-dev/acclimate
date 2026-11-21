@@ -4,7 +4,7 @@ Stage a verified Acclimate version as a Claude Agent SDK project: the instructio
 
 ## Install
 
-Install the plugin tarball together with the matching `@acclimate/sdk` tarball from the same release. Both are peers, so your app has exactly one SDK copy. The `/native` entry needs the optional peer `@anthropic-ai/claude-agent-sdk` `^0.3.325`; preparation alone does not load it.
+Install the plugin tarball together with the matching `@acclimate/sdk` tarball from the same release. The Acclimate SDK is a peer dependency. Install `@anthropic-ai/claude-agent-sdk` in your application to run Claude sessions.
 
 ```sh
 npm install "$release/acclimate-sdk-0.1.0.tgz" "$release/acclimate-claude-plugin-0.1.0.tgz" @anthropic-ai/claude-agent-sdk@^0.3.325

@@ -7,17 +7,10 @@ import {
   AcclimateUsageError,
   DeliveryError,
   TransportError,
-  compare,
   resolveAndCache,
   prepareFiles,
   createReceiptReporter,
 } from '@acclimate/sdk';
-import { defineEvaluation } from '@acclimate/sdk/evaluation';
-import {
-  connectedEvaluationDescriptor,
-  createLearningFieldAuditor,
-  createLearningOutcomeReporter,
-} from '@acclimate/sdk/learning';
 const input = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const client = new AcclimateClient({
   baseUrl: input.baseUrl,
@@ -30,186 +23,11 @@ const client = new AcclimateClient({
 const base = { workspaceId: input.workspaceId, bundleId: input.bundleId };
 const policy = {
   cacheDir: join(input.directory, 'cache'),
-  ...(input.offline ? { offline: { maxAgeMs: 300000 } } : {}),
+  ...(input.offline ? { offline: { pinnedVersionId: input.versionId ?? "legacy-channel" } } : {}),
 };
 const selection = input.versionId
   ? { ...base, versionId: input.versionId }
   : { ...base, channel: 'stable' };
-
-function reviewDefinition(datasetRevision, reviewCases) {
-  return {
-    configId: 'review-fixture',
-    configRevision: '1',
-    datasetRevision,
-    graderRevision: 'instruction-coverage-v2',
-    runtime: {},
-    execution: 'model-free',
-    cases: Object.entries(reviewCases).map(([caseId, requiredText]) => ({
-      caseId, input: { path: 'AGENTS.md', requiredText }, expected: true, repetitions: 2,
-    })),
-    execute: async ({ version, input: task }) => ({
-      output: version.payload.files.some((file) => file.path === task.path && file.text.includes(task.requiredText)),
-      usage: { costUsd: 0 },
-    }),
-    grade: async ({ output, expected }) => ({ reward: Number(output === expected) }),
-  };
-}
-
-function reviewDescriptors() {
-  return Object.fromEntries(Object.entries(input.cohorts).map(([phase, cases]) => [
-    phase, connectedEvaluationDescriptor(defineEvaluation(reviewDefinition(phase + '-v1', cases))),
-  ]));
-}
-
-async function evaluate() {
-  const reviewCases = input.reviewCases ?? { 'retry-review': 'retries' };
-  const parent = await resolveAndCache(
-    client,
-    { ...base, versionId: input.settings.parentVersionId },
-    policy,
-  );
-  const candidate = await resolveAndCache(
-    client,
-    { ...base, versionId: input.settings.candidateVersionId },
-    policy,
-  );
-  const bundles = new Map([
-    [parent.version.id, parent],
-    [candidate.version.id, candidate],
-  ]);
-  const { datasetRevision, runtime, graderRevision, expectedCases } = input.settings;
-  const definition = reviewDefinition(datasetRevision, reviewCases);
-  const answers = new Map(definition.cases.map(({ caseId, expected }) => [caseId, expected]));
-  if (input.reviewCases) {
-    const registered = connectedEvaluationDescriptor(defineEvaluation(definition));
-    assert.equal(runtime['acclimate.fixtures.v1.dataset'], registered.datasetDigest);
-  }
-  const casesById = new Map(definition.cases.map((testCase) => [testCase.caseId, testCase]));
-  const repetitionCounts = new Map();
-  for (const { caseId } of expectedCases) {
-    assert.ok(casesById.has(caseId), `Unexpected review case: ${caseId}`);
-    repetitionCounts.set(caseId, (repetitionCounts.get(caseId) ?? 0) + 1);
-  }
-  assert.equal(repetitionCounts.size, casesById.size);
-  const report = await compare({
-    parent: { version: parent.version },
-    candidate: { version: candidate.version },
-    datasetRevision,
-    evaluation: input.settings.evaluation,
-    runtime,
-    graderRevision,
-    cases: Array.from(repetitionCounts, ([caseId, repetitions]) => ({
-      caseId, repetitions, snapshot: casesById.get(caseId).input, settings: null,
-    })),
-    execute: ({ version, snapshot }) => definition.execute({ version: bundles.get(version.version.id), input: snapshot }),
-    grade: ({ output, caseId }) => definition.grade({ output, expected: answers.get(caseId) }),
-  });
-  assert.deepEqual(report.expectedCases, expectedCases);
-  return client.createComparison(base.workspaceId, base.bundleId, report, crypto.randomUUID());
-}
-
-async function reportPolicy() {
-  const { checkComparison, parseEvaluationPolicy } = await import('@acclimate/sdk/evaluation/policy');
-  const request = await client.getEvaluation(base.workspaceId, base.bundleId, input.requestId);
-  const comparison = await client.getComparison(base.workspaceId, base.bundleId, request.comparisonId);
-  const { datasetRevision, graderRevision, runtime, expectedCases } = request;
-  const descriptor = { datasetRevision, graderRevision, runtime, expectedCases };
-  const parsed = parseEvaluationPolicy(JSON.stringify(input.policy), descriptor);
-  const { policy, checks, verdict } = checkComparison({
-    comparison,
-    expectedDescriptor: descriptor,
-    expectedBinding: {
-      parentVersionId: request.parentVersionId,
-      parentDigest: request.parentDigest,
-      candidateVersionId: request.candidateVersionId,
-      candidateDigest: request.candidateDigest,
-      requestId: request.id,
-      attemptId: request.attemptId,
-      comparisonId: request.comparisonId,
-      submitter: request.evaluatorPrincipal,
-    },
-    policy: parsed.policy,
-    policyDigest: parsed.sha256,
-  });
-  return client.reportComparisonPolicyReceipt(base.workspaceId, base.bundleId, comparison.id, {
-    requestId: request.id, attemptId: request.attemptId, policy, checks, verdict,
-  });
-}
-
-function fieldJobPasses(instructions, job, defaultChecks = []) {
-  const extensions = instructions.includes('Review code.') ? [...defaultChecks, '.ts'] : defaultChecks;
-  const reviewed = job.changedPaths.filter((path) => extensions.some((suffix) => path.endsWith(suffix)));
-  return reviewed.length === job.expectedPaths.length && job.expectedPaths.every((path) => reviewed.includes(path));
-}
-
-async function gradeFieldJob() {
-  const target = { workspaceId: base.workspaceId, connectionId: input.connectionId };
-  const scopedClient = (token, role) =>
-    new AcclimateClient({
-      baseUrl: input.baseUrl,
-      token,
-      scope: input.connectionId + ':' + role,
-      connectionId: input.connectionId,
-      retries: 0,
-    });
-  const reporter = createReceiptReporter({
-    ...target,
-    client: scopedClient(input.receiptToken, 'receipt'),
-  });
-  const reportOutcome = createLearningOutcomeReporter({
-    ...target,
-    client: scopedClient(input.outcomeToken, 'outcome'),
-  });
-  const grade = (text) => fieldJobPasses(text, input.fieldJob) ? 'correct' : 'incorrect';
-  const audit = createLearningFieldAuditor({
-    ...target,
-    client,
-    cacheDir: policy.cacheDir,
-    samplePercent: 100,
-    evaluate: async ({ job, predecessor }) => ({
-      served: grade(job),
-      predecessor: grade(predecessor.payload.files.find((file) => file.path === 'AGENTS.md').text),
-    }),
-  });
-  const job = await scopedClient(input.readerToken, 'delivery').prepare({
-    ...base,
-    channel: 'stable',
-    cacheDir: policy.cacheDir,
-    reporter,
-  });
-  try {
-    const startedReceipt = job.reportStarted();
-    assert(startedReceipt);
-    await reporter.flush();
-    assert.equal(reporter.pendingCount, 0);
-    const instructions = await readFile(join(job.directory, 'AGENTS.md'), 'utf8');
-    const outcome = await reportOutcome(job.version, {
-      outcomeId: crypto.randomUUID(),
-      startedReceipt,
-      status: grade(instructions) === 'correct' ? 'completed' : 'failed',
-    });
-    const verdict = await audit(job.version, { job: instructions, outcome, startedReceipt });
-    assert(verdict, 'Expected a grade against the served release’s control');
-    return verdict;
-  } finally {
-    await job.cleanup();
-  }
-}
-
-async function replayFieldJob() {
-  const candidate = await resolveAndCache(client, selection, policy);
-  assert.equal(candidate.version.digest, input.digest);
-  const instructions = candidate.payload.files.find((file) => file.path === 'AGENTS.md').text;
-  assert.equal(fieldJobPasses(instructions, input.fieldJob), false, 'Original application must reproduce the loss');
-  const attempts = Array.from({ length: 3 }, () =>
-    fieldJobPasses(instructions, input.fieldJob, input.defaultChecks) ? 'pass' : 'regression');
-  const verdict = attempts.filter((result) => result === 'pass').length >= 2 ? 'pass' : 'regression';
-  const receipt = await client.reportLearningFieldReplay(base.workspaceId, input.connectionId, {
-    versionId: candidate.version.id, digest: candidate.version.digest, baselineRevision: input.baselineRevision,
-    outcomeId: input.outcomeId, verdict, attempts,
-  });
-  return { ...receipt, verdict };
-}
 
 async function delivery() {
   const reporter = input.reporting
@@ -357,7 +175,11 @@ async function recoverReporting() {
     now: () => now,
   });
   try {
-    const reader = new AcclimateClient({ baseUrl: input.baseUrl, token: input.readerToken, scope: 'delivery-fixture' });
+    const reader = new AcclimateClient({
+      baseUrl: input.baseUrl,
+      token: input.readerToken,
+      scope: 'delivery-fixture',
+    });
     const bundle = await resolveAndCache(reader, selection, { ...policy, reporter });
     const destination = join(input.directory, 'reporting-outage');
     await prepareFiles(bundle, destination);
@@ -365,86 +187,36 @@ async function recoverReporting() {
     reporter.reportPrepared(bundle);
     await reporter.flush();
     const pendingBefore = reporter.pendingCount;
-    const receivedBefore = (await client.listDeliveryReceipts(base.workspaceId, input.connectionId)).items;
+    const receivedBefore = (await client.listDeliveryReceipts(base.workspaceId, input.connectionId))
+      .items;
     const originals = [...originalEvents.values()];
-    const preparedEvent = originals.map((raw) => JSON.parse(raw)).find((event) => event.stage === 'prepared');
+    const preparedEvent = originals
+      .map((raw) => JSON.parse(raw))
+      .find((event) => event.stage === 'prepared');
     now += input.expired ? 24 * 60 * 60 * 1000 + 1 : 1000;
     recovered = true;
     await reporter.flush();
     await reporter.flush();
-    return { instruction, pendingBefore, receivedBefore, preparedEvent, originalEvents: originals.sort(),
-      sentAfter: sentAfter.sort(), pendingAfter: reporter.pendingCount };
+    return {
+      instruction,
+      pendingBefore,
+      receivedBefore,
+      preparedEvent,
+      originalEvents: originals.sort(),
+      sentAfter: sentAfter.sort(),
+      pendingAfter: reporter.pendingCount,
+    };
   } finally {
     await new Promise((resolve) => unavailable.close(resolve));
   }
 }
-async function compareMutation() {
-  const parent = {
-    version: await client.getVersion(base.workspaceId, base.bundleId, input.parentVersionId),
-  };
-  const candidate = {
-    version: await client.getVersion(base.workspaceId, base.bundleId, input.candidateVersionId),
-  };
-  const original = {
-    parentVersionId: parent.version.id,
-    candidateVersionId: candidate.version.id,
-    parentDigest: parent.version.digest,
-    candidateDigest: candidate.version.digest,
-    datasetRevision: 'fixed-dataset',
-    runtime: { model: 'fixture' },
-    graderRevision: 'fixed-grader',
-  };
-  let executions = 0;
-  const observed = [];
-  const attempts = new Map();
-  const options = {
-    parent,
-    candidate,
-    cases: [{ caseId: 'review', snapshot: null, settings: null }],
-    datasetRevision: original.datasetRevision,
-    runtime: { ...original.runtime },
-    graderRevision: original.graderRevision,
-    gradeRetries: 1,
-    execute: async ({ version }) => {
-      executions++;
-      if (input.mutation === 'identities') {
-        options.parent.version.id = 'changed-parent';
-        options.candidate.version.id = 'changed-candidate';
-        options.parent.version.digest = 'sha256:' + 'a'.repeat(64);
-        options.runtime.model = 'changed-model';
-        options.datasetRevision = 'changed-data';
-        options.graderRevision = 'changed-grader';
-      }
-      return { output: { findings: ['first', 'second'] } };
-    },
-    grade: async ({ output, version }) => {
-      observed.push([...output.findings]);
-      const attempt = attempts.get(version.version.id) || 0;
-      attempts.set(version.version.id, attempt + 1);
-      const reward = output.findings.length;
-      if (input.mutation === 'grader') {
-        output.findings.pop();
-        if (!attempt) throw Error('Fixture grader retry.');
-      }
-      return { reward };
-    },
-  };
-  const report = await compare(options);
-  return { original, report, executions, observed };
-}
 const actions = {
-  reviewDescriptors,
-  evaluate,
-  reportPolicy,
-  gradeFieldJob,
-  replayFieldJob,
   delivery,
   editJob,
   collision,
   cleanup,
   native,
   recoverReporting,
-  compareMutation,
 };
 if (!actions[input.action]) throw Error('Unknown SDK fixture action');
 try {

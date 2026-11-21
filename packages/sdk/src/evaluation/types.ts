@@ -1,15 +1,11 @@
 import type {
   BundleFile,
   CompatibilityTarget,
-  Comparison,
-  Evaluation,
-  EvaluationDescriptor,
-  EvaluationHandoff,
   VerifiedVersion,
 } from '../types.js';
 import type { ExecutionResult, GradeResult } from '../compare.js';
 import type { SafeCode, SafeDiagnostic, SafeNextAction } from './errors.js';
-export type { EvaluationDescriptor, EvaluationHandoff } from '../types.js';
+import type { CaseKey } from './collection.js';
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Depth = [unknown, unknown, unknown, unknown, unknown, unknown, unknown, unknown];
 /** The first reason a callback output type is not plain JSON, as a readable path. */
@@ -85,8 +81,7 @@ export interface ExecutionContext {
 export interface EvaluationGradeResult extends GradeResult {
   explanation?: Json;
   /**
-   * Named numeric grade components, such as `{ correctness: 1, citations: 0.5 }`. They travel
-   * with the outcome; a policy can gate on one with `metric.component`. At most 32 names of
+   * Named numeric grade components, such as `{ correctness: 1, citations: 0.5 }`.  At most 32 names of
    * 1–64 letters, digits, `_`, `-`, `.` or `:`, each a finite number.
    */
   components?: Record<string, number>;
@@ -167,16 +162,9 @@ export interface EvaluatorConfig {
   evaluatorToken: string;
   journalRoot: string;
 }
-export interface ReaderConfig {
-  schemaVersion: 1;
-  serviceUrl: string;
-  workspaceId: string;
-  readToken: string;
-}
 export interface PreflightResult {
   schemaVersion: 1;
   status: 'ready' | 'blocked';
-  authorization: 'verified' | 'denied' | 'unverified';
   checkedAt: string;
   checks: Array<{
     check:
@@ -184,59 +172,41 @@ export interface PreflightResult {
       | 'privateConfig'
       | 'journalStorage'
       | 'lock'
-      | 'serviceIdentity'
-      | 'evaluatorAccess'
       | 'targetBundle'
-      | 'targetRequest'
-      | 'descriptor'
-      | 'versions';
+      | 'descriptor';
     status: 'passed' | 'failed' | 'not_applicable' | 'unverified';
     code?: SafeCode;
   } & Pick<SafeDiagnostic, 'pathIssue' | 'field' | 'hint' | 'serviceUrl'>>;
   nextAction: SafeNextAction;
 }
-export interface EvaluationRunResult {
-  /** Number of application execution callbacks started by this invocation. */
-  callbacksStarted: number;
-  /**
-   * The first callback that failed in this invocation. `diagnosticFile` is a private local
-   * file with the redacted exception message and stack. It is never uploaded.
-   */
-  firstCallbackFailure?: {
-    caseId: string;
-    repetition: number;
-    side: 'parent' | 'candidate';
-    stage: 'execute' | 'grade';
-    reason:
-      | 'execution_failed'
-      | 'task_failed'
-      | 'output_invalid'
-      | 'grading_failed'
-      | 'execution_uncertain';
-    diagnosticFile?: string;
-  };
-  reusedEvidence: boolean;
-  schemaVersion: 1;
-  evaluation: Evaluation;
-  comparison: Comparison | null;
-  executionState: 'finished' | 'interrupted';
-  /** Present when this invocation executed trials: stop reason, cost and coverage. */
-  runSummary?: import('./controls.js').RunSummary;
-}
 export interface PreflightOptions<I = Json, E = Json, O = Json> {
   app: EvaluationApp<I, E, O>;
   configPath: string;
-  target: { bundleId: string; requestId?: string } | { handoff: EvaluationHandoff };
+  target: { bundleId: string };
 }
-export interface RunEvaluationOptions<I = Json, E = Json, O = Json> {
-  /** Resolve the connected learner's cache assignment after claiming the request. */
-  cachedParent?: () => Promise<import('../types.js').CachedLearningParent | null | undefined>;
-  app: EvaluationApp<I, E, O>;
-  configPath: string;
-  handoff: EvaluationHandoff;
-  allowLive?: boolean;
-  retryMissingTrial?: boolean;
-  signal?: AbortSignal;
-  /** Deadline, per-callback timeout, cost limit, case selection and progress. */
-  controls?: import('./controls.js').RunControls;
+/** The installed application’s case inventory and runtime metadata. */
+export interface EvaluationDescriptor {
+  datasetRevision: string;
+  graderRevision: string;
+  runtime: Record<string, string>;
+  expectedCases: CaseKey[];
+}
+export interface Usage {
+  inputTokens?: number;
+  outputTokens?: number;
+  costUsd?: number;
+}
+export interface Outcome {
+  executionStatus: 'completed' | 'task_failed' | 'infrastructure_failed';
+  gradingStatus: 'scored' | 'missing' | 'failed';
+  reward: number | null;
+  outputRef: string | null;
+  error: string | null;
+  usage: Usage | null;
+  /** Optional named numeric grade components, such as correctness. Present only on scored arms. */
+  components?: Record<string, number>;
+}
+export interface CasePair extends CaseKey {
+  parent: Outcome;
+  candidate: Outcome;
 }

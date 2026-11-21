@@ -21,9 +21,8 @@ from playwright.sync_api import expect
 from scripts.bdd.editor import expect_editor_value
 from scripts.bdd.run import pg_bin
 from scripts.bdd.world import World
-from scripts.bdd.interactions import open_details, draft_action
 from scripts.bdd.layout import inspect_layout, tab_to, assert_navigation_metrics
-from scripts.testing.compact_console import FILES, visit, reset_editor_view
+from scripts.testing.compact_console import FILES, visit
 
 
 class Evidence:
@@ -111,10 +110,6 @@ class Evidence:
                 metrics['desktop']['headerOverlaps']=overlaps
                 if outside or overlaps:
                     violations.append('desktop header children must be contained and groups must not overlap')
-            if name=='1440-draft-clean':
-                source=metrics['editor']
-                if not source or source['top']>250 or source['width']<1080 or source['height']<640:
-                    violations.append('desktop editor must start within 250px of the top and provide at least 1080×640px')
         metrics['violations'] = violations
         metrics['shortTargets'] = short
         cdp = page.context.new_cdp_session(page)
@@ -130,10 +125,6 @@ class Evidence:
         (self.output / (name + '.json')).write_text(json.dumps(metrics, indent=2) + '\n')
         assert metrics['capture']['before']==metrics['capture']['after'], 'Screenshot changed route geometry'
         assert metrics['capture']['pixels']==[metrics['viewport'],metrics['viewportHeight']],metrics['capture']
-        if name.endswith('-draft-dirty'):
-            save=page.get_by_role('button',name='Save draft',exact=True)
-            expect(save).to_be_enabled()
-            assert save.get_attribute('aria-disabled')!='true'
         if violations:
             self.geometry.append(dict(surface=name, violations=violations))
         return metrics
@@ -165,142 +156,6 @@ def navigation(page):
     page.mouse.wheel(0, -10000)
     page.wait_for_function('scrollY <= 1')
     return rows
-
-
-def route_capture(w, b, e, routes, candidate, width, height, name):
-    p = b.page
-    p.set_viewport_size(dict(width=width, height=height))
-    visit(p, b, routes[name])
-    expect(p.get_by_role('main')).to_be_visible()
-    nav = navigation(p)
-    if name == 'draft':
-        editor = p.get_by_role('textbox', name='Content', exact=True)
-        expect_editor_value(editor, candidate['files'][0]['text'])
-        collapse=p.get_by_role('button',name='Collapse navigation',exact=True)
-        restore_labels=width==1440 and collapse.count()>0
-        if restore_labels:
-            e.capture(p, '1440-draft-labels')
-            collapse.click()
-        reset_editor_view(p)
-        e.capture(p, f'{width}-{name}-clean')
-        edited = candidate['files'][0]['text'] + '\nDesktop unsaved source retention.\n'
-        editor.fill(edited)
-        expect(p.get_by_role('button', name='Save draft', exact=True)).to_be_enabled()
-        reset_editor_view(p)
-        e.capture(p, f'{width}-{name}-dirty')
-        # Changing source selection is real application input, retaining both edits.
-        p.get_by_role('treeitem', name='Open memory/team.md', exact=True).click()
-        expect_editor_value(editor, FILES[-1]['text'])
-        p.get_by_role('treeitem', name='Open AGENTS.md', exact=True).click()
-        expect_editor_value(editor, edited)
-        editor.fill(candidate['files'][0]['text'])
-        if restore_labels:
-            p.get_by_role('button',name='Expand navigation',exact=True).click()
-    else:
-        e.capture(p, f'{width}-{name}')
-    return dict(viewport=[width,height],navigation=nav,sourceEditsRetained=name=='draft')
-
-
-def overlays(w, b, e, routes, candidate):
-    p = b.page
-    p.set_viewport_size(dict(width=1440,height=900))
-    visit(p,b,routes['draft'])
-    add = p.get_by_role('button',name='Add entry',exact=True)
-    add.hover()
-    e.capture(p,'1440-add-entry-hover')
-    activate(p,add)
-    expect(p.get_by_role('menu')).to_be_visible()
-    p.keyboard.press('ArrowDown')
-    expect(p.get_by_role('menuitem',name='Add skill package',exact=True)).to_be_focused()
-    e.capture(p,'1440-add-entry-menu-focus')
-    p.keyboard.press('Escape')
-    expect(p.get_by_role('menu')).to_have_count(0)
-    expect(add).to_be_focused()
-
-    actions = p.get_by_role('button',name='Entry actions',exact=True)
-    activate(p,actions)
-    dialog = p.get_by_role('dialog',name='Entry actions',exact=True)
-    expect(dialog).to_be_visible()
-    tab_to(p,p.get_by_label('Entry path (rename)',exact=True))
-    e.capture(p,'1440-entry-actions-focus')
-    p.keyboard.press('Escape')
-    expect(dialog).to_have_count(0)
-    expect(actions).to_be_focused()
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), candidate['files'][0]['text'])
-
-    # A dirty navigation request must show the app's guard and preserve text on Escape.
-    editor = p.get_by_role('textbox', name='Content', exact=True)
-    edited = candidate['files'][0]['text']+'\nKeep this browser text on cancel.\n'
-    editor.fill(edited)
-    evaluate = draft_action(p,'Evaluate saved generation 1')
-    if evaluate.get_attribute('role') == 'menuitem':
-        for _ in range(10):
-            if evaluate.evaluate('el=>el===document.activeElement'): break
-            p.keyboard.press('ArrowDown')
-        expect(evaluate).to_be_focused()
-        p.keyboard.press('Enter')
-    else:
-        activate(p,evaluate,reverse=True)
-    expect(p.get_by_role('alertdialog')).to_contain_text('Unsaved text will be lost')
-    e.capture(p,'1440-unsaved-navigation-guard')
-    p.keyboard.press('Escape')
-    expect(p.get_by_role('alertdialog')).to_have_count(0)
-    expect_editor_value(editor, edited)
-    editor.fill(candidate['files'][0]['text'])
-
-    visit(p,b,routes['review'])
-    activate(p,p.get_by_role('link',name=re.compile(r'^Inspect evidence for ')))
-    expect(p.get_by_role('region',name='Evaluation case comparison',exact=True)).to_be_visible()
-    evidence = p.get_by_role('button',name='Review release with this evidence',exact=True)
-    activate(p,evidence)
-    expect(p.get_by_role('dialog')).to_contain_text(w.report['id'])
-    e.capture(p,'1440-evidenced-publish-decision')
-    p.keyboard.press('Escape')
-    expect(p.get_by_role('dialog')).to_have_count(0)
-    expect(evidence).to_be_focused()
-    visit(p,b,routes['review'])
-    open_details(p,'Publish without evaluation')
-    reason = p.get_by_label('Manual release reason',exact=True)
-    reason.fill('Desktop review of the unchanged saved snapshot.')
-    manual = p.get_by_role('button',name='Review manual release',exact=True)
-    activate(p,manual)
-    expect(p.get_by_role('dialog')).to_contain_text('No evaluation supports this release.')
-    e.capture(p,'1440-manual-publish-decision')
-    p.keyboard.press('Escape')
-    expect(p.get_by_role('dialog')).to_have_count(0)
-    expect(manual).to_be_focused()
-    expect(reason).to_have_value('Desktop review of the unchanged saved snapshot.')
-
-    visit(p,b,routes['library'])
-    account = p.get_by_role('button',name='Account',exact=True)
-    account.hover()
-    e.capture(p,'1440-account-hover')
-    activate(p,account)
-    expect(p.get_by_role('dialog',name='Your account',exact=True)).to_be_visible()
-    activate(p,p.get_by_role('button',name='Sign-in details',exact=True))
-    tab_to(p,p.get_by_role('button',name='Copy ID',exact=True))
-    e.capture(p,'1440-account-focus')
-    p.keyboard.press('Escape')
-    expect(p.get_by_role('dialog')).to_have_count(0)
-    expect(account).to_be_focused()
-    workspace = p.get_by_role('button',name='Workspaces')
-    expect(workspace).to_have_count(1)
-    p.mouse.move(500,150,steps=8)
-    expect(p.get_by_role('tooltip',include_hidden=True)).to_have_count(0)
-    workspace.hover()
-    expect(p.get_by_role('tooltip').filter(has_text=re.compile(r'^Workspaces'))).to_be_visible()
-    e.capture(p,'1440-workspace-tooltip-hover')
-    p.keyboard.press('Escape')
-    expect(p.get_by_role('tooltip')).to_have_count(0)
-    p.mouse.move(900,30,steps=8)
-    expect(p.get_by_role('tooltip',include_hidden=True)).to_have_count(0)
-    tab_to(p,workspace)
-    expect(p.get_by_role('tooltip').filter(has_text=re.compile(r'^Workspaces'))).to_be_visible()
-    e.capture(p,'1440-workspace-tooltip-focus')
-    p.keyboard.press('Escape')
-    expect(workspace).to_be_focused()
-    expect(p.get_by_role('tooltip')).to_have_count(0)
-    return dict(addEntryMenu=True,entryActions=True,dirtyNavigationGuard=True,manualDecision=True,evidencedDecision=True,account=True,tooltipHoverAndFocus=True,escapeRestoresFocus=True)
 
 
 def keyboard_resize(b,e,routes):
@@ -387,42 +242,6 @@ def focus_stress(b,e,routes):
     return result
 
 
-def focus_ownership(b,e,routes,candidate):
-    """Resizing must preserve source/modal focus while their controls stay visible."""
-    p=b.page;p.set_viewport_size(dict(width=1024,height=768));visit(p,b,routes['draft'])
-    editor=p.get_by_role('textbox', name='Content', exact=True)
-    original=candidate['files'][0]['text']
-    expect_editor_value(editor, original)
-    tab_to(p,editor)
-    p.keyboard.press('ControlOrMeta+A');p.keyboard.press('ArrowRight')
-    p.keyboard.press('Enter')
-    p.keyboard.insert_text('Preserve editor focus through resize.')
-    p.keyboard.press('Enter')
-    edited=original+'\nPreserve editor focus through resize.\n'
-    expect_editor_value(editor, edited)
-    p.set_viewport_size(dict(width=899,height=768))
-    expect(editor).to_be_focused(timeout=5000);expect_editor_value(editor, edited)
-    e.capture(p,'899-source-focus-retained')
-    p.set_viewport_size(dict(width=1024,height=768))
-    expect(editor).to_be_focused(timeout=5000);expect_editor_value(editor, edited)
-    e.capture(p,'1024-source-focus-retained')
-    editor.fill(original)
-    visit(p,b,routes['library'])
-    account=p.get_by_role('button',name='Account',exact=True)
-    activate(p,account)
-    dialog=p.get_by_role('dialog',name='Your account',exact=True)
-    expect(dialog).to_be_visible()
-    activate(p,dialog.get_by_role('button',name='Sign-in details',exact=True))
-    copy=dialog.get_by_role('button',name='Copy ID',exact=True)
-    tab_to(p,copy);expect(copy).to_be_focused()
-    p.set_viewport_size(dict(width=899,height=768))
-    expect(dialog).to_have_count(0)
-    expect(p.get_by_role('button',name='Open navigation',exact=True)).to_be_focused(timeout=5000)
-    e.capture(p,'899-account-hidden-anchor-navigation-fallback')
-    return dict(sourceFocusPreservedBothDirections=True,unsavedSourceRetained=True,
-      accountPopupClosesWithHiddenAnchor=True,hiddenInvokerFallsBackToVisibleNavigation=True)
-
-
 def build_fingerprint():
     """Hash all production outputs so changes behind the server entry are detected."""
     output=ROOT/'apps/console/.output'
@@ -438,7 +257,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pg-bin')
     parser.add_argument('--baseline',action='store_true')
-    parser.add_argument('--only',choices=['all','geometry','focus','focus-stress','ownership'],default='all',help='Recheck source geometry or native keyboard breakpoint focus on the unchanged build')
+    parser.add_argument('--only',choices=['all','geometry','focus','focus-stress'],default='all',help='Recheck source geometry or native keyboard breakpoint focus on the unchanged build')
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     output=args.output.resolve(); output.mkdir(parents=True,exist_ok=False,mode=0o700)
@@ -447,15 +266,8 @@ def main():
     build_hash=build_fingerprint();build_hash_after=None
     try:
         w.start(); w.fresh_scenario(SimpleNamespace(effective_tags=[])); w.publish_initial('',files=FILES)
-        candidate=dict(schemaVersion=1,files=[dict(file,text=file['text']+'\nUse a stable operation key.\n' if file['path']=='AGENTS.md' else file['text']) for file in FILES])
-        w.draft=w.call('POST',w.channel+'/drafts',dict(baseVersionId=w.original['version']['id'],baseRevision=w.original['revision'],payload=candidate))
-        w.draft_path=w.channel+'/drafts/'+w.draft['id']
-        w.request_evaluation(); w.start_attempt(); w.comparison(); w.finish(); w.create_integration()
-        requests_before=w.call('GET',w.bundle+'/evaluation-requests')['items']
         b=w.browser(); p=b.page
         routes=dict(library=b.workspace_path(),content=b.bundle_path('content'),
-          draft=b.bundle_path('changes',draft=w.draft['id'],path='AGENTS.md'),
-          review=b.bundle_path('changes',draft=w.draft['id'],candidate=w.draft['snapshotVersion']['id'],generation=w.draft['generation']),
           release=b.bundle_path('releases'),appsetup=b.bundle_path('connect'),
           connections=b.workspace_path('connections'),members=b.workspace_path('members'))
         if args.only in ('all','focus') and not args.baseline:
@@ -464,20 +276,16 @@ def main():
             e.run('native-keyboard-resize-stress',p,lambda:focus_stress(b,e,routes))
         if args.only=='all' and not args.baseline:
             e.run('coarse-desktop-topbar',p,lambda:coarse_desktop(b,e,routes))
-        if args.only in ('all','ownership') and not args.baseline:
-            e.run('keyboard-focus-ownership',p,lambda:focus_ownership(b,e,routes,candidate))
         for width,height in [(1024,768),(1440,900),(1920,1080)]:
             for name in routes:
-                if args.only in ('focus','focus-stress','ownership'):
+                if args.only in ('focus','focus-stress'):
                     continue
-                if args.only=='geometry' and (width==1024 or name!='draft'):
-                    continue
-                e.run(f'{width}-{name}',p,lambda width=width,height=height,name=name:route_capture(w,b,e,routes,candidate,width,height,name))
-        if args.only=='all':
-            e.run('desktop-overlays',p,lambda:overlays(w,b,e,routes,candidate))
+                def capture(name=name, width=width, height=height):
+                    p.set_viewport_size(dict(width=width, height=height))
+                    visit(p, b, routes[name])
+                    return e.capture(p, f'{width}-{name}')
+                e.run(f'{width}-{name}', p, capture)
         assert w.call('GET',w.channel)['version']==w.original['version'],'Release changed during layout review'
-        assert w.call('GET',w.bundle+'/evaluation-requests')['items']==requests_before,'Layout interactions created evaluation work'
-        assert w.draft_text()==candidate['files'][0]['text'],'Layout review altered saved source'
         assert not b.errors,b.errors
         build_hash_after=build_fingerprint()
         assert build_hash_after==build_hash,'Console build changed during run'

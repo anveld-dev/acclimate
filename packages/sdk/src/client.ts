@@ -1,73 +1,15 @@
-import type { Operation } from './types.js';
 import { AcclimateError, AcclimateUsageError, TransportError } from './errors.js';
 import type { PrepareDeliveryOptions, PreparedDelivery } from './prepare.js';
-import { registerEvaluationMutation } from './internal/http-bridge.js';
 import type {
-  ComparisonPolicyReceipt,
-  ComparisonPolicyReport,
-  EvaluationCapabilities,
-  ConnectionObservation,
-  EvaluationProgressRequest,
-  EvaluationProgressView,
-} from './types.js';
-import type {
-  Channel,
-  Connection,
-  CreateConnectionRequest,
-  ConnectionCredential,
-  ConnectionCredentialKind,
-  DeliveryReceipt,
-  DeliveryReceiptRequest,
-  LearningEnrollment,
-  LearningEnrollmentRequest,
-  LearningEnrollmentStatus,
-  LearningFieldAuditReceipt,
-  LearningFieldAuditRequest,
-  LearningFieldRequalification,
-  LearningFieldReplay,
-  LearningOutcomeReceipt,
-  LearningOutcomeStatus,
-  LearningIncidentReplay,
-  LearningOutcomeRequest,
-  LearningCorrectionRequest,
-  LearningRecheckRequest,
-  LearningRenewalRequest,
-  LearningRenewalReceipt,
-  LearningWork,
-} from './types.js';
-import type {
-  Evaluation,
-  EvaluationRequest,
-  StartEvaluationRequest,
-  FinishEvaluationRequest,
-  AbandonEvaluationRequest,
-  InterruptEvaluationRequest,
-} from './types.js';
-import type {
-  Page,
-  ListOptions,
-  Workspace,
-  BundleSetup,
-  BundleSetupRequest,
-  Draft,
-  CreateDraftRequest,
-  SaveDraftRequest,
-  DiscardDraftRequest,
-  DraftSnapshot,
-} from './types.js';
-import type {
-  ApiErrorBody,
-  Bundle,
-  ChannelResolution,
-  Comparison,
-  ComparisonRequest,
-  CreateVersionRequest,
-  Release,
-  ReleasePage,
-  CreateReleaseRequest,
-  Proposal,
-  ProposalRequest,
-  VersionMetadata,
+  ApiErrorBody, Bundle, BundleSetup, BundleSetupRequest, Channel, ChannelResolution,
+  Connection, ConnectionCredential, ConnectionCredentialKind, ConnectionObservation,
+  CreateConnectionRequest, CreateReleaseRequest, CreateVersionRequest, DeliveryReceipt,
+  DeliveryReceiptRequest, ListOptions, Operation, Page, Release, ReleasePage,
+  VersionMetadata, Workspace,
+  WorkspacePrincipal, LearningLoopRequest, LearningLoop, LearningRoundSummary, LearningRound, LearningMemory,
+  LearningEvolveCasesRequest, LearningEvolveCasesReceipt, LearningEvolveCasesPage, LearningOutcomeRequest,
+  LearningOutcomeReceipt, LearningWork, LearningEvaluationStart, LearningEvaluationAssignment,
+  LearningEvaluationReportRequest, LearningEvaluation,
 } from './types.js';
 
 /** Error codes the Acclimate service returns, plus codes the client assigns to HTTP failures. */
@@ -77,13 +19,8 @@ export type ApiErrorCode =
   | 'base_conflict'
   | 'credential_already_issued'
   | 'denied'
-  | 'draft_closed'
   | 'email_not_verified'
   | 'email_unavailable'
-  | 'evaluation_conflict'
-  | 'evaluation_progress_conflict'
-  | 'generation_conflict'
-  | 'guided_target_unsupported'
   | 'http_error'
   | 'idempotency_conflict'
   | 'invalid_compatibility'
@@ -91,23 +28,18 @@ export type ApiErrorCode =
   | 'invalid_content'
   | 'invalid_cursor'
   | 'invalid_session'
+  | 'learning_conflict'
   | 'invitation_closed'
   | 'invitation_exists'
   | 'invitation_limit'
   | 'last_admin'
-  | 'learning_conflict'
-  | 'learning_processing_error'
   | 'machine_principal_required'
   | 'not_found'
   | 'operation_closed'
   | 'parent_conflict'
   | 'payload_too_large'
-  | 'policy_binding_mismatch'
-  | 'policy_blocked'
-  | 'policy_receipt_conflict'
   | 'resend_unavailable'
   | 'response_too_large'
-  | 'review_already_decided'
   | 'revision_conflict'
   | 'unauthenticated'
   | 'unavailable'
@@ -227,9 +159,6 @@ export class AcclimateClient {
       this.maxJsonResponseBytes > 8 * 1024 * 1024
     )
       throw new AcclimateUsageError('maxJsonResponseBytes must be an integer between 1 and 8388608', 'maxJsonResponseBytes');
-    registerEvaluationMutation(this, (route, body, key) =>
-      this.request('POST', route, body, key, { 'X-Acclimate-Durable-Operation': 'true' }),
-    );
   }
   private part(value: string): string {
     if (!value || value === '.' || value === '..')
@@ -332,15 +261,17 @@ export class AcclimateClient {
     headers: Record<string, string> = {},
     raw = false,
     channelResolution = false,
+    optionalKey = false,
   ): Promise<T> {
     const mutation = method !== 'GET' && method !== 'HEAD';
-    if (mutation && (!idempotencyKey || !/^[\x20-\x7e]{1,128}$/.test(idempotencyKey)))
+    if (mutation && !(optionalKey && idempotencyKey === undefined) && (!idempotencyKey || !/^[\x20-\x7e]{1,128}$/.test(idempotencyKey)))
       throw new AcclimateUsageError(
         'mutations require a printable ASCII idempotency key (1..128 characters)',
         'idempotencyKey',
       );
+    const retries = mutation && idempotencyKey ? this.retries : 0;
     let last: unknown;
-    for (let attempt = 0; attempt <= (mutation ? this.retries : 0); attempt++) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const response = await this.send(this.baseUrl + path, {
           method,
@@ -362,7 +293,7 @@ export class AcclimateClient {
             if (error instanceof ApiError) throw error;
             return null;
           });
-          if (mutation && response.status >= 500 && attempt < this.retries) continue;
+          if (response.status >= 500 && attempt < retries) continue;
           throw new ApiError(
             response.status,
             err?.error?.code ?? 'http_error',
@@ -382,7 +313,7 @@ export class AcclimateClient {
       } catch (error) {
         if (error instanceof ApiError) throw error;
         last = error;
-        if (attempt >= (mutation ? this.retries : 0)) throw error;
+        if (attempt >= retries) throw error;
       }
     }
     throw last;
@@ -446,154 +377,7 @@ export class AcclimateClient {
     );
     return result.notModified ? { resolution: null, etag: result.etag, notModified: true } : result;
   }
-  private learningPath(workspaceId: string, connectionId: string): string {
-    return this.path(workspaceId, `/connections/${this.part(connectionId)}/learning`);
-  }
-  enrollLearning(
-    workspaceId: string,
-    connectionId: string,
-    body: LearningEnrollmentRequest,
-    key: string,
-  ): Promise<LearningEnrollment> {
-    return this.request(
-      'PUT',
-      this.learningPath(workspaceId, connectionId),
-      JSON.stringify(body),
-      key,
-    );
-  }
-  getLearningEnrollment(
-    workspaceId: string,
-    connectionId: string,
-  ): Promise<LearningEnrollmentStatus> {
-    return this.request('GET', this.learningPath(workspaceId, connectionId));
-  }
-  stopLearning(workspaceId: string, connectionId: string, key: string): Promise<LearningEnrollment> {
-    return this.request(
-      'POST',
-      this.learningPath(workspaceId, connectionId) + '/stop',
-      undefined,
-      key,
-    );
-  }
-  getLearningOutcome(
-    workspaceId: string,
-    connectionId: string,
-    outcomeId: string,
-  ): Promise<LearningOutcomeStatus> {
-    return this.request(
-      'GET',
-      this.learningPath(workspaceId, connectionId) + '/outcomes/' + this.part(outcomeId),
-    );
-  }
-  reportLearningIncidentReplay(
-    workspaceId: string,
-    connectionId: string,
-    body: LearningIncidentReplay,
-  ): Promise<{ accepted: true }> {
-    return this.request(
-      'POST',
-      this.learningPath(workspaceId, connectionId) + '/incident-replays',
-      JSON.stringify(body),
-      body.roundId,
-    );
-  }
-  reportLearningOutcome(
-    workspaceId: string,
-    connectionId: string,
-    body: LearningOutcomeRequest,
-    key = body.outcomeId,
-  ): Promise<LearningOutcomeReceipt> {
-    return this.request(
-      'POST',
-      this.learningPath(workspaceId, connectionId) + '/outcomes',
-      JSON.stringify(body),
-      key,
-    );
-  }
-  reportLearningCorrection(
-    workspaceId: string,
-    connectionId: string,
-    body: LearningCorrectionRequest,
-  ): Promise<{ correctionId: string; outcomeId: string; accepted: true }> {
-    return this.request(
-      'POST',
-      this.learningPath(workspaceId, connectionId) + '/corrections',
-      JSON.stringify(body),
-      body.correctionId,
-    );
-  }
-  reportLearningRecheck(
-    workspaceId: string,
-    connectionId: string,
-    body: LearningRecheckRequest,
-  ): Promise<{
-    correctionId: string;
-    revision: string;
-    verdict: LearningRecheckRequest['verdict'];
-    accepted: true;
-  }> {
-    return this.request(
-      'POST',
-      this.learningPath(workspaceId, connectionId) + '/rechecks',
-      JSON.stringify(body),
-      body.correctionId + ':' + body.revision,
-    );
-  }
-  getLearningWork(workspaceId: string, connectionId: string): Promise<LearningWork> {
-    return this.request('GET', this.learningPath(workspaceId, connectionId) + '/work');
-  }
-  getLearningFieldRequalification(
-    workspaceId: string,
-    connectionId: string,
-    versionId: string,
-  ): Promise<LearningFieldRequalification> {
-    return this.request(
-      'GET',
-      this.learningPath(workspaceId, connectionId) +
-        '/field-requalifications/' +
-        encodeURIComponent(versionId),
-    );
-  }
-  reportLearningFieldReplay(
-    workspaceId: string,
-    connectionId: string,
-    body: LearningFieldReplay,
-  ): Promise<{ accepted: true }> {
-    return this.request(
-      'POST',
-      this.learningPath(workspaceId, connectionId) + '/field-requalifications',
-      JSON.stringify(body),
-      [body.outcomeId, body.versionId, body.baselineRevision].join(':'),
-    );
-  }
-  reportLearningFieldAudit(
-    workspaceId: string,
-    connectionId: string,
-    body: LearningFieldAuditRequest,
-    key = body.outcomeId,
-  ): Promise<LearningFieldAuditReceipt> {
-    return this.request(
-      'POST',
-      this.learningPath(workspaceId, connectionId) + '/field-audits',
-      JSON.stringify(body),
-      key,
-    );
-  }
-  renewLearning(
-    workspaceId: string,
-    connectionId: string,
-    body: LearningRenewalRequest,
-    key = body.renewalId,
-  ): Promise<LearningRenewalReceipt> {
-    return this.request(
-      'POST',
-      this.learningPath(workspaceId, connectionId) + '/renew',
-      JSON.stringify(body),
-      key,
-    );
-  }
-  /** Inspect source history for evaluation and management. Apps resolve their enrolled connection. */
+  /** Inspect the channel’s latest release for evaluation or management. */
   async inspectSource(workspaceId: string, bundleId: string, channel: string): Promise<ChannelResolution | null> {
     const [release] = (await this.listReleases(workspaceId, bundleId, channel, { limit: 1 })).items;
     return release ? { channel: release.channel, revision: release.revision, version: release.version } : null;
@@ -623,8 +407,6 @@ export class AcclimateClient {
     request: CreateReleaseRequest,
     key: string,
   ): Promise<Release> {
-    if (request.expectedRevision !== '0' || !request.unevaluatedReason || 'comparisonId' in request || 'policyOverride' in request)
-      throw new AcclimateUsageError('Only the initial release can be seeded. Subsequent releases use connected learning.', 'expectedRevision');
     return this.request(
       'POST',
       this.path(
@@ -635,82 +417,56 @@ export class AcclimateClient {
       key,
     );
   }
-  createProposal(
-    workspaceId: string,
-    bundleId: string,
-    request: ProposalRequest,
-    key: string,
-  ): Promise<Proposal> {
-    return this.request(
-      'POST',
-      this.path(workspaceId, `/bundles/${this.part(bundleId)}/proposals`),
-      JSON.stringify(request),
-      key,
-    );
+  private loopPath(workspaceId: string, bundleId: string): string {
+    return this.path(workspaceId, `/bundles/${this.part(bundleId)}/learning`);
   }
-  getProposal(workspaceId: string, bundleId: string, id: string): Promise<Proposal> {
-    return this.request(
-      'GET',
-      this.path(workspaceId, `/bundles/${this.part(bundleId)}/proposals/${this.part(id)}`),
-    );
+  private learningQuery(options: Record<string, string | number | undefined>): string {
+    const query = new URLSearchParams();
+    for (const [name, value] of Object.entries(options))
+      if (value !== undefined) query.set(name, String(value));
+    return query.size ? `?${query}` : '';
   }
-  createComparison(
-    workspaceId: string,
-    bundleId: string,
-    request: ComparisonRequest,
-    key: string,
-  ): Promise<Comparison> {
-    return this.request(
-      'POST',
-      this.path(workspaceId, `/bundles/${this.part(bundleId)}/comparisons`),
-      JSON.stringify(request),
-      key,
-    );
+  enrollLearningLoop(workspaceId: string, bundleId: string, body: LearningLoopRequest, key?: string): Promise<LearningLoop> {
+    return this.request('PUT', this.loopPath(workspaceId, bundleId), JSON.stringify(body), key, {}, false, false, true);
   }
-  getComparison(workspaceId: string, bundleId: string, id: string): Promise<Comparison> {
-    return this.request(
-      'GET',
-      this.path(workspaceId, `/bundles/${this.part(bundleId)}/comparisons/${this.part(id)}`),
-    );
+  getLearningLoop(workspaceId: string, bundleId: string): Promise<LearningLoop> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId));
   }
-  private comparisonPolicyPath(workspaceId: string, bundleId: string, comparisonId: string) {
-    return this.path(
-      workspaceId,
-      `/bundles/${this.part(bundleId)}/comparisons/${this.part(comparisonId)}/policy-receipts`,
-    );
+  pauseLearningLoop(workspaceId: string, bundleId: string, key?: string): Promise<LearningLoop> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + '/pause', undefined, key, {}, false, false, true);
   }
-  listComparisonPolicyReceipts(
-    workspaceId: string,
-    bundleId: string,
-    comparisonId: string,
-  ): Promise<{ items: ComparisonPolicyReceipt[] }> {
-    return this.request('GET', this.comparisonPolicyPath(workspaceId, bundleId, comparisonId));
+  resumeLearningLoop(workspaceId: string, bundleId: string, key?: string): Promise<LearningLoop> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + '/resume', undefined, key, {}, false, false, true);
   }
-  listCandidatePolicyReceipts(
-    workspaceId: string,
-    bundleId: string,
-    versionId: string,
-  ): Promise<{ items: ComparisonPolicyReceipt[] }> {
-    return this.request(
-      'GET',
-      this.path(
-        workspaceId,
-        `/bundles/${this.part(bundleId)}/versions/${this.part(versionId)}/policy-receipts`,
-      ),
-    );
+  stopLearningLoop(workspaceId: string, bundleId: string, key?: string): Promise<LearningLoop> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + '/stop', undefined, key, {}, false, false, true);
   }
-  reportComparisonPolicyReceipt(
-    workspaceId: string,
-    bundleId: string,
-    comparisonId: string,
-    report: ComparisonPolicyReport,
-  ): Promise<ComparisonPolicyReceipt> {
-    return this.request(
-      'POST',
-      this.comparisonPolicyPath(workspaceId, bundleId, comparisonId),
-      JSON.stringify(report),
-      `policy:${comparisonId}:${report.policy.sha256}`,
-    );
+  listLearningRounds(workspaceId: string, bundleId: string, options: { before?: number; limit?: number } = {}): Promise<{ items: LearningRoundSummary[]; next: number | null }> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + '/rounds' + this.learningQuery(options));
+  }
+  getLearningRound(workspaceId: string, bundleId: string, roundId: string, options: { evaluation?: string } = {}): Promise<LearningRound> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + `/rounds/${this.part(roundId)}` + this.learningQuery(options));
+  }
+  getLearningMemory(workspaceId: string, bundleId: string, options: { revision?: number } = {}): Promise<LearningMemory> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + '/memory' + this.learningQuery(options));
+  }
+  listLearningEvolveCases(workspaceId: string, bundleId: string, options: { after?: string; limit?: number } = {}): Promise<LearningEvolveCasesPage> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + '/evolve-cases' + this.learningQuery(options));
+  }
+  addLearningEvolveCases(workspaceId: string, bundleId: string, body: LearningEvolveCasesRequest, key?: string): Promise<LearningEvolveCasesReceipt> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + '/evolve-cases', JSON.stringify(body), key, {}, false, false, true);
+  }
+  reportLearningOutcome(workspaceId: string, bundleId: string, body: LearningOutcomeRequest, key = body.outcomeId): Promise<LearningOutcomeReceipt> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + '/outcomes', JSON.stringify(body), key);
+  }
+  getLearningWork(workspaceId: string, bundleId: string): Promise<LearningWork> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + '/work');
+  }
+  startLearningEvaluation(workspaceId: string, bundleId: string, evaluationId: string, body: LearningEvaluationStart, key = body.attemptId): Promise<LearningEvaluationAssignment> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + `/evaluations/${this.part(evaluationId)}/start`, JSON.stringify(body), key);
+  }
+  reportLearningEvaluation(workspaceId: string, bundleId: string, evaluationId: string, body: LearningEvaluationReportRequest, key: string): Promise<LearningEvaluation> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + `/evaluations/${this.part(evaluationId)}/report`, JSON.stringify(body), key);
   }
   private listing(options: ListOptions = {}): string {
     const query = new URLSearchParams();
@@ -718,14 +474,11 @@ export class AcclimateClient {
     if (options.cursor !== undefined) query.set('cursor', options.cursor);
     return query.size ? `?${query}` : '';
   }
-  private draftPath(workspaceId: string, bundleId: string, channel: string, id?: string): string {
-    return this.path(
-      workspaceId,
-      `/bundles/${this.part(bundleId)}/channels/${this.part(channel)}/drafts${id === undefined ? '' : `/${this.part(id)}`}`,
-    );
-  }
   listWorkspaces(options: ListOptions = {}): Promise<Page<Workspace>> {
     return this.request('GET', `/v1/workspaces${this.listing(options)}`);
+  }
+  getPrincipal(workspaceId: string): Promise<WorkspacePrincipal> {
+    return this.request('GET', this.path(workspaceId, '/principal'));
   }
   listBundles(workspaceId: string, options: ListOptions = {}): Promise<Page<Bundle>> {
     return this.request('GET', this.path(workspaceId, `/bundles${this.listing(options)}`));
@@ -751,237 +504,6 @@ export class AcclimateClient {
       JSON.stringify(request),
       key,
     );
-  }
-  createDraft(
-    workspaceId: string,
-    bundleId: string,
-    channel: string,
-    request: CreateDraftRequest,
-    key: string,
-  ): Promise<Draft> {
-    return this.request(
-      'POST',
-      this.draftPath(workspaceId, bundleId, channel),
-      JSON.stringify(request),
-      key,
-    );
-  }
-  listDrafts(
-    workspaceId: string,
-    bundleId: string,
-    channel: string,
-    options: ListOptions & { status?: Draft['status'] | 'all' } = {},
-  ): Promise<Page<Draft>> {
-    return this.request(
-      'GET',
-      this.draftPath(workspaceId, bundleId, channel) +
-        this.listing(options) +
-        (options.status
-          ? `${this.listing(options) ? '&' : '?'}status=${encodeURIComponent(options.status)}`
-          : ''),
-    );
-  }
-  getDraft(workspaceId: string, bundleId: string, channel: string, id: string): Promise<Draft> {
-    return this.request('GET', this.draftPath(workspaceId, bundleId, channel, id));
-  }
-  getDraftHistory(
-    workspaceId: string,
-    bundleId: string,
-    channel: string,
-    id: string,
-    options: ListOptions = {},
-  ): Promise<Page<DraftSnapshot>> {
-    return this.request(
-      'GET',
-      this.draftPath(workspaceId, bundleId, channel, id) + '/history' + this.listing(options),
-    );
-  }
-  saveDraft(
-    workspaceId: string,
-    bundleId: string,
-    channel: string,
-    id: string,
-    request: SaveDraftRequest,
-    key: string,
-  ): Promise<Draft> {
-    return this.request(
-      'POST',
-      this.draftPath(workspaceId, bundleId, channel, id) + '/save',
-      JSON.stringify(request),
-      key,
-    );
-  }
-  discardDraft(
-    workspaceId: string,
-    bundleId: string,
-    channel: string,
-    id: string,
-    request: DiscardDraftRequest,
-    key: string,
-  ): Promise<Draft> {
-    return this.request(
-      'POST',
-      this.draftPath(workspaceId, bundleId, channel, id) + '/discard',
-      JSON.stringify(request),
-      key,
-    );
-  }
-  listProposals(
-    workspaceId: string,
-    bundleId: string,
-    options: ListOptions = {},
-  ): Promise<Page<Proposal>> {
-    return this.request(
-      'GET',
-      this.path(workspaceId, `/bundles/${this.part(bundleId)}/proposals${this.listing(options)}`),
-    );
-  }
-  listComparisons(
-    workspaceId: string,
-    bundleId: string,
-    options: ListOptions = {},
-  ): Promise<Page<Comparison>> {
-    return this.request(
-      'GET',
-      this.path(workspaceId, `/bundles/${this.part(bundleId)}/comparisons${this.listing(options)}`),
-    );
-  }
-  createEvaluation(
-    workspaceId: string,
-    bundleId: string,
-    request: EvaluationRequest,
-    key: string,
-  ): Promise<Evaluation> {
-    return this.request(
-      'POST',
-      this.path(workspaceId, `/bundles/${this.part(bundleId)}/evaluation-requests`),
-      JSON.stringify(request),
-      key,
-    );
-  }
-  startEvaluation(
-    workspaceId: string,
-    bundleId: string,
-    id: string,
-    request: StartEvaluationRequest,
-    key: string,
-  ): Promise<Evaluation> {
-    return this.request(
-      'POST',
-      this.path(
-        workspaceId,
-        `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/start`,
-      ),
-      JSON.stringify(request),
-      key,
-    );
-  }
-  getEvaluationProgress(
-    workspaceId: string,
-    bundleId: string,
-    id: string,
-  ): Promise<EvaluationProgressView> {
-    return this.request(
-      'GET',
-      this.path(
-        workspaceId,
-        `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/progress`,
-      ),
-    );
-  }
-  reportEvaluationProgress(
-    workspaceId: string,
-    bundleId: string,
-    id: string,
-    report: EvaluationProgressRequest,
-  ): Promise<EvaluationProgressView> {
-    // The server uses attempt + sequence, not retained operation records. This
-    // transport key enables safe same-body network retries without key growth.
-    return this.request(
-      'POST',
-      this.path(
-        workspaceId,
-        `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/progress`,
-      ),
-      JSON.stringify(report),
-      `progress:${report.sequence}`,
-    );
-  }
-  finishEvaluation(
-    workspaceId: string,
-    bundleId: string,
-    id: string,
-    request: FinishEvaluationRequest,
-    key: string,
-  ): Promise<Evaluation> {
-    return this.request(
-      'POST',
-      this.path(
-        workspaceId,
-        `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/finish`,
-      ),
-      JSON.stringify(request),
-      key,
-    );
-  }
-  /** Abandon an attempt whose outcome is unknown. Its evidence never counts, and a
-   * new request for the same candidate may then start. This is not proof that the
-   * original worker stopped. */
-  abandonEvaluation(
-    workspaceId: string,
-    bundleId: string,
-    id: string,
-    request: AbandonEvaluationRequest,
-    key: string,
-  ): Promise<Evaluation> {
-    return this.request(
-      'POST',
-      this.path(
-        workspaceId,
-        `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/abandon`,
-      ),
-      JSON.stringify(request),
-      key,
-    );
-  }
-  interruptEvaluation(
-    workspaceId: string,
-    bundleId: string,
-    id: string,
-    request: InterruptEvaluationRequest,
-    key: string,
-  ): Promise<Evaluation> {
-    return this.request(
-      'POST',
-      this.path(
-        workspaceId,
-        `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}/interrupt`,
-      ),
-      JSON.stringify(request),
-      key,
-    );
-  }
-  listEvaluations(
-    workspaceId: string,
-    bundleId: string,
-    options: ListOptions = {},
-  ): Promise<Page<Evaluation>> {
-    return this.request(
-      'GET',
-      this.path(
-        workspaceId,
-        `/bundles/${this.part(bundleId)}/evaluation-requests${this.listing(options)}`,
-      ),
-    );
-  }
-  getEvaluation(workspaceId: string, bundleId: string, id: string): Promise<Evaluation> {
-    return this.request(
-      'GET',
-      this.path(workspaceId, `/bundles/${this.part(bundleId)}/evaluation-requests/${this.part(id)}`),
-    );
-  }
-  getEvaluationCapabilities(workspaceId: string): Promise<EvaluationCapabilities> {
-    return this.request('GET', this.path(workspaceId, '/evaluation-capabilities'));
   }
   listConnectionObservations(
     workspaceId: string,

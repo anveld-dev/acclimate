@@ -1,11 +1,9 @@
 import json
-import os
 import re
 import socket
 import urllib.error
 import urllib.parse
 import urllib.request
-import tempfile
 from pathlib import Path
 from typing import Any, Literal
 from .types import *
@@ -105,38 +103,31 @@ class AcclimateClient:
         workspace_id: str,
         bundle_id: str,
         *,
-        channel: str,
+        channel: str | None = None,
+        version_id: str | None = None,
         cache_dir: str | Path | None = None,
         destination: str | Path | None = None,
+        offline: OfflinePolicy | None = None,
         max_cache_bytes: int = 20 * 1024 * 1024,
         reporter: DeliveryReporter | None = None,
     ) -> "PreparedDelivery":
         """Resolve and stage verified content for one job. Use as a context manager or call cleanup.
 
-        New jobs resolve their enrolled connection online. Each job keeps that version until cleanup.
+        Each channel job confirms its release online. For an exact version, pass
+        ``offline={"pinned_version_id": version_id}`` to permit verified cache fallback
+        after a transport failure or HTTP 503.
         """
-        from .delivery import prepare_files, resolve_and_cache, _remove_job_directory
+        from .delivery import resolve_and_cache, _stage_delivery
 
-        if not self.connection_id or not channel:
-            raise UsageError("Start jobs with an enrolled connection and its channel", "selection")
         if cache_dir is None:
             cache_dir = Path.home().resolve() / ".cache" / "acclimate" / "python"
         version = resolve_and_cache(
-            self, workspace_id, bundle_id, channel=channel,
+            self, workspace_id, bundle_id, channel=channel, version_id=version_id,
             cache_dir=str(cache_dir),
+            offline=offline,
             max_cache_bytes=max_cache_bytes, reporter=reporter,
         )
-        if destination is None:
-            directory = tempfile.mkdtemp(prefix="acclimate-job-", dir=os.path.realpath(tempfile.gettempdir()))
-        else:
-            directory = os.path.abspath(destination)
-        try:
-            staged = prepare_files(version, directory)
-        except BaseException:
-            if destination is None:
-                _remove_job_directory(directory)
-            raise
-        return PreparedDelivery(version, staged, directory, destination is None)
+        return _stage_delivery(version, destination)
 
     def _request(
         self,
@@ -152,9 +143,10 @@ class AcclimateClient:
         delivery: bool = False,
         _body_bytes: bytes | None = None,
         _retained: bool = False,
+        _optional_key: bool = False,
     ):
         mutation = method != "GET"
-        if mutation and (
+        if mutation and not (_optional_key and key is None) and (
             not isinstance(key, str) or not re.fullmatch(r"[\x20-\x7e]{1,128}", key)
         ):
             raise UsageError(
@@ -178,7 +170,8 @@ class AcclimateClient:
             headers["X-Acclimate-Connection-Id"] = self.connection_id
         if _retained:
             headers["X-Acclimate-Durable-Operation"] = "true"
-        for attempt in range(self.retries + 1 if mutation else 1):
+        retries = self.retries if mutation and key else 0
+        for attempt in range(retries + 1):
             req = urllib.request.Request(
                 self.base_url + path, data=data, headers=headers, method=method
             )
@@ -206,7 +199,7 @@ class AcclimateClient:
                             error = {}
                         if not isinstance(error, dict):
                             error = {}
-                        if mutation and status >= 500 and attempt < self.retries:
+                        if mutation and status >= 500 and attempt < retries:
                             continue
                         raise ApiError(
                             status,
@@ -236,7 +229,7 @@ class AcclimateClient:
                 ConnectionError,
                 OSError,
             ) as e:
-                if attempt == (self.retries if mutation else 0):
+                if attempt == retries:
                     raise TransportError(
                         f"Could not reach the Acclimate service at {self.base_url}. "
                         "Check that the service is running and reachable from this machine.",
@@ -262,6 +255,9 @@ class AcclimateClient:
     def list_workspaces(self, *, cursor: str | None = None, limit: int = 50) -> Page[Workspace]:
         return self._request("GET", "/v1/workspaces" + self._listing(cursor, limit))
 
+    def get_principal(self, workspace_id: str) -> WorkspacePrincipal:
+        return self._request("GET", self._workspace(workspace_id) + "/principal")
+
     def list_bundles(self, workspace_id: str, *, cursor: str | None = None, limit: int = 50) -> Page[Bundle]:
         return self._request("GET", self._base(workspace_id) + self._listing(cursor, limit))
 
@@ -275,20 +271,6 @@ class AcclimateClient:
     def create_bundle_setup(self, workspace_id: str, request: BundleSetupRequest, key: str) -> BundleSetup:
         """Create a bundle, its first version and its first release on ``channel`` in one write."""
         return self._request("POST", self._workspace(workspace_id) + "/bundle-setups", request, key)
-
-    def list_proposals(
-        self, workspace_id: str, bundle_id: str, *, cursor: str | None = None, limit: int = 50
-    ) -> Page[Proposal]:
-        return self._request(
-            "GET", self._base(workspace_id, bundle_id) + "/proposals" + self._listing(cursor, limit)
-        )
-
-    def list_comparisons(
-        self, workspace_id: str, bundle_id: str, *, cursor: str | None = None, limit: int = 50
-    ) -> Page[Comparison]:
-        return self._request(
-            "GET", self._base(workspace_id, bundle_id) + "/comparisons" + self._listing(cursor, limit)
-        )
 
     def create_bundle(
         self, workspace_id: str, request: CreateBundleRequest, key: str
@@ -361,8 +343,6 @@ class AcclimateClient:
         request: CreateReleaseRequest,
         key: str,
     ) -> Release:
-        if request.get("expectedRevision") != "0" or not request.get("unevaluatedReason") or request.get("comparisonId") or request.get("policyOverride"):
-            raise UsageError("Only the initial release can be seeded. Subsequent releases use connected learning.", "expectedRevision")
         return self._request(
             "POST",
             self._base(workspace_id, bundle_id)
@@ -373,52 +353,6 @@ class AcclimateClient:
             key,
         )
 
-    def create_proposal(
-        self, workspace_id: str, bundle_id: str, request: ProposalRequest, key: str
-    ) -> Proposal:
-        return self._request(
-            "POST", self._base(workspace_id, bundle_id) + "/proposals", request, key
-        )
-
-    def get_proposal(
-        self, workspace_id: str, bundle_id: str, proposal_id: str
-    ) -> Proposal:
-        return self._request(
-            "GET",
-            self._base(workspace_id, bundle_id) + "/proposals/" + self._part(proposal_id),
-        )
-
-    def create_comparison(
-        self, workspace_id: str, bundle_id: str, request: ComparisonRequest, key: str
-    ) -> Comparison:
-        return self._request(
-            "POST", self._base(workspace_id, bundle_id) + "/comparisons", request, key
-        )
-
-    def get_comparison(
-        self, workspace_id: str, bundle_id: str, comparison_id: str
-    ) -> Comparison:
-        return self._request(
-            "GET",
-            self._base(workspace_id, bundle_id)
-            + "/comparisons/"
-            + self._part(comparison_id),
-        )
-
-    def _comparison_policy_path(self, workspace_id: str, bundle_id: str, comparison_id: str) -> str:
-        return self._base(workspace_id, bundle_id) + "/comparisons/" + self._part(comparison_id) + "/policy-receipts"
-
-    def list_comparison_policy_receipts(self, workspace_id: str, bundle_id: str, comparison_id: str) -> ComparisonPolicyReceipts:
-        return self._request("GET", self._comparison_policy_path(workspace_id, bundle_id, comparison_id))
-
-    def list_candidate_policy_receipts(self, workspace_id: str, bundle_id: str, version_id: str) -> ComparisonPolicyReceipts:
-        return self._request("GET", self._base(workspace_id, bundle_id) + "/versions/" + self._part(version_id) + "/policy-receipts")
-
-    def report_comparison_policy_receipt(self, workspace_id: str, bundle_id: str, comparison_id: str,
-                                         report: ComparisonPolicyReport) -> ComparisonPolicyReceipt:
-        key = "policy:" + comparison_id + ":" + report["policy"]["sha256"]
-        return self._request("POST", self._comparison_policy_path(workspace_id, bundle_id, comparison_id), report, key)
-
     def create_connection(self, workspace_id: str, request: CreateConnectionRequest, key: str) -> Connection:
         return self._request("POST", "/v1/workspaces/" + self._part(workspace_id) + "/connections", request, key)
 
@@ -427,6 +361,75 @@ class AcclimateClient:
         if cursor is not None:
             query["cursor"] = cursor
         return self._request("GET", "/v1/workspaces/" + self._part(workspace_id) + "/connections?" + urllib.parse.urlencode(query))
+
+    def _loop_path(self, workspace_id: str, bundle_id: str) -> str:
+        return self._base(workspace_id, bundle_id) + "/learning"
+
+    @staticmethod
+    def _learning_query(**options: str | int | None) -> str:
+        query = urllib.parse.urlencode({k: v for k, v in options.items() if v is not None})
+        return "?" + query if query else ""
+
+    def enroll_learning_loop(self, workspace_id: str, bundle_id: str, body: LearningLoopRequest,
+                             key: str | None = None) -> LearningLoop:
+        return self._request("PUT", self._loop_path(workspace_id, bundle_id), body, key, _optional_key=True)
+
+    def get_learning_loop(self, workspace_id: str, bundle_id: str) -> LearningLoop:
+        return self._request("GET", self._loop_path(workspace_id, bundle_id))
+
+    def pause_learning_loop(self, workspace_id: str, bundle_id: str, key: str | None = None) -> LearningLoop:
+        return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/pause", key=key, _optional_key=True)
+
+    def resume_learning_loop(self, workspace_id: str, bundle_id: str, key: str | None = None) -> LearningLoop:
+        return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/resume", key=key, _optional_key=True)
+
+    def stop_learning_loop(self, workspace_id: str, bundle_id: str, key: str | None = None) -> LearningLoop:
+        return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/stop", key=key, _optional_key=True)
+
+    def list_learning_rounds(self, workspace_id: str, bundle_id: str, *,
+                             before: int | None = None, limit: int | None = None) -> LearningRoundPage:
+        path = self._loop_path(workspace_id, bundle_id) + "/rounds"
+        return self._request("GET", path + self._learning_query(before=before, limit=limit))
+
+    def get_learning_round(self, workspace_id: str, bundle_id: str, round_id: str, *,
+                           evaluation: str | None = None) -> LearningRound:
+        path = self._loop_path(workspace_id, bundle_id) + "/rounds/" + self._part(round_id)
+        return self._request("GET", path + self._learning_query(evaluation=evaluation))
+
+    def get_learning_memory(self, workspace_id: str, bundle_id: str, *,
+                            revision: int | None = None) -> LearningMemory:
+        """Read the latest optimizer memory or the exact revision requested."""
+        path = self._loop_path(workspace_id, bundle_id) + "/memory"
+        return self._request("GET", path + self._learning_query(revision=revision))
+
+    def list_learning_evolve_cases(
+        self, workspace_id: str, bundle_id: str, *, after: str | None = None, limit: int | None = None
+    ) -> LearningEvolveCasesPage:
+        path = self._loop_path(workspace_id, bundle_id) + "/evolve-cases"
+        return self._request("GET", path + self._learning_query(after=after, limit=limit))
+
+    def add_learning_evolve_cases(self, workspace_id: str, bundle_id: str, body: LearningEvolveCasesRequest,
+                                  key: str | None = None) -> LearningEvolveCasesReceipt:
+        return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/evolve-cases",
+                             body, key, _optional_key=True)
+
+    def report_learning_outcome(self, workspace_id: str, bundle_id: str, body: LearningOutcomeRequest,
+                                key: str | None = None) -> LearningOutcomeReceipt:
+        return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/outcomes",
+                             body, body["outcomeId"] if key is None else key)
+
+    def get_learning_work(self, workspace_id: str, bundle_id: str) -> LearningWork:
+        return self._request("GET", self._loop_path(workspace_id, bundle_id) + "/work")
+
+    def start_learning_evaluation(self, workspace_id: str, bundle_id: str, evaluation_id: str,
+                                  body: LearningEvaluationStart, key: str | None = None) -> LearningEvaluationAssignment:
+        path = self._loop_path(workspace_id, bundle_id) + "/evaluations/" + self._part(evaluation_id) + "/start"
+        return self._request("POST", path, body, body["attemptId"] if key is None else key)
+
+    def report_learning_evaluation(self, workspace_id: str, bundle_id: str, evaluation_id: str,
+                                   body: LearningEvaluationReportRequest, key: str) -> LearningEvaluation:
+        path = self._loop_path(workspace_id, bundle_id) + "/evaluations/" + self._part(evaluation_id) + "/report"
+        return self._request("POST", path, body, key)
 
     def _connection(self, workspace_id: str, connection_id: str) -> str:
         return "/v1/workspaces/" + self._part(workspace_id) + "/connections/" + self._part(connection_id)
@@ -461,71 +464,6 @@ class AcclimateClient:
             query["cursor"] = cursor
         return "?" + urllib.parse.urlencode(query)
 
-    def _draft(self, workspace_id, bundle_id, channel, draft_id=None):
-        path = self._base(workspace_id, bundle_id) + "/channels/" + self._part(channel) + "/drafts"
-        return path if draft_id is None else path + "/" + self._part(draft_id)
-
-    def create_draft(self, workspace_id: str, bundle_id: str, channel: str, request: CreateDraftRequest, key: str) -> Draft:
-        return self._request("POST", self._draft(workspace_id, bundle_id, channel), request, key)
-
-    def list_drafts(
-        self, workspace_id: str, bundle_id: str, channel: str, *,
-        cursor: str | None = None, limit: int = 50,
-        status: Literal["open", "discarded", "published", "all"] | None = None,
-    ) -> DraftPage:
-        query = self._listing(cursor, limit)
-        if status is not None:
-            query += "&" + urllib.parse.urlencode({"status": status})
-        return self._request("GET", self._draft(workspace_id, bundle_id, channel) + query)
-
-    def get_draft(self, workspace_id: str, bundle_id: str, channel: str, draft_id: str) -> Draft:
-        return self._request("GET", self._draft(workspace_id, bundle_id, channel, draft_id))
-
-    def get_draft_history(self, workspace_id: str, bundle_id: str, channel: str, draft_id: str, *, cursor: str | None = None, limit: int = 50) -> DraftSnapshotPage:
-        return self._request("GET", self._draft(workspace_id, bundle_id, channel, draft_id) + "/history" + self._listing(cursor, limit))
-
-    def save_draft(self, workspace_id: str, bundle_id: str, channel: str, draft_id: str, request: SaveDraftRequest, key: str) -> Draft:
-        return self._request("POST", self._draft(workspace_id, bundle_id, channel, draft_id) + "/save", request, key)
-
-    def discard_draft(self, workspace_id: str, bundle_id: str, channel: str, draft_id: str, request: DiscardDraftRequest, key: str) -> Draft:
-        return self._request("POST", self._draft(workspace_id, bundle_id, channel, draft_id) + "/discard", request, key)
-
-    def create_evaluation(self, workspace_id: str, bundle_id: str, request: EvaluationRequest, key: str) -> Evaluation:
-        return self._request("POST", self._base(workspace_id, bundle_id) + "/evaluation-requests", request, key)
-
-    def get_evaluation(self, workspace_id: str, bundle_id: str, evaluation_id: str) -> Evaluation:
-        return self._request("GET", self._base(workspace_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id))
-
-    def list_evaluations(self, workspace_id: str, bundle_id: str, *, cursor: str | None = None, limit: int = 50) -> EvaluationPage:
-        return self._request("GET", self._base(workspace_id, bundle_id) + "/evaluation-requests" + self._listing(cursor, limit))
-
-    def start_evaluation(self, workspace_id: str, bundle_id: str, evaluation_id: str, request: StartEvaluationRequest, key: str) -> Evaluation:
-        return self._request("POST", self._base(workspace_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/start", request, key)
-
-    def finish_evaluation(self, workspace_id: str, bundle_id: str, evaluation_id: str, request: FinishEvaluationRequest, key: str) -> Evaluation:
-        return self._request("POST", self._base(workspace_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/finish", request, key)
-
-    def abandon_evaluation(self, workspace_id: str, bundle_id: str, evaluation_id: str, request: AbandonEvaluationRequest, key: str) -> Evaluation:
-        """Abandon an attempt whose outcome is unknown, such as a cancelled CI job.
-
-        Its evidence never counts and a new request for the same candidate may then
-        start. This does not prove the original worker stopped.
-        """
-        return self._request("POST", self._base(workspace_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/abandon", request, key)
-
-    def interrupt_evaluation(self, workspace_id: str, bundle_id: str, evaluation_id: str, request: InterruptEvaluationRequest, key: str) -> Evaluation:
-        return self._request("POST", self._base(workspace_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/interrupt", request, key)
-
-    def get_evaluation_capabilities(self, workspace_id: str) -> EvaluationCapabilities:
-        return self._request("GET", "/v1/workspaces/" + self._part(workspace_id) + "/evaluation-capabilities")
-
-    def get_evaluation_progress(self, workspace_id: str, bundle_id: str, evaluation_id: str) -> EvaluationProgressView:
-        return self._request("GET", self._base(workspace_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/progress")
-
-    def report_evaluation_progress(self, workspace_id: str, bundle_id: str, evaluation_id: str, report: EvaluationProgressRequest) -> EvaluationProgressView:
-        # Attempt + sequence provide server idempotency; no retained key rows.
-        return self._request("POST", self._base(workspace_id, bundle_id) + "/evaluation-requests/" + self._part(evaluation_id) + "/progress", report, "progress:" + str(report["sequence"]))
-
     def list_connection_observations(self, workspace_id: str, *, cursor: str | None = None, limit: int = 50) -> ConnectionObservationPage:
         return self._request("GET", "/v1/workspaces/" + self._part(workspace_id) + "/connection-observations" + self._listing(cursor, limit))
 
@@ -536,91 +474,5 @@ class AcclimateClient:
     def close_operation(self, workspace_id: str, operation_id: str, *, operation_path: str) -> Operation:
         return self._request("POST", "/v1/workspaces/" + self._part(workspace_id) + "/operations/" + self._part(operation_id) + "/close", {"operationPath": operation_path}, operation_id)
 
-    def _learning(self, workspace_id: str, connection_id: str) -> str:
-        return self._connection(workspace_id, connection_id) + "/learning"
-
-    def enroll_learning(
-        self, workspace_id: str, connection_id: str, request: LearningEnrollmentRequest, key: str
-    ) -> LearningEnrollment:
-        return self._request("PUT", self._learning(workspace_id, connection_id), request, key)
-
-    def get_learning_enrollment(self, workspace_id: str, connection_id: str) -> LearningEnrollmentStatus:
-        return self._request("GET", self._learning(workspace_id, connection_id))
-
-    def stop_learning(self, workspace_id: str, connection_id: str, key: str) -> LearningEnrollment:
-        return self._request("POST", self._learning(workspace_id, connection_id) + "/stop", None, key)
-
-    def get_learning_outcome(self, workspace_id: str, connection_id: str, outcome_id: str) -> LearningOutcomeStatus:
-        return self._request(
-            "GET", self._learning(workspace_id, connection_id) + "/outcomes/" + self._part(outcome_id)
-        )
-
-    def report_learning_incident_replay(
-        self, workspace_id: str, connection_id: str, replay: LearningIncidentReplay
-    ) -> LearningAccepted:
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/incident-replays", replay, replay["roundId"]
-        )
-
-    def report_learning_outcome(
-        self, workspace_id: str, connection_id: str, outcome: LearningOutcomeRequest, key: str | None = None
-    ) -> LearningOutcomeReceipt:
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/outcomes", outcome,
-            outcome["outcomeId"] if key is None else key,
-        )
-
-    def report_learning_correction(
-        self, workspace_id: str, connection_id: str, correction: LearningCorrectionRequest
-    ) -> LearningCorrectionReceipt:
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/corrections", correction,
-            correction["correctionId"],
-        )
-
-    def report_learning_recheck(
-        self, workspace_id: str, connection_id: str, recheck: LearningRecheckRequest
-    ) -> LearningRecheckReceipt:
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/rechecks", recheck,
-            recheck["correctionId"] + ":" + recheck["revision"],
-        )
-
-    def get_learning_work(self, workspace_id: str, connection_id: str) -> LearningWork:
-        return self._request("GET", self._learning(workspace_id, connection_id) + "/work")
-
-    def get_learning_field_requalification(
-        self, workspace_id: str, connection_id: str, version_id: str
-    ) -> LearningFieldRequalification:
-        return self._request(
-            "GET",
-            self._learning(workspace_id, connection_id) + "/field-requalifications/" + self._part(version_id),
-        )
-
-    def report_learning_field_replay(
-        self, workspace_id: str, connection_id: str, replay: LearningFieldReplay
-    ) -> LearningAccepted:
-        key = ":".join((replay["outcomeId"], replay["versionId"], replay["baselineRevision"]))
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/field-requalifications", replay, key
-        )
-
-    def report_learning_field_audit(
-        self, workspace_id: str, connection_id: str, audit: LearningFieldAuditRequest, key: str | None = None
-    ) -> LearningFieldAuditReceipt:
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/field-audits", audit,
-            audit["outcomeId"] if key is None else key,
-        )
-
-    def renew_learning(
-        self, workspace_id: str, connection_id: str, renewal: LearningRenewalRequest, key: str | None = None
-    ) -> LearningRenewalReceipt:
-        return self._request(
-            "POST", self._learning(workspace_id, connection_id) + "/renew", renewal,
-            renewal["renewalId"] if key is None else key,
-        )
-
-
-# Resolve the public return type once the client exists.
+# Delivery uses this client for service reads. Load its public return type once the client exists.
 from .delivery import PreparedDelivery

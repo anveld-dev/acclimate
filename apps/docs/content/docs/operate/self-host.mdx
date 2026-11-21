@@ -1,9 +1,9 @@
 ---
 title: Self-host Acclimate
-description: Set up a single Linux server with PostgreSQL, Keycloak, and Caddy, then run your first comparison.
+description: Set up a single Linux server with PostgreSQL, Keycloak, and Caddy, then deliver a bundle to your application.
 ---
 
-Start with one server and run the evaluator in the environment that already runs your agent. Leave the optional service proposer disabled for this walkthrough. To try a comparison on your laptop first, see [Run locally](/docs/get-started/run-locally).
+Start with one server. For a disposable stack on your laptop, see [Run locally](/docs/get-started/run-locally).
 
 <Steps>
 <Step>
@@ -169,44 +169,11 @@ docker compose up -d --build --wait
 </Tab>
 </Tabs>
 
-Caddy obtains certificates for all three public names. Open your console URL, sign in as the realm user and change the temporary password. Choose **New workspace**, set a name and workspace ID, then choose **Create workspace**. Record the exact workspace ID for the evaluator grant. Set up a permanent Keycloak administrator and retire the bootstrap account after confirming you can administer the realm.
-
-</Step>
-<Step>
-
-## Grant evaluator access
-
-Generate a new token and keep it in a private file until you have added it to the service grant and your evaluator config.
-
-```sh
-openssl rand -hex 32 > "$private_dir/evaluator-token"
-```
-
-Replace `ACCLIMATE_AUTH=[]` in `service.env` with the following entry on one line. Replace the token placeholder and use your exact workspace ID. `principalId` is the evaluator's stable machine identity.
-
-```ini
-ACCLIMATE_AUTH=[{"token":"REPLACE_WITH_EVALUATOR_TOKEN","principalId":"support-evaluator","workspaceId":"support","rights":["read","write"]}]
-```
-
-Drain the service and recreate its container so it reads the updated file.
-
-```sh
-docker compose stop service
-docker compose up -d --no-build --force-recreate --wait service
-```
-
-Follow [Provision evaluator access](/docs/operate/evaluator-access#configure-the-worker) to write the private evaluator config. Use the public API URL, workspace ID, machine principal and token from this grant, with a persistent local journal in the evaluator environment. For worker operation and recovery, see the repository's [evaluator operations guide](https://github.com/anveld-dev/acclimate/blob/main/docs/evaluator-operations.md).
-
-</Step>
-<Step>
-
-## Run a comparison
-
-Download the matching SDK artifacts or build them from source, then install them in the environment where your agent runs. [Install the SDKs](/docs/get-started/install) covers the release artifacts and installation.
-
-Follow [join a team's workspace](/docs/get-started/join-a-team) to publish a starting bundle, save a candidate and connect your existing agent, grader and saved cases. Run the evaluator with your private config and inspect the paired scores in the console.
+Caddy obtains certificates for all three public names. Open your console URL, sign in as the realm user and change the temporary password. Choose **New workspace**, set a name and workspace ID, then choose **Create workspace**. Set up a permanent Keycloak administrator and retire the bootstrap account after confirming you can administer the realm.
 
 </Step>
 </Steps>
 
-Before routing users or workers to this host, [verify public HTTPS and authenticated access](/docs/operate/health-and-readiness#verify-access-and-activity). Set up [backups](/docs/operate/backup-and-restore) for both databases.
+## Deliver a bundle
+
+Open **Bundles**, import a bundle and choose its initial channel. Create a connection and issue a content-read credential. Use the connection's setup recipe to prepare files in your application. [Deliver content to jobs](/docs/guides/deliver-content)

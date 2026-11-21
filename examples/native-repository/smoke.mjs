@@ -1,5 +1,5 @@
 // Offline end-to-end check of this starter: the replay harness edits a copy of
-// fixture/, the real grader runs its Node tests, and two versions are compared.
+// fixture/, the real grader runs its Node tests, for two local payload fixtures.
 // No server, credentials or model calls are involved.
 //
 //   node smoke.mjs [--keep]

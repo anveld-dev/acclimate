@@ -19,7 +19,6 @@ from acclimate.evaluation import (
 from acclimate._evaluation_shared import ERROR_CODES, EXIT_CODES, exit_code_for, safe_error
 from acclimate.evaluation_app import case_inventory, main
 from acclimate.evaluation_cli import parse_evaluator_arguments
-from acclimate.evaluation_policy import POLICY_CHECK_CODES, PolicyError
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = json.loads((ROOT / "contracts/fixtures/evaluation-errors/definition-mistakes.json").read_text())
@@ -75,11 +74,6 @@ class ErrorTaxonomyTests(unittest.TestCase):
             self.assertTrue(caught.exception.reason)
             self.assertNotIn("not confirmed", str(caught.exception))
 
-    def test_policy_check_codes_match_the_error_code_reference_page(self):
-        rows = re.findall(r"^\| `([^`]+)` \| (pass or fail|unknown) \|", PAGE.read_text(), re.M)
-        documented = {code: "decision" if result == "pass or fail" else "unknown" for code, result in rows}
-        self.assertEqual(documented, POLICY_CHECK_CODES)
-
     def test_catalog_matches_the_error_code_reference_page(self):
         rows = re.findall(r"^\| `([^`]+)` \| (\d) \| `([a-z_]+)` \|", PAGE.read_text(), re.M)
         documented = {code: (int(exit_code), action) for code, exit_code, action in rows}
@@ -111,17 +105,9 @@ class ErrorTaxonomyTests(unittest.TestCase):
     def test_every_sdk_error_shares_the_base_class(self):
         for error in (ApiError(404, "not_found", "missing"), DeliveryError("invalid_payload", "bad"),
                       TransportError(), UsageError("bad"), EvaluationError("config.schema"),
-                      DefinitionError("cases", "bad"), OutputValidationError("output", "bad"),
-                      PolicyError("policy.invalid", field="metric.directon", reason="Unknown field.")):
+                      DefinitionError("cases", "bad"), OutputValidationError("output", "bad")):
             self.assertIsInstance(error, AcclimateError)
             self.assertIsInstance(error.code, str)
-        policy = PolicyError("policy.invalid", field="metric.directon", reason="Unknown field.")
-        self.assertIsInstance(policy, EvaluationError)
-        self.assertIsInstance(policy, ValueError)
-        self.assertEqual(policy.diagnostic["field"], "metric.directon")
-
-
-class AdapterErgonomicsTests(unittest.TestCase):
     def test_execute_input_exposes_instructions_skills_and_memory(self):
         bundle = {"version": {}, "resolvedAt": 0, "stale": False, "payload": {"schemaVersion": 1, "files": [
             {"path": "AGENTS.md", "kind": "instruction", "text": "Be brief."},
@@ -185,11 +171,7 @@ class CommandLineTests(unittest.TestCase):
             self.assertNotIn("application.py", err)
             _, _, _, error = self.run_main(["describe", "--bogus"])
             self.assertEqual((error["code"], error["field"]), ("usage.unknown_flag", '"--bogus"'))
-            _, _, _, error = self.run_main(["status", "--handoff", "x.json"])
-            self.assertEqual((error["code"], error["field"]), ("usage.missing_flag", "--config"))
-            _, _, _, error = self.run_main(["verify-export"])
-            self.assertEqual((error["code"], error["field"]), ("usage.missing_flag", "--manifest"))
-        self.assertEqual(parse_evaluator_arguments(["status", "--config", "c.json"], "/work")[1]["config"], "/work/c.json")
+        self.assertEqual(parse_evaluator_arguments(["pull", "--config", "c.json"], "/work")[1]["config"], "/work/c.json")
 
     def test_import_errors_show_the_real_exception_and_verbose_adds_the_traceback(self):
         source = "import definitely_missing_module_for_acclimate\n"

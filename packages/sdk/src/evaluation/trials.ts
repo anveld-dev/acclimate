@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { TaskExecutionError } from '../compare.js';
-import type { CasePair, Outcome, VerifiedVersion } from '../types.js';
+import { InfrastructureError, TaskExecutionError } from '../compare.js';
+import type { VerifiedVersion } from '../types.js';
+import type { CasePair, Outcome } from './types.js';
 import type { CapturedDefinition } from './definition.js';
 import {
   assertEvaluationOutput,
@@ -694,4 +695,14 @@ export async function runTrials(options: TrialRunOptions): Promise<TrialRunResul
       outputs: { comparedPairs, identicalPairs },
     },
   };
+}
+
+/** Retry an execution that explicitly reported an infrastructure failure. */
+export async function retryInfrastructureOnce<T>(execute: () => T | Promise<T>): Promise<T> {
+  try {
+    return await execute();
+  } catch (error) {
+    if (!(error instanceof InfrastructureError)) throw error;
+    return execute();
+  }
 }

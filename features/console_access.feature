@@ -2,11 +2,11 @@
 Feature: Use the console with personal workspace rights
 
   @UI-ACCESS-01
-  Scenario Outline: Workspace members can inspect content and delivery
+  Scenario Outline: A workspace member can read published content and delivery
     Given an administrator created a workspace with published content
     And the administrator grants the member the <role> role
     When the member opens that content in the console
-    Then the member can inspect content and delivery
+    Then browser content is read-only and delivery is visible
     Examples:
       | role   |
       | viewer |

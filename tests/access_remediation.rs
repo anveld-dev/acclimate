@@ -79,6 +79,7 @@ async fn fixture() -> (sqlx::PgPool, axum::Router, String) {
     let app = router(AppState {
         access: common::access(),
         runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
+        optimizer: None,
         db: db.clone(),
         grants: Arc::new(vec![Grant {
             token: "access-fixture".into(),
@@ -86,7 +87,6 @@ async fn fixture() -> (sqlx::PgPool, axum::Router, String) {
             project_id: project.clone(),
             rights: vec!["read".into(), "write".into(), "promote".into()],
         }]),
-        provider: None,
     });
     (db, app, project)
 }

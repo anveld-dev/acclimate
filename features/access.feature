@@ -29,7 +29,7 @@ Feature: Workspace identity and access
   Scenario Outline: Membership controls access to current content
     Given an administrator created a workspace with published content
     And the administrator grants the member the <role> role
-    When the member tries to save a draft
+    When the member tries to upload a version
     Then the write is <decision>
     And the member can read the current content
     Examples:
@@ -43,7 +43,7 @@ Feature: Workspace identity and access
     Given an administrator created a workspace with published content
     And the administrator grants the member the editor role
     When the administrator changes the member to viewer
-    And the member tries to save a draft
+    And the member tries to upload a version
     Then the write is denied
 
   @ACCESS-07

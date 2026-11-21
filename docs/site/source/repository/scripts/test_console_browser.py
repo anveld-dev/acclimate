@@ -20,8 +20,7 @@ from playwright.sync_api import expect
 
 
 def business_snapshot(h):
-    tables=['bundles','versions','channels','comparisons','proposals','promotions',
-            'drafts','draft_snapshots','evaluation_requests','integrations',
+    tables=['bundles','versions','channels','promotions','integrations',
             'integration_credentials','integration_receipts','idempotency','operation_records']
     return {table:h.sql(f"SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]'::jsonb)::text FROM {table} t") for table in tables}
 

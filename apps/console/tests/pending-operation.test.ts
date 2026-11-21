@@ -9,11 +9,10 @@ import {
   forgetPending,
   resolvePending,
   clearPendingOperations,
-  findRelatedPending,
   type PendingStorage,
 } from '../src/lib/pending-operation';
+import { restoreRequest } from '../src/lib/content-operation';
 import { exactOperation, closeOperation } from '../src/server/exact-operation';
-import { uniqueSkillName } from '../src/lib/unique-skill-name';
 class MemoryStorage implements PendingStorage {
   data = new Map<string, string>();
   get length() {
@@ -33,11 +32,11 @@ class MemoryStorage implements PendingStorage {
   }
 }
 const bundle = '11111111-1111-4111-8111-111111111111';
-const draft = '22222222-2222-4222-8222-222222222222';
+const version = '22222222-2222-4222-8222-222222222222';
 const key = '33333333-3333-4333-8333-333333333333';
-const path = `/v1/workspaces/p/bundles/${bundle}/channels/stable/drafts/${draft}/save`;
+const path = `/v1/workspaces/p/bundles/${bundle}/channels/stable/releases`;
 const scope = {
-  owner: 'draft' as const,
+  owner: 'releases' as const,
   actorScope: 'session-one',
   serviceIdentity: 'service-one',
   workspaceId: 'p',
@@ -52,50 +51,29 @@ const env = {
   CONSOLE_WORKSPACE: 'p',
   CONSOLE_BUNDLE: bundle,
 };
-const body = {
-  expectedGeneration: 2,
-  payload: {
-    schemaVersion: 1,
-    files: [{ path: 'AGENTS.md', kind: 'instruction', text: 'reviewed\ntext' }],
-  },
-};
+const body = { versionId: version, expectedRevision: '2', unevaluatedReason: 'Restore' };
 
-test('each page sees submissions from another editor only as related operations', () => {
-  const storage = new MemoryStorage();
-  const otherPage = { ...scope, owner: 'releases' as const };
-  const original = freezePending(storage, scope, path, body, key);
-  assert.equal(loadPending(storage, otherPage), null);
-  assert.equal(findRelatedPending(storage, otherPage)?.key, key);
-  assert.throws(() => freezePending(storage, otherPage, path, body), /earlier operation/);
-  assert.equal(storage.length, 1);
-  assert.deepEqual(loadPending(storage, scope), original);
-  for (const isolated of [
-    { actorScope: 'other-account' },
-    { workspaceId: 'other' },
-    { bundleId: 'other-bundle' },
-    { channel: 'canary' },
-    { serviceIdentity: 'other-service' },
-  ])
-    assert.equal(findRelatedPending(storage, { ...otherPage, ...isolated }), null);
-  resolvePending(storage, original.scope);
-  assert.equal(findRelatedPending(storage, otherPage), null);
-});
 // The service fingerprints the exact route and body.
 function fingerprint(path: string, body: string) {
   return (
     'sha256:' +
-    createHash('sha256')
-      .update('POST\0')
-      .update(path)
-      .update('\0')
-      .update(body)
-      .digest('hex')
+    createHash('sha256').update('POST\0').update(path).update('\0').update(body).digest('hex')
   );
 }
 
 test('lost response survives reload; not_observed retries exact bytes and original key', async () => {
   const storage = new MemoryStorage();
-  const record = freezePending(storage, scope, path, body, key);
+  const request = restoreRequest(
+    { versionId: version, expectedRevision: '2', reason: 'Restore' },
+    scope,
+  );
+  assert.equal(request.operationPath, path);
+  assert.deepEqual(JSON.parse(request.body), {
+    versionId: version,
+    expectedRevision: '2',
+    unevaluatedReason: 'Manual rollback (not evaluated): Restore',
+  });
+  const record = freezePendingExact(storage, scope, request.operationPath, request.body, key);
   const posts: Array<{ body: string; key: string | null; session: string | null }> = [];
   let writes = 0;
   const fetcher: typeof fetch = async (_url, init) => {
@@ -109,7 +87,7 @@ test('lost response survives reload; not_observed retries exact bytes and origin
     assert.equal(headers.get('X-Acclimate-Durable-Operation'), 'true');
     assert.equal(init?.redirect, 'manual');
     if (++writes === 1) throw new TypeError('dropped response after commit');
-    return Response.json({ id: draft, generation: 3 });
+    return Response.json({ id: version, revision: '3' });
   };
   await assert.rejects(
     exactOperation(
@@ -120,15 +98,15 @@ test('lost response survives reload; not_observed retries exact bytes and origin
   );
   // Fresh UI state may contain unrelated later edits. Retry is reconstructed from session storage.
   const reloaded = loadPending(storage, scope)!;
-  const result = await exactOperation<{ generation: number }>(
+  const result = await exactOperation<{ revision: string }>(
     env,
     { workspaceId: 'p', key: reloaded.key, operationPath: reloaded.action, body: reloaded.body! },
     fetcher,
   );
-  assert.equal(result.generation, 3);
+  assert.equal(result.revision, '3');
   assert.deepEqual(posts, [
-    { body: JSON.stringify(body), key, session: 'current-session' },
-    { body: JSON.stringify(body), key, session: 'current-session' },
+    { body: request.body, key, session: 'current-session' },
+    { body: request.body, key, session: 'current-session' },
   ]);
   resolvePending(storage, scope);
   assert.equal(loadPending(storage, scope), null);
@@ -142,14 +120,14 @@ test('changed exact bytes cannot adopt an existing receipt', async () => {
         workspaceId: 'p',
         key,
         operationPath: path,
-        body: JSON.stringify({ ...body, expectedGeneration: 99 }),
+        body: JSON.stringify({ ...body, expectedRevision: '99' }),
       },
       async () =>
         Response.json({
           status: 'committed',
           path,
           requestFingerprint: fingerprint(path, JSON.stringify(body)),
-          result: { id: draft },
+          result: { id: version },
         }),
     ),
     (error: any) => error.code === 'idempotency_conflict',
@@ -228,7 +206,7 @@ test('disabled editing, auth loss, noncanonical routes and crossed scope send no
     path.replace(bundle, bundle + '%2f'),
     path.replace('stable', '../other'),
     path.replace('stable', 'other'),
-    path.replace('/drafts/', '/credentials/'),
+    path.replace('/releases', '/drafts'),
   ]) {
     await assert.rejects(
       exactOperation(
@@ -267,29 +245,11 @@ test('disabled editing, auth loss, noncanonical routes and crossed scope send no
   );
 });
 
-test('new skill allocation reserves all support paths and case collisions', () => {
-  assert.equal(uniqueSkillName([]), 'new-skill');
-  assert.equal(
-    uniqueSkillName([
-      { path: 'skills/New-Skill/reference.md' },
-      { path: 'skills/new-skill-2/SKILL.md' },
-    ]),
-    'new-skill-3',
-  );
-});
-
 test('canonical operation families preserve exact bytes through browser freezing and server replay', async () => {
   const root = `/v1/workspaces/p/bundles/${bundle}`;
   const channel = `${root}/channels/stable`;
-  const paths = [
-    '/v1/workspaces/p/bundle-setups',
-    `${root}/proposals`,
-    `${root}/evaluation-requests`,
-    `${channel}/releases`,
-    `${channel}/drafts`,
-    ...['save', 'publish', 'discard'].map((action) => `${channel}/drafts/${draft}/${action}`),
-  ];
-  const exact = ' { "expectedGeneration" : 2 }\n';
+  const paths = ['/v1/workspaces/p/bundle-setups', `${channel}/releases`];
+  const exact = ' { "expectedRevision" : "2" }\n';
   for (const action of paths) {
     const storage = new MemoryStorage();
     const record = freezePendingExact(storage, scope, action, exact, key);
@@ -311,7 +271,6 @@ test('canonical operation families preserve exact bytes through browser freezing
   }
 });
 
-
 test('invalid operation targets never enter recovery storage or reach transport', async () => {
   let calls = 0;
   const fetcher: typeof fetch = async () => {
@@ -323,7 +282,8 @@ test('invalid operation targets never enter recovery storage or reach transport'
     path.replace(bundle, '44444444-4444-4444-8444-444444444444'),
     path.replace('stable', 'canary'),
     path.replace(bundle, 'not-a-bundle'),
-    path.replace(draft, 'not-a-draft'),
+    `/v1/workspaces/p/bundles/${bundle}/evaluation-requests`,
+    `/v1/workspaces/p/bundles/${bundle}/proposals`,
     path.replace('stable', 'bad channel'),
     path + '/extra',
     path + '?x=1',
@@ -331,7 +291,7 @@ test('invalid operation targets never enter recovery storage or reach transport'
     path.replace(bundle, '%2e%2e'),
     path.replace('stable', '..'),
     path.replace('stable', 'a\\b'),
-    path.replace('/drafts/', '/credentials/'),
+    path.replace('/releases', '/drafts'),
     `/v1/workspaces/p/bundles/${bundle}/channels/stable/promotions`,
   ];
   for (const operationPath of invalid) {

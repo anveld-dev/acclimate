@@ -198,7 +198,7 @@ def _offline_pin(offline: Any, channel: str | None) -> str | None:
         pin = offline["pinned_version_id"]
         if isinstance(pin, str) and pin:
             return pin
-    raise UsageError("Offline reads require an exact version. New jobs resolve the connection online.", "offline")
+    raise UsageError("Offline reads require an exact version. New jobs resolve the channel online.", "offline")
 
 
 def resolve_and_cache(
@@ -226,7 +226,7 @@ def resolve_and_cache(
     resolution = None
     try:
         if channel is not None:
-            key = _key(client, workspace_id, bundle_id, "learning-channel", channel)
+            key = _key(client, workspace_id, bundle_id, "channel", channel)
             old = _read(fd, key)
             response, etag, not_modified = client.resolve_channel(
                 workspace_id,
@@ -443,6 +443,20 @@ class PreparedDelivery(AbstractContextManager["PreparedDelivery"]):
 
     def __exit__(self, *args) -> None:
         self.cleanup()
+
+
+def _stage_delivery(version: VerifiedVersion, destination: str | Path | None) -> PreparedDelivery:
+    if destination is None:
+        directory = tempfile.mkdtemp(prefix="acclimate-job-", dir=os.path.realpath(tempfile.gettempdir()))
+    else:
+        directory = os.path.abspath(destination)
+    try:
+        staged = prepare_files(version, directory)
+    except BaseException:
+        if destination is None:
+            _remove_job_directory(directory)
+        raise
+    return PreparedDelivery(version, staged, directory, destination is None)
 
 
 def _remove_job_directory(directory: str) -> None:

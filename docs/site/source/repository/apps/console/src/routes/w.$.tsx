@@ -2,14 +2,13 @@ import { ArrowLeft, GitBranch } from 'lucide-react';
 import { PageHeader } from '../components/page-header';
 import { Button } from '@/components/ui/button';
 import { WorkspaceMenuButton } from '../components/workspace-chrome';
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate, useRouter } from '@tanstack/react-router';
 import {
   parseConsoleLocation,
   bundleHref,
   bundleViewLabels,
   channelSwitchSearch,
   workspaceHref,
-  releaseRevision,
   type BundleView,
 } from '../navigation';
 import { readWorkspaceBundles } from '../server/setup-actions';
@@ -18,14 +17,15 @@ import { readConnections } from '../server/integration-actions';
 import { readWorkspaceAccess } from '../server/access-actions';
 import { BundleLibrary } from '../components/bundle-library';
 import { BundleContent } from '../components/bundle-content';
-import { BundleChanges } from '../components/bundle-changes';
 import { SdkSetup, UseInAnApp } from '../components/sdk-setup';
+import { BundleLearning } from '../components/bundle-learning';
+import { readLearningLoop } from '../server/learning-loop';
 import { BundleReleases } from '../components/bundle-releases';
 import { WorkspaceConnections } from '../components/workspace-connections';
 import { WorkspaceDelivery } from '../components/workspace-delivery';
 import { readDeliveryObservations } from '../server/delivery-observations-actions';
 import { WorkspaceMembers } from '../components/workspace-members';
-import { WorkspaceEvaluatorTokens } from '../components/workspace-evaluator-tokens';
+import { WorkspaceMachineTokens } from '../components/workspace-machine-tokens';
 import { ConsoleLink, consoleDestination } from '../components/console-link';
 import { ConnectionNotice, PageTitle } from '../components/shared';
 import { useNavigation } from '../components/use-navigation';
@@ -48,29 +48,18 @@ export const Route = createFileRoute('/w/$')({
             'kind',
             'query',
             'q',
-            'draft',
-            'proposal',
-            'candidate',
-            'generation',
-            'comparison',
-            'pair',
-            'fromRevision',
-            'request',
-            'history',
-            'tab',
-            'reviewTab',
             'connectionTab',
             'connection',
             'access',
             'bundleId',
+            'round',
+            'memory',
           ].includes(key) &&
           (typeof value === 'string' || typeof value === 'number'),
       ),
     ) as Record<string, string | number>,
   loaderDeps: ({ search }) => ({
-    search: Object.fromEntries(
-      Object.entries(search).filter(([key]) => key !== 'reviewTab' && key !== 'connectionTab'),
-    ),
+    search: Object.fromEntries(Object.entries(search).filter(([key]) => key !== 'connectionTab')),
   }),
   loader: async ({ params, deps }) => {
     const location = parseConsoleLocation('/w/' + params._splat);
@@ -116,6 +105,19 @@ export const Route = createFileRoute('/w/$')({
       bundleId: location.bundleId!,
       channel: location.channel || String(deps.search.channel || 'stable'),
     };
+    if (location.view === 'learning')
+      return {
+        kind: 'learning' as const,
+        location,
+        scope,
+        result: await readLearningLoop({
+          data: {
+            ...scope,
+            round: typeof deps.search.round === 'string' ? deps.search.round : undefined,
+            memory: deps.search.memory === undefined ? undefined : String(deps.search.memory),
+          },
+        }),
+      };
     return {
       kind: 'bundle' as const,
       location,
@@ -127,6 +129,7 @@ export const Route = createFileRoute('/w/$')({
 });
 function ScopedPage() {
   const data = Route.useLoaderData();
+  const router = useRouter();
   const search = Route.useSearch();
   const navigation = useNavigation();
   const workspaceKey = `${navigation?.actorScope}:${navigation?.role}:${data.kind === 'missing' ? '' : data.location.workspaceId}`;
@@ -203,12 +206,35 @@ function ScopedPage() {
           workspaceId={data.location.workspaceId}
           initial={data.result}
         />
-        <WorkspaceEvaluatorTokens
+        <WorkspaceMachineTokens
           key={`tokens-${workspaceKey}`}
           workspaceId={data.location.workspaceId}
         />
       </div>
     );
+  if (data.kind === 'learning') {
+    const channel = data.result.ok
+      ? (data.result.loop?.channel ?? data.result.channels[0])
+      : undefined;
+    const scope = { ...data.scope, channel: channel ?? data.scope.channel };
+    return (
+      <div className="bundle-page bundle-workspace">
+        <BundleScopeHeader
+          name={data.result.ok ? data.result.bundleName : navigation?.bundleName || scope.bundleId}
+          scope={scope}
+          view="learning"
+          search={search}
+          description="Evaluate the bundle in recurring learning rounds."
+        />
+        <BundleLearning
+          key={`${workspaceKey}:${scope.bundleId}`}
+          scope={data.scope}
+          state={data.result}
+          refresh={() => router.invalidate({ sync: true })}
+        />
+      </div>
+    );
+  }
   const { state, scope, location } = data;
   const view = location.view as BundleView;
   if (state.status !== 'ready')
@@ -250,9 +276,9 @@ function ScopedPage() {
       </div>
     );
   const description = {
-    content: 'The starting instructions, skills and memory for connected apps.',
-    changes: 'Inspect the changes and evaluation results for this bundle.',
-    releases: 'Inspect the versions released on this channel.',
+    content: 'The instructions, skills and memory your app receives.',
+    releases: 'See what shipped or restore an earlier release.',
+    learning: 'Evaluate the bundle in recurring learning rounds.',
     connect: 'Use this bundle in your agent app.',
   }[view];
   const identity = `${state.actorScope}:${scope.workspaceId}:${scope.bundleId}:${scope.channel}`;
@@ -264,13 +290,10 @@ function ScopedPage() {
         view={view}
         search={search}
         description={description}
-        currentRevision={state.resolution.revision}
         apiUrl={state.publicApiUrl}
       />
       {view === 'content' ? (
         <BundleContent key={identity} state={state} search={search} />
-      ) : view === 'changes' ? (
-        <BundleChanges key={identity} state={state} search={search} />
       ) : view === 'releases' ? (
         <BundleReleases key={identity + ':' + state.resolution.revision} state={state} />
       ) : (
@@ -286,7 +309,6 @@ function BundleScopeHeader({
   search,
   description,
   unavailableChannel = false,
-  currentRevision,
   apiUrl,
 }: {
   name: string;
@@ -295,42 +317,11 @@ function BundleScopeHeader({
   search: Record<string, unknown>;
   description: string;
   unavailableChannel?: boolean;
-  currentRevision?: string;
   apiUrl?: string;
 }) {
-  const navigate = useNavigate();
-  const historyHref = bundleHref(scope, 'changes', { history: 1 }) + '#evaluation-history';
-  // Evaluation history lives under Changes but is its own destination in the bundle tabs.
-  const historyView =
-    view === 'changes' && String(search.history) === '1' && !search.draft && !search.proposal;
-  const isChangeDetail =
-    !unavailableChannel &&
-    view === 'changes' &&
-    Boolean(
-      search.draft || search.proposal || search.candidate || search.comparison || search.request,
-    );
-  const fromRevision =
-    isChangeDetail && search.candidate && currentRevision
-      ? releaseRevision(search.fromRevision)
-      : undefined;
-  const returnRevision =
-    fromRevision && currentRevision && BigInt(fromRevision) <= BigInt(currentRevision)
-      ? fromRevision
-      : undefined;
-  const parentLabel = returnRevision
-    ? `Back to revision ${returnRevision}`
-    : isChangeDetail
-      ? 'Back to changes'
-      : view === 'connect'
-        ? 'Back to content'
-        : 'Back to bundles';
-  const parentHref = returnRevision
-    ? `${bundleHref(scope, 'releases')}#revision-${returnRevision}`
-    : isChangeDetail
-      ? bundleHref(scope, 'changes')
-      : view === 'connect'
-        ? bundleHref(scope, 'content')
-        : workspaceHref(scope.workspaceId);
+  const parentLabel = view === 'connect' ? 'Back to content' : 'Back to bundles';
+  const parentHref =
+    view === 'connect' ? bundleHref(scope, 'content') : workspaceHref(scope.workspaceId);
   return (
     <PageHeader
       title={name}
@@ -345,19 +336,15 @@ function BundleScopeHeader({
               <ArrowLeft aria-hidden="true" className="size-4" />
               <span className="bundle-scope-return-label">{parentLabel}</span>
               <span className="bundle-scope-return-short" aria-hidden="true">
-                {returnRevision
-                  ? `Revision ${returnRevision}`
-                  : isChangeDetail
-                    ? 'Changes'
-                    : view === 'connect'
-                      ? 'Content'
-                      : 'Bundles'}
+                {view === 'connect' ? 'Content' : 'Bundles'}
               </span>
             </ConsoleLink>
           </Button>
         </>
       }
-      titleAccessory={<ChannelPicker scope={scope} view={view} search={search} />}
+      titleAccessory={
+        view !== 'learning' && <ChannelPicker scope={scope} view={view} search={search} />
+      }
       actions={
         apiUrl && (
           <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -366,46 +353,20 @@ function BundleScopeHeader({
         )
       }
       footer={
-        !unavailableChannel && (
-          <nav aria-label="Bundle navigation" className="bundle-tabs bundle-scope-navigation">
-            {(Object.keys(bundleViewLabels) as (keyof typeof bundleViewLabels)[]).map((tab) => (
+        <nav aria-label="Bundle navigation" className="bundle-tabs bundle-scope-navigation">
+          {(Object.keys(bundleViewLabels) as (keyof typeof bundleViewLabels)[])
+            .filter((tab) => !unavailableChannel || tab === 'learning')
+            .map((tab) => (
               <ConsoleLink
                 key={tab}
                 href={bundleHref(scope, tab)}
                 exactActive
-                aria-current={view === tab && !historyView ? 'page' : undefined}
+                aria-current={view === tab ? 'page' : undefined}
               >
                 {bundleViewLabels[tab]}
               </ConsoleLink>
             ))}
-            <ConsoleLink
-              href={historyHref}
-              exactActive
-              aria-current={historyView ? 'page' : undefined}
-              onClick={async (event) => {
-                const link = event.currentTarget;
-                if (
-                  event.button !== 0 ||
-                  event.metaKey ||
-                  event.ctrlKey ||
-                  event.shiftKey ||
-                  event.altKey ||
-                  link.pathname !== window.location.pathname
-                )
-                  return;
-                event.preventDefault();
-                const destination = link.href;
-                await navigate(consoleDestination(historyHref));
-                requestAnimationFrame(() => {
-                  if (window.location.href === destination)
-                    document.getElementById('evaluation-history')?.focus({ preventScroll: true });
-                });
-              }}
-            >
-              Evaluations
-            </ConsoleLink>
-          </nav>
-        )
+        </nav>
       }
     />
   );
@@ -416,7 +377,7 @@ function ChannelPicker({
   search,
 }: {
   scope: { workspaceId: string; bundleId: string; channel: string };
-  view: 'content' | 'changes' | 'releases' | 'connect';
+  view: BundleView;
   search: Record<string, unknown>;
 }) {
   const nav = useNavigation();

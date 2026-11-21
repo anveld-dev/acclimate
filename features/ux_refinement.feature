@@ -8,7 +8,7 @@ Feature: Recoverable content editing and explicit imports
     When I open a bookmarked content path missing from that channel
     Then the missing selection is explained without displaying unrelated content
     When I clear the missing selection and choose the memory entry
-    Then I read that published memory in the same bundle without creating a draft
+    Then I read that published memory in the same bundle without changing the release
 
   @UX-05
   Scenario: Create an imported bundle from real instruction and skill files

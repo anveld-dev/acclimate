@@ -18,16 +18,15 @@ export function validateOperationTarget(
   if (!path.startsWith(prefix)) throw Error('Operation scope changed.');
   const parts = path.slice(prefix.length).split('/');
   let allowed = parts.length === 1 && parts[0] === 'bundle-setups';
-  if (parts[0] === 'bundles' && UUID.test(parts[1] || '')) {
-    allowed ||= parts.length === 3 && ['proposals', 'evaluation-requests'].includes(parts[2]);
-    if (parts[2] === 'channels' && /^[A-Za-z0-9_-]{1,64}$/.test(parts[3] || '')) {
-      allowed ||= parts.length === 5 && ['releases', 'drafts'].includes(parts[4]);
-      allowed ||=
-        parts.length === 7 &&
-        parts[4] === 'drafts' &&
-        UUID.test(parts[5]) &&
-        ['save', 'publish', 'discard'].includes(parts[6]);
-    }
+  if (
+    parts.length === 5 &&
+    parts[0] === 'bundles' &&
+    UUID.test(parts[1]) &&
+    parts[2] === 'channels' &&
+    /^[A-Za-z0-9_-]{1,64}$/.test(parts[3]) &&
+    parts[4] === 'releases'
+  ) {
+    allowed = true;
   }
   if (!allowed || new URL(path, 'http://operation.invalid').pathname !== path)
     throw Error('Unsupported durable operation.');

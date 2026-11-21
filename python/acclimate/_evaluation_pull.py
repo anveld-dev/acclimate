@@ -1,4 +1,4 @@
-"""Save a channel's published payload as the JSON file `compare --payload` reads."""
+"""Save a channel's published payload to a JSON file."""
 from __future__ import annotations
 
 import json
@@ -14,7 +14,7 @@ USAGE = "pull --config CONFIG --bundle ID [--channel CHANNEL] --out FILE  Save t
 
 
 def pull_payload(*, config_path, bundle_id, channel, out):
-    """Write a new private payload file. Edit it, then compare it with its parent."""
+    """Write a new private payload file."""
     config = read_evaluator_config(config_path)
     try:
         client = make_client(config)
@@ -53,7 +53,5 @@ def pull_command(flags):
     result = pull_payload(config_path=flags["config"], bundle_id=flags["bundle"], channel=channel, out=flags["out"])
     if sys.stderr.isatty():
         noun = "file" if result["files"] == 1 else "files"
-        print(f"Saved {channel} (version {result['versionId']}, {result['files']} {noun}) to {result['out']}.\n"
-              f"Edit it, then run: python -m acclimate compare --config CONFIG --bundle {result['bundleId']} "
-              f"--channel {channel} --payload {result['out']} --name NAME", file=sys.stderr)
+        print(f"Saved {channel} (version {result['versionId']}, {result['files']} {noun}) to {result['out']}.", file=sys.stderr)
     return 0, result

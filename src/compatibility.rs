@@ -151,9 +151,6 @@ pub(crate) fn metadata_problem(text: &str, name: &str) -> Option<String> {
             .into()
     })
 }
-pub(crate) fn metadata_valid(text: &str, name: &str) -> bool {
-    metadata_problem(text, name).is_none()
-}
 pub fn validate(payload: &BundlePayload, target: &str) -> Result<(), Vec<CompatibilityIssue>> {
     if target == "generic" {
         return Ok(());

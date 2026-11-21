@@ -76,47 +76,10 @@ jobs:
       - run: npm ci --ignore-scripts --prefer-offline --no-audit
       - run: npm run typecheck
       - run: npm test
-      - run: npm run test:improvement
-      - run: npm run test:operator
-      - run: npm run test:evaluator
-      - run: npm run test:full-roadmap
+      - run: npm run test:starters
       - run: npm audit --audit-level=high
       - run: PYTHONPATH=python python -m unittest discover -s python/tests -v
       - run: python -m unittest discover -s scripts/operations -p 'test_*.py' -v
-  pr-gate:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Test the CI wrapper and starter archive
-        run: npm run test:ci-starter
-      - id: gate
-        name: Run the PR quality gate action against an offline evaluator
-        uses: ./examples/ci
-        with:
-          app: examples/ci/test/fake-evaluator.mjs
-          policy: examples/ci/test/policy.json
-          bundle: offline-bundle
-          bundle-dir: examples/ci/test/bundle
-          config-json: '{"serviceUrl":"http://127.0.0.1:9/","workspaceId":"offline","evaluatorPrincipalId":"offline-ci"}'
-          token: offline-token
-      - name: Check the gate outputs
-        env:
-          RESULT: ${{ steps.gate.outputs.result }}
-          VERDICT: ${{ steps.gate.outputs.verdict }}
-          CANDIDATE: ${{ steps.gate.outputs.candidate-version-id }}
-          SUMMARY: ${{ steps.gate.outputs.summary-json }}
-        run: |
-          test "$RESULT" = pass
-          test "$VERDICT" = pass
-          test "$CANDIDATE" = 00000000-0000-4000-8000-000000000002
-          python3 -c 'import json, sys; summary = json.load(open(sys.argv[1])); assert summary["commit"] == sys.argv[2], summary' "$SUMMARY" "$GITHUB_SHA"
   test:
     needs: [changes, build]
     if: needs.changes.outputs.full == 'true'
@@ -164,7 +127,6 @@ jobs:
       - run: npm run pack:verify -- --skip-build --console-runtime
       - run: python scripts/productization/rust_tests.py --pg-bin /usr/lib/postgresql/16/bin
       - run: npm run test:e2e -- --skip-build --pg-bin /usr/lib/postgresql/16/bin
-      - run: npm run qualify:full-roadmap -- --skip-build --pg-bin /usr/lib/postgresql/16/bin
       - run: python -m unittest discover -s scripts/productization -p 'test_external.py' -v
       - run: npm run test:identity:contracts
       - uses: actions/upload-artifact@v4
@@ -174,34 +136,6 @@ jobs:
             artifacts/releases/
             artifacts/production-only/
           if-no-files-found: error
-  connected-learning:
-    needs: [changes, build]
-    if: needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: actions/download-artifact@v4
-        with:
-          name: integration-build
-          path: ${{ runner.temp }}
-      - run: tar --zstd -xf "$RUNNER_TEMP/integration-build.tar.zst"
-      - run: npm ci --ignore-scripts --prefer-offline --no-audit
-      - name: Install PostgreSQL test binaries
-        run: |
-          if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
-            sudo apt-get update
-            sudo apt-get install -y postgresql-16
-          fi
-          /usr/lib/postgresql/16/bin/initdb --version
-      - name: Qualify connected learning against PostgreSQL
-        run: python scripts/productization/connected_learning.py --skip-build --pg-bin /usr/lib/postgresql/16/bin
   behavior-shard:
     needs: build
     runs-on: ubuntu-24.04
@@ -242,15 +176,13 @@ jobs:
         env:
           SHARD: ${{ matrix.shard }}
         run: npm run test:bdd -- --skip-build --shard "$SHARD" 3 --pg-bin /usr/lib/postgresql/16/bin
-      - name: Check the read-only console, sign-in protocol and Vite draft flow
+      - name: Check the read-only console and sign-in protocol
         if: matrix.shard == 3
         run: |
           python scripts/test_console_browser.py --pg-bin /usr/lib/postgresql/16/bin > artifacts/bdd/console-readonly.log &
           readonly_pid=$!
           status=0
-          # Both checks below start Vite against the same workspace cache.
           python scripts/testing/console_protocol.py --pg-bin /usr/lib/postgresql/16/bin --report artifacts/production-only/console-protocol.json || status=$?
-          npm run test:bdd -- --skip-build --dev-console --pg-bin /usr/lib/postgresql/16/bin --tags @UI-DRAFT-02 || status=$?
           wait "$readonly_pid" || status=$?
           exit "$status"
       - uses: actions/upload-artifact@v4

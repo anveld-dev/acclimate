@@ -11,8 +11,6 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Row, Transaction};
 
-/// The installed evaluator promises retained operations only for this grammar of
-/// operation keys (see `operation_path`).
 pub(crate) fn guided_project(project: &str) -> bool {
     !project.is_empty()
         && project.len() <= 128
@@ -22,49 +20,6 @@ pub(crate) fn guided_project(project: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
 }
-pub(crate) fn guided_uuid(value: &str) -> bool {
-    uuid::Uuid::parse_str(value).is_ok_and(|id| id.to_string() == value)
-}
-fn guided_evaluator_route(project: &str, path: &str) -> bool {
-    let Some(suffix) = path.strip_prefix(&format!("/v1/workspaces/{project}/")) else {
-        return false;
-    };
-    match suffix.split('/').collect::<Vec<_>>().as_slice() {
-        ["bundles", bundle, "comparisons" | "evaluation-requests"] => guided_uuid(bundle),
-        [
-            "bundles",
-            bundle,
-            "evaluation-requests",
-            request,
-            "start" | "finish" | "interrupt" | "abandon",
-        ] => guided_uuid(bundle) && guided_uuid(request),
-        _ => false,
-    }
-}
-
-// Body identities are part of the guided target too. Legacy raw writes retain
-// their historical ID syntax; a retained-ready write must use canonical UUIDs.
-fn guided_evaluator_body(path: &str, body: &[u8]) -> bool {
-    let Ok(body) = serde_json::from_slice::<Value>(body) else {
-        return false;
-    };
-    let canonical = |value: &Value| value.as_str().is_some_and(guided_uuid);
-    if path.ends_with("/start") {
-        canonical(&body["attemptId"])
-    } else if path.ends_with("/finish") {
-        canonical(&body["attemptId"]) && canonical(&body["comparisonId"])
-    } else if path.ends_with("/interrupt") || path.ends_with("/abandon") {
-        true
-    } else {
-        canonical(&body["parentVersionId"])
-            && canonical(&body["candidateVersionId"])
-            && (body["proposalId"].is_null() || canonical(&body["proposalId"]))
-            && (body["evaluation"].is_null()
-                || (canonical(&body["evaluation"]["requestId"])
-                    && canonical(&body["evaluation"]["attemptId"])))
-    }
-}
-
 // Operation keys are the canonical public route the client called
 // (`/v1/workspaces/{p}/...`). Handlers record each retained operation under that
 // path in `operation_records`, `idempotency`, `mutation_audit` and the request
@@ -93,34 +48,8 @@ fn rights(project: &str, path: &str) -> Option<&'static [&'static str]> {
         // Version creation uses the same legacy UUID syntax as ordinary authoring.
         // A marked write retains its receipt; lookup/close require current write authority.
         ["bundles", b, "versions"] if uuid(b) => Some(&["write"]),
-        ["bundles", b, "proposals"] if uuid(b) => Some(&["propose"]),
-        // Evaluator operations need only the narrow `evaluate` right, which `write` implies.
-        ["bundles", b, "evaluation-requests"] if uuid(b) => Some(&["evaluate"]),
-        ["bundles", b, "comparisons"] if guided_uuid(b) => Some(&["evaluate"]),
-        [
-            "bundles",
-            b,
-            "evaluation-requests",
-            e,
-            "start" | "finish" | "interrupt" | "abandon",
-        ] if guided_uuid(b) && guided_uuid(e) => Some(&["evaluate"]),
         ["bundles", b, "channels", c, "releases"]
             if uuid(b) && crate::channels::valid_channel(c) =>
-        {
-            Some(&["promote"])
-        }
-        // Evaluators stage candidates as drafts. Changing or discarding one requires write.
-        ["bundles", b, "channels", c, "drafts"] if uuid(b) && crate::channels::valid_channel(c) => {
-            Some(&["evaluate"])
-        }
-        ["bundles", b, "channels", c, "drafts", d, "save" | "discard"]
-            if uuid(b) && uuid(d) && crate::channels::valid_channel(c) =>
-        {
-            Some(&["write"])
-        }
-        // Historical publication receipts remain inspectable.
-        ["bundles", b, "channels", c, "drafts", d, "publish"]
-            if uuid(b) && uuid(d) && crate::channels::valid_channel(c) =>
         {
             Some(&["promote"])
         }
@@ -128,7 +57,7 @@ fn rights(project: &str, path: &str) -> Option<&'static [&'static str]> {
     }
 }
 fn global(path: &str) -> bool {
-    path.ends_with("/bundle-setups") || path.split('/').nth(8) == Some("drafts")
+    path.ends_with("/bundle-setups")
 }
 fn namespace(path: &str) -> &str {
     if global(path) { "" } else { path }
@@ -218,6 +147,34 @@ async fn begin_mutation_inner<'a>(
     body: &[u8],
     require_admin: bool,
 ) -> ApiResult<MutationStart<'a>> {
+    let mut tx = s.db.begin().await.map_err(db)?;
+    crate::auth::authorize_transaction(&mut tx, a, project, &a.required_right).await?;
+    if rights(project, path).is_some() {
+        authorize(&mut tx, s, a, h, project, path).await?;
+    }
+    prepare_mutation(tx, a, project, path, h, body, require_admin).await
+}
+
+pub(crate) async fn begin_authorized_mutation<'a>(
+    tx: Transaction<'a, Postgres>,
+    a: &Actor,
+    project: &str,
+    path: &str,
+    h: &HeaderMap,
+    body: &[u8],
+) -> ApiResult<MutationStart<'a>> {
+    prepare_mutation(tx, a, project, path, h, body, false).await
+}
+
+async fn prepare_mutation<'a>(
+    mut tx: Transaction<'a, Postgres>,
+    a: &Actor,
+    project: &str,
+    path: &str,
+    h: &HeaderMap,
+    body: &[u8],
+    require_admin: bool,
+) -> ApiResult<MutationStart<'a>> {
     let key = h
         .get("idempotency-key")
         .and_then(|x| x.to_str().ok())
@@ -234,22 +191,6 @@ async fn begin_mutation_inner<'a>(
     let marked = h
         .get("x-acclimate-durable-operation")
         .is_some_and(|v| v == "true");
-    // Never silently give a guided evaluator a transient 24-hour operation.
-    // Other historical routes retain their existing marker handling.
-    let evaluator_route = path.ends_with("/comparisons") || path.contains("/evaluation-requests");
-    if marked
-        && evaluator_route
-        && (!audited
-            || !guided_evaluator_route(project, path)
-            || !guided_evaluator_body(path, body)
-            || a.principal.len() > 1024)
-    {
-        return Err(err(
-            StatusCode::BAD_REQUEST,
-            "guided_target_unsupported",
-            "Target does not support retained evaluator operations",
-        ));
-    }
     let retained = durable || (audited && marked);
     let mut hash = Sha256::new();
     hash.update(b"POST\0");
@@ -257,11 +198,6 @@ async fn begin_mutation_inner<'a>(
     hash.update([0]);
     hash.update(body);
     let fingerprint = hash.finalize().to_vec();
-    let mut tx = s.db.begin().await.map_err(db)?;
-    crate::auth::authorize_transaction(&mut tx, a, project, &a.required_right).await?;
-    if audited {
-        authorize(&mut tx, s, a, h, project, path).await?;
-    }
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(lock(&a.principal, project, path, key))
         .execute(&mut *tx)
@@ -294,7 +230,15 @@ async fn begin_mutation_inner<'a>(
         {
             return Err(err(
                 StatusCode::CONFLICT,
-                "idempotency_conflict",
+                if path
+                    .strip_prefix(&format!("/v1/workspaces/{project}/bundles/"))
+                    .and_then(|suffix| suffix.split_once('/'))
+                    .is_some_and(|(_, route)| route.starts_with("learning/evaluations/"))
+                {
+                    "learning_conflict"
+                } else {
+                    "idempotency_conflict"
+                },
                 "Key was used with different request bytes",
             ));
         }
@@ -368,10 +312,53 @@ pub(crate) async fn finish_mutation(
     } else {
         sqlx::query("INSERT INTO idempotency(principal_id,project_id,method,path,key,fingerprint,response_status,response_body,expires_at) VALUES($1,$2,'POST',$3,$4,$5,$6,$7,now()+interval '24 hours')").bind(&c.principal).bind(&c.project).bind(&c.path).bind(&c.key).bind(&c.fingerprint).bind(status.as_u16() as i32).bind(&bytes).execute(&mut *c.tx).await.map_err(db)?;
     }
-    sqlx::query("INSERT INTO mutation_audit(project_id,actor_user_id,service_principal,principal_id,path,operation_key) VALUES($1,$2,$3,$4,$5,$6)").bind(&c.project).bind(c.user_id).bind(&c.service_principal).bind(&c.principal).bind(&c.path).bind(&c.key).execute(&mut *c.tx).await.map_err(db)?;
+    write_audit(
+        &mut c.tx,
+        &c.project,
+        c.user_id,
+        &c.service_principal,
+        &c.principal,
+        &c.path,
+        &c.key,
+    )
+    .await?;
     c.tx.commit().await.map_err(db)?;
     Ok((status, [(header::CONTENT_TYPE, "application/json")], bytes).into_response())
 }
+pub(crate) async fn audit_mutation(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: &Actor,
+    project: &str,
+    path: &str,
+    key: &str,
+) -> ApiResult<()> {
+    write_audit(
+        tx,
+        project,
+        actor.user_id,
+        &actor.service_principal,
+        &actor.principal,
+        path,
+        key,
+    )
+    .await
+}
+
+async fn write_audit(
+    tx: &mut Transaction<'_, Postgres>,
+    project: &str,
+    user: Option<uuid::Uuid>,
+    service: &str,
+    principal: &str,
+    path: &str,
+    key: &str,
+) -> ApiResult<()> {
+    sqlx::query("INSERT INTO mutation_audit(project_id,actor_user_id,service_principal,principal_id,path,operation_key) VALUES($1,$2,$3,$4,$5,$6)")
+        .bind(project).bind(user).bind(service).bind(principal).bind(path).bind(key)
+        .execute(&mut **tx).await.map_err(db)?;
+    Ok(())
+}
+
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OperationScope {
@@ -441,7 +428,7 @@ async fn outcome(
         .and_then(|r| r.first().copied())
         .unwrap_or(if closing { "write" } else { "read" });
     let actor = if path.is_empty() {
-        ["read", "evaluate", "write", "promote", "propose"]
+        ["read", "evaluate", "write", "promote"]
             .into_iter()
             .find_map(|right| crate::auth::actor(&h, &s, &p, right).ok())
             .ok_or_else(|| {
@@ -508,6 +495,7 @@ async fn outcome(
 }
 /// A durable domain command. Callers hold the domain lock and use the same
 /// transaction for the mutation and receipt, including when adopting old data.
+#[allow(dead_code)]
 pub(crate) struct DurableCommand {
     project: String,
     scope: String,
@@ -515,21 +503,25 @@ pub(crate) struct DurableCommand {
     key: String,
     request: Value,
     principal_owned: bool,
+    legacy_request: Option<Value>,
     optional_retry_field: Option<&'static str>,
 }
 
+#[allow(dead_code)]
 #[derive(sqlx::FromRow)]
 struct DurableReceipt {
     principal_id: String,
     request: Option<Value>,
     legacy_fingerprint: Option<String>,
+    legacy_normalized: bool,
     response: Value,
 }
 
+#[allow(dead_code)]
 impl DurableCommand {
     pub(crate) fn new(
         project: &str,
-        integration: uuid::Uuid,
+        scope_id: uuid::Uuid,
         operation: &str,
         principal: &str,
         key: impl ToString,
@@ -537,11 +529,12 @@ impl DurableCommand {
     ) -> Self {
         Self {
             project: project.into(),
-            scope: format!("learning/{integration}/{operation}"),
+            scope: format!("learning/{scope_id}/{operation}"),
             principal: principal.into(),
             key: key.to_string(),
             request,
             principal_owned: false,
+            legacy_request: None,
             optional_retry_field: None,
         }
     }
@@ -549,7 +542,7 @@ impl DurableCommand {
     pub(crate) fn optional(
         headers: &HeaderMap,
         project: &str,
-        integration: uuid::Uuid,
+        scope_id: uuid::Uuid,
         operation: &str,
         principal: &str,
         request: Value,
@@ -568,8 +561,7 @@ impl DurableCommand {
                             "Invalid idempotency key",
                         )
                     })?;
-                let mut command =
-                    Self::new(project, integration, operation, principal, key, request);
+                let mut command = Self::new(project, scope_id, operation, principal, key, request);
                 command.principal_owned = true;
                 Ok(command)
             })
@@ -588,6 +580,11 @@ impl DurableCommand {
         Ok(Json(response))
     }
 
+    pub(crate) fn with_legacy_request(mut self, request: Value) -> Self {
+        self.legacy_request = Some(request);
+        self
+    }
+
     /// Some older clients repeat a report without the attempts sent by the
     /// evaluator. Match that abbreviated retry only when the field is absent.
     pub(crate) fn with_optional_retry_field(mut self, field: &'static str) -> Self {
@@ -601,7 +598,7 @@ impl DurableCommand {
         conflict: impl FnOnce() -> crate::ApiErr,
     ) -> ApiResult<Option<Value>> {
         let stored: Option<DurableReceipt> = sqlx::query_as(
-            "SELECT principal_id,request,legacy_fingerprint,response FROM durable_commands
+            "SELECT principal_id,request,legacy_fingerprint,legacy_normalized,response FROM durable_commands
              WHERE (project_id,scope,key)=($1,$2,$3) AND (NOT $4 OR principal_id=$5)",
         )
         .bind(&self.project)
@@ -622,6 +619,7 @@ impl DurableCommand {
             fingerprint == crate::digest(&serde_json::to_vec(&self.request).map_err(db)?)
         } else {
             stored.request.as_ref() == Some(&self.request)
+                || (stored.legacy_normalized && stored.request == self.legacy_request)
                 || self.optional_retry_field.is_some_and(|field| {
                     if self.request.get(field).is_some() {
                         return false;
@@ -676,7 +674,7 @@ impl DurableCommand {
 mod tests {
     use super::*;
     #[test]
-    fn guided_targets_and_retained_evaluator_routes_have_one_closed_grammar() {
+    fn operation_project_names_have_one_grammar() {
         for project in [
             "",
             ".",
@@ -689,34 +687,12 @@ mod tests {
             assert!(!guided_project(project));
         }
         assert!(guided_project("existing_project-1.2"));
-        let bundle = "abcdefab-cdef-4abc-8def-abcdefabcdef";
-        let request = "12345678-1234-4234-8234-123456789abc";
-        assert!(guided_uuid(bundle));
-        assert!(!guided_uuid(&bundle.to_uppercase()));
-        for suffix in [
-            format!("bundles/{bundle}/comparisons"),
-            format!("bundles/{bundle}/evaluation-requests"),
-            format!("bundles/{bundle}/evaluation-requests/{request}/start"),
-            format!("bundles/{bundle}/evaluation-requests/{request}/finish"),
-            format!("bundles/{bundle}/evaluation-requests/{request}/interrupt"),
-            format!("bundles/{bundle}/evaluation-requests/{request}/abandon"),
-        ] {
-            let route = format!("/v1/workspaces/p/{suffix}");
-            assert!(guided_evaluator_route("p", &route));
-            assert_eq!(rights("p", &route), Some(["evaluate"].as_slice()));
-            assert_eq!(namespace(&route), route);
-            assert!(!guided_evaluator_route(
-                "p",
-                &route.replace(bundle, &bundle.to_uppercase())
-            ));
-        }
     }
     #[test]
     fn operation_paths_are_canonical_workspace_routes() {
         let bundle = "11111111-1111-4111-8111-111111111111";
         for path in [
             format!("/v1/workspaces/p/bundles/{bundle}/channels/releases/releases"),
-            format!("/v1/workspaces/p/bundles/{bundle}/channels/c/drafts"),
             "/v1/workspaces/p/bundle-setups".to_owned(),
         ] {
             assert_eq!(operation_path(&path), Some(path.as_str()));
@@ -754,8 +730,6 @@ mod tests {
             let route = format!("/v1/workspaces/p/bundles/{bundle}/versions");
             assert_eq!(rights("p", &route), Some(["write"].as_slice()));
             assert_eq!(namespace(&route), route);
-            // This authoring extension does not broaden the evaluator promise.
-            assert!(!guided_evaluator_route("p", &route));
             assert!(rights("other", &route).is_none());
         }
         assert!(rights("p", "/v1/workspaces/p/bundles/not-a-uuid/versions").is_none());
@@ -774,58 +748,8 @@ mod tests {
             "content:u:p:k"
         );
         assert_eq!(
-            lock(
-                "u",
-                "p",
-                "/v1/workspaces/p/bundles/11111111-1111-4111-8111-111111111111/channels/c/drafts",
-                "k"
-            ),
-            "content:u:p:k"
-        );
-        assert_ne!(
-            lock(
-                "u",
-                "p",
-                "/v1/workspaces/p/bundles/11111111-1111-4111-8111-111111111111/proposals",
-                "k"
-            ),
-            lock(
-                "u",
-                "p",
-                "/v1/workspaces/p/bundles/11111111-1111-4111-8111-111111111111/evaluation-requests",
-                "k"
-            )
-        );
-        assert_eq!(
             rights("p", "/v1/workspaces/p/bundle-setups"),
             Some(["write", "promote"].as_slice())
-        );
-        assert_eq!(
-            rights(
-                "p",
-                "/v1/workspaces/p/bundles/11111111-1111-4111-8111-111111111111/channels/c/drafts/22222222-2222-4222-8222-222222222222/publish"
-            ),
-            Some(["promote"].as_slice())
-        );
-        // Evaluators stage candidate drafts; changing or publishing them is not evaluation.
-        let drafts =
-            "/v1/workspaces/p/bundles/11111111-1111-4111-8111-111111111111/channels/c/drafts";
-        assert_eq!(rights("p", drafts), Some(["evaluate"].as_slice()));
-        for action in ["save", "discard"] {
-            assert_eq!(
-                rights(
-                    "p",
-                    &format!("{drafts}/22222222-2222-4222-8222-222222222222/{action}")
-                ),
-                Some(["write"].as_slice())
-            );
-        }
-        assert!(
-            rights(
-                "p",
-                "/v1/workspaces/x/bundles/11111111-1111-4111-8111-111111111111/proposals"
-            )
-            .is_none()
         );
         assert!(rights("p", "/v1/workspaces/p/credentials").is_none());
         assert!(!global(

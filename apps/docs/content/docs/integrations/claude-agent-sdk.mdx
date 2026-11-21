@@ -1,9 +1,9 @@
 ---
 title: Claude Agent SDK
-description: Prepare project instructions and skills, run a fresh Claude Agent SDK query, and evaluate the same code with acclimate-eval.
+description: Prepare project instructions and skills for a fresh Claude Agent SDK query.
 ---
 
-Prepare a Claude project workspace using `@acclimate/claude-plugin`. Install the plugin tarball with the matching [Acclimate SDK](/docs/get-started/install); both come from the same release, and the SDK is a peer of the plugin. The `/native` entry targets the optional peer `@anthropic-ai/claude-agent-sdk` `^0.3.325`.
+Prepare a Claude project workspace using `@acclimate/claude-plugin`. Install the plugin tarball with the matching [Acclimate SDK](/docs/get-started/install); both come from the same release, and the SDK is a peer of the plugin. Install `@anthropic-ai/claude-agent-sdk` in your application to run Claude sessions.
 
 ## Where the verified version comes from
 
@@ -11,7 +11,6 @@ Prepare a Claude project workspace using `@acclimate/claude-plugin`. Install the
 
 - In a job, `client.prepare()` resolves the channel, verifies the digest and returns a delivery. Pass the delivery itself so its start receipt survives.
 - With `resolveAndCache(client, selection, { cacheDir })` you get the verified version directly.
-- In evaluation, the evaluator passes it to your `execute` function as `version`.
 
 ## Run a job
 
@@ -52,35 +51,6 @@ const prepared = await prepare(delivery, { baseDir: '/absolute/path/to/repositor
 ```
 
 This copies `.claude/settings.json`, `.claude/agents/`, `.claude/commands/`, `.claude/hooks/`, `.claude/output-styles/` and `.mcp.json`. Instructions and skills still come only from the bundle: `CLAUDE.md`, `CLAUDE.local.md`, `.claude/skills/` and `.claude/settings.local.json` are never copied. `prepared.overlayFiles` lists the copied files with their SHA-256 digests. Record them in your runtime identity, because hooks and MCP servers change behavior.
-
-## Evaluate the same code
-
-Export `cases`, `execute` and `grade` from the module that runs Claude, so `acclimate-eval` compares versions with the code your jobs use:
-
-```ts
-import { ExecutionUncertainError } from '@acclimate/sdk/evaluation';
-
-export async function execute({ version, input, signal }) {
-  const prepared = await prepare(version);
-  const abortController = new AbortController();
-  signal.addEventListener('abort', () => abortController.abort(signal.reason), { once: true });
-  let answer = '';
-  try {
-    for await (const message of query({
-      prompt: input.prompt,
-      options: { ...claudeSessionOptions(prepared), model, abortController },
-    }))
-      if (message.type === 'result' && message.subtype === 'success') answer = message.result;
-  } catch (cause) {
-    // A rejected query does not prove the Claude process stopped: keep the files.
-    throw new ExecutionUncertainError({ cause });
-  }
-  await prepared.cleanup();
-  return { output: { answer } };
-}
-```
-
-The repository's `examples/claude-agent.ts` is the complete, typechecked version: delivery with receipts and result retention, plus `cases`, `execute` and `grade`. To compare Claude on an existing repository with frozen tests, set `"harness": "claude"` in the [native repository starter](/docs/guides/deliver-content#stage-a-repository-for-evaluation).
 
 ## Qualification
 

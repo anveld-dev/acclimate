@@ -2,7 +2,7 @@
 """Actual syntax/editor/file-control proof on disposable PostgreSQL/OIDC fixtures.
 
 No builds, servers outside the fixture, provider/model calls, auth injection or
-DOM/focus mutation. A native editor edit is explicitly saved to the private draft.
+DOM or focus mutation.
 """
 import argparse
 import json
@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from playwright.sync_api import expect
 from scripts.bdd.editor import editor_value, expect_editor_value
-from scripts.bdd.interactions import open_content_actions, open_draft_details, close_draft_details
+from scripts.bdd.interactions import open_content_actions
 from scripts.bdd.layout import capture_layout, tab_to
 from scripts.bdd.run import pg_bin
 from scripts.bdd.world import World
@@ -69,72 +69,6 @@ def readonly(w, b, evidence):
     assert p.evaluate('navigator.clipboard.readText()') == LONG_SOURCE
     p.keyboard.press('Escape')
     return dict(jsonSyntax=True, exactCopy=True, largePlainFallback=True, untrustedMarkupIsData=True, noKindFilter=True, footerCount=True)
-
-
-def native_editor(w, b, evidence, draft, path):
-    p = b.page
-    # Put known source on the clipboard through the actual published Copy action.
-    visit(p, b, b.bundle_path('content', path='memory/context.json'))
-    source = p.get_by_test_id('entry-content')
-    expect(source).to_have_attribute('data-syntax-language', 'json')
-    panel = open_content_actions(p)
-    panel.get_by_role('button', name='Copy content', exact=True).click()
-    assert p.evaluate('navigator.clipboard.readText()') == JSON_SOURCE
-    p.keyboard.press('Escape')
-    visit(p, b, b.bundle_path('changes', draft=draft['id'], path='AGENTS.md'))
-    field = p.get_by_role('textbox', name='Content', exact=True)
-    expect(field).to_have_attribute('contenteditable', 'true', timeout=15000)
-    expect_editor_value(field, LONG_SOURCE)
-    assert p.locator('[data-code-editor] .cm-line').count() < 3000, 'Fixture must exercise a virtualized document'
-    tab_to(p, field)
-    p.keyboard.press('ControlOrMeta+A')
-    p.keyboard.press('ControlOrMeta+v')
-    expect_editor_value(field, JSON_SOURCE.replace('\n', '\r\n'))
-    p.keyboard.press('ControlOrMeta+z')
-    expect_editor_value(field, LONG_SOURCE)
-    p.keyboard.press('ControlOrMeta+End')
-    p.keyboard.press('Enter')
-    p.keyboard.insert_text('Native appended edit.')
-    p.keyboard.press('Enter')
-    changed = LONG_SOURCE + '\r\nNative appended edit.\r\n'
-    expect_editor_value(field, changed)
-    undo_steps = 0
-    while editor_value(field) != LONG_SOURCE and undo_steps < 5:
-        p.keyboard.press('ControlOrMeta+z')
-        undo_steps += 1
-    expect_editor_value(field, LONG_SOURCE)
-    assert undo_steps > 0
-    for _ in range(undo_steps):
-        p.keyboard.press('ControlOrMeta+Shift+z')
-    expect_editor_value(field, changed)
-    p.get_by_role('treeitem', name='Open memory/context.json', exact=True).click()
-    expect_editor_value(field, JSON_SOURCE)
-    p.get_by_role('treeitem', name='Open AGENTS.md', exact=True).click()
-    expect_editor_value(field, changed)
-    p.get_by_role('button', name='Save draft', exact=True).click()
-    deadline = time.monotonic() + 20
-    while time.monotonic() < deadline:
-        saved = w.call('GET', path)
-        if saved['generation'] == 2:
-            break
-        p.wait_for_timeout(100)
-    else:
-        raise AssertionError('Native source edit did not save a second generation')
-    payload = w.call('GET', w.bundle+'/versions/'+saved['snapshotVersion']['id']+'/payload')
-    assert payload['files'][0]['text'] == changed, 'Saving normalized or truncated the source'
-    expect_editor_value(field, changed)
-    details = open_draft_details(p)
-    expect(details).to_contain_text(saved['snapshotVersion']['id'])
-    expect(details.get_by_role('heading', name='Saved snapshot history', exact=True)).to_be_visible()
-    capture_layout(p, evidence.output, 'draft-details-history-dialog')
-    close_draft_details(p)
-    expect(p.get_by_role('button', name='Add entry', exact=True)).to_be_visible()
-    expect(p.get_by_role('button', name='Import files into this draft', exact=True)).to_be_visible()
-    expect(p.get_by_label('Entry type', exact=True)).to_have_count(0)
-    expect(p.locator('.file-navigator-footer')).to_have_text('4 files')
-    capture_layout(p, evidence.output, 'large-native-editor-after-save')
-    return dict(bytes=len(changed.encode()), virtualized=True, nativeInput=True, actualClipboardPaste=True, undoRedoExact=True, fileSwitchRetainsEdits=True, savedBytesExact=True, lineEndingsRetained=True, detailsDialogAndHistory=True)
-
 
 
 def sdk_copied_recipes(w, b, evidence):
@@ -206,17 +140,13 @@ def main():
         world.start()
         world.fresh_scenario(SimpleNamespace(effective_tags=[]))
         world.publish_initial('', files=FILES)
-        draft = world.call('POST', world.channel+'/drafts', dict(baseVersionId=world.original['version']['id'], baseRevision=world.original['revision'], payload=dict(schemaVersion=1, files=FILES)))
-        path = world.channel+'/drafts/'+draft['id']
         original = world.call('GET', world.channel)
         b = world.browser()
         b.page.set_viewport_size(dict(width=1440, height=900))
         evidence.run('readonly-syntax-copy-and-safe-markup', b.page, lambda: readonly(world, b, evidence))
-        evidence.run('large-native-editor-exact-save-and-history', b.page, lambda: native_editor(world, b, evidence, draft, path))
         if args.sdk:
             evidence.run('copied-typescript-python-basic-delivery', b.page, lambda: sdk_copied_recipes(world, b, evidence))
-        assert world.call('GET', world.channel) == original, 'Editor checks published a release'
-        assert world.call('GET', world.bundle+'/evaluation-requests')['items'] == []
+        assert world.call('GET', world.channel) == original, 'Inspection changed the release'
         assert not b.errors, b.errors
         unchanged = True
     except Exception as error:
@@ -226,7 +156,7 @@ def main():
         world.close()
         if before != after:
             evidence.failures.append(dict(check='frozen-build', error='Production output changed'))
-        result = dict(passed=not evidence.failures, checks=evidence.checks, failures=evidence.failures, releaseUnchanged=unchanged, sourceBuildBeforeSha256=before, sourceBuildAfterSha256=after, paidModelCalls=0, providerCalls=0, domMutation=False, focusInjection=False, limits=['One explicit native edit is saved only to the disposable draft.', 'Full editor bytes are read through the intentional public host handle; input stays native.'])
+        result = dict(passed=not evidence.failures, checks=evidence.checks, failures=evidence.failures, releaseUnchanged=unchanged, sourceBuildBeforeSha256=before, sourceBuildAfterSha256=after, paidModelCalls=0, providerCalls=0, domMutation=False, focusInjection=False, limits=['Disposable fixture service.'])
         (output/'summary.json').write_text(json.dumps(result, indent=2)+'\n')
         print(json.dumps(result, indent=2), flush=True)
     return 0 if result['passed'] else 1

@@ -222,12 +222,6 @@
     "title": "Web console"
   },
   {
-    "source": "tools/operator/README.md",
-    "route": "operate/review.html",
-    "group": "Operate",
-    "title": "Review and release"
-  },
-  {
     "source": "deploy/README.md",
     "route": "operate/deploy.html",
     "group": "Operate",
@@ -250,12 +244,6 @@
     "route": "operate/keycloak.html",
     "group": "Operate",
     "title": "Keycloak setup"
-  },
-  {
-    "source": "scripts/full-roadmap/README.md",
-    "route": "operate/qualification.html",
-    "group": "Operate",
-    "title": "Full qualification"
   },
   {
     "source": "docs/research/README.md",
@@ -306,58 +294,48 @@
     "title": "Earlier proposal"
   },
   {
-    "source": "docs/architecture/continuous-learning/README.md",
-    "route": "source/architecture/continuous-learning/README.md",
-    "kind": "source"
-  },
-  {
-    "source": "docs/architecture/continuous-learning/alternatives/artifact-protocol.md",
-    "route": "source/architecture/continuous-learning/alternatives/artifact-protocol.md",
-    "kind": "source"
-  },
-  {
-    "source": "docs/architecture/continuous-learning/alternatives/shared-campaign.md",
-    "route": "source/architecture/continuous-learning/alternatives/shared-campaign.md",
-    "kind": "source"
-  },
-  {
-    "source": "docs/architecture/continuous-learning/alternatives/small-learner.md",
-    "route": "source/architecture/continuous-learning/alternatives/small-learner.md",
-    "kind": "source"
-  },
-  {
-    "source": "docs/architecture/continuous-learning/evidence.md",
-    "route": "source/architecture/continuous-learning/evidence.md",
-    "kind": "source"
-  },
-  {
-    "source": "docs/architecture/continuous-learning/implementation.md",
-    "route": "source/architecture/continuous-learning/implementation.md",
-    "kind": "source"
-  },
-  {
-    "source": "docs/architecture/continuous-learning/migration.md",
-    "route": "source/architecture/continuous-learning/migration.md",
-    "kind": "source"
-  },
-  {
-    "source": "docs/architecture/continuous-learning/mutations.md",
-    "route": "source/architecture/continuous-learning/mutations.md",
-    "kind": "source"
-  },
-  {
-    "source": "docs/architecture/continuous-learning/product-flow.md",
-    "route": "source/architecture/continuous-learning/product-flow.md",
-    "kind": "source"
-  },
-  {
-    "source": "docs/architecture/continuous-learning/recovery.md",
-    "route": "source/architecture/continuous-learning/recovery.md",
-    "kind": "source"
-  },
-  {
     "source": "docs/architecture/deepening-review.md",
     "route": "source/architecture/deepening-review.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/README.md",
+    "route": "source/architecture/self-improvement-memory/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/decisions.md",
+    "route": "source/architecture/self-improvement-memory/decisions.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/evaluator-and-contracts.md",
+    "route": "source/architecture/self-improvement-memory/evaluator-and-contracts.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/experiment.md",
+    "route": "source/architecture/self-improvement-memory/experiment.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/loop.md",
+    "route": "source/architecture/self-improvement-memory/loop.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/memory.md",
+    "route": "source/architecture/self-improvement-memory/memory.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/optimizer.md",
+    "route": "source/architecture/self-improvement-memory/optimizer.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/self-improvement-memory/removal.md",
+    "route": "source/architecture/self-improvement-memory/removal.md",
     "kind": "source"
   },
   {

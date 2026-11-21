@@ -7,19 +7,11 @@ Feature: Navigate by workspace and bundle ownership
     Given a published bundle containing "Review code."
     When I open its scoped Content URL
     Then the workspace navigation contains Bundles, Delivery and Connections
-    And the bundle tabs contain Content, Changes, Releases and Evaluations
+    And the bundle tabs contain Content, Releases and Learning
     And the old seven-peer navigation and inert footer are absent
     And desktop navigation uses labelled icons with hover and keyboard tooltips
     And workspace switching precedes navigation and the account remains at the bottom of the rail
     And bundle identity and tabs occupy separate header rows
-
-  @NAV-03
-  Scenario: A saved draft bookmark survives another tab selecting a different bundle
-    Given a published bundle containing "Review code."
-    And I have saved a draft containing "Review retries."
-    And another bundle is published on the same channel and revision
-    When another tab opens the other bundle and I open the saved draft bookmark
-    Then the bookmark still names the original bundle and saved text
 
   @NAV-04
   Scenario: Release history cannot bleed between bundles with matching revisions
@@ -64,6 +56,22 @@ Feature: Navigate by workspace and bundle ownership
     When I reopen the bundle library with its previous operation record
     And I look up the pending creation result
     Then the original bundle opens once and the previous storage key is gone
+
+  @NAV-10
+  Scenario: Browser Back restores the published entry and its search
+    Given a published bundle with instructions, a skill and reusable memory
+    When I search for memory, visit Releases and go Back
+    Then the published memory and its URL search are restored
+
+  @NAV-11 @hosted
+  Scenario: Switching workspace asks before discarding browser edits
+    Given an administrator created a workspace with published content
+    And the operator can also access another workspace
+    When I enter initial instructions for a new bundle and try to switch workspace
+    And I cancel that workspace switch
+    Then the original workspace and unsaved text remain selected
+    When I confirm leaving edits to switch workspace
+    Then the other workspace opens without saving the abandoned text
 
   @NAV-12 @hosted
   Scenario: A role downgrade clears a stale membership-management form

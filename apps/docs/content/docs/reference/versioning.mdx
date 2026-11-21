@@ -20,7 +20,7 @@ From `1.0.0`, Acclimate follows [Semantic Versioning](https://semver.org): break
 
 ## Match SDK and service versions
 
-Use the SDK release that matches your service's minor version. The service also accepts requests from SDKs and evaluators of the previous minor release, so you can upgrade the service first and then roll out applications and evaluators. An SDK newer than the service isn't supported, because it can call routes or send fields the older service rejects.
+Use the SDK release that matches your service's minor version. The service also accepts requests from SDKs of the previous minor release where the wire contract remains compatible, so you can upgrade the service first and then roll out applications. Use the [upgrade notes](/docs/operate/upgrades-and-recovery) for removed workflows. An SDK newer than the service isn't supported, because it can call routes or send fields the older service rejects.
 
 | Service | SDK `0.N.x` | SDK `0.(N-1).x` | SDK `0.(N+1).x` |
 | --- | --- | --- | --- |
@@ -29,10 +29,8 @@ Use the SDK release that matches your service's minor version. The service also 
 Upgrade in this order:
 
 1. Upgrade the service and console. See [upgrades and recovery](/docs/operate/upgrades-and-recovery).
-2. Upgrade evaluators and applications to the matching SDK.
-3. Finish or recover any evaluation that started before the upgrade with the SDK language and release that started it. A run's private journal belongs to that release.
+2. Upgrade applications to the matching SDK.
 
-Evaluators also check the service's capabilities before they write. `GET /v1/workspaces/{workspaceId}/evaluation-capabilities` returns what the caller may do, and the release manifest lists the capability names the release supports, such as `retained-evaluation-operations-v1`. An evaluator stops with a setup error when a capability it needs is missing.
 
 ## The wire contract
 
@@ -52,7 +50,7 @@ JSON fields are camelCase on the wire and in both SDKs' request and response obj
 
 ## Document schema versions
 
-Several JSON documents carry a `schemaVersion` field: bundle payloads, evaluation handoffs, capability snapshots and evaluation manifests. All are version `1` today.
+Several JSON documents carry a `schemaVersion` field: bundle payloads and evaluation manifests. All are version `1` today.
 
 - A document's `schemaVersion` changes only when the document changes incompatibly. Additive fields keep the number.
 - Readers reject a `schemaVersion` they don't know rather than guessing.

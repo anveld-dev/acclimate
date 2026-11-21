@@ -107,7 +107,7 @@ def main():
     expected.add(str((ROOT / 'CONTEXT.md').resolve()))
     expected.add(str((ROOT / 'docs/development.md').resolve()))
     expected.add(str((ROOT / 'docs/evaluator-operations.md').resolve()))
-    expected |= {str((ROOT / name).resolve()) for name in ('apps/console/README.md', 'tools/operator/README.md','deploy/README.md','deploy/sign-in.md','deploy/keycloak/README.md','scripts/full-roadmap/README.md')}
+    expected |= {str((ROOT / name).resolve()) for name in ('apps/console/README.md', 'deploy/README.md','deploy/sign-in.md','deploy/keycloak/README.md')}
     for archived in (ROOT / 'docs/research/archive/runtime-platform').rglob('*.md'):
         copy = SITE / 'source' / archived.relative_to(ROOT / 'docs')
         if not copy.is_file() or copy.read_bytes() != archived.read_bytes():

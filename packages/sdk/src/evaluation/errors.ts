@@ -18,102 +18,56 @@ export type SafeCode =
   | 'config.schema'
   | 'config.permissions'
   | 'config.url'
-  | 'handoff.missing'
   | 'definition.invalid'
-  | 'definition.report_budget_exceeded'
   | 'application.invalid'
   | 'application.import_failed'
+  | 'learning.apps_invalid_export'
+  | 'learning.held_out_mismatch'
   | 'output.invalid'
   | 'payload.incompatible'
   | 'runtime.unsupported'
-  | 'capabilities.unsupported'
   | 'bundle.missing'
-  | 'request.missing'
-  | 'version.missing'
   | 'guided_target_unsupported'
   | 'auth.denied'
-  | 'auth.principal_mismatch'
-  | 'learning.apps_module_missing'
-  | 'learning.apps_module_load_failed'
-  | 'learning.apps_invalid_export'
-  | 'learning.recheck_callback_missing'
-  | 'learning.field_replay_callback_missing'
-  | 'learning.incident_replay_callback_missing'
   | 'descriptor.mismatch'
-  | 'version.binding_mismatch'
   | 'service.unavailable'
   | 'transport.response_too_large'
   | 'journal.busy'
-  | 'journal.foreign'
-  | 'journal.missing'
-  | 'journal.relocated'
   | 'journal.invalid'
   | 'journal.ownership_lost'
   | 'execution.uncertain'
-  | 'submission.unconfirmed'
-  | 'request.interrupted'
-  | 'request.base_conflict'
-  | 'request.channel_empty'
-  | 'request.intent_mismatch'
-  | 'policy.invalid'
-  | 'policy.inventory_incompatible'
-  | 'evidence.not_terminal'
   | 'evidence.identity_mismatch'
   | 'evidence.malformed'
-  | 'evidence.reward_out_of_range'
   | 'evidence.incomplete'
-  | 'cost.unknown'
-  | 'analysis.nonfinite'
-  | 'analysis.invalid_config'
-  | 'analysis.invalid_observations'
-  | 'analysis.identity_mismatch'
-  | 'artifact.missing'
-  | 'artifact.hash_mismatch'
-  | 'artifact.integrity'
-  | 'artifact.selection_invalid'
-  | 'artifact.mapper_failed'
   | 'internal.error';
 export type EvaluationPhase =
   | 'configure'
   | 'preflight'
-  | 'claim'
   | 'verify'
   | 'execute'
-  | 'submit'
-  | 'finish'
-  | 'inspect'
-  | 'policy'
-  | 'export';
+  | 'inspect';
 export type ExecutionState = 'not_started' | 'may_have_started' | 'report_saved' | 'finished';
 export type SafeNextAction =
+  | 'none'
   | 'fix_command'
   | 'fix_config'
   | 'fix_application'
   | 'check_service'
   | 'ask_operator'
-  | 'upgrade_service'
   | 'retry_same_command'
-  | 'restore_original_journal'
-  | 'inspect_external_app'
-  | 'interrupt_then_new_request'
-  | 'review_terminal_evidence';
+  | 'inspect_external_app';
 
 /**
- * Evaluator CLI exit codes. Each one names what to do next, so CI can tell a
- * quality decision from a broken pipeline.
+ * Evaluator CLI exit codes. Each one describes the command outcome.
  */
 export const EXIT_CODES = {
-  /** The command succeeded. For a policy check, the candidate passed. */
+  /** The command succeeded. */
   ok: 0,
   /** Fix the command line, config, application module or definition, then rerun. */
   usage: 1,
-  /** The quality gate failed: the policy verdict is `fail`. */
-  gateFailed: 2,
-  /** The evidence cannot support a verdict yet: the policy is indeterminate, the run is not terminal, or exported evidence is missing. */
-  indeterminate: 3,
-  /** The run or the service failed: the request finished as `failed`, or the service was unreachable or returned a server error. */
+  /** The service or local runtime failed. */
   infrastructure: 4,
-  /** Recovery is required before retrying: execution may have started, a submission is unconfirmed, the journal needs attention, or the request was interrupted or conflicts with a newer parent. */
+  /** Recovery is required before retrying because callback execution or local ownership is uncertain. */
   recovery: 5,
 } as const;
 export type ExitCode = (typeof EXIT_CODES)[keyof typeof EXIT_CODES];
@@ -123,7 +77,6 @@ const pathGuidance = {
   journalAlias: { field: 'journalRoot', hint: 'Set journalRoot to the absolute realpath of the journal directory, including all parents. On macOS, /var is an alias for /private/var.' },
   configMode: { field: 'configPath', hint: 'Use a config owned by the current user with mode 0600 (chmod 600) in a private directory owned by that user with mode 0700 (chmod 700).' },
   journalMode: { field: 'journalRoot', hint: 'Use a journal directory owned by the current user with mode 0700 (chmod 700).' },
-  exportOverlap: { field: 'outputDirectory', hint: 'Set --out to a new directory outside the config, journal and prepared workspace trees. Choose a separate private sibling of those trees.' },
 } as const;
 export type PathIssue = keyof typeof pathGuidance;
 
@@ -147,63 +100,30 @@ export const EVALUATION_ERROR_CODES: Readonly<Record<SafeCode, Readonly<CodeInfo
   'usage.invalid_flag': usage('A flag has an invalid or repeated value.'),
   'usage.conflicting_flags': usage('These flags cannot be used together.'),
   'config.missing': config('The evaluator config file does not exist.'),
-  'config.schema': config('The evaluator config, handoff or command input has an invalid field.'),
+  'config.schema': config('The evaluator config or command input has an invalid field.'),
   'config.permissions': config('A private file or directory has unsafe ownership, mode or path.'),
   'config.url': config('serviceUrl must be an https:// origin, or http:// on localhost, with no path, query or credentials.'),
-  'handoff.missing': config('The handoff file does not exist.'),
   'definition.invalid': app('The evaluation definition is invalid.'),
-  'definition.report_budget_exceeded': app('The case inventory exceeds the comparison report size limit. Split the cases into smaller evaluations.'),
   'application.invalid': app('The application module does not export a valid adapter.'),
+  'learning.apps_invalid_export': app('Default-export an object with execute, grade, heldOut and an execution mode.'),
+  'learning.held_out_mismatch': app('The installed held-out cases do not match the loop\'s held-out commitment.'),
   'application.import_failed': app('The application module could not be imported.'),
   'payload.incompatible': { message: 'The payload breaks a compatibility rule of a native harness the application declares.', nextAction: 'fix_command', exitCode: 1 },
   'output.invalid': app('A callback returned a value that is not plain JSON.'),
-  'runtime.unsupported': config('This platform cannot run the durable evaluator. Use Linux or macOS with python3 available.'),
-  'capabilities.unsupported': { message: 'The service does not support retained evaluation operations.', nextAction: 'upgrade_service', exitCode: 1 },
+  'runtime.unsupported': config('This platform cannot run the evaluator. Use Linux or macOS with python3 available.'),
   'bundle.missing': config('The bundle does not exist in this workspace or the evaluator cannot read it.'),
-  'request.missing': config('The evaluation request does not exist in this workspace.'),
-  'version.missing': config('A parent or candidate version does not exist in this workspace.'),
-  guided_target_unsupported: config('The workspace, bundle, request or channel identifier is not in the supported format.'),
-  'auth.denied': operator('The service denied this token. Check the evaluator or reader token and its permissions.'),
-  'auth.principal_mismatch': operator('The token belongs to a different principal or workspace than the config names.'),
-  'learning.apps_module_missing': config('The learning application module is missing.'),
-  'learning.apps_module_load_failed': config('The learning application module could not be loaded.'),
-  'learning.apps_invalid_export': config('The learning application module has an invalid export.'),
-  'learning.recheck_callback_missing': config('The learning application does not export the recheck callback.'),
-  'learning.field_replay_callback_missing': config('The learning application does not export the field replay callback.'),
-  'learning.incident_replay_callback_missing': config('The learning application does not export the incident replay callback.'),
-  'descriptor.mismatch': app('The installed cases, grader or runtime differ from the ones the request was created with.'),
-  'version.binding_mismatch': config('The parent or candidate version does not match the request, config or handoff.'),
+  guided_target_unsupported: config('The workspace or bundle identifier is not in the supported format.'),
+  'auth.denied': operator('The service denied this token. Check the evaluator token and its permissions.'),
+  'descriptor.mismatch': app('The installed descriptor is invalid.'),
   'service.unavailable': { message: 'The Acclimate service is unreachable or returned a server error.', nextAction: 'check_service', exitCode: 4 },
   'transport.response_too_large': { message: 'A service response exceeded the size limit.', nextAction: 'fix_config', exitCode: 4 },
-  'journal.busy': recovery('Another evaluator process owns this request. No execution started here.', 'retry_same_command'),
-  'journal.foreign': recovery('The journal belongs to a different request or evaluator.', 'inspect_external_app'),
-  'journal.missing': recovery('The request has started, but this machine has no journal for it.', 'inspect_external_app'),
-  'journal.relocated': recovery('The journal moved from its original location.', 'restore_original_journal'),
+  'journal.busy': recovery('Another evaluator process holds the local evaluator lock. No execution started here.', 'retry_same_command'),
   'journal.invalid': recovery('The journal is corrupt or was edited.', 'fix_config'),
   'journal.ownership_lost': recovery('This process lost ownership of the journal during the run.', 'inspect_external_app'),
   'execution.uncertain': recovery('Callbacks may have started, and the evaluator cannot prove they stopped.', 'inspect_external_app'),
-  'submission.unconfirmed': recovery('The report was saved locally, but the service has not confirmed the submission.', 'retry_same_command'),
-  'request.interrupted': recovery('The request was interrupted.', 'interrupt_then_new_request'),
-  'request.base_conflict': recovery('The published parent changed after this request was created.', 'fix_config'),
-  'request.channel_empty': operator('The channel has no published release, so there is no parent to compare with.'),
-  'request.intent_mismatch': config('The saved run intent differs from this command. Reuse the original inputs, or start a new run name.'),
-  'policy.invalid': config('The quality policy is invalid.'),
-  'policy.inventory_incompatible': config('The policy requires cases that are not in the evaluation inventory.'),
-  'evidence.not_terminal': { message: 'The request has not finished, so there is no complete evidence yet.', nextAction: 'fix_config', exitCode: 3 },
-  'evidence.identity_mismatch': config('The evidence does not match the expected request, attempt or submitter.'),
+  'evidence.identity_mismatch': config('The version or digest does not match the expected identity.'),
   'evidence.malformed': config('The service returned evidence in an unexpected shape.'),
-  'evidence.reward_out_of_range': config('A scored reward is outside the reward scale declared by the policy. Fix the grader or the policy metric.scale.'),
-  'evidence.incomplete': { message: 'The service returned incomplete evidence.', nextAction: 'fix_config', exitCode: 3 },
-  'cost.unknown': { message: 'Cost evidence is missing for some outcomes.', nextAction: 'fix_config', exitCode: 3 },
-  'analysis.nonfinite': config('An analysis input or result is not a finite number.'),
-  'analysis.invalid_config': config('The analysis configuration is invalid.'),
-  'analysis.invalid_observations': config('An analysis observation is invalid.'),
-  'analysis.identity_mismatch': config('An analysis observation does not match the trusted evidence.'),
-  'artifact.missing': { message: 'A private review artifact is missing from the journal.', nextAction: 'fix_config', exitCode: 3 },
-  'artifact.hash_mismatch': config('A private review artifact does not match its recorded digest.'),
-  'artifact.integrity': config('The private artifact index is inconsistent with the saved report.'),
-  'artifact.selection_invalid': config('The artifact selection file is invalid.'),
-  'artifact.mapper_failed': app('toReviewArtifact threw or returned an invalid value.'),
+  'evidence.incomplete': { message: 'The bundle inventory exceeded the preflight read limit.', nextAction: 'fix_config', exitCode: 1 },
   'internal.error': { message: 'An unexpected error occurred. Rerun with --verbose or ACCLIMATE_DEBUG=1 for details.', nextAction: 'fix_config', exitCode: 4 },
 } satisfies Record<SafeCode, CodeInfo>);
 
@@ -218,19 +138,12 @@ export interface SafeDiagnostic {
   phase: EvaluationPhase;
   executionState: ExecutionState;
   nextAction: SafeNextAction;
-  evaluationRequestId?: string;
   correlationId?: string;
   httpStatus?: number;
   /** Service origin the evaluator tried to reach. */
   serviceUrl?: string;
   mismatchFields?: readonly string[];
   missingFields?: readonly string[];
-  reportBudget?: {
-    estimatedBytes: number;
-    limitBytes: number;
-    expectedPairs: number;
-    maxPairsPerPartition: number;
-  };
 }
 const allowedFields = new Set([
   'datasetRevision',
@@ -280,9 +193,6 @@ export class EvaluationError extends AcclimateError<SafeCode> {
       phase: options.phase ?? 'configure',
       executionState: options.executionState ?? 'not_started',
       nextAction: options.nextAction ?? info.nextAction,
-      ...(options.evaluationRequestId && /^[a-f0-9-]{36}$/.test(options.evaluationRequestId)
-        ? { evaluationRequestId: options.evaluationRequestId }
-        : {}),
       ...(options.correlationId && /^[A-Za-z0-9._:-]{1,128}$/.test(options.correlationId)
         ? { correlationId: options.correlationId }
         : {}),
@@ -404,7 +314,6 @@ export function toSafeDiagnostic(
     }).diagnostic;
   }
   if (executionState === 'may_have_started') code = 'execution.uncertain';
-  else if (executionState === 'report_saved') code = 'submission.unconfirmed';
   else if (error instanceof TransportError)
     return new EvaluationError('service.unavailable', {
       phase,

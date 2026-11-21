@@ -1,8 +1,6 @@
 # Make the console a product
 
-**Implemented, with one production identity path.** Durable drafts, content setup/import, proposal/evaluation/review, scoped selection and optional app receipts are connected. PostgreSQL, verified OIDC sessions and current memberships are mandatory. The [production evidence](../production-only/evidence.md) is the current acceptance record; live-provider deployment and model-quality claims remain separate.
-
-Use [the console guide](../../../apps/console/README.md) to run it and [acceptance evidence](acceptance.md#local-qualification-evidence--2026-11-13) for what was actually checked. These pages retain the implementation contracts and ownership decisions; exact callable APIs are in the SDK and service.
+This is the historical console productization plan. It records earlier implementation and acceptance decisions. Use the [console guide](../../../apps/console/README.md) for this release and the [learning loop design](../self-improvement-memory/README.md) for later phases.
 
 The product stays a Rust content service, a TanStack console and SDKs. Applications own agent execution, credentials, fixtures, limits and grading. A release changes a channel pointer; delivery reports describe what an app says it observed.
 

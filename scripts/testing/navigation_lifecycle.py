@@ -133,7 +133,7 @@ def run(args):
         scope = {'owner': 'improvement', 'actorScope': 'synthetic-actor', 'workspaceId': world.h.project,
                  'serviceIdentity': 'synthetic-service'}
         record = {'version': 1, 'scope': scope,
-                  'action': '/v1/workspaces/' + world.h.project + '/proposals',
+                  'action': '/v1/workspaces/' + world.h.project + '/bundle-setups',
                   'key': str(uuid.uuid4()), 'createdAt': 1,
                   'body': '{"synthetic":"private"}',
                   'disclosure': {'consent': True, 'wholeParentBundle': True,

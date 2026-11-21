@@ -741,10 +741,8 @@ export function BundleLibrary({ state, workspaceId }: { state: LibraryState; wor
               {source === 'files' && (
                 <div className="space-y-3">
                   <ImportContent
-                    purpose="creation"
                     payload={importedFiles}
                     disabled={pending}
-                    compatibilityTarget={compatibilityTarget}
                     onReadingChange={setReadingFiles}
                     onApply={(payload) => {
                       setImportedFiles(payload);
@@ -870,7 +868,7 @@ export function BundleLibrary({ state, workspaceId }: { state: LibraryState; wor
                 <div role="status" className="space-y-2 rounded-md border p-3">
                   <p>
                     Repair native compatibility issues before publishing. Incomplete content can be
-                    saved in an existing draft.
+                    found in an existing version.
                   </p>
                   <ul className="list-inside list-disc">
                     {importIssues.map((issue, index) => (

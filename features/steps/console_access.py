@@ -1,7 +1,7 @@
 import uuid
 from behave import given, when, then
 from playwright.sync_api import expect
-from scripts.bdd.interactions import open_details, submit_and_wait, create_workspace_action, assert_workspace_selected
+from scripts.bdd.interactions import submit_and_wait, create_workspace_action, assert_workspace_selected
 
 @when('the member opens that content in the console')
 def open_member(context):
@@ -9,12 +9,12 @@ def open_member(context):
     w.browser_actor='member'
     w.browser().select_bundle()
 
-@then('the member can inspect content and delivery')
-def rights(context):
+@then('browser content is read-only and delivery is visible')
+def delivery_rights(context):
     w=context.world
     p=w.browser_fixture.page
-    expect(p.get_by_test_id('entry-content')).to_have_text('Review code.')
-    expect(p.get_by_role('link', name='Edit entry', exact=True)).to_have_count(0)
+    expect(p.get_by_test_id('entry-content')).to_contain_text('Review code.')
+    expect(p.get_by_role('link',name='Edit entry',exact=True)).to_have_count(0)
     # Observe delivery as an ordinary workspace member without granting credential administration.
     connection=w.call('POST',w.root+'/connections',dict(bundleId=w.setup['bundle']['id'],
         channel='stable',displayName='Reader delivery fixture'),actor='admin')
@@ -23,8 +23,6 @@ def rights(context):
     expect(p.get_by_role('heading',name='Delivery',exact=True)).to_be_visible()
     row=p.get_by_role('region',name='Delivery for Reader delivery fixture',exact=True)
     expect(row).to_be_visible()
-    evaluations=row.get_by_role('link',name='View bundle evaluations for Reader delivery fixture')
-    assert w.setup['bundle']['id'] in evaluations.get_attribute('href')
     expect(row).to_contain_text('Nothing reported within retention · delivery unknown.')
     assert w.call('GET',w.root+'/connection-observations',actor='member')['items'][0]['id']==connection['id']
     expect(p.get_by_role('link',name='Connections',exact=True)).to_have_count(0)

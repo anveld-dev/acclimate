@@ -1,0 +1,30 @@
+{
+  "cases": [
+    {
+      "caseId": "ticket-02",
+      "input": {
+        "text": "Réinitialiser le mot de passe",
+        "priority": 2
+      },
+      "expected": {
+        "action": "reset",
+        "notify": true
+      }
+    },
+    {
+      "caseId": "ticket-01",
+      "input": {
+        "text": "Double charge",
+        "history": [
+          null,
+          1
+        ]
+      },
+      "expected": [
+        "refund",
+        "confirm"
+      ]
+    }
+  ],
+  "digest": "sha256:f60f61d616ebb2b215a6265b048d2bd65284ca57301e3505671e8920b33b5b31"
+}

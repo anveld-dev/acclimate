@@ -86,3 +86,29 @@ fn legacy_modes_and_implicit_databases_are_rejected_before_connecting() {
         );
     }
 }
+
+#[test]
+fn removed_settings_fail_preflight_by_name() {
+    for name in [
+        "ACCLIMATE_CRITIC_MODEL",
+        "ACCLIMATE_CRITIC_ENDPOINT",
+        "ACCLIMATE_CRITIC_TOKEN",
+        "ACCLIMATE_LEARNING_REVIEW_SECONDS",
+        "ACCLIMATE_LEARNING_PARENT_MAX_REUSES",
+        "ACCLIMATE_LEARNING_PARENT_MAX_AGE_SECONDS",
+        "ACCLIMATE_LEARNING_PAIR_BUDGET",
+        "ACCLIMATE_LEARNING_MAX_REPETITIONS",
+        "ACCLIMATE_LEARNING_CALIBRATION_REPETITIONS",
+        "ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS",
+        "ACCLIMATE_LEARNING_MAX_CHAIN_AGE_SECONDS",
+        "ACCLIMATE_LEARNING_CALIBRATION_ATTEMPTS",
+        "ACCLIMATE_LEARNING_FAILURE_WINDOW_SECONDS",
+        "ACCLIMATE_PROPOSAL_GROWTH_FLOOR_BYTES",
+        "ACCLIMATE_EVALUATION_ABANDON_SECONDS",
+    ] {
+        let output = service("127.0.0.1:0").env(name, "").output().unwrap();
+        assert_eq!(output.status.code(), Some(1), "{name}");
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(error.contains(name) && error.contains("removed"), "{error}");
+    }
+}

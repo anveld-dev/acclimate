@@ -1,20 +1,24 @@
 ---
-title: Inspect automatic releases
-description: Follow a connected learning round from its evidence to the version served to new jobs.
+title: Release and roll back
+description: Point a channel at an immutable version and record the reason.
 ---
 
-An administrator seeds the bundle and enrolls the app connection. The app runs an evaluator on its own tasks. When a correction is ready, Acclimate proposes a change and compares it with the version the connection currently serves. [Set up connected learning](/docs/guides/connected-learning)
+## Release a version
 
-## Follow a change
+Creating a bundle in the console imports its content and creates its first release. Use the SDK or [HTTP API](/docs/reference/http-api) to upload a new version to an existing bundle. A release requires the target version ID, the channel's expected revision, and a reason in `unevaluatedReason`. Use a credential with the `promote` right to release.
 
-Open **Connections**, choose the app, and open **Learning**. Each round shows its candidate, checks and outcome. A passing candidate advances the connection’s delivery revision automatically. A blocked candidate keeps its evidence and reason, and new jobs continue using the previous version.
-
-Use **Changes** to inspect comparisons, file differences and case scores. To inspect recorded evidence in the terminal, run the operator CLI.
-
-```sh
-npm run operator -- review --workspace WORKSPACE --bundle BUNDLE --channel stable --comparison COMPARISON
+```ts
+const release = await client.createRelease(workspaceId, bundleId, 'stable', {
+  versionId,
+  expectedRevision: currentRevision,
+  unevaluatedReason: 'Ship updated instructions',
+}, operationId);
 ```
 
-## Follow delivery
+Use a fresh idempotency key for each operation. If the channel moved, re-read its revision before deciding whether to release.
 
-Each new job resolves the enrolled connection once. A running job keeps the version it started with. Automatic rollback is enabled by default and uses field audit evidence to restore an earlier version. An administrator can stop learning to freeze delivery at its current version. [Monitor a release](/docs/guides/connected-learning#monitor-a-release)
+## Roll back a channel
+
+Open the bundle's **Releases** tab, select the earlier release and inspect its content. Choose **Restore**, enter a reason and confirm. This creates a new release with a higher revision pointing to the existing immutable version. New jobs resolve to it; already prepared jobs keep their pinned versions.
+
+If the console loses the response, check the pending operation in **Releases**. Retry the exact saved request or close the operation before submitting a new one.

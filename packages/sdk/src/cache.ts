@@ -137,7 +137,7 @@ export async function resolveAndCache(
       !offline.pinnedVersionId)
   )
     throw new AcclimateUsageError(
-      'Offline reads require an exact version. New jobs resolve the connection online.',
+      'Offline reads require an exact version. New jobs resolve the channel online.',
       'offline',
     );
   if (
@@ -159,7 +159,7 @@ export async function resolveAndCache(
       keyFor(client, [
         selection.workspaceId,
         selection.bundleId,
-        'learning-channel',
+        'channel',
         selection.channel,
       ]),
     );

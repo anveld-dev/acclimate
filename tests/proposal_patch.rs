@@ -1,18 +1,13 @@
-use acclimate_service::{BundlePayload, ProposalRequest, proposal_edits::reconstruct};
+use acclimate_service::{
+    BundlePayload,
+    proposal_edits::{Changes, reconstruct},
+};
 use serde_json::{Value, json};
 fn parent(text: &str) -> BundlePayload {
     serde_json::from_value(json!({"schemaVersion":1,"files":[{"path":"guide.md","kind":"instruction","text":text},{"path":"memory/large.md","kind":"memory","text":"unchanged\n".repeat(5000)}]})).unwrap()
 }
-fn request() -> ProposalRequest {
-    ProposalRequest {
-        parent_version_id: "parent".into(),
-        allowed_paths: vec!["guide.md".into()],
-        hypothesis: "Improve".into(),
-        evidence: vec![],
-    }
-}
-fn patch(edits: Value) -> String {
-    json!({"schemaVersion":1,"edits":edits,"rationale":"A bounded revision"}).to_string()
+fn patch(edits: Value) -> Changes {
+    serde_json::from_value(json!({"edits":edits,"files":[]})).unwrap()
 }
 #[test]
 fn disjoint_original_unicode_anchors_preserve_large_untouched_bytes_and_order() {
@@ -21,12 +16,12 @@ fn disjoint_original_unicode_anchors_preserve_large_untouched_bytes_and_order() 
         "prefix".repeat(7000),
         "tail".repeat(2000)
     ));
-    let (c, _) = reconstruct(
+    let c = reconstruct(
         &p,
-        &request(),
         &patch(json!([
  {"path":"guide.md","oldText":"αβ","newText":"💡"},
  {"path":"guide.md","oldText":"gamma δ","newText":"gamma β"}])),
+        "generic",
     )
     .unwrap();
     assert_eq!(
@@ -42,22 +37,21 @@ fn disjoint_original_unicode_anchors_preserve_large_untouched_bytes_and_order() 
     assert!(p.files[1].text.len() > 40_000);
 }
 #[test]
-fn rejects_overlap_duplicate_ambiguous_missing_outside_and_empty_anchors() {
+fn rejects_overlap_duplicate_ambiguous_missing_and_empty_anchors() {
     for edits in [
         json!([{"path":"guide.md","oldText":"abc","newText":"x"},{"path":"guide.md","oldText":"bcd","newText":"y"}]),
         json!([{"path":"guide.md","oldText":"abc","newText":"x"},{"path":"guide.md","oldText":"abc","newText":"y"}]),
         json!([{"path":"guide.md","oldText":"","newText":"x"}]),
         json!([{"path":"guide.md","oldText":"missing","newText":"x"}]),
-        json!([{"path":"memory/large.md","oldText":"unchanged","newText":"x"}]),
         json!([{"path":"missing.md","oldText":"abc","newText":"x"}]),
     ] {
-        assert!(reconstruct(&parent("abcd"), &request(), &patch(edits)).is_err());
+        assert!(reconstruct(&parent("abcd"), &patch(edits), "generic").is_err());
     }
     assert!(
         reconstruct(
             &parent("aaa"),
-            &request(),
-            &patch(json!([{"path":"guide.md","oldText":"aa","newText":"x"}]))
+            &patch(json!([{"path":"guide.md","oldText":"aa","newText":"x"}])),
+            "generic"
         )
         .is_err()
     );
@@ -65,212 +59,81 @@ fn rejects_overlap_duplicate_ambiguous_missing_outside_and_empty_anchors() {
     assert_eq!(
         reconstruct(
             &empty,
-            &request(),
-            &patch(json!([{"path":"guide.md","oldText":"","newText":"hello"}]))
+            &patch(json!([{"path":"guide.md","oldText":"","newText":"hello"}])),
+            "generic"
         )
         .unwrap()
-        .0
         .files[0]
             .text,
         "hello"
     );
-    assert!(reconstruct(&empty,&request(),&patch(json!([{"path":"guide.md","oldText":"","newText":"x"},{"path":"guide.md","oldText":"","newText":"y"}]))).is_err());
+    assert!(reconstruct(&empty,&patch(json!([{"path":"guide.md","oldText":"","newText":"x"},{"path":"guide.md","oldText":"","newText":"y"}])), "generic").is_err());
 }
-#[test]
-fn protocol_bounds_and_no_full_payload_fallback() {
-    let p = parent("original");
-    assert!(
-        reconstruct(
-            &p,
-            &request(),
-            &json!({"payload":p,"rationale":"old full echo"}).to_string()
-        )
-        .is_err()
-    );
-    let edit = json!({"path":"guide.md","oldText":"original","newText":"x"});
-    assert!(reconstruct(&p, &request(), &patch(json!(vec![edit; 129]))).is_err());
-    let rationale = json!({"schemaVersion":1,"edits":[],"rationale":"💡".repeat(1025)}).to_string();
-    assert!(reconstruct(&p, &request(), &rationale).is_err());
-    let content =
-        patch(json!([{"path":"guide.md","oldText":"original","newText":"x".repeat(32768)}]));
-    assert!(reconstruct(&p, &request(), &content).is_err());
-    assert!(reconstruct(&p, &request(), "{\"schemaVersion\":1,\"edits\":[]").is_err());
+fn whole(files: Value) -> Changes {
+    serde_json::from_value(json!({"edits":[],"files":files})).unwrap()
 }
 
 #[test]
-fn inclusive_protocol_limits_and_final_payload_limit() {
+fn writes_and_deletes_any_file_and_preserves_existing_kind_and_order() {
     let p = parent("original");
-    let change = json!([{"path":"guide.md", "oldText":"original", "newText":"updated"}]);
-    let mut content = patch(change.clone());
-    content.extend(std::iter::repeat_n(' ', 32768 - content.len()));
-    assert!(reconstruct(&p, &request(), &content).is_ok());
-    content.push(' ');
-    assert!(reconstruct(&p, &request(), &content).is_err());
-    let rationale =
-        json!({"schemaVersion":1,"edits":change,"rationale":"x".repeat(4096)}).to_string();
-    assert!(reconstruct(&p, &request(), &rationale).is_ok());
-    let original = (0..128)
-        .map(|i| format!("anchor-{i:03} "))
-        .collect::<String>();
-    let edits = (0..128).map(|i| json!({"path":"guide.md","oldText":format!("anchor-{i:03}"),"newText":format!("changed-{i:03}")})).collect::<Vec<_>>();
-    let (candidate, _) = reconstruct(&parent(&original), &request(), &patch(json!(edits))).unwrap();
+    let changes = whole(json!([
+        {"op":"write","path":"guide.md","text":"updated"},
+        {"op":"delete","path":"memory/large.md"},
+        {"op":"write","path":"skills/triage/SKILL.md","text":"---\nname: triage\ndescription: Help\nallowed-tools: Read\n---\nCheck retries."},
+        {"op":"write","path":"memory/new.md","text":"new note"}
+    ]));
+    let c = reconstruct(&p, &changes, "generic").unwrap();
     assert_eq!(
-        candidate.files[0].text,
-        original.replace("anchor-", "changed-")
+        c.files
+            .iter()
+            .map(|file| (file.path.as_str(), file.kind.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("guide.md", "instruction"),
+            ("skills/triage/SKILL.md", "skill"),
+            ("memory/new.md", "memory")
+        ]
     );
-    let p = parent(&format!("before{}", "x".repeat(262_144 - 6)));
-    assert!(
-        reconstruct(
-            &p,
-            &request(),
-            &patch(json!([{"path":"guide.md","oldText":"before","newText":"after is longer"}]))
-        )
-        .is_err()
+    assert_eq!(c.files[0].text, "updated");
+    let edits = patch(
+        json!([{"path":"memory/large.md","oldText":"unchanged\n".repeat(5000),"newText":"new"}]),
+    );
+    assert_eq!(
+        reconstruct(&p, &edits, "generic").unwrap().files[1].text,
+        "new"
     );
 }
 
 #[test]
-fn a_proposal_must_change_parent_content() {
+fn rejects_invalid_paths_duplicates_and_empty_payloads() {
     let p = parent("original");
-    for edits in [
-        json!([]),
-        json!([{"path":"guide.md","oldText":"original","newText":"original"}]),
+    for files in [
+        json!([{"op":"delete","path":"missing.md"}]),
+        json!([{"op":"delete","path":"guide.md"},{"op":"delete","path":"guide.md"}]),
+        json!([{"op":"delete","path":"guide.md"},{"op":"delete","path":"memory/large.md"}]),
+        json!([{"op":"write","path":"Guide.md","text":"duplicate"}]),
     ] {
-        assert!(
-            matches!(reconstruct(&p, &request(), &patch(edits)), Err(ref e) if e == "Proposal did not change any file")
+        assert!(reconstruct(&p, &whole(files), "generic").is_err());
+    }
+    let changes: Changes = serde_json::from_value(json!({
+        "edits":[{"path":"guide.md","oldText":"original","newText":"new"}],
+        "files":[{"op":"delete","path":"guide.md"}]
+    }))
+    .unwrap();
+    assert!(reconstruct(&p, &changes, "generic").is_err());
+}
+
+#[test]
+fn delivery_and_target_limits_apply_without_a_growth_cap() {
+    let p = parent("original");
+    let second = whole(json!([{"op":"write","path":"second.md","text":"other"}]));
+    assert!(reconstruct(&p, &second, "generic").is_ok());
+    assert!(reconstruct(&p, &second, "codex").is_err());
+    for (count, should_fit) in [(4, true), (5, false)] {
+        let ops = (0..count).map(|i| json!({"op":"write","path":format!("memory/long-{i}.md"),"text":"x".repeat(225*1024)})).collect::<Vec<_>>();
+        assert_eq!(
+            reconstruct(&p, &whole(json!(ops)), "generic").is_ok(),
+            should_fit
         );
     }
-}
-
-#[test]
-fn scoped_skill_mutations_require_complete_packages_and_exact_parent_inventory() {
-    use acclimate_service::proposal_edits::{SkillPackages, reconstruct_scoped};
-    let policy = SkillPackages {
-        create_skill_names: vec!["settlement".into()],
-        retire_skill_names: vec!["settlement".into()],
-    };
-    let scoped = |p: &BundlePayload, ops: Value| {
-        let response =
-            json!({"schemaVersion":1,"edits":[],"skillOperations":ops,"rationale":"fix"})
-                .to_string();
-        reconstruct_scoped(p, &request(), Some(&policy), &response)
-    };
-    let manifest =
-        "---\nname: settlement\ndescription: Classify a settlement\n---\nUse the helper.";
-    let create = json!({"op":"createSkill","name":"settlement","files":[{"relativePath":"SKILL.md","text":manifest}]});
-    let p = parent("unchanged");
-    let mut script = create.clone();
-    script["files"]
-        .as_array_mut()
-        .unwrap()
-        .push(json!({"relativePath":"scripts/helper.sh","text":"echo helper"}));
-    assert!(scoped(&p, json!([script])).is_err());
-    // Generated frontmatter is an allowlist of name and description.
-    for extra in [
-        "allowed-tools: Bash",
-        "hooks:\n  PreToolUse: run.sh",
-        "model: opus",
-        "license: MIT",
-        "Name: other",
-    ] {
-        let mut restricted = create.clone();
-        restricted["files"][0]["text"] =
-            json!(manifest.replace("description:", &format!("{extra}\ndescription:")));
-        assert!(scoped(&p, json!([restricted])).is_err(), "{extra}");
-    }
-    let mut block = create.clone();
-    block["files"][0]["text"] = json!(manifest.replace(
-        "description: Classify a settlement",
-        "description: |\n  Classify a settlement\n  in two lines"
-    ));
-    assert!(scoped(&p, json!([block])).is_ok());
-    let (created, _) = scoped(&p, json!([create.clone()])).unwrap();
-    assert_eq!(created.files[2].path, "skills/settlement/SKILL.md");
-    assert!(scoped(&created, json!([create.clone()])).is_err());
-    // Computed independently with the SDK's packageDigest for this manifest.
-    let retire = json!({"op":"retireSkill","name":"settlement","expectedPackageDigest":"sha256:5eca19aa33955298395808785953d1e4dcb409fb0f24d04bb71a2c4f4ed6a010"});
-    assert_eq!(
-        scoped(&created, json!([retire.clone()]))
-            .unwrap()
-            .0
-            .files
-            .len(),
-        2
-    );
-    let mut changed = created.clone();
-    changed.files[2].text.push('!');
-    assert!(scoped(&changed, json!([retire.clone()])).is_err());
-    assert!(scoped(&p, json!([create.clone(), retire])).is_err());
-    for (name, file, content) in [
-        ("other", "SKILL.md", manifest),
-        ("settlement", "../escape", manifest),
-        ("settlement", "helper.md", "missing manifest"),
-        ("settlement", "SKILL.md", "invalid metadata"),
-    ] {
-        assert!(scoped(&p, json!([{"op":"createSkill","name":name,"files":[{"relativePath":file,"text":content}]}])).is_err());
-    }
-    assert!(reconstruct(&p,&request(), &json!({"schemaVersion":1,"edits":[],"skillOperations":[create],"rationale":"unauthorized"}).to_string()).is_err());
-}
-
-#[test]
-fn new_memory_note_supersedes_only_an_explicitly_allowed_note() {
-    let parent = parent("Keep this guidance");
-    let mut request = request();
-    request.allowed_paths.push("memory/new.md".into());
-    let patch = json!({
-        "schemaVersion":1, "edits":[], "rationale":"Replace stale context",
-        "noteOperations":[{"op":"create_note","path":"memory/new.md","text":"Reusable context","supersedes":"memory/large.md"}]
-    }).to_string();
-    assert!(reconstruct(&parent, &request, &patch).is_err());
-    request.allowed_paths.push("memory/large.md".into());
-    let (candidate, _) = reconstruct(&parent, &request, &patch).unwrap();
-    assert_eq!(candidate.files.len(), 2);
-    assert_eq!(candidate.files[0].text, "Keep this guidance");
-    assert_eq!(candidate.files[1].path, "memory/new.md");
-    assert_eq!(parent.files[1].path, "memory/large.md");
-}
-
-#[test]
-fn proposal_growth_is_measured_against_encoded_parent() {
-    let mut parent = parent("before");
-    parent.files.truncate(1);
-    let edit = patch(json!([{"path":"guide.md","oldText":"before","newText":"x".repeat(3000)}]));
-    assert_eq!(
-        reconstruct(&parent, &request(), &edit).err().unwrap(),
-        "Candidate exceeds proposal byte-growth limit"
-    );
-}
-
-#[test]
-fn generated_skill_edits_change_only_name_and_description_frontmatter() {
-    let skill = |frontmatter: &str, body: &str| -> BundlePayload {
-        serde_json::from_value(json!({"schemaVersion":1,"files":[{"path":"skills/settle/SKILL.md","kind":"skill","text":format!("---\nname: settle\n{frontmatter}description: Settle a claim\n---\n{body}")}]})).unwrap()
-    };
-    let mut request = request();
-    request.allowed_paths = vec!["skills/settle/SKILL.md".into()];
-    let edit = |parent: &BundlePayload, old: &str, new: &str| {
-        reconstruct(
-            parent,
-            &request,
-            &patch(json!([{"path":"skills/settle/SKILL.md","oldText":old,"newText":new}])),
-        )
-    };
-    let plain = skill("", "Use the ledger.");
-    assert!(edit(&plain, "Use the ledger.", "Use the ledger twice.").is_ok());
-    assert!(edit(&plain, "Settle a claim", "Settle a disputed claim").is_ok());
-    for added in [
-        "allowed-tools: Bash\n",
-        "hooks:\n  Stop: run.sh\n",
-        "model: opus\n",
-    ] {
-        assert!(
-            edit(&plain, "description:", &format!("{added}description:")).is_err(),
-            "{added}"
-        );
-    }
-    // An author's own permissions stay exactly as written; the body can still change.
-    let authored = skill("allowed-tools: Read\n", "Use the ledger.");
-    assert!(edit(&authored, "Use the ledger.", "Use the ledger twice.").is_ok());
-    assert!(edit(&authored, "allowed-tools: Read", "allowed-tools: Bash").is_err());
-    assert!(edit(&authored, "allowed-tools: Read\n", "").is_err());
 }

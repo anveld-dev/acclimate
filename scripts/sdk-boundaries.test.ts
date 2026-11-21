@@ -164,7 +164,7 @@ test('a new job cannot select an offline version', async () => {
   const h = await harness();
   try {
     await assert.rejects(resolveAndCache(h.client, { workspaceId: 'p', bundleId: 'b1', channel: 'stable' },
-      { ...h.policy, offline: { pinnedVersionId: 'v1' } }), /resolve the connection online/);
+      { ...h.policy, offline: { pinnedVersionId: 'v1' } }), /resolve the channel online/);
     assert.equal(h.downloads(), 0);
   } finally { await h.close(); }
 });

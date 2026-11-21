@@ -18,14 +18,10 @@ export type {
 export * from './types.js';
 export { createReceiptReporter } from './reporting.js';
 export type { ReceiptReporterOptions, DeliveryObservation, DeliveryObserver } from './reporting.js';
-export { compare, submitComparison, TaskExecutionError, InfrastructureError } from './compare.js';
-export type {
-  ComparisonVersion,
-  ComparisonCase,
-  ExecutionResult,
-  GradeResult,
-  CompareOptions,
-} from './compare.js';
+export { TaskExecutionError, InfrastructureError } from './compare.js';
+export type { ExecutionResult, GradeResult } from './compare.js';
 
 export { compatibilityIssues, assertCompatible } from './compatibility.js';
 export type { CompatibilityIssue } from './compatibility.js';
+export { createAcclimate } from './jobs.js';
+export type { AcclimateJob, AcclimateOptions, JobOptions } from './jobs.js';

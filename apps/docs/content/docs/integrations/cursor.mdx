@@ -24,7 +24,7 @@ const agent = await Agent.create({
 
 Cursor's local sandbox is off unless you enable it. Call `prepared.reportStarted()` when the run reaches `RUNNING`. Start a fresh local agent for a new version. After `run.wait()` returns, retain the result, then call `await prepared.cleanup()`. Cleanup removes the prepared directory, including any files the agent created, and releases the delivery.
 
-The repository's `examples/cursor-agent.ts` shows the complete job, and the [native repository starter](/docs/guides/deliver-content#stage-a-repository-for-evaluation) runs Cursor with `"harness": "cursor"`.
+The repository's `examples/cursor-agent.ts` shows the complete job, and the [native repository starter](/docs/guides/deliver-content#prepare-an-existing-repository) runs Cursor with `"harness": "cursor"`.
 
 ## Qualification
 

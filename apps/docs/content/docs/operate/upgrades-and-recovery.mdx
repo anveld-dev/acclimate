@@ -1,9 +1,9 @@
 ---
 title: Upgrade and recover
-description: Back up and restore PostgreSQL, verify a service upgrade, and recover an interrupted evaluation.
+description: Back up PostgreSQL and verify a service upgrade.
 ---
 
-Preserve stored content and release history when changing service releases, and recover evaluator attempts using their original worker state.
+Preserve stored content and release history when changing service releases.
 
 ## Pin a release
 
@@ -11,14 +11,14 @@ Acclimate uses a shared `major.minor.patch` release version for the service, con
 
 ## Upgrade the deployment
 
-This release uses a fresh schema baseline. An installation using the former migration chain has no in-place upgrade to this baseline. Keep the existing database with its matching service build. Use a separate empty PostgreSQL database to try this release alongside it.
+Installations on the 0015 schema can upgrade in place. Keep older schema baselines with their matching service build.
 
 <Steps>
 <Step>
 
-### Stop traffic and drain the applications
+### Pause traffic and stop the applications
 
-Pause external clients and worker submissions. Take the public routes out of service and stop both application containers. Leave PostgreSQL running for the dump. In the bundled stack you can stop all three public routes by stopping Caddy first.
+Pause external clients. Take the public routes out of service and stop both application containers. Leave PostgreSQL running for the dump. In the bundled stack you can stop all three public routes by stopping Caddy first.
 
 ```sh
 docker compose stop proxy
@@ -52,21 +52,27 @@ Keep one Rust process per database. A normal `docker compose down` preserves vol
 
 ### Verify before resuming traffic
 
-Check service and console readiness. Start the proxy with `docker compose up -d --no-build --wait proxy` for [your authenticated read and sign-in checks](/docs/operate/health-and-readiness#verify-access-and-activity) while access is limited to your verification clients. Resume user and worker traffic after those checks pass. If verification fails after a schema change, recover the previous release using its matching verified backup.
+Check service and console readiness. Start the proxy with `docker compose up -d --no-build --wait proxy` for [your authenticated read and sign-in checks](/docs/operate/health-and-readiness#verify-access-and-activity) while access is limited to your verification clients. Resume user and application traffic after those checks pass. If verification fails after a schema change, recover the previous release using its matching verified backup.
 
 </Step>
 </Steps>
 
-## Recover an evaluation
+## Upgrade from migration 0015 or 0016
 
-Keep the evaluator journal and private artifacts in separate protected backups. When restoring worker state, confirm the original worker has stopped and use one authoritative physical volume. A copied journal has its own kernel locks even at the same path.
+Migrations 0017 and 0018 permanently drop the old change and connection-learning records. Keep the backup as the archive.
 
-| What you observe | Recovery |
-| --- | --- |
-| Start response lost before callbacks | Retry with the original journal, request, and evaluator config. The runner recovers the retained start and checks current request state. |
-| Exact report saved and submission or finish response lost | Retry with the original config and journal. The runner resends saved bytes with the original key. |
-| Execution started with no complete sealed report | Inspect the original app and external tasks. Confirm their state before explicitly interrupting and deciding whether to start a new request. |
-| A comparison finished with an `execution_uncertain` gap | One arm's `execute` could not confirm its work stopped; the rest of the comparison ran. Its job directory holds `uncertain.json`. Confirm the external task stopped, then clean its quarantined files (the native starter provides `node native.mjs jobs cleanup JOB_ID --confirm-stopped`). |
-| Original journal absent, relocated, or from another runtime | Restore supported ownership and the original canonical root, or inspect the external effects and record interruption. |
+1. Take a full backup:`python3 scripts/operations/backup.py dump /private/backups/acclimate-pre-loop.dump`. Restore it into a database with the `pre-learning-loop` build to read old rounds.
+2. Before phase 2, find connections that receive a learned version. After `0018` they receive their own channel's version instead:
 
-Use [evaluator status and interrupt](/docs/reference/evaluator-cli) to inspect and record the lifecycle. A stale heartbeat, an interrupted request, or a credential revocation cannot establish that an external job terminated.
+   ```sql
+   SELECT e.project_id, e.bundle_id, e.integration_id, e.source_channel, e.delivery_channel,
+          d.version_id AS delivered, s.version_id AS source_head
+   FROM connected_learning_enrollments e
+   JOIN channels d ON (d.project_id, d.bundle_id, d.name) = (e.project_id, e.bundle_id, e.delivery_channel)
+   JOIN channels s ON (s.project_id, s.bundle_id, s.name) = (e.project_id, e.bundle_id, e.source_channel)
+   WHERE d.version_id <> s.version_id;
+   ```
+
+   Before upgrading, record the delivered version ID for each affected connection. After upgrading, you can release that version on the source channel with a reason. This also updates any other connection using that channel.
+3. No drain is needed. Queued rounds, proposals and evaluation requests are dropped. Evaluators still polling `…/learning/work` get `404 not_found` and must be stopped.
+4. `learn-<connectionId>` channels stay as ordinary channels with their release history.

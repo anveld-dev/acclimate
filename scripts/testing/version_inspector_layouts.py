@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 from playwright.sync_api import expect
 from scripts.bdd.run import pg_bin
 from scripts.bdd.world import World
-from scripts.testing.compact_console import FILES, visit
+from scripts.testing.compact_console import FILES, select_release, visit
 from scripts.testing.desktop_layouts import build_fingerprint
 
 EXPORTED = 'First nested duplicate.\r\nUnicode: café, 日本語, résumé.\r\n\r\n'
@@ -30,9 +30,8 @@ FILES14 = FILES + [dict(path=p, kind='skill', text=t) for p, t in [
 def seed(w):
     w.start(); w.fresh_scenario(SimpleNamespace(effective_tags=[])); w.publish_initial('', files=FILES14)
     current = w.call('GET', w.channel)
-    draft = w.call('POST', w.channel + '/drafts', dict(baseVersionId=current['version']['id'], baseRevision=current['revision'], payload=dict(schemaVersion=1, files=[dict(f, text=f['text']+'\nRevision two.\n') for f in FILES14])))
-    w.call('POST', w.channel+'/releases', dict(versionId=draft['snapshotVersion']['id'], expectedRevision=current['revision'], unevaluatedReason='Disposable historical inspection fixture.'))
-    return draft
+    version = w.call('POST', w.bundle + '/versions', dict(parentVersionId=current['version']['id'], payload=dict(schemaVersion=1, files=[dict(f, text=f['text']+'\nRevision two.\n') for f in FILES14])))
+    w.call('POST', w.channel+'/releases', dict(versionId=version['id'], expectedRevision=current['revision'], unevaluatedReason='Disposable historical inspection fixture.'))
 
 
 def read_endpoint():
@@ -48,10 +47,11 @@ def run(args):
     w=World(pg_bin(args.pg_bin));before=build_fingerprint();checks=[];mutations=[]
     def record(text):checks.append(text);print('PASS '+text,flush=True)
     try:
-        draft=seed(w);current=w.call('GET',w.channel);b=w.browser();p=b.page
+        seed(w);current=w.call('GET',w.channel);b=w.browser();p=b.page
         p.on('request',lambda r:mutations.append(dict(method=r.method,path=urlsplit(r.url).path)) if r.method in ('POST','PUT','PATCH','DELETE') else None)
         d=p.get_by_role('dialog',name='Version content',exact=True)
         def trigger(revision=1):
+            select_release(p, revision)
             return p.get_by_role('button',name='Inspect content for revision '+str(revision),exact=True)
         def open_dialog(revision=1):
             trigger(revision).click();expect(d.get_by_label('Content of AGENTS.md',exact=True)).to_have_text(FILES[0]['text'] if revision==1 else FILES[0]['text']+'\nRevision two.\n')

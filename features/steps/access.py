@@ -60,11 +60,11 @@ def grant(context, role):
     w.member_role = role
 
 
-@when('the member tries to save a draft')
+@when('the member tries to upload a version')
 def member_write(context):
     w = context.world
     allowed = w.member_role in ('editor', 'admin')
-    w.call('POST', w.channel + '/drafts', dict(baseVersionId=w.original['version']['id'],baseRevision='1',payload=payload('Member edit.')), actor='member', expected=201 if allowed else 403)
+    w.call('POST', w.bundle + '/versions', dict(parentVersionId=w.original['version']['id'],payload=payload('Member edit.')), actor='member', expected=201 if allowed else 403)
     w.member_write_status = w.last_status
 
 

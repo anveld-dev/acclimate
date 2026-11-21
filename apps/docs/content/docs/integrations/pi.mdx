@@ -19,7 +19,7 @@ const loader = await createPiResourceLoader(prepared, ['memory/selected.md']);
 
 Use the returned loader when your app creates a fresh session with `createAgentSession`, and limit its `tools`. Replace the example memory path with one in your bundle or omit the list. Call `prepared.reportStarted()` when the session starts, keep the working directory until the session stops using it, then call `await prepared.cleanup()`.
 
-The [native repository starter](/docs/guides/deliver-content#stage-a-repository-for-evaluation) runs Pi with `"harness": "pi"` and a `provider/model-id` model value.
+The [native repository starter](/docs/guides/deliver-content#prepare-an-existing-repository) runs Pi with `"harness": "pi"` and a `provider/model-id` model value.
 
 ## Qualification
 

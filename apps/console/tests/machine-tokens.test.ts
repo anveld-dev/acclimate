@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { machineTokenCommand } from '../src/server/machine-token-core';
-import { evaluatorConfig, validJournalRoot } from '../src/lib/evaluator-config';
 import { consoleEnvironment } from './console-fixture';
 
 const id = '12345678-1234-4234-8234-123456789012';
@@ -59,7 +58,6 @@ test('list, rotate and revoke use the workspace token routes', async () => {
   };
   const listed = await machineTokenCommand(env, { kind: 'list', workspaceId: 'p' }, fetcher);
   assert.equal(listed.ok && listed.items?.length, 1);
-  assert.equal(listed.ok && listed.publicApiUrl, env.CONSOLE_PUBLIC_API_URL);
   await machineTokenCommand(
     env,
     { kind: 'rotate', workspaceId: 'p', id, overlapSeconds: 3600 },
@@ -86,7 +84,7 @@ test('invalid input never reaches the service and service messages surface', asy
     { kind: 'list', workspaceId: '..' },
     { kind: 'revoke', workspaceId: 'p', id: '../x', reason: 'r' },
     { kind: 'revoke', workspaceId: 'p', id, reason: ' ' },
-    { kind: 'issue', workspaceId: 'p', name: 'ci', rights: ['admin'], expiresInDays: 1 },
+    { kind: 'issue', workspaceId: 'p', name: 'ci', rights: ['propose'], expiresInDays: 1 },
     { kind: 'issue', workspaceId: 'p', name: 'ci', rights: [], expiresInDays: 1 },
   ] as const)
     assert.equal((await machineTokenCommand(env, input as never, never)).ok, false);
@@ -105,42 +103,4 @@ test('invalid input never reaches the service and service messages surface', asy
     Response.json({ error: { code: 'denied', message: 'no', requestId: 'r' } }, { status: 403 }),
   );
   assert.equal(denied.ok === false && denied.denied, true);
-});
-
-test('the downloaded evaluator.json is ready for the SDK evaluator', () => {
-  const file = evaluatorConfig({
-    publicApiUrl: 'https://api.example.test',
-    workspaceId: 'p',
-    principalId: 'machine:ci',
-    journalRoot: '/home/ci/.acclimate/journal',
-    token: 'acm_secret',
-  });
-  assert.deepEqual(JSON.parse(file), {
-    schemaVersion: 1,
-    serviceUrl: 'https://api.example.test',
-    workspaceId: 'p',
-    evaluatorPrincipalId: 'machine:ci',
-    evaluatorToken: 'acm_secret',
-    journalRoot: '/home/ci/.acclimate/journal',
-  });
-  // Without an embedded token the SDK reads ACCLIMATE_EVALUATOR_TOKEN.
-  const tokenless = JSON.parse(
-    evaluatorConfig({
-      publicApiUrl: 'https://api.example.test/',
-      workspaceId: 'p',
-      principalId: 'machine:ci',
-      journalRoot: '/j',
-    }),
-  );
-  assert.equal('evaluatorToken' in tokenless, false);
-  for (const value of ['relative/journal', ' /padded', '/new\nline', ''])
-    assert.equal(validJournalRoot(value), false);
-  assert.throws(() =>
-    evaluatorConfig({
-      publicApiUrl: 'https://a.test',
-      workspaceId: 'p',
-      principalId: 'm',
-      journalRoot: 'x',
-    }),
-  );
 });

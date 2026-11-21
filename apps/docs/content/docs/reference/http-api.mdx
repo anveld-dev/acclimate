@@ -3,7 +3,7 @@ title: HTTP API and wire contract
 description: Locate the workspace routes and understand payload verification, authentication, and write retries.
 ---
 
-Use the HTTP contract when integrating without an SDK or inspecting a response. [`contracts/openapi.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/openapi.json) is the OpenAPI 3.1 source of truth for routes, request and response bodies, status codes and error codes. [`contracts/bundle.schema.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/bundle.schema.json) describes bundle payloads. The `EvaluationHandoff` schema describes the handoff file the console downloads for an evaluator.
+Use the HTTP contract when integrating without an SDK or inspecting a response. [`contracts/openapi.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/openapi.json) is the OpenAPI 3.1 source of truth for routes, request and response bodies, status codes and error codes. [`contracts/bundle.schema.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/bundle.schema.json) describes bundle payloads.
 
 The SDKs ship the same shapes. In TypeScript, import the types from `@acclimate/sdk`; their declarations are in `node_modules/@acclimate/sdk/dist/types.d.ts`. In Python, import them from `acclimate` or `acclimate.types`. JSON fields are camelCase in every language. See [versioning and compatibility](/docs/reference/versioning) for how the contract changes between releases.
 
@@ -19,14 +19,10 @@ Every workspace route starts with `/v1/workspaces/{workspaceId}`.
 | Read metadata or exact bytes | `GET /bundles/{bundleId}/versions/{versionId}` or the same path with `/payload` |
 | List channels | `GET /bundles/{bundleId}/channels` |
 | Resolve a channel | `GET /bundles/{bundleId}/channels/{channel}` |
-| List, create, save or discard advisory drafts | `/bundles/{bundleId}/channels/{channel}/drafts` and its subpaths |
-| List release history or seed a new bundle once | `GET` or `POST /bundles/{bundleId}/channels/{channel}/releases` |
-| List or create proposals | `GET` or `POST /bundles/{bundleId}/proposals` |
-| List or create comparisons | `GET` or `POST /bundles/{bundleId}/comparisons` |
-| List or create evaluation requests | `GET` or `POST /bundles/{bundleId}/evaluation-requests` |
-| Check evaluator authority | `GET /evaluation-capabilities` |
+| List or create releases | `GET` or `POST /bundles/{bundleId}/channels/{channel}/releases` |
 | List or create connections | `GET` or `POST /connections` |
-| Connected learning | `/connections/{connectionId}/learning` and its subpaths |
+| List connection observations | `GET /connection-observations` |
+| Manage machine tokens | `GET` or `POST /machine-tokens` and its subpaths |
 | Look up or close a retained write | `GET /operations/{operationId}` or `POST /operations/{operationId}/close` |
 
 `GET /v1/workspaces` lists the workspaces the caller can access.
@@ -35,7 +31,7 @@ Machine requests carry an `Authorization: Bearer …` header and need the approp
 
 ## Read and verify a version
 
-For job delivery, send an enrolled content-read credential or the enrolled connection UUID in `X-Acclimate-Connection-Id` with an authorized credential. The service resolves that connection’s release and returns its revision and immutable version metadata. Send the last ETag in `If-None-Match` for a conditional channel read. An HTTP 304 means the selected mapping was unchanged. Obtain the exact stored payload from `/payload`, verify its SHA-256 digest against the metadata before parsing, then validate the bundle schema. Re-encoding a JSON object can change the bytes.
+Channel resolution returns a revision and immutable version metadata. Send the last ETag in `If-None-Match` for a conditional channel read. An HTTP 304 means the selected mapping was unchanged. Obtain the exact stored payload from `/payload`, verify its SHA-256 digest against the metadata before parsing, then validate the bundle schema. Re-encoding a JSON object can change the bytes.
 
 Bundle entries are UTF-8 text with a portable relative path and a kind of `instruction`, `skill`, or `memory`. The contract allows up to 128 files, 256 KiB of text per file, and a 1 MiB bundle payload. Paths reject traversal and file or directory collisions.
 
@@ -52,6 +48,32 @@ Bundle entries are UTF-8 text with a portable relative path and a kind of `instr
 
 ## Retry a mutation
 
-For scoped content writes, provide an `Idempotency-Key` of 1–128 printable ASCII characters. Retry with the same key and exact request bytes. A different body with that key can return a 409 conflict. Comparison creation and evaluation start, finish and interrupt use retained operations: send `X-Acclimate-Durable-Operation: true`, and look up or close a lost write with `GET /operations/{key}?operationPath=...` and `POST /operations/{key}/close`. See [evaluation recovery](/docs/operate/upgrades-and-recovery#recover-an-evaluation).
+For scoped content writes, provide an `Idempotency-Key` of 1–128 printable ASCII characters. Retry with the same key and exact request bytes. A different body with that key can return a 409 conflict. Bundle setup and release writes support retained results. Send `X-Acclimate-Durable-Operation: true` with a UUID idempotency key. Look up or close a lost write with `GET /operations/{key}?operationPath=...` or `POST /operations/{key}/close`.
 
-Release writes check the expected revision. An evidence-based release also checks that the current channel version is the candidate's evaluated parent. On a revision or parent conflict, re-read the channel and review the current state.
+Release writes take `versionId`, `expectedRevision` and `unevaluatedReason`. On a revision conflict, re-read the channel before submitting a new release.
+
+## Learning loop
+
+Paths below are relative to `/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning`.
+
+| Method and suffix | Caller | Request and response |
+| --- | --- | --- |
+| `PUT` | Administrator | Send `channel`, `appPrincipalId`, `setting: {domain, benchmark, policyModel}` and `heldOut: {digest, cases}`. Returns `LearningLoop`. |
+| `GET` | Reader | Returns `LearningLoop`. An unenrolled bundle returns 404. |
+| `POST /pause`, `/resume`, `/stop` | Administrator | No body. Returns `LearningLoop`. |
+| `GET /rounds` | Reader | Optional `before` round cursor and `limit` (default 20, max 100). Returns `{items, next}` with round summaries. |
+| `GET /rounds/{roundId}` | Reader | Returns `LearningRound`, including summary fields, pinned settings, candidates, selection and evaluations. Optional `evaluation` ID includes the full report for one evolve evaluation. |
+| `GET /memory` | Reader other than the app principal | Returns `LearningMemory` with the rendered document and full attempt provenance. Optional `revision` selects a historical revision, including revision 0. |
+| `POST /evolve-cases` | App principal or signed-in workspace member with write access | Send `cases: [{caseId, input, expected}]` and/or `retire: [caseId]`. Returns `{evolveRevision, added, retired, liveCases}`. |
+| `POST /outcomes` | App principal | Send `outcomeId`, `versionId`, `digest`, `input` and `expected`. Returns `{outcomeId, caseId, evolveRevision}`. |
+| `GET /work` | App principal | Returns `{bundleId, status, items}` with queued or running evaluations. |
+| `POST /evaluations/{evaluationId}/start` | App principal | Send `attemptId`. Returns `{evaluation, cases, heldOut, reportedCaseIds}`. |
+| `POST /evaluations/{evaluationId}/report` | App principal | Send `attemptId` with `cases: [{caseId, rollouts}]` or an `error`. Returns `LearningEvaluation`. |
+
+Administrators are signed-in workspace admins or machine principals with `promote`. The enrolled app principal must hold `evaluate` and be distinct from the enrolling administrator. The service returns 409 if enrollment changes the channel, principal or held-out commitment while a round is active. Pause and wait for the round to end before changing those fields.
+
+Start and report require `Idempotency-Key`. Keep the same attempt ID on restart and skip the assignment's `reportedCaseIds`. A case report contains exactly five rollout scores and pass flags. Evolve rollouts can carry optional `trace` and `error` strings. Held-out rollouts carry only `score` and `passed`. Each completed evaluation's score is the mean of its case means.
+
+Each round records candidates with their diagnoses, predicted evolve cases, changes, scanner findings, screen verdicts and evolve scores as they become available. The selection records the decision to adopt or keep and its reason. An adoption immediately releases the selected version and writes a memory attempt. Held-out results are for monitoring only.
+
+Enrollment, controls and evolve writes accept optional idempotency keys. An outcome is keyed by its durable `outcomeId`. See [enrollment and evaluator setup](/docs/guides/learning-loop).

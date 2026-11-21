@@ -1,20 +1,14 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
-import { createServer, type Server } from 'node:http';
+import { createServer } from 'node:http';
 import { mkdtemp, rm, realpath } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AcclimateClient, ApiError, resolveAndCache } from '../packages/sdk/src/index.js';
-import { compare, submitComparison } from '../packages/sdk/src/compare.js';
 import { prepare as prepareCodex } from '../packages/codex-plugin/src/index.js';
-import type {
-  BundlePayload,
-  ComparisonRequest,
-  VersionMetadata,
-} from '../packages/sdk/src/types.js';
-
+import type { BundlePayload } from '../packages/sdk/src/types.js';
 const required = (name: string) => {
   const v = process.env[name];
   if (!v) throw new Error(`${name} must be set`);
@@ -36,18 +30,17 @@ const auth = JSON.stringify([
     token,
     principalId: principal,
     workspaceId: project,
-    rights: ['read', 'write', 'propose', 'promote'],
+    rights: ['read', 'write', 'promote'],
   },
   {
     token: noReadToken,
     principalId: `e2e-limited-${randomUUID()}`,
     workspaceId: project,
-    rights: ['write', 'propose', 'promote'],
+    rights: ['write', 'promote'],
   },
 ]);
-const modelToken = `fixture-${randomUUID()}`;
 const temp = await mkdtemp(path.join(await realpath(os.tmpdir()), 'acclimate-service-e2e-'));
-let service: ChildProcess | undefined, model: Server | undefined;
+let service: ChildProcess | undefined;
 let childOutput = '';
 const withTimeout = <T>(p: Promise<T>, ms: number, label: string) =>
   new Promise<T>((resolve, reject) => {
@@ -63,14 +56,25 @@ const withTimeout = <T>(p: Promise<T>, ms: number, label: string) =>
       },
     );
   });
-const listen = async (server: Server): Promise<number> => {
-  server.listen(0, '127.0.0.1');
-  await new Promise<void>((resolve, reject) => {
-    server.once('listening', resolve);
-    server.once('error', reject);
-  });
-  return (server.address() as any).port;
-};
+async function waitUntilReady(base: string, phase: string) {
+  const deadline = Date.now() + 15000;
+  let lastCheck = 'no response';
+  while (Date.now() < deadline) {
+    if (service?.exitCode != null || service?.signalCode != null) {
+      throw new Error(`service exited before ${phase} (${service.exitCode ?? service.signalCode})`);
+    }
+    try {
+      const response = await fetch(`${base}/ready`, { signal: AbortSignal.timeout(1000) });
+      const body = await response.text();
+      if (response.ok) return;
+      lastCheck = `HTTP ${response.status} ${body}`;
+    } catch (error) {
+      lastCheck = error instanceof Error && error.cause ? String(error.cause) : String(error);
+    }
+    await delay(100);
+  }
+  throw new Error(`service ${phase} deadline exceeded (${lastCheck})`);
+}
 async function expectApiError(fn: () => Promise<unknown>, status: number, code?: string) {
   try {
     await fn();
@@ -95,40 +99,6 @@ async function fetchError(url: string, tokenValue: string, method = 'GET', body?
   return { status: r.status, body: await r.json().catch(() => null) };
 }
 try {
-  const modelPort = await listen(
-    (model = createServer(async (req, res) => {
-      let raw = '';
-      for await (const chunk of req) raw += chunk;
-      if (req.method !== 'POST' || req.headers.authorization !== `Bearer ${modelToken}`) {
-        res.writeHead(401).end();
-        return;
-      }
-      try {
-        const outer = JSON.parse(raw),
-          prompt = JSON.parse(outer.messages[1].content.split('\n')[1]);
-        const payload: BundlePayload = structuredClone(prompt.parent);
-        const allowed = new Set(prompt.request.allowedPaths);
-        const file = payload.files.find((f) => allowed.has(f.path));
-        if (!file) throw new Error('fixture expected an allowed path');
-        const content = JSON.stringify({
-          schemaVersion: 1,
-          edits: [
-            {
-              path: file.path,
-              oldText: file.text,
-              newText: file.text + '\n\nProposal: ' + prompt.request.hypothesis,
-            },
-          ],
-          rationale: 'Fixture model applied the requested bounded text edit.',
-        });
-        res
-          .writeHead(200, { 'content-type': 'application/json' })
-          .end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content } }] }));
-      } catch {
-        res.writeHead(400).end();
-      }
-    })),
-  );
   const servicePort = await new Promise<number>((resolve, reject) => {
     const s = createServer();
     s.listen(0, '127.0.0.1', () => {
@@ -164,9 +134,6 @@ try {
       ACCLIMATE_BIND: `127.0.0.1:${servicePort}`,
       DATABASE_URL: databaseUrl,
       ACCLIMATE_AUTH: auth,
-      ACCLIMATE_MODEL_ENDPOINT: `http://127.0.0.1:${modelPort}/v1/chat/completions`,
-      ACCLIMATE_MODEL_TOKEN: modelToken,
-      ACCLIMATE_MODEL: 'gpt-6-luna',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -182,24 +149,7 @@ try {
     childOutput += String(e);
   });
   const base = `http://127.0.0.1:${servicePort}`;
-  let ready = false;
-  const startupDeadline = Date.now() + 15000;
-  await withTimeout(
-    (async () => {
-      while (!ready && Date.now() < startupDeadline) {
-        if (service?.exitCode !== null && service?.exitCode !== undefined)
-          throw new Error(`service exited before startup (${service.exitCode}): ${childOutput}`);
-        try {
-          const r = await fetch(`${base}/ready`, { signal: AbortSignal.timeout(1000) });
-          ready = r.ok;
-        } catch {}
-        if (!ready) await delay(100);
-      }
-      if (!ready) throw new Error('service startup deadline exceeded');
-    })(),
-    16000,
-    'service startup',
-  );
+  await waitUntilReady(base, 'startup');
   const client = new AcclimateClient({
     baseUrl: base,
     token,
@@ -257,13 +207,17 @@ try {
     { versionId: parent.id, expectedRevision: '0', unevaluatedReason: 'Initial fixture seed' },
     'seed-channel',
   );
-  await expectApiError(() => client.resolveChannel(project, bundle.id, 'stable'), 409, 'connected_learning_required');
-  const source = await client.inspectSource(project, bundle.id, 'stable');
-  assert.equal(source?.version.id, seeded.version.id);
+  const channel = await client.resolveChannel(project, bundle.id, 'stable');
+  assert.equal(channel.resolution?.version.id, parent.id);
+  assert(channel.etag);
+  assert(
+    (await client.resolveChannel(project, bundle.id, 'stable', { etag: channel.etag! }))
+      .notModified,
+  );
   const cacheDir = path.join(temp, 'verified-cache');
   const verified = await resolveAndCache(
     client,
-    { workspaceId: project, bundleId: bundle.id, versionId: parent.id },
+    { workspaceId: project, bundleId: bundle.id, channel: 'stable' },
     { cacheDir },
   );
   assert.equal(verified.version.id, parent.id);
@@ -283,85 +237,58 @@ try {
     await prepared.cleanup();
   }
 
-  const proposal = await client.createProposal(
+  const candidate = await client.createVersion(
     project,
     bundle.id,
     {
       parentVersionId: parent.id,
-      allowedPaths: ['AGENTS.md'],
-      hypothesis: 'Clarify concise response behavior',
-      evidence: ['fixture evidence'],
-    },
-    'proposal-create',
-  );
-  const finalProposal = await withTimeout(
-    (async () => {
-      for (let i = 0; i < 100; i++) {
-        const p = await client.getProposal(project, bundle.id, proposal.id);
-        if (p.status === 'succeeded' || p.status === 'failed') return p;
-        await delay(100);
-      }
-      throw new Error('proposal did not finish');
-    })(),
-    12000,
-    'proposal completion',
-  );
-  assert.equal(finalProposal.status, 'succeeded', `proposal failed: ${finalProposal.error}`);
-  assert(finalProposal.candidate);
-  const candidate = finalProposal.candidate as VersionMetadata;
-  const complete = await compare({
-    parent: { version: parent },
-    candidate: { version: candidate },
-    cases: [
-      {
-        caseId: 'case-a',
-        snapshot: { text: 'sample' },
-        settings: { tone: 'plain' },
-        repetitions: 2,
+      payload: {
+        ...parentPayload,
+        files: parentPayload.files.map((file) =>
+          file.path === 'AGENTS.md' ? { ...file, text: file.text + '\nReview retries.' } : file,
+        ),
       },
-    ],
-    datasetRevision: 'fixture-dataset-v1',
-    runtime: { app: 'service-e2e' },
-    graderRevision: 'fixture-grader-v1',
-    execute: async ({ version, caseId, repetition, snapshot }) => ({
-      output: { text: snapshot.text, version: version.version.id, caseId, repetition },
-    }),
-    grade: async ({ output, version }) => ({ reward: output.version === candidate.id ? 0.8 : 0.7 }),
-  });
-  assert.equal(complete.results.length, 2);
-  const incomplete: ComparisonRequest = { ...complete, results: complete.results.slice(0, 1) };
-  const incompleteRow = await submitComparison(
-    client,
+    },
+    'candidate-upload',
+  );
+  const promoted = await client.createRelease(
     project,
     bundle.id,
-    incomplete,
-    'comparison-incomplete',
+    'stable',
+    {
+      versionId: candidate.id,
+      expectedRevision: seeded.revision,
+      unevaluatedReason: 'Reviewed candidate upload',
+    },
+    'promotion-good',
   );
-  assert.equal(incompleteRow.complete, false);
   await expectApiError(
     () =>
-      submitComparison(
-        client,
+      client.createRelease(
         project,
         bundle.id,
-        { ...complete, candidateDigest: 'sha256:' + '0'.repeat(64) },
-        'comparison-mismatched-digest',
+        'stable',
+        { versionId: parent.id, expectedRevision: seeded.revision, unevaluatedReason: 'stale CAS' },
+        'promotion-stale',
       ),
-    400,
-    'invalid_content',
+    409,
+    'revision_conflict',
   );
-  const uploaded = await submitComparison(
-    client,
+  const rollback = await client.createRelease(
     project,
     bundle.id,
-    complete,
-    'comparison-complete',
+    'stable',
+    {
+      versionId: parent.id,
+      expectedRevision: promoted.revision,
+      unevaluatedReason: 'Fixture rollback',
+    },
+    'promotion-rollback',
   );
-  assert.equal(uploaded.complete, true);
-  assert.equal((await client.listReleases(project, bundle.id, 'stable')).items.length, 1);
+  assert.equal(rollback.previousVersionId, candidate.id);
   const active = await resolveAndCache(
     client,
-    { workspaceId: project, bundleId: bundle.id, versionId: parent.id },
+    { workspaceId: project, bundleId: bundle.id, channel: 'stable' },
     { cacheDir: path.join(temp, 'active-cache') },
   );
   const pinned = await prepareCodex(active);
@@ -412,9 +339,6 @@ try {
       ACCLIMATE_BIND: `127.0.0.1:${servicePort}`,
       DATABASE_URL: databaseUrl,
       ACCLIMATE_AUTH: auth,
-      ACCLIMATE_MODEL_ENDPOINT: `http://127.0.0.1:${modelPort}/v1/chat/completions`,
-      ACCLIMATE_MODEL_TOKEN: modelToken,
-      ACCLIMATE_MODEL: 'gpt-6-luna',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -424,22 +348,7 @@ try {
   service.stderr?.on('data', (b) => {
     childOutput += b.toString();
   });
-  const restartDeadline = Date.now() + 15000;
-  await withTimeout(
-    (async () => {
-      for (; Date.now() < restartDeadline; ) {
-        if (service?.exitCode !== null && service?.exitCode !== undefined)
-          throw new Error(`service failed restarting: ${childOutput}`);
-        try {
-          if ((await fetch(`${base}/ready`, { signal: AbortSignal.timeout(1000) })).ok) return;
-        } catch {}
-        await delay(100);
-      }
-      throw new Error('service restart deadline exceeded');
-    })(),
-    16000,
-    'service restart',
-  );
+  await waitUntilReady(base, 'restart');
   const restarted = new AcclimateClient({
     baseUrl: base,
     token,
@@ -449,14 +358,13 @@ try {
   });
   assert.equal((await restarted.getVersion(project, bundle.id, parent.id)).digest, parent.digest);
   assert.equal(
-    (await restarted.inspectSource(project, bundle.id, 'stable'))?.version.id,
+    (await restarted.resolveChannel(project, bundle.id, 'stable')).resolution?.version.id,
     parent.id,
   );
   assert.equal(
-    (await restarted.getProposal(project, bundle.id, proposal.id)).candidate?.id,
-    candidate.id,
+    (await restarted.getVersion(project, bundle.id, candidate.id)).digest,
+    candidate.digest,
   );
-  assert.equal((await restarted.getComparison(project, bundle.id, uploaded.id)).complete, true);
   console.log('service e2e passed');
 } catch (error) {
   const e = error instanceof Error ? error : new Error(String(error));
@@ -475,6 +383,5 @@ try {
       delay(3000),
     ]);
   }
-  if (model) await new Promise<void>((resolve) => model!.close(() => resolve()));
   await rm(temp, { recursive: true, force: true });
 }

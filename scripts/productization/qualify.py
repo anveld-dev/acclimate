@@ -6,7 +6,6 @@ Never reads dotenv files or uses an existing DATABASE_URL. Cluster is deleted on
 import argparse
 import sys
 import json
-import os
 from pathlib import Path
 import secrets
 import shutil
@@ -14,6 +13,7 @@ import socket
 import subprocess
 import tempfile
 import time
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
@@ -44,10 +44,24 @@ class Harness:
         self.issuer = 'https://identity.example.invalid'
         self._identity = None
         self.env = service_env(database_url=f'postgresql://qualification@127.0.0.1:{self.pg_port}/postgres',
-            bind=f'127.0.0.1:{self.port}', project=self.project, tokens=self.tokens,
+            bind=f'127.0.0.1:{self.port}', project=self.project, tokens={},
             login_token=self.login_token, console_token=self.console_token, issuer=self.issuer)
+        self.configure_grants()
         self.service = None
         self.log = open(self.dir / 'service.log', 'w+')
+
+    def configure_grants(self, outsider_prefix='other-'):
+        self.env['ACCLIMATE_AUTH'] = json.dumps([
+            dict(
+                token=token,
+                principalId=principal,
+                workspaceId=outsider_prefix + self.project if principal == 'outsider' else self.project,
+                rights=['read'] if principal in ('viewer', 'outsider') else
+                ['read', 'write'] if principal in ('evaluator', 'other') else
+                ['read', 'write', 'promote'],
+            )
+            for principal, token in self.tokens.items()
+        ])
 
     def pg(self, tool, *args):
         return subprocess.run([str(self.pg_bin / tool), *args], check=True, capture_output=True, text=True)
@@ -101,9 +115,10 @@ class Harness:
     def sql(self, query):
         return self.pg('psql', self.env['DATABASE_URL'], '-XAt', '-v', 'ON_ERROR_STOP=1', '-c', query).stdout.strip()
 
-    def call(self, method, route, body=None, actor='operator', status=None, key=None):
+    def call(self, method, route, body=None, actor='operator', status=None, key=None, extra_headers=None):
         data = json.dumps(body, separators=(',', ':')).encode() if body is not None else None
         headers = {'Authorization': 'Bearer ' + self.tokens[actor], 'X-Acclimate-Scope': actor, 'Content-Type': 'application/json'}
+        headers.update(extra_headers or {})
         if method == 'POST':
             headers['Idempotency-Key'] = key or secrets.token_hex(16)
         try:
@@ -147,64 +162,30 @@ def qualify(h):
     setup = h.call('POST', root + '/bundle-setups', setup_body)
     b = root + '/bundles/' + setup['bundle']['id']
     channel = b + '/channels/stable'
-    draft_body = dict(baseVersionId=setup['version']['id'], baseRevision='1', payload=payload('Review retries.'))
-    draft = h.call('POST', channel + '/drafts', draft_body)
-    d = channel + '/drafts/' + draft['id']
-    save_body = dict(expectedGeneration=1, payload=payload('Review duplicate retries.'))
+    versions = b + '/versions'
+    body = dict(parentVersionId=setup['version']['id'], payload=payload('Review duplicate retries.'))
     lost_key = secrets.token_hex(16)
-    # Discard the response deliberately: recover via persisted operation ID, never a new key.
-    h.call('POST', d + '/save', save_body, key=lost_key)
+    headers = {'X-Acclimate-Durable-Operation': 'true'}
+    h.call('POST', versions, body, key=lost_key, extra_headers=headers)
     h.sql("UPDATE idempotency SET expires_at=now()-interval '1 second'")
     h.restart()
-    operation = h.call('GET', root + '/operations/' + lost_key)
+    lookup = root + '/operations/' + lost_key + '?' + urlencode({'operationPath': versions})
+    operation = h.call('GET', lookup)
     assert operation['status'] == 'committed'
-    draft = operation['result']
-    assert h.call('GET', root + '/operations/' + lost_key, actor='other')['status'] == 'not_observed'
-    assert h.call('POST', d + '/save', save_body, key=lost_key) == draft
-    h.call('POST', d + '/save', dict(expectedGeneration=1, payload=payload('Different bytes.')), key=lost_key, status=409)
-    h.call('POST', d + '/save', dict(expectedGeneration=1, payload=payload('Stale tab.')), status=409)
-    history = h.call('GET', d + '/history')
-    assert [x['generation'] for x in history['items']] == [2, 1]
-    h.restart()
-    reopened = h.call('GET', d)
-    assert reopened == draft
-    parent, candidate = setup['version'], reopened['snapshotVersion']
-    settings = dict(parentVersionId=parent['id'], parentDigest=parent['digest'], candidateVersionId=candidate['id'], candidateDigest=candidate['digest'], datasetRevision='model-free-v1', runtime={'executor': 'literal-content-v1'}, graderRevision='contains-retry-v1', expectedCases=[dict(caseId='retry', repetition=0)])
-
-    def evaluation(results, expected):
-        e = h.call('POST', b + '/evaluation-requests', dict(**settings, requireBoundEvidence=True))
-        path = b + '/evaluation-requests/' + e['id']
-        h.call('POST', path + '/start', dict(attemptId='attempt-1'), actor='evaluator')
-        comparison = h.call('POST', b + '/comparisons', dict(**settings, results=results, evaluation=dict(requestId=e['id'], attemptId='attempt-1')), actor='evaluator')
-        h.call('POST', path + '/finish', dict(attemptId='attempt-1', comparisonId=comparison['id']), actor='other', status=409)
-        done = h.call('POST', path + '/finish', dict(attemptId='attempt-1', comparisonId=comparison['id']), actor='evaluator')
-        assert done['status'] == expected
-        assert h.call('GET', b + '/comparisons/' + comparison['id']) == comparison
-        return comparison
-
-    partial = evaluation([], 'failed')
-    h.call('POST', d + '/publish', dict(expectedGeneration=2, expectedRevision='1', comparisonId=partial['id']), status=404)
-    failed_outcome = dict(executionStatus='infrastructure_failed', gradingStatus='failed', reward=None, error='Synthetic executor failure')
-    evaluation([dict(caseId='retry', repetition=0, parent=failed_outcome, candidate=failed_outcome)], 'failed')
-    interrupted = h.call('POST', b + '/evaluation-requests', dict(**settings, requireBoundEvidence=True))
-    ep = b + '/evaluation-requests/' + interrupted['id']
-    h.call('POST', ep + '/interrupt', dict(reason='Explicit fixture interruption'))
-    h.call('POST', ep + '/start', dict(attemptId='too-late'), actor='evaluator', status=409)
-    # Actual app-owned execution reads the exact service bytes, with no model/provider.
-    outcomes = []
-    for version in (parent, candidate):
-        response = urlopen(Request(h.base + b + '/versions/' + version['id'] + '/payload', headers={'Authorization': 'Bearer ' + h.tokens['evaluator'], 'X-Acclimate-Scope': 'evaluator'}))
-        content = json.loads(response.read())
-        reward = int('retries' in content['files'][0]['text'])
-        outcomes.append(dict(executionStatus='completed', gradingStatus='scored', reward=reward, usage={'costUsd': 0}))
-    complete = evaluation([dict(caseId='retry', repetition=0, parent=outcomes[0], candidate=outcomes[1])], 'completed')
-    h.call('POST', d + '/publish', dict(expectedGeneration=2, expectedRevision='1', comparisonId=complete['id']), status=404)
-    blocked = h.call('POST', channel + '/releases', dict(versionId=candidate['id'], expectedRevision='1',
-                     comparisonId=complete['id']), status=409)
-    assert blocked['error']['code'] == 'connected_learning_required'
-    seed, = h.call('GET', channel + '/releases')['items']
-    assert seed['version'] == parent
-    return dict(bundleId=setup['bundle']['id'], version=candidate, seed=parent, flows=['empty setup', 'second project scope denial', 'draft save and history', 'stale generation denial', 'real service restart/reopen', 'app-owned model-free evaluation', 'partial and failed comparison', 'other evaluator denial', 'interruption', 'automatic-only release enforcement', 'ambiguous save recovery after cache expiry/restart', 'same-key replay and changed-body denial'])
+    candidate = operation['result']
+    assert h.call('GET', lookup, actor='other')['status'] == 'not_observed'
+    assert h.call('POST', versions, body, key=lost_key) == candidate
+    h.call('POST', versions, dict(body, payload=payload('Different bytes.')), key=lost_key, status=409)
+    assert h.call('GET', versions + '/' + candidate['id'] + '/payload') == body['payload']
+    release = dict(versionId=candidate['id'], expectedRevision='1', unevaluatedReason='Reviewed fixture')
+    h.call('POST', channel + '/releases', dict(release, expectedRevision='0'), status=409)
+    published = h.call('POST', channel + '/releases', release)
+    assert published['revision'] == '2'
+    assert h.call('GET', channel)['version'] == candidate
+    return dict(bundleId=setup['bundle']['id'], version=candidate, flows=[
+        'workspace scope', 'immutable version upload', 'restart and operation recovery',
+        'same-key replay and changed-body denial', 'release revision conflict', 'channel release',
+    ])
 
 
 def main():
@@ -227,7 +208,7 @@ def main():
         config.write_text(json.dumps(dict(baseUrl=h.base, token=h.tokens['operator'], project=h.project, **result)))
         config.chmod(0o600)
         subprocess.run(['node', str(consumer / 'consumer.mjs'), str(config)], cwd=consumer, check=True)
-        result['flows'].append('packed SDK seed and candidate inspection')
+        result['flows'].append('clean packed SDK resolve/pin/prepare')
         print(json.dumps(result, indent=2))
     finally:
         h.close()

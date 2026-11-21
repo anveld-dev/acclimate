@@ -5,13 +5,11 @@ export { compatibilityIssues, assertCompatible } from './compatibility.js';
 export type { CompatibilityIssue } from './compatibility.js';
 export {
   validateEvaluationDescriptor,
-  validateEvaluationHandoff,
   validateEvaluationServiceUrl,
   assertGuidedTarget,
-  evaluationDescriptorDifferences,
   EvaluationConfigurationError,
 } from './evaluation-validation.js';
-export type { GuidedTarget, EvaluationMismatchField } from './evaluation-validation.js';
+export type { GuidedTarget } from './evaluation-validation.js';
 
 export type DeliveryErrorCode =
   | 'cache_miss'

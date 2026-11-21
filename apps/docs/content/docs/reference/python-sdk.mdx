@@ -1,65 +1,31 @@
 ---
 title: Python SDK
-description: Evaluate a Python agent, deliver pinned versions to jobs, and call every service route from Python.
+description: Deliver pinned versions to Python jobs and work with the workspace API.
 ---
 
 The `acclimate-sdk` package needs Python 3.11 or later on Linux or macOS and has no third-party dependencies. [Install it](/docs/get-started/install) with `pip install acclimate-sdk`, then import it as `acclimate`.
-
-## Evaluate a change
-
-Put an `application.py` next to your agent. It exports the saved cases, a callback that runs the agent with one version's files, and an independent grader.
-
-```py
-# application.py
-from acclimate.evaluation import ExecutionResult, GradeResult
-from support_agent import run_agent, score_result, saved_cases
-
-cases = saved_cases  # [{"caseId": ..., "input": ..., "expected": ...}]
-
-def execute(run):
-    result = run_agent(files=run.version["payload"]["files"], task=run.input)
-    return ExecutionResult(output=result.answer, usage={"inputTokens": result.tokens_in})
-
-def grade(run):
-    reward, why = score_result(run.output, run.expected)
-    return GradeResult(reward=reward, explanation=why)
-```
-
-```sh
-acclimate try --live --payload candidate
-acclimate compare --local --parent parent --candidate candidate --live
-acclimate describe
-acclimate compare --config "$EVALUATOR_CONFIG" --handoff "$HANDOFF" --live
-```
-
-`try` and `compare --local` need no service, config or handoff. Their results are advisory and never release evidence.
-
-The [Python support agent example](https://github.com/anveld-dev/acclimate/tree/main/examples/python-support-agent) is a complete, network-free version of this flow, and the [Python evaluation starter](https://github.com/anveld-dev/acclimate/tree/main/examples/python-evaluation-starter) is a blank template. The [evaluator CLI reference](/docs/reference/evaluator-cli) lists every command.
 
 ## Naming
 
 Python names are snake_case: method names, keyword arguments, and attributes such as `ApiError.request_id` and `ExecuteInput.case_id`. HTTP request and response dictionaries keep the wire contract's camelCase keys, such as `version["parentVersionId"]`, because they are the JSON the service sends and accepts. The TypedDicts in `acclimate.types` describe them.
 
-## Start a job with its connection’s release
+## Deliver a pinned version to a job
 
 ```py
 import os
 from acclimate import AcclimateClient
 
-client = AcclimateClient(
-    os.environ["ACCLIMATE_URL"], os.environ["ACCLIMATE_TOKEN"], "support-agent",
-    connection_id=os.environ["ACCLIMATE_CONNECTION"],
-)
+client = AcclimateClient(os.environ["ACCLIMATE_URL"], os.environ["ACCLIMATE_TOKEN"], "support-agent")
 with client.prepare(workspace_id, bundle_id, channel="stable") as prepared:
     result = run_agent(task, instructions=prepared.instructions, skill_files=prepared.skill_files)
     save_job_result(result, version=prepared.version["version"]["id"], digest=prepared.version["version"]["digest"])
 ```
 
-The task, IDs, agent call and result storage belong to your application. For background work, keep the prepared object and call `cleanup()` after the job stops and its result is saved.
+The task, IDs, agent call and result storage belong to your application. Pass `version_id=` instead of `channel=` to request an exact version. For background work, keep the prepared object and call `cleanup()` after the job stops and its result is saved.
 
 | Attribute of the prepared job | Contents |
 | --- | --- |
-| `version` | The verified payload, channel resolution and version metadata, including the ID and digest used by the job. |
+| `version` | The verified version: its metadata in `version["version"]`, including `id` and `digest`, the verified `payload`, and resolution details. `version["stale"]` is true when the content came from the offline cache. |
 | `instructions` | The instruction files joined into one string. |
 | `skill_files`, `files` | Staged skill files, and every staged file, with `path`, `kind` and `absolutePath`. |
 | `directory` | The private job directory. |
@@ -67,7 +33,13 @@ The task, IDs, agent call and result storage belong to your application. For bac
 
 The cache defaults to `~/.cache/acclimate/python`. Set `cache_dir` to change it and `destination` to choose the job directory. Keep a separate cache directory for each SDK language.
 
-New jobs resolve their enrolled connection online. Running jobs keep their prepared version. `resolve_and_cache(client, workspace_id, bundle_id, cache_dir=..., ...)` and `prepare_files(version, destination)` run the two steps separately. `validate_payload(payload)` checks a bundle payload without contacting the service.
+Every channel job confirms its release online. For an exact version, allow verified cache fallback after a transport failure or HTTP 503 with its pinned version ID.
+
+```py
+client.prepare(workspace_id, bundle_id, version_id=pinned, offline={"pinned_version_id": pinned})
+```
+
+A denial, a missing resource or an integrity failure never falls back. `resolve_and_cache(client, workspace_id, bundle_id, cache_dir=..., ...)` and `prepare_files(version, destination)` run the two steps separately. `validate_payload(payload)` checks a bundle payload without contacting the service.
 
 ## Client
 
@@ -77,27 +49,23 @@ New jobs resolve their enrolled connection online. Running jobs keep their prepa
 
 Every mutation takes an explicit idempotency key of 1–128 printable ASCII characters. Retry a lost write with the same key and the same request. Listing methods take `cursor=` and `limit=` keyword arguments and return `{"items": [...], "nextCursor": ...}`; pass `nextCursor` back as `cursor` to read the next page.
 
-The Python client has every method of the TypeScript client. The method names are the snake_case form of the TypeScript names.
+The Python client uses snake_case equivalents of the shared TypeScript client methods.
 
 | Area | Methods |
 | --- | --- |
-| Workspaces and bundles | `list_workspaces`, `list_bundles`, `create_bundle`, `create_bundle_setup` |
+| Workspaces and bundles | `list_workspaces`, `get_principal`, `list_bundles`, `create_bundle`, `create_bundle_setup` |
 | Versions | `create_version`, `get_version`, `get_payload` |
 | Channels and releases | `list_channels`, `resolve_channel`, `inspect_source`, `list_releases`, `create_release` |
-| Drafts | `create_draft`, `list_drafts`, `get_draft`, `get_draft_history`, `save_draft`, `discard_draft` |
-| Proposals and comparisons | `create_proposal`, `get_proposal`, `list_proposals`, `create_comparison`, `get_comparison`, `list_comparisons` |
-| Policy receipts | `report_comparison_policy_receipt`, `list_comparison_policy_receipts`, `list_candidate_policy_receipts` |
-| Evaluation requests | `create_evaluation`, `get_evaluation`, `list_evaluations`, `start_evaluation`, `finish_evaluation`, `interrupt_evaluation`, `abandon_evaluation`, `get_evaluation_capabilities`, `get_evaluation_progress`, `report_evaluation_progress` |
 | Connections and receipts | `create_connection`, `list_connections`, `create_connection_credential`, `revoke_connection`, `revoke_connection_credential`, `report_delivery_receipt`, `list_delivery_receipts`, `list_connection_observations` |
-| Connected learning | `enroll_learning`, `get_learning_enrollment`, `stop_learning`, `renew_learning`, `report_learning_outcome`, `get_learning_outcome`, `report_learning_correction`, `report_learning_recheck`, `get_learning_work`, `report_learning_incident_replay`, `get_learning_field_requalification`, `report_learning_field_replay`, `report_learning_field_audit` |
 | Retained operations | `get_operation`, `close_operation` |
 | Other | `health`, `prepare` |
+
+For the local evaluator and payload tools in the Python SDK, see the [evaluator CLI reference](/docs/reference/evaluator-cli).
 
 Differences from the TypeScript client:
 
 - `resolve_channel` returns a `(resolution, etag, not_modified)` tuple.
 - The TypeScript client's `sessionToken` and `fetch` options have no Python equivalent. The session token is only for the console's own server.
-- The learning report methods take the key from the report, as the TypeScript defaults do. `report_learning_outcome`, `report_learning_field_audit`, `renew_learning` also accept an explicit key.
 
 ## Errors
 
@@ -113,68 +81,106 @@ Differences from the TypeScript client:
 | `acclimate.evaluation.OutputValidationError` | A callback returned a value that is not plain JSON, or unknown `usage` keys. Code `output.invalid`. |
 | `acclimate.evaluation.EvaluationUsageError` | The evaluator command line is invalid. Code `usage.*`. |
 
-## Evaluation API
-
-The CLI loads `application.py` and calls `define_evaluation` for you. Use the functions below to embed the evaluator in your own process.
-
-### Application module
-
-| Export | Required | Meaning |
-| --- | --- | --- |
-| `cases` | Yes | Saved cases as `Case` objects or `{"caseId", "input", "expected", "repetitions"?}` dictionaries. `ACCLIMATE_EVALUATOR_CASES` can name a private JSON file instead. |
-| `execute(run)` | Yes | Runs the agent. Receives an `ExecuteInput`, returns an `ExecutionResult`. May be a coroutine. |
-| `grade(run)` | Yes | Scores one output. Receives a `GradeInput`, returns a `GradeResult`. May be a coroutine. |
-| `revision_files` | No | Paths, relative to the module, of files the agent reads at runtime. Their contents become part of the build identity. |
-| `runtime` | No | `{"settings": {...}, "artifacts": {...}}` naming model deployments, tool configuration and build digests. |
-| `grader` | No | `{"artifactDigest": ...}` for a separately versioned grader. |
-| `config_id` | No | A name for this configuration in the descriptor. Defaults to `application`. |
-| `execution` | No | `"live"` (default) needs `--live`. `"model-free"` is for deterministic adapters. |
-| `concurrency` | No | Pairs in flight at once, 1–64. Defaults to 1. Part of the descriptor. |
-| `grade_retries` | No | Extra grade attempts after a grader raises or times out, 0–5. Defaults to 0. Part of the descriptor. |
-| `to_review_artifact(item)` | No | Selects which output or explanation fields a review export may include. |
-
-The CLI fingerprints `application.py`, the local modules it imports and the files in `revision_files`. Only the hashes and case IDs appear in the public descriptor.
-
-### Callback inputs and results
-
-| Class | Fields |
-| --- | --- |
-| `Case(case_id, input, expected, repetitions=1)` | One saved case. |
-| `ExecuteInput` | `version` (the verified version under test), `input`, `case_id`, `repetition`, `cancellation`, `context`. The `instructions`, `instruction_files`, `skill_files` and `memory_files` properties read its content. |
-| `ExecutionContext` | `request_id`, `attempt_id`, `side` (`parent` or `candidate`), `job_id`, `private_job_directory`. |
-| `CancellationContext` | `is_cancelled()` and `raise_if_cancelled()`. Check it while waiting on external work. |
-| `ExecutionResult(output, execution_status="completed", error=None, output_ref=None, usage=None)` | Gradeable JSON output. Set `execution_status="task_failed"` for a failed task that still produced output. `usage` takes measured `inputTokens`, `outputTokens` and `costUsd` (or `input_tokens`, `output_tokens` and `cost_usd`). Any other key marks the output invalid. |
-| `GradeInput` | `output`, `expected`, `case_id`, `repetition`, `cancellation`. |
-| `GradeResult(reward, error=None, explanation=None)` | A reward from 0 to 1 and an optional JSON explanation. |
-
-Raise `ExecutionUncertainError` from `execute` when external work might still be running, such as after a timeout that didn't stop the provider job. The evaluator records that arm as `execution_uncertain`, writes `uncertain.json` in its private job directory, never retries it, and continues with the other pairs. Raised from `grade`, it stops the run. Raise `TaskExecutionError` for a task failure with no gradeable output.
-
-### Functions
-
-| Function | Use |
-| --- | --- |
-| `define_evaluation(*, config_id, config_revision, dataset_revision, grader_revision, runtime, execution, cases, execute, grade, collection=None, concurrency=1, grade_retries=0)` | Build an `EvaluationApp`. `execution` is `"live"` or `"model-free"`. Callbacks may be ordinary functions or coroutine functions; coroutines run to completion on one private event loop per evaluation. |
-| `preflight_evaluation(*, app, config_path, target=None, handoff=None)` | Check the private configuration, journal and service access without running callbacks. |
-| `run_evaluation(*, app, config_path, handoff, allow_live=False, cancel_event=None, controls=None)` | Run or recover one evaluation request. `allow_live=True` must match a live app. Setting `cancel_event` asks callbacks to stop. `controls` is a `RunControls` with `deadline_ms`, `case_timeout_ms`, `max_cost_usd`, `selection` and `progress`; the result then includes `runSummary`. The result's `firstCallbackFailure` names the first failed callback and its private diagnostic file. |
-| `run_evaluation_async(*, config_path, handoff, app=None, directory=None, allow_live=False, controls=None)` | Await `run_evaluation` from an asyncio application. Cancelling the await asks the run to stop and waits for its worker. |
-| `bind_run_controls(app, controls)` | Return an app with run controls bound, without changing its descriptor. |
-
-The client, delivery helpers and `run_evaluation` are synchronous. In an asyncio application, await `run_evaluation_async`, which runs the whole evaluation in a worker thread, signals cancellation and waits for the worker to finish. The starter's `async_eval.py` shows the call.
-
-### Related modules
-
-| Module | Exports |
-| --- | --- |
-| `acclimate.evaluation_policy` | `check_comparison`, `parse_evaluation_policy`, `validate_evaluation_policy` |
-| `acclimate.evaluation_artifacts` | `export_review_evidence`, `verify_review_export`, `parse_artifact_selection` |
-| `acclimate.evaluation_analysis` | `analyze_comparison` |
-| `acclimate.evaluation_manifest` | `create_evaluation_manifest`, `restore_evaluation_manifest` |
-| `acclimate.evaluation_local` | `run_local_comparison`, `score_local_comparison`, `try_evaluation`, `load_local_payload`, `local_payload_digest`, `local_version`, `LocalRunError`: compare payloads or check callback shapes without a service. Results are advisory. |
-| `acclimate.evaluation_async` | `run_evaluation_async`, `run_in_thread_until_quiescent` |
-| `acclimate.evaluation_cli` | `evaluation_main`, the CLI entry point |
-
 ## Reporters
 
 `DeliveryReporter(client, workspace_id, connection_id, *, max_queue=100)` reports delivery stages for a connection from a background thread. Pass it to `client.prepare(..., reporter=reporter)` and call `prepared.report_started()` when the job starts. Report failures never block delivery. Call `wait(timeout)` and then `close(timeout)` before a short-lived process exits.
 
 `EvaluationProgressReporter(client, *, workspace_id, bundle_id, request_id, attempt_id)` reports optional progress for a running evaluation with `report(sequence=..., phase=..., completed=..., total=...)`. It returns `False` instead of raising when a report fails.
+
+## Learning
+
+Create `acclimate_loop.py` next to a JSON or JSONL file of examples. Each example has
+`input` and `expected`, and may supply a stable `caseId`.
+
+```python
+import json
+from acclimate.learning import define_loop, exact, openai
+
+loop = define_loop(
+    bundle="support-agent",
+    channel="stable",
+    agent=openai("gpt-6.2-sol", parse=json.loads),
+    cases="cases.jsonl",
+    grade=exact("action"),
+)
+```
+
+Set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE`, and `ACCLIMATE_TOKEN` for the
+evaluator. The token needs `evaluate` access and must belong to the enrolled
+app principal. The CLI reads the principal ID from the service. You can also
+set `ACCLIMATE_APP_PRINCIPAL` explicitly (for a machine token,
+`machine:<name>`). Enrollment requires `promote` access. If the service
+requires a different principal for enrollment, set `ACCLIMATE_ENROLL_TOKEN`
+to a separate token with `promote` access. The channel needs an existing release.
+
+```sh
+python -m acclimate learn
+python -m acclimate learn --config ./acclimate_loop.py --once
+```
+
+The command resolves the bundle by name, reconciles enrollment, syncs evolve
+cases, and prints round progress. `--once` exits after a completed round.
+Case paths are relative to the loop file. The setting defaults to the bundle
+name as `domain`, the case filename as `benchmark`, and the agent model as
+`policyModel`. Pass `policy_model`, `domain` or `benchmark` to override those
+defaults.
+
+The default split assigns a case to held-out when the unsigned big-endian
+SHA-256 digest of its UTF-8 case ID is below `2**255`. A missing case ID
+defaults to the SHA-256 hex of the canonical JSON input. Keep examples in both
+splits. The command uploads evolve cases and keeps held-out inputs and
+expectations local. Removing an evolve example retires it. Give edited examples
+a new case ID because the service treats case content as immutable. Production
+outcomes survive file sync.
+
+`openai(model, base_url=None, api_key=None, effort=None, parse=None, render=None)` uses an OpenAI-compatible Chat Completions endpoint. It reads `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) and `OPENAI_API_KEY` when the corresponding options are omitted. `render(version)` receives the verified version and returns system text. `parse(text)` transforms the assistant text before grading. Both callbacks are synchronous. HTTP failures raise `OpenAIHttpError` with `.status` and a key-redacted `.trace`. [CLIProxyAPI setup](/docs/guides/learning-loop#use-codex-through-cliproxyapi)
+
+For custom execution, pass `policy_model` and implement `execute(version, input, rollout)` as a synchronous function that
+returns output or `(output, trace)`. Rollout indexes run from zero through four.
+Use `exact()` for whole-output JSON equality or `exact("action")` to compare
+the top-level `action` field to the expected value. Use `tests(command, cwd=None)`
+to run a shell command against `output.json` in a temporary directory, with an
+optional copy of the fixture directory at `cwd`. Exit status zero scores 1 and
+any other exit status scores 0. A custom `grade(output, expected)` can return
+a score between 0 and 1, or a dict containing `score` and `passed`.
+
+### Record production outcomes
+
+```python
+from acclimate import Acclimate
+
+acclimate = Acclimate.from_env()
+job = acclimate.job("support-agent", channel="stable", input=ticket)
+with job.prepare() as prepared:
+    run_my_production_agent(prepared)
+receipt = job.expect("refund")
+```
+
+`Acclimate(url, workspace, token, cache_dir=...)` accepts explicit connection
+settings. The outcome expectation uses the same shape as the case file, such
+as `"refund"` with `exact("action")` or `{"action": "refund"}` with `exact()`.
+`job.version` exposes the verified version pinned when the job was
+created. `job.prepare(destination=None)` stages that same version using the
+delivery context manager. Use `job.expect(expected, input=...)` to override
+the job input. Retry the same outcome on the same job to reuse `job.outcome_id`
+and its server-side receipt.
+
+### Learning client reference
+
+Import wire types such as `LearningLoopRequest`, `LearningLoop`, `LearningRoundSummary`, `LearningRound`, `LearningCandidate`, `LearningSelection`, `LearningMemory`, `LearningEvaluation` and `LearningWork` from `acclimate.types`. The client methods take the workspace ID and bundle ID first. JSON keys follow the [HTTP contract](/docs/reference/http-api#learning-loop).
+
+| Task | Client methods |
+| --- | --- |
+| Enroll and control | `enroll_learning_loop`, `pause_learning_loop`, `resume_learning_loop`, `stop_learning_loop` |
+| Inspect | `get_learning_loop`, `list_learning_rounds`, `get_learning_round`, `get_learning_memory` |
+| Manage evolve cases and report outcomes | `list_learning_evolve_cases`, `add_learning_evolve_cases`, `report_learning_outcome` |
+| Serve evaluation work | `get_learning_work`, `start_learning_evaluation`, `report_learning_evaluation` |
+
+`acclimate.learning.held_out_digest(cases)` computes the enrollment digest
+from the evaluator's private cases. To run evaluations directly, call
+`acclimate.learning.serve_learning_loop(client, workspace_id, bundle_id, execute=..., grade=..., held_out=...)`.
+The runner keeps a private local journal so restarts can reuse completed
+rollouts and skip cases the service already accepted. Supply `journal_dir`
+to override the default at `~/.local/state/acclimate/python-learning`.
+
+`get_learning_round` returns candidates and the selector decision. `get_learning_memory` returns the latest improvement memory or a specific revision when you supply `revision`. Read memory as a workspace reader other than the app principal.

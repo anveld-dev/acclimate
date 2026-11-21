@@ -3,11 +3,11 @@ title: Deliver content to jobs
 description: Prepare a pinned version for each job and stage an existing repository for a native coding agent.
 ---
 
-Prepare a verified version when your application starts a job. In the console, open the bundle's **App setup** guide for the API URL, workspace ID, bundle ID, channel, and SDK recipe. Use a content-read credential for the enrolled connection.
+Prepare a verified version when your application starts a job. In the console, open the bundle's **App setup** guide for the API URL, workspace ID, bundle ID, channel, and SDK recipe. Use a content-read credential for the connection.
 
 ## Prepare the job's content
 
-Set the enrolled connection ID on the SDK client and resolve its channel once per new job. Give your agent the prepared instructions and skill files, and choose which approved memory to include. Save the version ID and digest with the result.
+Set the connection ID on the SDK client and resolve its channel once per new job. Give your agent the prepared instructions and skill files, and choose which approved memory to include. Save the version ID and digest with the result.
 
 ```ts
 import { AcclimateClient } from '@acclimate/sdk';
@@ -48,7 +48,7 @@ const reporter = createReceiptReporter({
 const prepared = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
 ```
 
-At the job's real start event, call `prepared.reportStarted()` (Python `prepared.report_started()`) and retain the returned receipt with its job ID. It returns `null` when reporting is unavailable. When the job ends, `await reporter.flush()` and call `reporter.close()`. [Connected learning](/docs/guides/connected-learning) can use that receipt to bind later field evidence to the release.
+At the job's real start event, call `prepared.reportStarted()` (Python `prepared.report_started()`) and retain the returned receipt with its job ID. It returns `null` when reporting is unavailable. When the job ends, `await reporter.flush()` and call `reporter.close()`.
 
 ## Choose a native integration
 
@@ -73,32 +73,6 @@ const prepared = await prepareNativeFiles(verifiedVersion, {
 | [Pi](/docs/integrations/pi) | `AGENTS.md`, `.agents/skills/`, and resource descriptors |
 | [Cursor](/docs/integrations/cursor) | `AGENTS.md` and `.cursor/skills/` |
 
-## Stage a repository for evaluation
+## Prepare an existing repository
 
-Use the native repository starter from the release to compare a coding agent on an existing repository. Try it offline first: `node smoke.mjs` in the extracted starter compares two versions with the bundled replay harness and fixture repository, with no provider SDK or credentials. Then install the verified SDK and the plugin for your harness together. This example uses Codex and release 0.1.0.
-
-```sh
-release=/absolute/path/to/verified-release
-app=/absolute/path/to/native-repository-starter
-npm install --prefix "$app" --workspaces=false --offline --ignore-scripts --no-audit --no-fund --save-exact \
-  "$release/acclimate-sdk-0.1.0.tgz" "$release/acclimate-codex-plugin-0.1.0.tgz"
-node "$app/verify-install.mjs" codex
-```
-
-Install the native SDK separately as described in its [integration guide](/docs/integrations/codex). In the starter's private `native.json`, set `harness` to `codex`, `claude`, `pi`, `cursor` or `replay`, `sourceRoot` to your checkout and `stateRoot` to private persistent storage outside both the repository and evaluator journal. The starter runs each built-in harness with explicit sandbox defaults, so you do not write an adapter. Set `model` to a model your app can access, and supply your own cases. List several harnesses in `harnesses` to compare them; the harness then becomes part of each case ID, such as `checkout-retry@claude`.
-
-- Include every original file your grader needs in `sourceFiles`, or set `sourceInventory` with include and exclude globs to list them with `git ls-files`. The starter copies regular text files and rejects symlinks, existing `AGENTS.md` or `CLAUDE.md`, and dot-prefixed paths you have not listed in `allowDotPaths`. Each error names the path and rule.
-- List writable solution paths or globs, such as `src/**`, in `resultFiles` and original protected tests in `testFiles`. The default grader runs the frozen Node tests against retained solution files in a fresh tree and reports per-test counts. Set `reward` to `"fraction"` to score passed tests over total tests. Files the agent creates outside `resultFiles` are reported as undeclared changes.
-- Set `repetitions` on a case to run its pair more than once.
-- Set `approvedMemoryPaths` for memory the agent may receive. The version digest still identifies the whole verified version.
-- Set the worker's `TMPDIR` to the private persistent workspace parent before starting the evaluator. Keep the checkout fixed through evaluation or regrading.
-
-The starter's case shape uses `caseId`, `input.prompt`, and `expected: null` when the expected behavior lives in the frozen tests. Run these commands from the starter directory. Use the public descriptor to create and download a request before running `doctor` or `compare`.
-
-```sh
-./node_modules/.bin/acclimate-eval describe
-./node_modules/.bin/acclimate-eval doctor --config "$EVALUATOR_CONFIG" --handoff handoff.json
-./node_modules/.bin/acclimate-eval compare --config "$EVALUATOR_CONFIG" --handoff handoff.json --live
-```
-
-Each job runs with its own `HOME` that holds only authentication, so global harness configuration does not affect either version. Each agent turn runs in its own process group. When `turnTimeoutMs` expires, the starter kills the group and records a failed task with `reason: 'timeout'`, keeping the partial changes for grading. A provider error keeps its redacted message in a private `failure.json`. Only work whose stop cannot be confirmed is quarantined, and then only that case's result is lost; the rest of the comparison continues. Use `node native.mjs jobs list`, `jobs inspect JOB_ID` and `jobs cleanup JOB_ID --confirm-stopped` for recovery, and `node native.mjs check-bundle payload.json` to check a candidate's compatibility before a live run. See `examples/native-repository/README.md` and the [evaluator access guide](/docs/operate/evaluator-access).
+The native repository starter provides an offline replay harness. Extract it from the release and run `node smoke.mjs` in its directory to check preparation before installing a provider SDK. Use the [native repository starter README](https://github.com/anveld-dev/acclimate/tree/main/examples/native-repository#readme) for configuration and private job recovery.

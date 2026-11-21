@@ -1,4 +1,5 @@
 //! Opt-in application observations; integration credentials never grant project access.
+const CONNECTION_HEADER: &str = "x-acclimate-connection-id";
 use crate::{ApiResult, AppState, db, err, path};
 use axum::{
     Json, Router,
@@ -89,7 +90,6 @@ async fn create(
     if b.display_name.trim().is_empty()
         || b.display_name.len() > 120
         || !crate::channels::valid_channel(&b.channel)
-        || crate::connected_learning::internal_channel(&b.channel)
     {
         return Err(invalid());
     }
@@ -305,19 +305,8 @@ pub(crate) async fn content_transaction<'a>(
     channel: Option<&str>,
     version: Option<Uuid>,
 ) -> ApiResult<sqlx::Transaction<'a, sqlx::Postgres>> {
-    Ok(content_scope(s, h, p, b, channel, version).await?.0)
-}
-
-pub(crate) async fn content_scope<'a>(
-    s: &'a AppState,
-    h: &HeaderMap,
-    p: &str,
-    b: &str,
-    channel: Option<&str>,
-    version: Option<Uuid>,
-) -> ApiResult<(sqlx::Transaction<'a, sqlx::Postgres>, Option<String>)> {
     let connection = h
-        .get(crate::connected_learning::CONNECTION_HEADER)
+        .get(CONNECTION_HEADER)
         .map(|value| {
             value
                 .to_str()
@@ -335,17 +324,7 @@ pub(crate) async fn content_scope<'a>(
         && !s.grants.iter().any(|g| g.token == token)
         && s.access.console_token() != token;
     if !integration_token && connection.is_none() {
-        let tx = crate::auth::read_transaction(s, h, p).await?;
-        // Members inspect the source in the console. Jobs resolve an enrolled
-        // connection, while evaluators can still read exact candidate versions.
-        if channel.is_some() && crate::auth::actor(h, s, p, "read")?.user_id.is_none() {
-            return Err(err(
-                StatusCode::CONFLICT,
-                "connected_learning_required",
-                "Use an enrolled connection to resolve a delivery version",
-            ));
-        }
-        return Ok((tx, None));
+        return crate::auth::read_transaction(s, h, p).await;
     }
     let mut tx = if integration_token {
         s.db.begin().await.map_err(db)?
@@ -353,7 +332,7 @@ pub(crate) async fn content_scope<'a>(
         crate::auth::read_transaction(s, h, p).await?
     };
     let bundle = path(b)?;
-    let (id, source) = if integration_token {
+    let source = if integration_token {
         let r = sqlx::query("SELECT i.project_id,i.bundle_id,i.channel,i.id,c.kind FROM integration_credentials c JOIN integrations i ON (i.project_id,i.id)=(c.project_id,c.integration_id) WHERE c.secret_hash=$1 AND c.revoked_at IS NULL AND i.enabled FOR SHARE OF c,i")
             .bind(crate::digest(token.as_bytes())).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(denied)?;
         let id: Uuid = r.get("id");
@@ -364,25 +343,20 @@ pub(crate) async fn content_scope<'a>(
         {
             return Err(denied());
         }
-        (id, r.get::<String, _>("channel"))
+        r.get::<String, _>("channel")
     } else {
         let id = connection.ok_or_else(denied)?;
-        let source: String = sqlx::query_scalar("SELECT channel FROM integrations WHERE project_id=$1 AND bundle_id=$2 AND id=$3 AND enabled FOR SHARE")
-            .bind(p).bind(bundle).bind(id).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(denied)?;
-        (id, source)
+        sqlx::query_scalar("SELECT channel FROM integrations WHERE project_id=$1 AND bundle_id=$2 AND id=$3 AND enabled FOR SHARE")
+            .bind(p).bind(bundle).bind(id).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(denied)?
     };
     if channel.is_some_and(|c| c != source) {
         return Err(denied());
     }
-    let effective: String = sqlx::query_scalar("SELECT delivery_channel FROM connected_learning_enrollments WHERE project_id=$1 AND integration_id=$2")
-        .bind(p).bind(id).fetch_optional(&mut *tx).await.map_err(db)?
-        .ok_or_else(|| err(StatusCode::CONFLICT, "connected_learning_required", "Enroll this connection before starting a job"))?;
     if let Some(version) = version
         && !delivery_history(
             &mut tx,
             p,
             bundle,
-            id,
             &source,
             DeliveryVersion {
                 id: version,
@@ -394,7 +368,7 @@ pub(crate) async fn content_scope<'a>(
     {
         return Err(denied());
     }
-    Ok((tx, Some(effective)))
+    Ok(tx)
 }
 
 struct DeliveryVersion<'a> {
@@ -407,18 +381,15 @@ async fn delivery_history(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     project: &str,
     bundle: Uuid,
-    integration: Uuid,
     source: &str,
     version: DeliveryVersion<'_>,
 ) -> ApiResult<bool> {
     sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM promotions p
            JOIN versions v ON (v.project_id,v.bundle_id,v.id)=(p.project_id,p.bundle_id,p.version_id)
-           JOIN connected_learning_enrollments e ON e.project_id=p.project_id AND e.bundle_id=p.bundle_id AND e.integration_id=$3
-           WHERE p.project_id=$1 AND p.bundle_id=$2 AND p.version_id=$5
-             AND ((p.channel=$4 AND p.revision <= e.source_revision) OR p.channel=e.delivery_channel)
-             AND ($6::text IS NULL OR v.digest=$6) AND ($7::bigint IS NULL OR p.revision=$7))",
-    ).bind(project).bind(bundle).bind(integration).bind(source).bind(version.id).bind(version.digest).bind(version.revision)
+           WHERE p.project_id=$1 AND p.bundle_id=$2 AND p.channel=$3 AND p.version_id=$4
+             AND ($5::text IS NULL OR v.digest=$5) AND ($6::bigint IS NULL OR p.revision=$6))",
+    ).bind(project).bind(bundle).bind(source).bind(version.id).bind(version.digest).bind(version.revision)
         .fetch_one(&mut **tx).await.map_err(db)
 }
 
@@ -505,7 +476,6 @@ async fn receive(
         &mut tx,
         &p,
         b.bundle_id,
-        i,
         &channel,
         DeliveryVersion {
             id: b.version_id,

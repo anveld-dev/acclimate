@@ -55,19 +55,9 @@ class CreateVersionRequest(TypedDict):
     payload: BundlePayload
 
 
-class PolicyReceiptReference(TypedDict):
-    comparisonId: str
-    policyDigest: str
-
-
-class PolicyOverride(TypedDict):
-    reason: str
-    receipts: list[PolicyReceiptReference]
-
-
 class CreateReleaseRequest(TypedDict):
     versionId: str
-    expectedRevision: Literal["0"]
+    expectedRevision: str
     unevaluatedReason: str
 
 
@@ -77,10 +67,7 @@ class Release(TypedDict):
     revision: str
     version: VersionMetadata
     previousVersionId: str | None
-    comparisonId: str | None
     unevaluatedReason: str | None
-    policyOverride: NotRequired[PolicyOverride]
-    policyApprovalPromotionId: NotRequired[str]
     reviewer: str
     createdAt: str
 
@@ -88,99 +75,6 @@ class Release(TypedDict):
 class ReleasePage(TypedDict):
     items: list[Release]
     nextBeforeRevision: str | None
-
-
-class ProposalRequest(TypedDict):
-    parentVersionId: str
-    allowedPaths: list[str]
-    hypothesis: str
-    evidence: list[str]
-
-
-class CriticVerdict(TypedDict):
-    verdict: Literal["accept", "reject"]
-    objections: list[str]
-    risky: NotRequired[bool]
-
-
-class ProposalChange(TypedDict):
-    path: str
-    before: str | None
-    after: str | None
-
-
-class ProposalScreen(TypedDict):
-    stage: Literal["initial", "repair"]
-    result: CriticVerdict | None
-    changes: list[ProposalChange]
-    scannerClean: NotRequired[bool]
-    structural: NotRequired[bool]
-    rationale: NotRequired[str]
-
-
-class Proposal(TypedDict):
-    id: str
-    parentVersionId: str
-    status: Literal["queued", "running", "succeeded", "failed"]
-    attempts: int
-    candidate: VersionMetadata | None
-    rationale: str | None
-    screening: NotRequired[list[ProposalScreen]]
-    error: str | None
-    createdAt: str
-
-
-class CaseKey(TypedDict):
-    caseId: str
-    repetition: int
-
-
-class Usage(TypedDict, total=False):
-    inputTokens: int
-    outputTokens: int
-    costUsd: float
-
-
-class Outcome(TypedDict):
-    executionStatus: Literal["completed", "task_failed", "infrastructure_failed"]
-    gradingStatus: Literal["scored", "missing", "failed"]
-    reward: float | None
-    outputRef: str | None
-    error: str | None
-    usage: Usage | None
-    #: Optional named numeric grade components on a scored outcome. A policy can gate on one
-    #: with ``metric.component``.
-    components: NotRequired[dict[str, float]]
-
-
-class CasePair(CaseKey):
-    parent: Outcome
-    candidate: Outcome
-
-
-class EvaluationBinding(TypedDict):
-    requestId: str
-    attemptId: str
-
-
-class ComparisonRequest(TypedDict):
-    evaluation: NotRequired[EvaluationBinding]
-    parentVersionId: str
-    candidateVersionId: str
-    parentDigest: str
-    candidateDigest: str
-    datasetRevision: str
-    runtime: dict[str, str]
-    graderRevision: str
-    expectedCases: list[CaseKey]
-    results: list[CasePair]
-
-
-class Comparison(ComparisonRequest):
-    id: str
-    complete: bool
-    submitter: str
-    createdAt: str
 
 
 class VerifiedVersionConnection(TypedDict):
@@ -196,157 +90,6 @@ class VerifiedVersion(TypedDict):
     stale: bool
     # Present when the SDK resolved the bundle for an explicitly scoped connection.
     connection: NotRequired[VerifiedVersionConnection]
-
-
-class EvaluationDescriptor(TypedDict):
-    datasetRevision: str
-    graderRevision: str
-    runtime: dict[str, str]
-    expectedCases: list[CaseKey]
-
-
-class EvaluationHandoff(TypedDict):
-    schemaVersion: Literal[1]
-    serviceUrl: str
-    workspaceId: str
-    bundleId: str
-    requestId: str
-    descriptor: EvaluationDescriptor
-
-
-class _EvaluationTarget(EvaluationDescriptor):
-    parentVersionId: str
-    parentDigest: str
-    candidateVersionId: str
-    candidateDigest: str
-    proposalId: NotRequired[str | None]
-    runName: NotRequired[str]
-    retryOf: NotRequired[str]
-
-
-class EvaluationRequest(_EvaluationTarget):
-    requireBoundEvidence: NotRequired[Literal[True]]
-    policyDigest: NotRequired[str]
-
-
-class Evaluation(_EvaluationTarget):
-    requireBoundEvidence: Literal[True]
-    id: str
-    # ``abandoned``: the attempt's outcome is unknown; later reports are refused and
-    # its evidence never counts.
-    status: Literal["requested", "running", "completed", "failed", "interrupted", "abandoned"]
-    evaluatorPrincipal: str | None
-    attemptId: str | None
-    comparisonId: str | None
-    error: str | None
-    createdAt: str
-    updatedAt: str
-    lastActivityAt: NotRequired[str]
-    abandonedAt: NotRequired[str]
-    abandonedBy: NotRequired[str]
-
-
-class EvaluationPage(TypedDict):
-    items: list[Evaluation]
-    nextCursor: str | None
-
-
-class StartEvaluationRequest(TypedDict):
-    attemptId: str
-
-
-class FinishEvaluationRequest(StartEvaluationRequest):
-    comparisonId: str
-
-
-class InterruptEvaluationRequest(TypedDict):
-    reason: str
-
-
-class AbandonEvaluationRequest(TypedDict):
-    reason: str
-
-
-class ComparisonPolicyIdentity(TypedDict):
-    id: str
-    revision: str
-    sha256: str
-
-
-class ComparisonPolicyCheck(TypedDict):
-    code: str
-    result: Literal["pass", "fail", "unknown"]
-
-
-class ComparisonPolicyReport(TypedDict):
-    requestId: str
-    attemptId: str
-    policy: ComparisonPolicyIdentity
-    verdict: Literal["pass", "fail", "indeterminate"]
-    checks: list[ComparisonPolicyCheck]
-
-
-class ComparisonPolicyReceipt(ComparisonPolicyReport):
-    comparisonId: str
-    reportedBy: str
-    receivedAt: str
-
-
-class ComparisonPolicyReceipts(TypedDict):
-    items: list[ComparisonPolicyReceipt]
-
-
-class EvaluationRights(TypedDict):
-    read: bool
-    evaluate: bool
-    write: bool
-    propose: bool
-    promote: bool
-
-
-class EvaluationAbandonmentPolicy(TypedDict):
-    explicit: bool
-    inactivitySeconds: int
-
-
-class EvaluationCapabilities(TypedDict):
-    schemaVersion: Literal[1]
-    workspaceId: str
-    principalId: str
-    checkedAt: str
-    readUnpublished: Literal[True]
-    writeEvaluation: bool
-    retainedEvaluationOperations: Literal[True]
-    rights: NotRequired[EvaluationRights]
-    credential: NotRequired[dict[str, str]]
-    abandonment: NotRequired[EvaluationAbandonmentPolicy]
-    runLabels: NotRequired[Literal[True]]
-    policyPins: NotRequired[Literal[True]]
-
-
-class EvaluationProgressRequest(TypedDict):
-    attemptId: str
-    sequence: int
-    phase: Literal["preparing", "executing", "grading", "submitting"]
-    completed: int
-    total: int
-    case: NotRequired[CaseKey]
-
-
-class EvaluationProgressObservation(EvaluationProgressRequest):
-    receivedAt: str
-    evaluatorPrincipal: str
-
-
-class EvaluationProgressView(TypedDict):
-    schemaVersion: Literal[1]
-    requestId: str
-    status: Literal["requested", "running", "completed", "failed", "interrupted", "abandoned"]
-    attemptId: str | None
-    observation: EvaluationProgressObservation | None
-    activity: Literal["fresh", "stale", "absent"]
-    checkedAt: str
-    staleAfterSeconds: Literal[60]
 
 
 class ConnectionLatestObservation(TypedDict):
@@ -372,54 +115,17 @@ class ConnectionObservationPage(TypedDict):
     nextCursor: str | None
 
 
-class Draft(TypedDict):
-    id: str
-    channel: str
-    baseVersionId: str
-    baseRevision: str
-    snapshotVersion: VersionMetadata
-    generation: int
-    status: Literal["open", "discarded", "published"]
-    createdAt: str
-    updatedAt: str
-    promotionId: str | None
-
-
-class CreateDraftRequest(TypedDict):
-    baseVersionId: str
-    baseRevision: str
-    payload: BundlePayload
-
-
-class SaveDraftRequest(TypedDict):
-    expectedGeneration: int
-    payload: BundlePayload
-
-
-class DiscardDraftRequest(TypedDict):
-    expectedGeneration: int
-
-
-class DraftSnapshot(TypedDict):
-    generation: int
-    version: VersionMetadata
-
-
-class DraftPage(TypedDict):
-    items: list[Draft]
-    nextCursor: str | None
-
-
-class DraftSnapshotPage(TypedDict):
-    items: list[DraftSnapshot]
-    nextCursor: str | None
-
-
 class Page(TypedDict, Generic[_T]):
     """A bounded service listing. Send ``nextCursor`` back unchanged as ``cursor``."""
 
     items: list[_T]
     nextCursor: str | None
+
+
+class WorkspacePrincipal(TypedDict):
+    principalId: str
+    kind: Literal["machine", "user"]
+    rights: list[str]
 
 
 class Workspace(TypedDict):
@@ -517,244 +223,12 @@ class OfflinePinnedVersion(TypedDict):
 OfflinePolicy = OfflinePinnedVersion
 
 
-class LearningEvaluationDescriptor(EvaluationDescriptor):
-    fixtureProtocol: NotRequired[Literal["installed-v1"]]
-    datasetDigest: NotRequired[str]
-    caseFingerprints: NotRequired[list[str]]
-    familyFingerprints: NotRequired[list[str]]
-
-
-class LearningSelectionPolicies(TypedDict):
-    development: dict[str, Any]
-    audit: dict[str, Any]
-
-
-class LearningSkillPackages(TypedDict):
-    createSkillNames: list[str]
-    retireSkillNames: list[str]
-
-
-class LearningEnrollmentRequest(TypedDict):
-    installationId: str
-    permittedPaths: list[str]
-    maxProposalAdmissions: int
-    development: LearningEvaluationDescriptor
-    audits: list[LearningEvaluationDescriptor]
-    outcomePrincipal: str
-    evaluatorPrincipal: str
-    selectionPolicies: NotRequired[LearningSelectionPolicies]
-    skillPackages: NotRequired[LearningSkillPackages]
-    maxCorrectionsPerRound: NotRequired[int]
-    automaticRollback: NotRequired[bool]
-
-
-class LearningEnrollment(TypedDict):
-    workspaceId: str
-    connectionId: str
-    bundleId: str
-    channel: str
-    installationId: str
-    permittedPaths: list[str]
-    maxProposalAdmissions: int
-    development: LearningEvaluationDescriptor
-    requiresRolloutAuthorization: bool
-    automaticRollback: bool
-    outcomePrincipal: str
-    evaluatorPrincipal: str
-    auditCount: int
-    authorizedBy: str
-    proposalAdmissions: int
-    renewalRevision: int
-    stoppedAt: str | None
-    enabled: bool
-    audits: NotRequired[list[LearningEvaluationDescriptor]]
-    selectionPolicies: NotRequired[LearningSelectionPolicies]
-    skillPackages: NotRequired[LearningSkillPackages]
-    maxCorrectionsPerRound: NotRequired[int]
-    policyEpoch: NotRequired[int]
-
-
-class LearningEnrollmentStatus(LearningEnrollment):
-    """Enrollment plus recent rounds. Round, calibration and history entries follow the OpenAPI schema."""
-
-    rounds: list[dict[str, Any]]
-    remainingAudits: int
-    deliveredVersionId: str
-    deliveredRevision: str
-    developmentIncumbent: NotRequired[dict[str, Any]]
-    policyHistory: NotRequired[list[dict[str, Any]]]
-    noiseCalibration: NotRequired[dict[str, Any]]
-
-
-class LearningRenewalRequest(TypedDict):
-    renewalId: str
-    expectedRevision: int
-    proposalAdmissions: int
-    audits: list[LearningEvaluationDescriptor]
-    development: NotRequired[LearningEvaluationDescriptor]
-    selectionPolicies: NotRequired[LearningSelectionPolicies]
-
-
-class LearningRenewalReceipt(LearningEnrollment):
-    appliedRenewalRevision: int
-
-
-class LearningLesson(TypedDict):
-    path: str
-    instruction: str
-
-
-class LearningFeedback(TypedDict):
-    expected: str
-    observed: str
-
-
-LearningReplayVerdict = Literal["pass", "regression", "unavailable"]
-
-
-class LearningIncidentReplay(TypedDict):
-    roundId: str
-    outcomeId: str
-    versionId: str
-    digest: str
-    baselineRevision: str
-    verdict: LearningReplayVerdict
-    attempts: NotRequired[list[LearningReplayVerdict]]
-
-
-class LearningOutcomeStatus(TypedDict):
-    """Outcome state and its corrections. Release lineage fields follow the OpenAPI schema."""
-
-    outcomeId: str
-    status: Literal["completed", "failed"]
-    versionId: str
-    deliveryRevision: str | None
-    receivedAt: str
-    corrections: list[dict[str, Any]]
-    bundleId: NotRequired[str]
-    channel: NotRequired[str]
-    currentDelivery: NotRequired[dict[str, str]]
-    servedRelease: NotRequired[dict[str, Any] | None]
-    fieldAudit: NotRequired[dict[str, Any] | None]
-
-
-class LearningOutcomeRequest(TypedDict):
-    outcomeId: str
-    versionId: str
-    digest: str
-    status: Literal["completed", "failed"]
-    requireIncidentReplay: NotRequired[bool]
-    startedReceiptId: NotRequired[str]
-    deliveryRevision: NotRequired[str]
-    lesson: NotRequired[LearningLesson]
-    feedback: NotRequired[LearningFeedback]
-
-
-class LearningCorrectionRequest(TypedDict):
-    correctionId: str
-    outcomeId: str
-    requireIncidentReplay: NotRequired[bool]
-    lesson: NotRequired[LearningLesson]
-    feedback: NotRequired[LearningFeedback]
-
-
-class LearningCorrectionReceipt(TypedDict):
-    correctionId: str
-    outcomeId: str
-    accepted: Literal[True]
-
-
-class LearningRecheck(LearningCorrectionRequest):
-    versionId: str
-    digest: str
-    revision: str
-
-
-LearningRecheckVerdict = Literal["reproduced", "resolved", "unavailable"]
-
-
-class LearningRecheckRequest(TypedDict):
-    correctionId: str
-    versionId: str
-    digest: str
-    revision: str
-    verdict: LearningRecheckVerdict
-
-
-class LearningRecheckReceipt(TypedDict):
-    correctionId: str
-    revision: str
-    verdict: LearningRecheckVerdict
-    accepted: Literal[True]
-
-
-class LearningOutcomeReceipt(TypedDict):
-    outcomeId: str
-    accepted: Literal[True]
-    eligible: bool
-    fieldAudit: NotRequired[dict[str, str]]
-
-
-class LearningFieldAuditRequest(TypedDict):
-    outcomeId: str
-    startedReceiptId: str
-    versionId: str
-    digest: str
-    revision: str
-    parentVersionId: str
-    parentDigest: str
-    verdict: Literal["pass", "regression", "win", "loss", "tie"]
-
-
-class LearningFieldRequalification(TypedDict):
-    versionId: str
-    digest: str
-    baselineRevision: str
-    pendingOutcomeIds: list[str]
-    failedOutcomeIds: list[str]
-
-
-class LearningFieldReplay(TypedDict):
-    versionId: str
-    digest: str
-    baselineRevision: str
-    outcomeId: str
-    verdict: Literal["pass", "regression"]
-    attempts: NotRequired[list[Literal["pass", "regression"]]]
-
-
-class LearningFieldAuditReceipt(TypedDict):
-    outcomeId: str
-    accepted: Literal[True]
-    regressions: int
-    windowSize: int
-    wins: NotRequired[int]
-    rollbackPromotionId: NotRequired[str]
-
-
-class LearningAccepted(TypedDict):
-    accepted: Literal[True]
-
-
-class LearningWork(TypedDict):
-    """Assigned evaluations and replays. Item shapes follow the OpenAPI schema."""
-
-    installationId: str
-    bundleId: str
-    active: bool
-    items: list[dict[str, Any]]
-    incidentReplays: NotRequired[list[dict[str, Any]]]
-    fieldReplays: NotRequired[list[dict[str, Any]]]
-    rechecks: NotRequired[list[LearningRecheck]]
-
-
-
 class OperationCommitted(TypedDict):
     status: Literal["committed"]
     operationId: str
     path: str
     requestFingerprint: NotRequired[str]
-    result: Draft | BundleSetup | Evaluation | Comparison | Release | Proposal | VersionMetadata | dict
+    result: BundleSetup | Release | VersionMetadata | dict
 
 
 class OperationNotObserved(TypedDict):
@@ -770,7 +244,378 @@ class OperationClosed(TypedDict):
 
 Operation = OperationCommitted | OperationNotObserved | OperationClosed
 
+LearningJson = str | int | float | bool | None | list["LearningJson"] | dict[str, "LearningJson"]
+LearningLoopStatus = Literal["running", "paused", "stopped"]
+LearningEvaluationStatus = Literal["queued", "running", "scored", "failed", "cancelled"]
+
+
+class LearningSetting(TypedDict):
+    domain: str
+    benchmark: str
+    policyModel: str
+
+
+class LearningHeldOut(TypedDict):
+    digest: str
+    cases: int
+
+
+class LearningLoopRequest(TypedDict):
+    channel: str
+    appPrincipalId: str
+    setting: LearningSetting
+    heldOut: LearningHeldOut
+
+
+class LearningRoundSummary(TypedDict):
+    id: str
+    number: int
+    state: Literal["scoring_incumbent", "proposing", "screening", "evaluating", "selecting",
+                   "scoring_held_out", "completed", "failed", "stopped"]
+    decision: Literal["adopted", "kept"] | None
+    reason: Literal["selector-kept", "no-candidates", "no-survivors", "no-evaluated-candidates",
+                    "channel-moved", "incumbent-evaluation-failed", "optimizer-unavailable",
+                    "optimizer-context-too-large", "selector-unavailable", "stopped"] | None
+    parentVersionId: str
+    adoptedSample: int | None
+    adoptedVersionId: str | None
+    incumbentScore: float | None
+    heldOutScore: float | None
+    heldOutError: str | None
+    createdAt: str
+    endedAt: str | None
+
+
+class LearningLoop(LearningLoopRequest):
+    workspaceId: str
+    bundleId: str
+    status: LearningLoopStatus
+    pauseReason: Literal["operator", "failed-rounds", "optimizer-context-too-large"] | None
+    evolveRevision: int
+    liveCases: int
+    memoryRevision: int
+    nextRound: int
+    failedRounds: int
+    enrolledBy: str
+    createdAt: str
+    updatedAt: str
+    activeRound: LearningRoundSummary | None
+    rounds: list[LearningRoundSummary]
+
+
+class _LearningProblemId(TypedDict):
+    id: str
+
+
+class _LearningNewProblem(TypedDict):
+    new: str
+
+
+class LearningDiagnosis(TypedDict):
+    problem: _LearningProblemId | _LearningNewProblem
+    predicted: list[str]
+
+
+_ReasoningEffort = Literal["low", "medium", "high", "xhigh", "max", "ultra"]
+
+
+class LearningSelection(TypedDict):
+    decision: Literal["adopt", "keep"]
+    sample: int | None
+    versionId: str | None
+    digest: str | None
+    reason: str
+    model: str
+    reasoningEffort: NotRequired[_ReasoningEffort | None]
+    inputDigest: str
+
+
+class _LearningEdit(TypedDict):
+    path: str
+    oldText: str
+    newText: str
+
+
+class _LearningFileWrite(TypedDict):
+    op: Literal["write"]
+    path: str
+    text: str
+
+
+class _LearningFileDelete(TypedDict):
+    op: Literal["delete"]
+    path: str
+
+
+class _LearningChanges(TypedDict):
+    edits: list[_LearningEdit]
+    files: list[_LearningFileWrite | _LearningFileDelete]
+
+
+class _LearningFinding(TypedDict):
+    rule: str
+    field: Literal["rationale", "rootCause", "path", "text"]
+    path: str | None
+
+
+class _LearningScan(TypedDict):
+    clean: bool
+    findings: list[_LearningFinding]
+
+
+class _LearningScreen(TypedDict):
+    verdict: Literal["evaluate", "skip"]
+    reason: str
+
+
+class LearningCandidate(TypedDict):
+    sample: int
+    status: Literal["generating", "generated", "dropped", "screened_out", "evaluating",
+                    "evaluated", "evaluation_failed"]
+    dropReason: Literal["provider-failed", "format-rejected", "scanner-rejected", "no-change"] | None
+    rationale: str | None
+    changes: _LearningChanges | None
+    diagnosis: LearningDiagnosis | None
+    scan: _LearningScan | None
+    screen: _LearningScreen | None
+    versionId: str | None
+    evaluationId: str | None
+    evolveScore: float | None
+
+
+class _LearningEvaluationIdentity(TypedDict):
+    roundId: str
+    role: Literal["incumbent", "candidate", "retained"]
+    sample: int | None
+    split: Literal["evolve", "heldOut"]
+    versionId: str
+    digest: str
+    evolveRevision: int | None
+    deadlineAt: str
+
+
+class LearningWorkItem(_LearningEvaluationIdentity):
+    evaluationId: str
+    roundNumber: int
+    heldOut: LearningHeldOut | None
+    status: Literal["queued", "running"]
+
+
+class LearningWork(TypedDict):
+    bundleId: str
+    status: LearningLoopStatus
+    items: list[LearningWorkItem]
+
+
+class LearningHeldOutRollout(TypedDict):
+    score: float
+    passed: bool
+
+
+class LearningRollout(LearningHeldOutRollout):
+    trace: NotRequired[str | None]
+    error: NotRequired[str | None]
+
+
+class _LearningCaseReport(TypedDict):
+    caseId: str
+    rollouts: list[LearningRollout]
+
+
+class LearningEvaluationReport(TypedDict):
+    cases: list[_LearningCaseReport]
+
+
+class LearningEvaluationReportRequest(TypedDict):
+    attemptId: str
+    cases: NotRequired[list[_LearningCaseReport]]
+    error: NotRequired[str]
+
+
+class _LearningCaseSummary(TypedDict):
+    caseId: str
+    passedRollouts: int
+    meanScore: float
+
+
+class LearningEvaluation(_LearningEvaluationIdentity):
+    id: str
+    status: LearningEvaluationStatus
+    score: float | None
+    cases: int
+    reportedCases: int
+    createdAt: str
+    startedAt: str | None
+    error: str | None
+    caseSummaries: NotRequired[list[_LearningCaseSummary]]
+    report: NotRequired[LearningEvaluationReport]
+
+
+class LearningRound(LearningRoundSummary):
+    channel: str
+    channelRevision: str
+    evolveRevision: int
+    memoryRevision: int
+    memoryDigest: str | None
+    historyDigest: str | None
+    setting: LearningSetting
+    heldOut: LearningHeldOut
+    optimizerModel: str | None
+    optimizerReasoningEffort: _ReasoningEffort | None
+    selection: LearningSelection | None
+    candidates: list[LearningCandidate]
+    evaluations: list[LearningEvaluation]
+
+
+class LearningEvaluationStart(TypedDict):
+    attemptId: str
+
+
+class LearningEvolveCase(TypedDict):
+    caseId: str
+    input: LearningJson
+    expected: LearningJson
+
+
+class LearningLiveEvolveCase(LearningEvolveCase):
+    addedRevision: int
+
+
+class LearningEvolveCasesPage(TypedDict):
+    items: list[LearningLiveEvolveCase]
+    next: str | None
+    evolveRevision: int
+
+
+class LearningEvaluationAssignment(TypedDict):
+    evaluation: LearningEvaluation
+    cases: list[LearningEvolveCase] | None
+    heldOut: LearningHeldOut | None
+    reportedCaseIds: list[str]
+
+
+class LearningEvolveCasesRequest(TypedDict):
+    cases: NotRequired[list[LearningEvolveCase]]
+    retire: NotRequired[list[str]]
+
+
+class LearningEvolveCasesReceipt(TypedDict):
+    evolveRevision: int
+    added: int
+    retired: int
+    liveCases: int
+
+
+class LearningOutcomeRequest(TypedDict):
+    outcomeId: str
+    versionId: str
+    digest: str
+    input: LearningJson
+    expected: LearningJson
+
+
+class LearningOutcomeReceipt(TypedDict):
+    outcomeId: str
+    caseId: str
+    evolveRevision: int
+
+
+class _LearningMemoryProvenance(LearningSetting):
+    round: int
+
+
+class _LearningMemoryStoredProvenance(_LearningMemoryProvenance):
+    evolveRevision: int
+    heldOutDigest: str
+    optimizerModel: str
+
+
+class _LearningMemoryWhat(TypedDict):
+    rationale: str
+    changes: _LearningChanges
+
+
+class _LearningMemoryAttempt(TypedDict):
+    round: int
+    sample: int
+    accepted: Literal[True]
+    backfilled: bool
+    what: _LearningMemoryWhat
+    files: list[str]
+    predicted: list[str]
+    fixed: list[str]
+    missed: list[str]
+    passed: int
+    total: int
+    domain: str
+    provenance: _LearningMemoryProvenance
+
+
+class _LearningMemoryProblem(TypedDict):
+    id: str
+    rootCause: str
+    openedRound: int
+    attempts: list[_LearningMemoryAttempt]
+
+
+class _LearningImprovementMemory(TypedDict):
+    schemaVersion: Literal[1]
+    memoryRevision: int
+    problems: list[_LearningMemoryProblem]
+
+
+class _LearningMemoryRecord(TypedDict):
+    revision: int
+    problemId: str
+    roundId: str
+    round: int
+    versionId: str
+    provenance: _LearningMemoryStoredProvenance
+
+
+class LearningMemory(TypedDict):
+    currentRevision: int
+    memoryRevision: int
+    memoryDigest: str
+    improvementMemory: _LearningImprovementMemory
+    records: list[_LearningMemoryRecord]
+
+
+class LearningRoundPage(TypedDict):
+    items: list[LearningRoundSummary]
+    next: int | None
+
+
 __all__ = [
+    "LearningJson",
+    "LearningSetting",
+    "LearningHeldOut",
+    "LearningLoopRequest",
+    "LearningRoundSummary",
+    "LearningLoop",
+    "LearningDiagnosis",
+    "LearningSelection",
+    "LearningCandidate",
+    "LearningWorkItem",
+    "LearningWork",
+    "LearningHeldOutRollout",
+    "LearningRollout",
+    "LearningEvaluationReport",
+    "LearningEvaluationReportRequest",
+    "LearningEvaluation",
+    "LearningRound",
+    "LearningEvaluationStart",
+    "LearningEvolveCase",
+    "LearningEvaluationAssignment",
+    "LearningLiveEvolveCase",
+    "LearningEvolveCasesPage",
+    "LearningEvolveCasesRequest",
+    "LearningEvolveCasesReceipt",
+    "LearningOutcomeRequest",
+    "LearningOutcomeReceipt",
+    "LearningMemory",
+    "LearningRoundPage",
+
     "FileKind",
     "CompatibilityTarget",
     "BundleFile",
@@ -780,57 +625,17 @@ __all__ = [
     "VersionMetadata",
     "ChannelResolution",
     "CreateVersionRequest",
-    "PolicyReceiptReference",
-    "PolicyOverride",
     "CreateReleaseRequest",
     "Release",
     "ReleasePage",
-    "ProposalRequest",
-    "CriticVerdict",
-    "ProposalChange",
-    "ProposalScreen",
-    "Proposal",
-    "CaseKey",
-    "Usage",
-    "Outcome",
-    "CasePair",
-    "EvaluationBinding",
-    "ComparisonRequest",
-    "Comparison",
     "VerifiedVersion",
     "VerifiedVersionConnection",
-    "EvaluationDescriptor",
-    "EvaluationHandoff",
-    "EvaluationRequest",
-    "Evaluation",
-    "EvaluationPage",
-    "StartEvaluationRequest",
-    "FinishEvaluationRequest",
-    "InterruptEvaluationRequest",
-    "AbandonEvaluationRequest",
-    "ComparisonPolicyIdentity",
-    "ComparisonPolicyCheck",
-    "ComparisonPolicyReport",
-    "ComparisonPolicyReceipt",
-    "ComparisonPolicyReceipts",
-    "EvaluationCapabilities",
-    "EvaluationRights",
-    "EvaluationAbandonmentPolicy",
-    "EvaluationProgressRequest",
-    "EvaluationProgressObservation",
-    "EvaluationProgressView",
     "ConnectionLatestObservation",
     "ConnectionObservation",
     "ConnectionObservationPage",
-    "Draft",
-    "CreateDraftRequest",
-    "SaveDraftRequest",
-    "DiscardDraftRequest",
-    "DraftSnapshot",
-    "DraftPage",
-    "DraftSnapshotPage",
     "Page",
     "Workspace",
+    "WorkspacePrincipal",
     "Channel",
     "BundleOrigin",
     "BundleSetupRequest",
@@ -844,33 +649,6 @@ __all__ = [
     "DeliveryReceipt",
     "OfflinePinnedVersion",
     "OfflinePolicy",
-    "LearningEvaluationDescriptor",
-    "LearningSelectionPolicies",
-    "LearningSkillPackages",
-    "LearningEnrollmentRequest",
-    "LearningEnrollment",
-    "LearningEnrollmentStatus",
-    "LearningRenewalRequest",
-    "LearningRenewalReceipt",
-    "LearningLesson",
-    "LearningFeedback",
-    "LearningReplayVerdict",
-    "LearningIncidentReplay",
-    "LearningOutcomeStatus",
-    "LearningOutcomeRequest",
-    "LearningCorrectionRequest",
-    "LearningCorrectionReceipt",
-    "LearningRecheck",
-    "LearningRecheckVerdict",
-    "LearningRecheckRequest",
-    "LearningRecheckReceipt",
-    "LearningOutcomeReceipt",
-    "LearningFieldAuditRequest",
-    "LearningFieldRequalification",
-    "LearningFieldReplay",
-    "LearningFieldAuditReceipt",
-    "LearningAccepted",
-    "LearningWork",
     "OperationCommitted",
     "OperationNotObserved",
     "OperationClosed",

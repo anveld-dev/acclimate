@@ -1,24 +1,11 @@
 """These application mistakes must remain static errors; never execute this file."""
 from acclimate import (
-    AcclimateClient, Evaluation, FinishEvaluationRequest, StartEvaluationRequest, VerifiedVersionConnection,
+    AcclimateClient, CreateReleaseRequest, VerifiedVersionConnection,
 )
 from acclimate.evaluation import (
     Case, EvaluationApp, EvaluationError, ExecuteInput, ExecutionResult, GradeInput, GradeResult, define_evaluation,
 )
-from acclimate.evaluation_analysis import AnalysisComparisonBinding
-
-missing_analysis_comparison: AnalysisComparisonBinding = {  # reject: typeddict-item
-    "parentVersionId": "parent", "candidateVersionId": "candidate",
-    "parentDigest": "sha256:parent", "candidateDigest": "sha256:candidate",
-    "requestId": "request", "attemptId": "attempt",
-}
-
-bad_start: StartEvaluationRequest = {"attempt_id": "attempt"}  # reject: typeddict-unknown-key,typeddict-item
-bad_finish: FinishEvaluationRequest = {"attemptId": "attempt"}  # reject: typeddict-item
-
-
-def invalid_status(evaluation: Evaluation) -> None:
-    evaluation["status"] = "sealed"  # reject: typeddict-item
+bad_release: CreateReleaseRequest = {"versionId": "v", "expectedRevision": "0"}  # reject: typeddict-item
 
 
 def execute(run: ExecuteInput[dict[str, str]]) -> ExecutionResult[dict[str, str]]:

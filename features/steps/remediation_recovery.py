@@ -4,8 +4,6 @@ import re
 from urllib.parse import quote
 from behave import when, then
 from playwright.sync_api import expect
-from scripts.bdd.editor import expect_editor_value
-from features.steps.console import ensure_editor, save_browser, saved_draft
 from scripts.bdd.interactions import reveal
 
 
@@ -42,83 +40,16 @@ def lose_response(page, click):
     assert dropped
 
 
-@when('the browser loses a successful {command} snapshot response for text A')
-def lose_snapshot(context, command):
+@when('the browser loses a successful restore response')
+def lose_operation(context):
     w = context.world
-    p = w.browser().page
-    ensure_editor(context)
-    if command == 'save':
-        p.get_by_role('textbox', name='Content', exact=True).fill('Initial saved fixture.')
-        save_browser(context)
-    else:
-        assert command == 'create'
-        expect(p).to_have_url(__import__('re').compile(r'[?&]draft=new'))
-    w.before_retry_url = p.url
-    p.get_by_role('textbox', name='Content', exact=True).fill(TEXT_A)
-    lose_response(p, lambda: p.get_by_role('button', name='Save draft', exact=True).click())
-    w.recovered_draft = saved_draft(w)
-    assert w.draft_text(w.recovered_draft) == TEXT_A
-    w.recovery_records = records(p)
-    assert len(w.recovery_records) == 1
-
-
-@when('I edit the uncertain snapshot to text B and retry the exact request')
-def edit_retry(context):
-    p = context.world.browser_fixture.page
-    p.get_by_role('textbox', name='Content', exact=True).fill(TEXT_B)
-    p.get_by_role('textbox', name='Content', exact=True).evaluate("element => element.dataset.recoveryInstance = 'same-editor'")
-    held = []
-    def hold(route):
-        if route.request.method == 'POST' and not held:
-            response = route.fetch()
-            held.append(True)
-            # A successful save/retry response is held at the browser boundary.
-            # Selecting another file here could supersede saved-draft navigation.
-            expect(p.get_by_role('treeitem', name='Open AGENTS.md', exact=True)).to_be_disabled()
-            expect(p.get_by_role('textbox', name='Content', exact=True)).to_be_disabled()
-            route.fulfill(response=response)
-        else:
-            route.continue_()
-    p.route('**/*', hold)
-    try:
-        p.get_by_role('button', name='Retry exact request', exact=True).click()
-        expect(p.get_by_text('Your later browser edits are preserved.', exact=False)).to_be_visible()
-    finally:
-        p.unroute('**/*', hold)
-    assert held
-
-
-@then('the service retains only text A and the same editor keeps unsaved text B')
-def retained_editor(context):
-    w = context.world
-    p = w.browser_fixture.page
-    expect(p).to_have_url(w.before_retry_url)
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), TEXT_B)
-    expect(p.get_by_role('textbox', name='Content', exact=True)).to_have_attribute('data-recovery-instance', 'same-editor')
-    expect(p.locator('.draft-status p[data-unsaved="true"]')).to_contain_text(f"Generation {w.recovered_draft['generation']} saved · Unsaved changes")
-    assert records(p) == []
-    current = saved_draft(w)
-    assert current == w.recovered_draft
-    assert w.draft_text(current) == TEXT_A
-    expect(p.get_by_role('button', name='Save draft', exact=True)).to_be_enabled()
-
-
-@when('the browser loses a successful {operation} response')
-def lose_operation(context, operation):
-    w = context.world
-    w.recovery_kind = operation
-    if operation == 'draft':
-        w.browser().select_bundle()
-        lose_snapshot(context, 'create')
-        return
-    assert operation == 'restore'
-    w.save_new('Release before rollback.')
+    w.upload_version('Release before rollback.')
     w.manual_release()
     b = w.browser()
     b.visit('/releases')
     p = b.page
-    p.get_by_role('button', name=re.compile(r'^Compare Revision 1\b', re.I)).click()
-    p.get_by_role('region', name='Comparison for revision 1', exact=True).get_by_role('button', name='Restore revision 1', exact=True).click()
+    p.get_by_role('article', name='Revision 1', exact=True).get_by_role('button').click()
+    p.get_by_role('region', name='Selected release', exact=True).get_by_role('button', name='Restore revision 1', exact=True).click()
     p.get_by_label('Reason for restoring', exact=True).fill('Explicit recovery fixture rollback.')
     lose_response(p, lambda: p.get_by_role('button', name='Restore version', exact=True).click())
     w.recovery_records = records(p)
@@ -141,7 +72,7 @@ def lose_rights(context):
     record = json.loads(w.recovery_records[0][1])
     lookup = w.root + '/operations/' + record['key'] + '?operationPath=' + quote(record['action'], safe='')
     w.call('GET', lookup, actor='_browser-operator', expected=403)
-    retry = 'Retry exact request' if w.recovery_kind == 'draft' else 'Retry exact restore'
+    retry = 'Retry exact restore'
     reveal(p.get_by_role('button', name=retry, exact=True, include_hidden=True))
     p.get_by_role('button', name=retry, exact=True).click()
     expect(p.get_by_role('button', name=retry, exact=True)).to_be_enabled()
@@ -157,22 +88,10 @@ def reconcile_rights(context):
     p = w.browser_fixture.page
     w.call('PUT',w.root+'/memberships/'+w.sessions['_browser-operator']['userId'],
            dict(role='admin'),actor='_rights-admin')
-    # Close must return the already committed draft and safely hand off to its
-    # saved route, rather than fence it or leave an old editor permanently busy.
-    settlement = 'Close unresolved operation' if w.recovery_kind == 'draft' else 'Check result'
+    settlement = 'Check result'
     reveal(p.get_by_role('button', name=settlement, exact=True, include_hidden=True))
     p.get_by_role('button', name=settlement, exact=True).click()
     expect(p.get_by_role('button', name='Check result', exact=True)).to_have_count(0)
     assert records(p) == []
-    if w.recovery_kind == 'draft':
-        expect(p).to_have_url(__import__('re').compile(r'[?&]draft='+w.recovered_draft['id']))
-        p.wait_for_load_state('networkidle')
-        expect(p.get_by_role('textbox', name='Content', exact=True)).to_be_enabled()
-        p.get_by_role('textbox', name='Content', exact=True).fill(TEXT_B)
-        expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), TEXT_B)
-        expect(p.locator('.draft-status p[data-unsaved="true"]')).to_contain_text(f"Generation {w.recovered_draft['generation']} saved · Unsaved changes")
-        assert saved_draft(w) == w.recovered_draft
-        assert w.draft_text(w.recovered_draft) == TEXT_A
-    else:
-        current = w.call('GET', w.channel)
-        assert current['revision'] == '3' and current['version'] == w.original['version']
+    current = w.call('GET', w.channel)
+    assert current['revision'] == '3' and current['version'] == w.original['version']

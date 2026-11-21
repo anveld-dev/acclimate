@@ -35,32 +35,44 @@ _PATH_DIAGNOSTICS = {
 
 
 SafeCode = Literal[
-    "usage.missing_command", "usage.unknown_command", "usage.unknown_flag", "usage.missing_flag",
-    "usage.invalid_flag", "usage.conflicting_flags",
-    "config.missing", "config.schema", "config.permissions", "config.url", "handoff.missing",
-    "definition.invalid", "definition.report_budget_exceeded", "application.invalid",
-    "application.import_failed", "output.invalid", "payload.incompatible", "runtime.unsupported", "capabilities.unsupported",
-    "bundle.missing", "request.missing", "version.missing", "guided_target_unsupported",
-    "auth.denied", "auth.principal_mismatch",
-    "learning.apps_module_missing", "learning.apps_module_load_failed", "learning.apps_invalid_export",
-    "learning.recheck_callback_missing", "learning.field_replay_callback_missing",
-    "learning.incident_replay_callback_missing",
-    "descriptor.mismatch", "version.binding_mismatch", "service.unavailable", "transport.response_too_large",
-    "journal.busy", "journal.foreign", "journal.missing", "journal.relocated", "journal.invalid",
-    "journal.ownership_lost", "execution.uncertain", "submission.unconfirmed", "request.interrupted",
-    "request.base_conflict", "request.channel_empty", "request.intent_mismatch", "policy.invalid", "policy.inventory_incompatible",
-    "evidence.not_terminal", "evidence.identity_mismatch", "evidence.malformed", "evidence.reward_out_of_range", "evidence.incomplete",
-    "cost.unknown", "analysis.nonfinite", "analysis.invalid_config", "analysis.invalid_observations",
-    "analysis.identity_mismatch", "artifact.missing", "artifact.hash_mismatch", "artifact.integrity",
-    "artifact.selection_invalid", "artifact.mapper_failed", "internal.error",
+    "usage.missing_command",
+    "usage.unknown_command",
+    "usage.unknown_flag",
+    "usage.missing_flag",
+    "usage.invalid_flag",
+    "usage.conflicting_flags",
+    "config.missing",
+    "config.schema",
+    "config.permissions",
+    "config.url",
+    "definition.invalid",
+    "application.invalid",
+    "application.import_failed",
+    "learning.apps_invalid_export",
+    "learning.held_out_mismatch",
+    "output.invalid",
+    "payload.incompatible",
+    "runtime.unsupported",
+    "bundle.missing",
+    "guided_target_unsupported",
+    "auth.denied",
+    "descriptor.mismatch",
+    "service.unavailable",
+    "transport.response_too_large",
+    "journal.busy",
+    "journal.invalid",
+    "journal.ownership_lost",
+    "execution.uncertain",
+    "evidence.identity_mismatch",
+    "evidence.malformed",
+    "evidence.incomplete",
+    "internal.error",
 ]
 SafeNextAction = Literal[
-    "fix_command", "fix_config", "fix_application", "check_service", "ask_operator", "upgrade_service",
-    "retry_same_command", "restore_original_journal", "inspect_external_app", "interrupt_then_new_request",
-    "review_terminal_evidence",
+    "none", "fix_command", "fix_config", "fix_application", "check_service",
+    "ask_operator", "retry_same_command", "inspect_external_app",
 ]
-EvaluationPhase = Literal["configure", "preflight", "claim", "verify", "execute", "submit", "finish",
-                          "inspect", "policy", "export"]
+EvaluationPhase = Literal["configure", "preflight", "verify", "execute", "inspect"]
 ExecutionState = Literal["not_started", "may_have_started", "report_saved", "finished"]
 
 #: Evaluator CLI exit codes. Each names what to do next, so CI can tell a quality
@@ -68,8 +80,6 @@ ExecutionState = Literal["not_started", "may_have_started", "report_saved", "fin
 EXIT_CODES = {
     "ok": 0,              # The command succeeded. For a policy check, the candidate passed.
     "usage": 1,           # Fix the command line, config, application module or definition.
-    "gate_failed": 2,     # The quality gate failed: the policy verdict is fail.
-    "indeterminate": 3,   # The evidence cannot support a verdict yet.
     "infrastructure": 4,  # The run or the service failed.
     "recovery": 5,        # Recovery is required before retrying.
 }
@@ -102,63 +112,30 @@ ERROR_CODES: dict[str, tuple[str, str, int]] = {
     "usage.invalid_flag": _usage("A flag has an invalid or repeated value."),
     "usage.conflicting_flags": _usage("These flags cannot be used together."),
     "config.missing": _config("The evaluator config file does not exist."),
-    "config.schema": _config("The evaluator config, handoff or command input has an invalid field."),
+    "config.schema": _config("The evaluator config or command input has an invalid field."),
     "config.permissions": _config("A private file or directory has unsafe ownership, mode or path."),
     "config.url": _config("serviceUrl must be an https:// origin, or http:// on localhost, with no path, query or credentials."),
-    "handoff.missing": _config("The handoff file does not exist."),
     "definition.invalid": _app("The evaluation definition is invalid."),
-    "definition.report_budget_exceeded": _app("The case inventory exceeds the comparison report size limit. Split the cases into smaller evaluations."),
     "application.invalid": _app("The application module does not export a valid adapter."),
     "application.import_failed": _app("The application module could not be imported."),
+    "learning.apps_invalid_export": _app("Default-export an object with execute, grade, heldOut and an execution mode."),
+    "learning.held_out_mismatch": _app("The installed held-out cases do not match the loop's held-out commitment."),
     "output.invalid": _app("A callback returned a value that is not plain JSON."),
     "payload.incompatible": ("The payload breaks a compatibility rule of a native harness the application declares.", "fix_command", 1),
-    "runtime.unsupported": _config("This platform cannot run the durable evaluator. Use Linux or macOS with python3 available."),
-    "capabilities.unsupported": ("The service does not support retained evaluation operations.", "upgrade_service", 1),
+    "runtime.unsupported": _config("This platform cannot run the evaluator. Use Linux or macOS with python3 available."),
     "bundle.missing": _config("The bundle does not exist in this workspace or the evaluator cannot read it."),
-    "request.missing": _config("The evaluation request does not exist in this workspace."),
-    "version.missing": _config("A parent or candidate version does not exist in this workspace."),
-    "guided_target_unsupported": _config("The workspace, bundle, request or channel identifier is not in the supported format."),
-    "auth.denied": ("The service denied this token. Check the evaluator or reader token and its permissions.", "ask_operator", 1),
-    "auth.principal_mismatch": ("The token belongs to a different principal or workspace than the config names.", "ask_operator", 1),
-    "learning.apps_module_missing": _config("The learning application module is missing."),
-    "learning.apps_module_load_failed": _config("The learning application module could not be loaded."),
-    "learning.apps_invalid_export": _config("The learning application module has an invalid export."),
-    "learning.recheck_callback_missing": _config("The learning application does not export the recheck callback."),
-    "learning.field_replay_callback_missing": _config("The learning application does not export the field replay callback."),
-    "learning.incident_replay_callback_missing": _config("The learning application does not export the incident replay callback."),
-    "descriptor.mismatch": _app("The installed cases, grader or runtime differ from the ones the request was created with."),
-    "version.binding_mismatch": _config("The parent or candidate version does not match the request, config or handoff."),
+    "guided_target_unsupported": _config("The workspace or bundle identifier is not in the supported format."),
+    "auth.denied": ("The service denied this token. Check the evaluator token and its permissions.", "ask_operator", 1),
+    "descriptor.mismatch": _app("The installed descriptor is invalid."),
     "service.unavailable": ("The Acclimate service is unreachable or returned a server error.", "check_service", 4),
     "transport.response_too_large": ("A service response exceeded the size limit.", "fix_config", 4),
-    "journal.busy": _recovery("Another evaluator process owns this request. No execution started here.", "retry_same_command"),
-    "journal.foreign": _recovery("The journal belongs to a different request or evaluator.", "inspect_external_app"),
-    "journal.missing": _recovery("The request has started, but this machine has no journal for it.", "inspect_external_app"),
-    "journal.relocated": _recovery("The journal moved from its original location.", "restore_original_journal"),
+    "journal.busy": _recovery("Another evaluator process holds the local evaluator lock. No execution started here.", "retry_same_command"),
     "journal.invalid": _recovery("The journal is corrupt or was edited.", "fix_config"),
     "journal.ownership_lost": _recovery("This process lost ownership of the journal during the run.", "inspect_external_app"),
     "execution.uncertain": _recovery("Callbacks may have started, and the evaluator cannot prove they stopped.", "inspect_external_app"),
-    "submission.unconfirmed": _recovery("The report was saved locally, but the service has not confirmed the submission.", "retry_same_command"),
-    "request.interrupted": _recovery("The request was interrupted.", "interrupt_then_new_request"),
-    "request.base_conflict": _recovery("The published parent changed after this request was created.", "fix_config"),
-    "request.channel_empty": ("The channel has no published release, so there is no parent to compare with.", "ask_operator", 1),
-    "request.intent_mismatch": _config("The saved run intent differs from this command. Reuse the original inputs, or start a new run name."),
-    "policy.invalid": _config("The quality policy is invalid."),
-    "policy.inventory_incompatible": _config("The policy requires cases that are not in the evaluation inventory."),
-    "evidence.not_terminal": ("The request has not finished, so there is no complete evidence yet.", "fix_config", 3),
-    "evidence.identity_mismatch": _config("The evidence does not match the expected request, attempt or submitter."),
+    "evidence.identity_mismatch": _config("The version or digest does not match the expected identity."),
     "evidence.malformed": _config("The service returned evidence in an unexpected shape."),
-    "evidence.reward_out_of_range": _config("A scored reward is outside the reward scale declared by the policy. Fix the grader or the policy metric.scale."),
-    "evidence.incomplete": ("The service returned incomplete evidence.", "fix_config", 3),
-    "cost.unknown": ("Cost evidence is missing for some outcomes.", "fix_config", 3),
-    "analysis.nonfinite": _config("An analysis input or result is not a finite number."),
-    "analysis.invalid_config": _config("The analysis configuration is invalid."),
-    "analysis.invalid_observations": _config("An analysis observation is invalid."),
-    "analysis.identity_mismatch": _config("An analysis observation does not match the trusted evidence."),
-    "artifact.missing": ("A private review artifact is missing from the journal.", "fix_config", 3),
-    "artifact.hash_mismatch": _config("A private review artifact does not match its recorded digest."),
-    "artifact.integrity": _config("The private artifact index is inconsistent with the saved report."),
-    "artifact.selection_invalid": _config("The artifact selection file is invalid."),
-    "artifact.mapper_failed": _app("to_review_artifact raised or returned an invalid value."),
+    "evidence.incomplete": ("The bundle inventory exceeded the preflight read limit.", "fix_config", 1),
     "internal.error": ("An unexpected error occurred. Rerun with --verbose or ACCLIMATE_DEBUG=1 for details.", "fix_config", 4),
 }
 
@@ -417,26 +394,6 @@ def validate_descriptor(value: Any) -> dict:
     return clone_json(value)
 
 
-def descriptor_from(value: dict) -> dict:
-    return {key: copy.deepcopy(value[key]) for key in ("datasetRevision","graderRevision","runtime","expectedCases")}
-
-
-def assert_descriptor(actual: dict, expected: dict) -> None:
-    fields = []
-    for name in ("datasetRevision","graderRevision","runtime"):
-        if actual.get(name) != expected.get(name):
-            fields.append(name)
-    try:
-        inventory_a = {(x["caseId"],x["repetition"]) for x in actual["expectedCases"]}
-        inventory_b = {(x["caseId"],x["repetition"]) for x in expected["expectedCases"]}
-        if inventory_a != inventory_b or len(inventory_a) != len(actual["expectedCases"]):
-            fields.append("expectedCases")
-    except (KeyError, TypeError):
-        fields.append("expectedCases")
-    if fields:
-        raise EvaluationError("descriptor.mismatch",phase="verify",mismatch_fields=fields)
-
-
 def validate_service_url(value: Any) -> None:
     if not _text(value,4096,trimmed=True):
         raise EvaluationError("config.url")
@@ -447,16 +404,6 @@ def validate_service_url(value: Any) -> None:
         _ = url.port  # Reading the port validates its syntax and range.
     except ValueError:
         raise EvaluationError("config.url") from None
-
-
-def validate_handoff(value: Any) -> dict:
-    if type(value) is not dict or set(value) != {"schemaVersion","serviceUrl","workspaceId","bundleId","requestId","descriptor"} or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1:
-        raise EvaluationError("config.schema")
-    validate_service_url(value["serviceUrl"])
-    if not guided_workspace(value["workspaceId"]) or not guided_uuid(value["bundleId"]) or not guided_uuid(value["requestId"]):
-        raise EvaluationError("guided_target_unsupported")
-    validate_descriptor(value["descriptor"])
-    return clone_json(value)
 
 
 def _canonical_path(path: str | Path, *, alias_issue: str | None = None) -> Path:
@@ -607,7 +554,7 @@ def _read_token_file(path: Any) -> str:
     return token
 
 
-def _read_config(path: str | Path, reader: bool) -> dict:
+def _read_config(path: str | Path) -> dict:
     try:
         relative = not Path(path).is_absolute()
     except TypeError:
@@ -622,9 +569,9 @@ def _read_config(path: str | Path, reader: bool) -> dict:
     filename = _canonical_path(path, alias_issue="configAlias")
     _private_parent(filename)
     value = parse_json(read_private_bytes(filename, config_file=True))
-    fields = {"schemaVersion","serviceUrl","workspaceId","readToken"} if reader else {"schemaVersion","serviceUrl","workspaceId","evaluatorPrincipalId","journalRoot"}
+    fields = {"schemaVersion","serviceUrl","workspaceId","evaluatorPrincipalId","journalRoot"}
     # The evaluator token is inline, in a private file, or in ACCLIMATE_EVALUATOR_TOKEN.
-    optional = set() if reader else {"captureCallbackErrors","evaluatorToken","evaluatorTokenFile"}
+    optional = {"captureCallbackErrors","evaluatorToken","evaluatorTokenFile"}
     if (type(value) is not dict or not fields.issubset(value) or set(value) - fields - optional
             or type(value.get("schemaVersion")) is not int or value["schemaVersion"] != 1
             or type(value.get("captureCallbackErrors", False)) is not bool
@@ -633,30 +580,20 @@ def _read_config(path: str | Path, reader: bool) -> dict:
     validate_service_url(value["serviceUrl"])
     if not guided_workspace(value["workspaceId"]):
         raise EvaluationError("guided_target_unsupported")
-    if not reader and (not _text(value["evaluatorPrincipalId"],1024,trimmed=True) or not _text(value["journalRoot"],4096,trimmed=True) or not Path(value["journalRoot"]).is_absolute()):
+    if (not _text(value["evaluatorPrincipalId"],1024,trimmed=True) or not _text(value["journalRoot"],4096,trimmed=True) or not Path(value["journalRoot"]).is_absolute()):
         raise EvaluationError("config.schema")
-    if not reader and "evaluatorTokenFile" in value:
+    if "evaluatorTokenFile" in value:
         value = {k: v for k, v in value.items() if k != "evaluatorTokenFile"} | {"evaluatorToken": _read_token_file(value["evaluatorTokenFile"])}
-    elif not reader and "evaluatorToken" not in value:
+    elif "evaluatorToken" not in value:
         value = value | {"evaluatorToken": os.environ.get(EVALUATOR_TOKEN_ENV)}
-    token_key = "readToken" if reader else "evaluatorToken"
-    if not _text(value[token_key],4096,trimmed=True):
+    if not _text(value["evaluatorToken"],4096,trimmed=True):
         raise EvaluationError("config.schema")
     return value
 
 
 def read_evaluator_config(path: str | Path) -> dict:
     try:
-        return _read_config(path,False)
-    except EvaluationError:
-        raise
-    except (OSError, ValueError, TypeError):
-        raise EvaluationError("config.schema") from None
-
-
-def read_reader_config(path: str | Path) -> dict:
-    try:
-        return _read_config(path,True)
+        return _read_config(path)
     except EvaluationError:
         raise
     except (OSError, ValueError, TypeError):
@@ -664,41 +601,8 @@ def read_reader_config(path: str | Path) -> dict:
 
 
 def make_client(config: dict) -> AcclimateClient:
-    return AcclimateClient(config["serviceUrl"],token=config.get("evaluatorToken",config.get("readToken")),
-        scope=config.get("evaluatorPrincipalId","review-reader"),max_json_response_bytes=4*MIB)
-
-
-def scope_from(config: dict, handoff: dict) -> dict:
-    if handoff["serviceUrl"] != config["serviceUrl"] or handoff["workspaceId"] != config["workspaceId"]:
-        raise EvaluationError("auth.principal_mismatch")
-    return {"serviceUrl":config["serviceUrl"],"workspaceId":config["workspaceId"],
-        "bundleId":handoff["bundleId"],"requestId":handoff["requestId"],
-        "evaluatorPrincipalId":config["evaluatorPrincipalId"]}
-
-
-def mutation_path(operation: str, scope: dict) -> str:
-    if not guided_workspace(scope.get("workspaceId")) or not guided_uuid(scope.get("bundleId")):
-        raise EvaluationError("guided_target_unsupported")
-    base=f'/v1/workspaces/{scope["workspaceId"]}/bundles/{scope["bundleId"]}'
-    if operation == "submit":
-        return base+"/comparisons"
-    if operation == "createRequest":
-        return base+"/evaluation-requests"
-    if operation == "createDraft":
-        channel=scope.get("channel")
-        if type(channel) is not str or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}",channel):
-            raise EvaluationError("guided_target_unsupported")
-        return base+f"/channels/{channel}/drafts"
-    if operation in ("start","finish","interrupt","abandon") and guided_uuid(scope.get("requestId")):
-        return base+f'/evaluation-requests/{scope["requestId"]}/{operation}'
-    raise EvaluationError("guided_target_unsupported")
-
-
-def mutate(client: AcclimateClient, operation: str, scope: dict, body_bytes: bytes, key: str) -> dict:
-    if type(body_bytes) is not bytes or len(body_bytes)>2*MIB:
-        raise EvaluationError("config.schema")
-    parse_json(body_bytes)
-    return client._request("POST",mutation_path(operation,scope),key=key,_body_bytes=body_bytes,_retained=True)
+    return AcclimateClient(config["serviceUrl"],token=config["evaluatorToken"],
+        scope=config["evaluatorPrincipalId"],max_json_response_bytes=4*MIB)
 
 
 def sha256(data: bytes) -> str:

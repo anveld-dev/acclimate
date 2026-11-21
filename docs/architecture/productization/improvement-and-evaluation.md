@@ -2,7 +2,7 @@
 
 **Implemented as an operator workflow.** Connect existing proposals, versions, comparisons and promotions. The application runs and grades its own agent; the operator reviews the evidence and chooses a release.
 
-The current boundaries are in [the improvement design](../../design/improvement.md), [service](../../../src/improvement.rs), [compare helper](../../../packages/sdk/src/compare.ts) and [app-owned example](../../../examples/service-proposer/workflow.ts). The [release console](../../../apps/console/src/components/bundle-releases.tsx) has history and rollback, not this workflow.
+The current boundaries are in [the improvement design](../../design/improvement.md), [service](https://github.com/anveld-dev/acclimate/blob/4096ff1b60098554b0cb932866a338cadf29601c/src/improvement.rs), [compare helper](../../../packages/sdk/src/compare.ts) and [app-owned example](https://github.com/anveld-dev/acclimate/blob/4096ff1b60098554b0cb932866a338cadf29601c/examples/service-proposer/workflow.ts). The [release console](../../../apps/console/src/components/bundle-releases.tsx) has history and rollback, not this workflow.
 
 ```text
 save a draft or request a proposal → choose an immutable candidate
@@ -24,13 +24,13 @@ The compare helper now captures report version IDs/digests, dataset revision, ru
 
 It also keeps a canonical output isolated from graders and passes a fresh clone to every attempt. Outputs must be structured-cloneable data; an uncloneable output records a grading failure without rerunning execution. In-process retries do not imply durable storage or cross-process recovery.
 
-Both fixes have [model-free regression tests](../../../packages/sdk/tests/compare/compare.test.ts). They need no server profile registry, downloadable manifest or output-index service.
+Both fixes have [model-free regression tests](https://github.com/anveld-dev/acclimate/blob/4096ff1b60098554b0cb932866a338cadf29601c/packages/sdk/tests/compare/compare.test.ts). They need no server profile registry, downloadable manifest or output-index service.
 
 ## Request and run evaluation
 
 The first console handoff is a small durable request: parent/candidate IDs and digests, dataset revision, expected cases/repetitions, runtime/model settings, grader revision, requester, state, attempt and optional comparison ID. Record the app's declared limits and configuration ID/digest where useful. Freeze those fields at creation. They describe intended execution; the service cannot certify an external host's behavior.
 
-Ship one app-owned fixture command by adapting [the existing workflow](../../../examples/service-proposer/workflow.ts). It reads private service configuration, fetches the request, verifies both version digests and parentage, and uses locally installed fixtures, execution and grading functions. Document its exact invocation with a request ID. Do not put credentials in the copied command, download code from a request or follow arbitrary fixture URLs. This runnable example is required with the evaluation UI; a universal runner and server-side profile registration are not.
+Ship one app-owned fixture command by adapting [the existing workflow](https://github.com/anveld-dev/acclimate/blob/4096ff1b60098554b0cb932866a338cadf29601c/examples/service-proposer/workflow.ts). It reads private service configuration, fetches the request, verifies both version digests and parentage, and uses locally installed fixtures, execution and grading functions. Document its exact invocation with a request ID. Do not put credentials in the copied command, download code from a request or follow arbitrary fixture URLs. This runnable example is required with the evaluation UI; a universal runner and server-side profile registration are not.
 
 Under the bundle, add request create/list/detail plus `POST /{id}/start`, `/finish` and `/interrupt`. Start binds the authenticated evaluator principal and a caller-generated attempt ID. Finish checks that same principal, attempt and current scoped permission; require the linked comparison to have that submitter too. Match its version identities, declared dataset/runtime/grader fields and expected inventory to the stored request. A request ID in evidence identifies the association; no exact-byte manifest protocol is required.
 

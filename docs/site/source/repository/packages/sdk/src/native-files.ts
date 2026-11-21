@@ -234,3 +234,5 @@ export async function prepareNativeFiles(
     },
   };
 }
+
+export { transcriptTail } from './learning/trace.js';

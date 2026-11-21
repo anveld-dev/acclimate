@@ -36,7 +36,7 @@ type FileTreeProps = {
   onSelectItem?: (item: FileTreeItem) => void;
 };
 
-/** Scope changes reset folds; path changes do not change draft entry identity. */
+/** Scope changes reset folds; path changes do not change file identity. */
 export function FileTree(props: FileTreeProps) {
   return <ScopedFileTree key={props.scopeKey} {...props} />;
 }
@@ -212,10 +212,8 @@ function ScopedFileTree({
     const onResize = () => schedule(true);
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => schedule());
     const workspace = element.closest('.content-workspace');
-    const workbench = element.closest('.draft-workbench');
     const controls = element.parentElement?.querySelector('.file-navigator-controls');
-    const toolbar = workbench?.querySelector('.draft-toolbar');
-    [element, workspace, workbench, controls, toolbar].forEach((node) => {
+    [element, workspace, controls].forEach((node) => {
       if (node) observer?.observe(node);
     });
     window.addEventListener('resize', onResize);

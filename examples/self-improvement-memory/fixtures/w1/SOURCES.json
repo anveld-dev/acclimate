@@ -1,0 +1,30 @@
+{
+  "baseline.json": {
+    "source": "Adapted from examples/real-app-learning/baseline.json for prompt-only W1",
+    "sha256": "8362bd86039edfca394fd271b5ae153301e3c279b444fec76996310f3b668c25"
+  },
+  "tasks.py": {
+    "source": "examples/real-app-learning/tasks.py",
+    "sha256": "98ba61a7435fe79a90285a67effc0cec9bea0e303362ef232aece0b96615d3fe"
+  },
+  "40-case-additions.json": {
+    "source": "examples/real-app-learning/40-case-additions.json",
+    "sha256": "004236e032a562e956e30da4f9d0282275000cfdf45de1004af0728e9904fd47"
+  },
+  "grade.py": {
+    "source": "examples/real-app-learning/grade.py",
+    "sha256": "6b65e6c8afe07d8a923ab5710c1693441a77a098a295cf436cde457de4b97f65"
+  },
+  "check-replication.py": {
+    "source": "examples/real-app-learning/check-replication.py",
+    "sha256": "575c6122089b4301e1540411f9a7d102afc64a073a3261500c6651829c141401"
+  },
+  "replication-audit.json": {
+    "source": "examples/real-app-learning/replication-audit.json",
+    "sha256": "219431880c0f5f12c61254c4d0eeb40e61ba14f5a5d9926841e71903e1f68b1c"
+  },
+  "held-out.json": {
+    "source": "Authored for W1 phase 5",
+    "sha256": "96d4b082896de26931b1b8f9c8c15a92c68e8e58a3c70f39a79d01785f25015b"
+  }
+}

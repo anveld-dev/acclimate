@@ -180,7 +180,7 @@ def assert_navigation_metrics(metrics):
         assert bounds and bounds['top']>=second['top']-1 and bounds['bottom']<=second['bottom']+1, dict(navigation=bounds,second=second)
     if metrics['viewport'] in (390,320) and navigation:
         bounds=navigation['bounds']
-        assert bounds and len(navigation['links'])==4, navigation
+        assert bounds and [link['name'] for link in navigation['links']] == ['Content', 'Releases', 'Learning'], navigation
         clipped=[link for link in navigation['links'] if link['left'] < bounds['left']-1 or link['right'] > bounds['right']+1 or link['top'] < bounds['top']-1 or link['bottom'] > bounds['bottom']+1]
         assert not clipped, dict(navigation=bounds,clippedTabs=clipped)
     if metrics['viewport']<=600 and metrics.get('hasDetailBackLink'):

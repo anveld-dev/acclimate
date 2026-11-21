@@ -33,13 +33,13 @@ class CoverageTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), 'import-only')
 
-    inventory={'DRAFT-01':{'cases':2,'name':'Save and reopen',
+    inventory={'RELEASE-01':{'cases':2,'name':'Release and restore',
                            'examples':[{'state':'new'},{'state':'saved'}]}}
     def result(self,state,status='passed',step='passed'):
-        return {'tags':['DRAFT-01'],'example':{'state':state},'status':status,
+        return {'tags':['RELEASE-01'],'example':{'state':state},'status':status,
                 'steps':[{'result':{'status':step}}]}
     def covered(self,*rows):
-        return assess(self.inventory,[{'elements':list(rows)}])['DRAFT-01']['covered']
+        return assess(self.inventory,[{'elements':list(rows)}])['RELEASE-01']['covered']
     def test_all_variants_must_pass(self):
         self.assertTrue(self.covered(self.result('saved'),self.result('new')))
     def test_missing_or_extra_variant_cannot_pass(self):
@@ -53,7 +53,7 @@ class CoverageTests(unittest.TestCase):
     def test_merge_shards_removes_filtered_placeholders_and_retains_duplicate_runs(self):
         with tempfile.TemporaryDirectory() as temporary:
             first, second = (Path(temporary) / name for name in ('first.json', 'second.json'))
-            location = 'features/draft.feature:1'
+            location = 'features/releases.feature:1'
             background = {'type':'background','steps':[]}
             first.write_text(json.dumps([dict(location=location, elements=[
                 background, self.result('new'), self.result('saved', status='skipped')])]))
@@ -62,9 +62,9 @@ class CoverageTests(unittest.TestCase):
             merged = merge_shards([first, second])
             self.assertEqual(len(merged), 1)
             self.assertEqual(merged[0]['elements'].count(background), 1)
-            self.assertTrue(assess(self.inventory, merged)['DRAFT-01']['covered'])
+            self.assertTrue(assess(self.inventory, merged)['RELEASE-01']['covered'])
             for paths in ([first], [first, second, first]):
-                self.assertFalse(assess(self.inventory, merge_shards(paths))['DRAFT-01']['covered'])
+                self.assertFalse(assess(self.inventory, merge_shards(paths))['RELEASE-01']['covered'])
     def test_skipped_undefined_or_failed_never_count(self):
         for status in ['skipped','undefined','failed','error']:
             with self.subTest(status=status):

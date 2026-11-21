@@ -74,22 +74,20 @@ class PythonStarterTest(unittest.TestCase):
             if path.is_file() and "__pycache__" not in path.parts
         )
         self.assertEqual(files, sorted(inventory["python-evaluation"]))
-        self.assertFalse(any(name.endswith((".mjs", ".mts", ".json")) and name != "quality-policy.example.json"
+        self.assertFalse(any(name.endswith((".mjs", ".mts", ".json"))
                              for name in files))
         self.assertNotIn("application.py", files, "the release check installs its own application.py")
 
     def test_shared_helpers_match_the_mixed_starter(self):
         # Change both copies together until the mixed starter drops its Python files.
-        for name in ("acclimate_eval.py", "analyze.py", "async_eval.py", "quality-policy.example.json",
-                     "test/test_async_lifetime.py"):
-            with self.subTest(name=name):
-                self.assertEqual((STARTER / name).read_bytes(), (MIXED_STARTER / name).read_bytes())
+        self.assertEqual((STARTER / "acclimate_eval.py").read_bytes(),
+                         (MIXED_STARTER / "acclimate_eval.py").read_bytes())
 
     def test_starter_entry_point_prints_help(self):
         result = subprocess.run([sys.executable, "acclimate_eval.py", "--help"], cwd=STARTER,
                                 env={**os.environ, "PYTHONPATH": str(ROOT / "python")},
                                 capture_output=True, text=True, check=True)
-        self.assertIn("compare", result.stdout)
+        self.assertIn("describe", result.stdout)
 
 
 if __name__ == "__main__":

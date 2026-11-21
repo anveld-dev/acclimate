@@ -129,102 +129,6 @@
     "cases": 1,
     "lane": "service"
   },
-  "LEARNING-01": {
-    "name": "A late correction can settle without another proposal on the current revision",
-    "source": "features/connected_learning.feature",
-    "cases": 2,
-    "lane": "service",
-    "examples": [
-      {
-        "evidence": "available",
-        "state": "resolved"
-      },
-      {
-        "evidence": "unavailable",
-        "state": "private_evidence_unavailable"
-      }
-    ]
-  },
-  "LEARNING-02": {
-    "name": "A proposer repairs measured development losses while held-out cases stay private",
-    "source": "features/connected_learning.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "LEARNING-03": {
-    "name": "Only a distinct review task qualifies as a held-out audit",
-    "source": "features/connected_learning.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "LEARNING-04": {
-    "name": "A retry distinguishes a better score from a failed execution",
-    "source": "features/connected_learning.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "LEARNING-05": {
-    "name": "Replaying withdrawn content can requalify a candidate without releasing it",
-    "source": "features/connected_learning.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "LEARNING-06": {
-    "name": "Every protected repetition must meet its latency ceiling before audit",
-    "source": "features/connected_learning.feature",
-    "cases": 2,
-    "lane": "service",
-    "examples": [
-      {
-        "first": "40",
-        "second": "120",
-        "state": "rejected",
-        "remaining": "1"
-      },
-      {
-        "first": "80",
-        "second": "80",
-        "state": "audit",
-        "remaining": "0"
-      }
-    ]
-  },
-  "LEARNING-07": {
-    "name": "A manual restore cannot move the baseline of a parked correction",
-    "source": "features/connected_learning.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "LEARNING-08": {
-    "name": "A blocked audit closes permanently and retains its evidence",
-    "source": "features/connected_learning.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "LEARNING-09": {
-    "name": "Fenced feedback and bounded screening settle before evaluation",
-    "source": "features/connected_learning.feature",
-    "cases": 4,
-    "lane": "service",
-    "examples": [
-      {
-        "mode": "repair",
-        "result": "repaired"
-      },
-      {
-        "mode": "reject",
-        "result": "critic-rejected"
-      },
-      {
-        "mode": "malformed-once",
-        "result": "format-retried"
-      },
-      {
-        "mode": "malformed",
-        "result": "proposal-format-rejected"
-      }
-    ]
-  },
   "UI-SETUP-01": {
     "name": "Create content only after an explicit action",
     "source": "features/console.feature",
@@ -257,56 +161,26 @@
     "cases": 1,
     "lane": "browser"
   },
-  "UI-CONTENT-02": {
-    "name": "Published instructions can be inspected from the console",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-DRAFT-02": {
-    "name": "A historical draft bookmark shows its saved change after restart",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-EVAL-02": {
-    "name": "Incomplete evidence shows all missing grades and unknown cost",
+  "UI-RECOVERY-02": {
+    "name": "Authorization loss cannot settle an uncertain restore",
     "source": "features/console.feature",
     "cases": 1,
     "lane": "browser"
   },
   "UI-RELEASE-01": {
-    "name": "Inspect the initial release and the absence of manual restore",
+    "name": "Inspect, download and restore a historical release with a reason",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-RELEASE-03": {
+    "name": "Review the new current release before retrying a stale restore",
     "source": "features/console.feature",
     "cases": 1,
     "lane": "browser"
   },
   "UI-INTEGRATION-01": {
     "name": "Issue a one-time credential and revoke it through the console",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-LEARNING-01": {
-    "name": "Inspect a blocked release and its rejection reason",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-LEARNING-02": {
-    "name": "Trace a failed job to the withdrawn release and its independent audit",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-LEARNING-03": {
-    "name": "A reviewer traces a rejected rollout to the regressed audit case",
-    "source": "features/console.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "UI-LEARNING-04": {
-    "name": "Stopping learning during a passing audit prevents a late automatic rollout",
     "source": "features/console.feature",
     "cases": 1,
     "lane": "browser"
@@ -335,8 +209,20 @@
     "cases": 1,
     "lane": "browser"
   },
+  "UI-KEYBOARD-01": {
+    "name": "Search, inspect and change tabs using the keyboard",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-POLL-01": {
+    "name": "Published content updates without a refresh button",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
   "UI-ACCESS-01": {
-    "name": "Workspace members can inspect content and delivery",
+    "name": "A workspace member can read published content and delivery",
     "source": "features/console_access.feature",
     "cases": 2,
     "lane": "browser",
@@ -378,196 +264,6 @@
     "source": "features/console_access.feature",
     "cases": 1,
     "lane": "browser"
-  },
-  "DRAFT-01": {
-    "name": "Reopen saved work after a service restart",
-    "source": "features/drafts.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "DRAFT-02": {
-    "name": "Keep both saved generations as immutable history",
-    "source": "features/drafts.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "DRAFT-03": {
-    "name": "A stale tab cannot overwrite a newer save",
-    "source": "features/drafts.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "DRAFT-04": {
-    "name": "Retry a confirmed save without creating another generation",
-    "source": "features/drafts.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "DRAFT-05": {
-    "name": "Recover an unconfirmed save after restart and response-cache expiry",
-    "source": "features/drafts.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "DRAFT-06": {
-    "name": "Reusing an operation ID with changed text is rejected",
-    "source": "features/drafts.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "DRAFT-07": {
-    "name": "Another writer cannot recover my operation",
-    "source": "features/drafts.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "DRAFT-08": {
-    "name": "A discarded draft stays closed after restart",
-    "source": "features/drafts.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "DRAFT-09": {
-    "name": "Invalid edits cannot partially replace a saved snapshot",
-    "source": "features/drafts.feature",
-    "cases": 5,
-    "lane": "service",
-    "examples": [
-      {
-        "invalid": "path traversal"
-      },
-      {
-        "invalid": "colliding paths"
-      },
-      {
-        "invalid": "unsupported schema"
-      },
-      {
-        "invalid": "no entries"
-      },
-      {
-        "invalid": "an oversized entry"
-      }
-    ]
-  },
-  "DRAFT-10": {
-    "name": "Browse all saved drafts through pagination",
-    "source": "features/drafts.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "DRAFT-11": {
-    "name": "A saved draft stays open after a manual publication attempt",
-    "source": "features/drafts.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "EVAL-01": {
-    "name": "A requested comparison does not pretend execution has started",
-    "source": "features/evaluation.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "EVAL-02": {
-    "name": "An application runs both exact versions and submits complete evidence",
-    "source": "features/evaluation.feature",
-    "cases": 1,
-    "lane": "sdk"
-  },
-  "EVAL-03": {
-    "name": "Starting the same attempt again does not create another run",
-    "source": "features/evaluation.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "EVAL-04": {
-    "name": "A competing attempt cannot take over a running evaluation",
-    "source": "features/evaluation.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "EVAL-05": {
-    "name": "Another writer cannot finish someone else's evaluation",
-    "source": "features/evaluation.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "EVAL-06": {
-    "name": "Bound evidence must match the requested experiment at submission",
-    "source": "features/evaluation.feature",
-    "cases": 5,
-    "lane": "service",
-    "examples": [
-      {
-        "setting": "dataset"
-      },
-      {
-        "setting": "runtime"
-      },
-      {
-        "setting": "grader"
-      },
-      {
-        "setting": "case inventory"
-      },
-      {
-        "setting": "result case"
-      }
-    ]
-  },
-  "EVAL-07": {
-    "name": "Partial grades survive a failed evaluation and block measured publication",
-    "source": "features/evaluation.feature",
-    "cases": 3,
-    "lane": "service",
-    "examples": [
-      {
-        "execution": "completed",
-        "grading": "missing"
-      },
-      {
-        "execution": "completed",
-        "grading": "failed"
-      },
-      {
-        "execution": "infrastructure_failed",
-        "grading": "missing"
-      }
-    ]
-  },
-  "EVAL-08": {
-    "name": "Unknown usage is preserved instead of inventing a zero cost",
-    "source": "features/evaluation.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "EVAL-09": {
-    "name": "An operator can interrupt pending or running work",
-    "source": "features/evaluation.feature",
-    "cases": 2,
-    "lane": "service",
-    "examples": [
-      {
-        "state": "waiting for an evaluator",
-        "outcome": "no attempt or evaluator has been assigned"
-      },
-      {
-        "state": "running with submitted evidence",
-        "outcome": "the original evaluator cannot finish with its submitted evidence"
-      }
-    ]
-  },
-  "EVAL-10": {
-    "name": "A service restart does not invent evaluator completion",
-    "source": "features/evaluation.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "EVAL-11": {
-    "name": "Repeated completion links the same immutable comparison",
-    "source": "features/evaluation.feature",
-    "cases": 1,
-    "lane": "service"
   },
   "IDENTITY-01": {
     "name": "A verified callback creates a private bounded browser session",
@@ -626,7 +322,7 @@
     "lane": "service"
   },
   "INTEGRATION-03": {
-    "name": "A content-read credential cannot fetch unpublished drafts",
+    "name": "A content-read credential cannot fetch unreleased versions",
     "source": "features/integrations.feature",
     "cases": 1,
     "lane": "service"
@@ -724,19 +420,13 @@
     "lane": "runtime"
   },
   "NATIVE-WALK-01": {
-    "name": "Enroll an imported native bundle and run it through the installed SDK",
+    "name": "Repair, release, deliver and roll back one native-target bundle",
     "source": "features/native_walk.feature",
     "cases": 1,
     "lane": "browser"
   },
   "NAV-01": {
     "name": "Workspace navigation and bundle tabs have different jobs",
-    "source": "features/navigation.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "NAV-03": {
-    "name": "A saved draft bookmark survives another tab selecting a different bundle",
     "source": "features/navigation.feature",
     "cases": 1,
     "lane": "browser"
@@ -777,6 +467,18 @@
     "cases": 1,
     "lane": "browser"
   },
+  "NAV-10": {
+    "name": "Browser Back restores the published entry and its search",
+    "source": "features/navigation.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "NAV-11": {
+    "name": "Switching workspace asks before discarding browser edits",
+    "source": "features/navigation.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
   "NAV-12": {
     "name": "A role downgrade clears a stale membership-management form",
     "source": "features/navigation.feature",
@@ -789,48 +491,6 @@
     "cases": 1,
     "lane": "browser"
   },
-  "PROPOSAL-01": {
-    "name": "A valid proposal creates a reviewable immutable candidate",
-    "source": "features/proposals.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "PROPOSAL-02": {
-    "name": "Provider edits outside the allowed paths are rejected",
-    "source": "features/proposals.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "PROPOSAL-03": {
-    "name": "Provider errors do not become pretend improvements",
-    "source": "features/proposals.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "PROPOSAL-04": {
-    "name": "Disabled proposal generation reports failure honestly",
-    "source": "features/proposals.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "PROPOSAL-05": {
-    "name": "A refreshed client can find and inspect its proposal",
-    "source": "features/proposals.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "PROPOSAL-06": {
-    "name": "A new memory note supersedes an explicitly allowed note",
-    "source": "features/proposals.feature",
-    "cases": 1,
-    "lane": "service"
-  },
-  "PROPOSAL-07": {
-    "name": "A candidate over the growth limit is retried",
-    "source": "features/proposals.feature",
-    "cases": 1,
-    "lane": "service"
-  },
   "PYTHON-01": {
     "name": "Resolve and materialize a verified release through the Python SDK",
     "source": "features/python_sdk.feature",
@@ -838,13 +498,13 @@
     "lane": "sdk"
   },
   "PYTHON-02": {
-    "name": "Python requires a current connection for each new job",
+    "name": "Python channel delivery requires online confirmation for each new job",
     "source": "features/python_sdk.feature",
     "cases": 1,
     "lane": "sdk"
   },
   "PYTHON-03": {
-    "name": "Author and evaluate one snapshot through the Python client",
+    "name": "Upload and release an immutable version through the Python client",
     "source": "features/python_sdk.feature",
     "cases": 1,
     "lane": "sdk"
@@ -861,32 +521,26 @@
     "cases": 1,
     "lane": "sdk"
   },
-  "UX-06": {
-    "name": "A retired editing bookmark leads to connected learning after reload",
-    "source": "features/recovery_reload.feature",
-    "cases": 1,
-    "lane": "browser"
-  },
-  "RELEASE-01": {
-    "name": "A complete standalone comparison cannot publish a draft",
+  "RELEASE-05": {
+    "name": "A release requires a reason",
     "source": "features/releases.feature",
     "cases": 1,
     "lane": "service"
   },
-  "RELEASE-02": {
-    "name": "An operator cannot send edited content straight to the source channel",
+  "RELEASE-06": {
+    "name": "Roll back through another recorded channel revision",
     "source": "features/releases.feature",
     "cases": 1,
     "lane": "service"
   },
-  "RELEASE-03": {
-    "name": "A second channel name cannot bypass initial setup",
+  "RELEASE-07": {
+    "name": "History pagination exposes every release once",
     "source": "features/releases.feature",
     "cases": 1,
     "lane": "service"
   },
-  "RELEASE-04": {
-    "name": "Delivery requires an enrolled connection",
+  "RELEASE-08": {
+    "name": "A reader cannot publish content",
     "source": "features/releases.feature",
     "cases": 1,
     "lane": "service"
@@ -898,7 +552,7 @@
     "lane": "sdk"
   },
   "SDK-02": {
-    "name": "A fresh job cannot select a version by ID",
+    "name": "A fresh job can request the original version by ID after publication",
     "source": "features/sdk_delivery.feature",
     "cases": 1,
     "lane": "sdk"
@@ -910,13 +564,13 @@
     "lane": "sdk"
   },
   "SDK-04": {
-    "name": "A legacy offline option cannot bypass the connection",
+    "name": "A channel job requires online confirmation even with offline permission",
     "source": "features/sdk_delivery.feature",
     "cases": 1,
     "lane": "sdk"
   },
   "SDK-05": {
-    "name": "Another SDK identity cannot reuse the first identity's offline mapping",
+    "name": "Another SDK identity cannot reuse the first identity's offline version",
     "source": "features/sdk_delivery.feature",
     "cases": 1,
     "lane": "sdk"
@@ -999,18 +653,6 @@
   },
   "SDK-14": {
     "name": "Expired queued observations are dropped instead of reminted",
-    "source": "features/sdk_delivery.feature",
-    "cases": 1,
-    "lane": "sdk"
-  },
-  "SDK-15": {
-    "name": "A mutating failed grader does not change the next grading attempt",
-    "source": "features/sdk_delivery.feature",
-    "cases": 1,
-    "lane": "sdk"
-  },
-  "SDK-16": {
-    "name": "Asynchronous caller changes cannot relabel executed versions",
     "source": "features/sdk_delivery.feature",
     "cases": 1,
     "lane": "sdk"

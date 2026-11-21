@@ -29,7 +29,7 @@ export function fileTreeLeafId(itemId: string): string {
   return `file:${JSON.stringify(itemId)}`;
 }
 
-/** Draft paths can be invalid while being edited. Keep them as exact root leaves. */
+/** Keep invalid paths as exact root leaves. */
 function pathSegments(path: string): string[] | undefined {
   if (!path.trim() || /[\\\u0000-\u001f\u007f]/.test(path)) return;
   const parts = path.split('/');
@@ -78,11 +78,13 @@ export function buildFileTree(items: readonly FileTreeItem[]): FileTreeNode[] {
     });
   }
   const order = (nodes: FileTreeNode[]): FileTreeNode[] => [
-    ...nodes.filter((node) => node.type === 'folder').map((node) => {
-      const folder = node as FileTreeFolder;
-      folder.children = order(folder.children);
-      return folder;
-    }),
+    ...nodes
+      .filter((node) => node.type === 'folder')
+      .map((node) => {
+        const folder = node as FileTreeFolder;
+        folder.children = order(folder.children);
+        return folder;
+      }),
     ...nodes.filter((node) => node.type === 'file'),
   ];
   return order(roots);

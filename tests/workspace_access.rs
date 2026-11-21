@@ -54,9 +54,9 @@ async fn workspace_membership_and_session_revocation() {
     let app = router(AppState {
         access: common::access(),
         runtime: Arc::new(acclimate_service::RuntimeStatus::new()),
+        optimizer: None,
         db: db.clone(),
         grants: Arc::new(grants),
-        provider: None,
     });
     let request = |method: &str, uri: String, session: &str, body: &str| {
         Request::builder()

@@ -54,7 +54,7 @@ def changed_paths(base):
 if __name__ == "__main__":
     base = os.environ.get("PR_BASE_SHA") if os.environ["GITHUB_EVENT_NAME"] == "pull_request" else None
     jobs = required_jobs(changed_paths(base))
-    print("Selected checks:", ", ".join(sorted(jobs | {"docs", "pr-gate"})))
+    print("Selected checks:", ", ".join(sorted(jobs | {"docs"})))
     with open(os.environ["GITHUB_OUTPUT"], "a") as output:
         for name in sorted(FULL):
             print(f"{name}={str(name in jobs).lower()}", file=output)

@@ -3,7 +3,7 @@ import { open } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveAndCache } from '../cache.js';
 import { ApiError } from '../client.js';
-import { createEvaluationTransport } from '../internal/evaluation-transport.js';
+import { createEvaluatorClient } from '../internal/evaluation-transport.js';
 import { readEvaluatorConfig } from './config.js';
 import { EvaluationError, EvaluationUsageError } from './errors.js';
 
@@ -21,7 +21,7 @@ export async function pullPayload(options: {
   out: string;
 }) {
   const config = await readEvaluatorConfig(options.configPath);
-  const { client } = createEvaluationTransport(config);
+  const client = createEvaluatorClient(config);
   let resolved, source;
   try {
     source = await client.inspectSource(config.workspaceId, options.bundleId, options.channel);

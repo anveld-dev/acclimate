@@ -87,7 +87,7 @@ export const revisionFiles = [
 ];
 export const configId = 'native-repository';
 // Built-in harnesses with native layout rules. acclimate-eval checks payloads against them
-// (doctor --payload, compare --payload, compare --local) before any request or paid run.
+// (`doctor --payload` and `try --payload`) before any paid run.
 const NATIVE_TARGETS = ['codex', 'claude', 'pi', 'cursor'];
 const declaredTargets = [...harnesses.values()].map(harness => harness.kind).filter(kind => NATIVE_TARGETS.includes(kind));
 export const compatibilityTarget = declaredTargets.length ? declaredTargets : undefined;

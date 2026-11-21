@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 /// Machine rights. `evaluate` is the narrow evaluator right: it reads the
 /// workspace and runs evaluations, but never publishes, promotes or moves channels.
-pub(crate) const RIGHTS: [&str; 5] = ["read", "evaluate", "write", "propose", "promote"];
+pub(crate) const RIGHTS: [&str; 4] = ["read", "evaluate", "write", "promote"];
 
 /// `write` keeps its historical evaluator authority, and `evaluate` includes `read`.
 pub(crate) fn rights_allow(rights: &[String], right: &str) -> bool {
@@ -206,6 +206,7 @@ mod tests {
                 )
                 .unwrap(),
             ),
+            optimizer: None,
             runtime: Arc::new(crate::RuntimeStatus::new()),
             db: sqlx::postgres::PgPoolOptions::new()
                 .connect_lazy("postgres://localhost/unused")
@@ -224,7 +225,6 @@ mod tests {
                     rights: vec!["read".into(), "write".into()],
                 },
             ]),
-            provider: None,
         };
         let mut headers = HeaderMap::new();
         headers.insert(

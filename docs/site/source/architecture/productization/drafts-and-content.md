@@ -4,7 +4,7 @@
 
 The console should let an operator return to a saved draft after closing the browser or restarting the service, make further changes, and publish exactly the snapshot they reviewed. A draft is a small mutable record pointing to immutable versions; it is not another copy of bundle content. This is single-operator workflow with conflict detection, not collaborative editing or filesystem synchronization.
 
-The earlier single-file editor kept its version only in React. The current [draft workspace](https://github.com/anveld-dev/acclimate/blob/0dae127600f21ae1d456c5fce340982f34c90b40/apps/console/src/components/draft-workspace.tsx) loads durable draft records, retained generations and exact snapshots. [Versions](../../../migrations/0001_init.sql) store immutable payload bytes, parent, digest and ID; promotions and comparisons retain those identities. The navigation update opens one named draft or published view at a time.
+The earlier single-file editor kept its version only in React. The current [draft workspace](https://github.com/anveld-dev/acclimate/blob/4096ff1b60098554b0cb932866a338cadf29601c/apps/console/src/components/draft-workspace.tsx) loads durable draft records, retained generations and exact snapshots. [Versions](../../../migrations/0001_init.sql) store immutable payload bytes, parent, digest and ID; promotions and comparisons retain those identities. The navigation update opens one named draft or published view at a time.
 
 ## Storage and API
 

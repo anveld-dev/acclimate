@@ -1,4 +1,4 @@
-from behave import when, then
+from behave import given, when, then
 from scripts.productization.qualify import payload
 
 
@@ -33,7 +33,6 @@ def origin_retained(context, origin):
 def seed(context):
     w = context.world
     release = w.call('GET', w.channel + '/releases')['items'][0]
-    assert release['comparisonId'] is None
     assert release['unevaluatedReason'] == 'Explicit behavior-test initial release.'
 
 
@@ -95,3 +94,18 @@ def labelled(context, label):
 def label_retained(context, label):
     w = context.world
     assert w.call('GET', w.root + '/bundles')['items'][0]['sourceLabel'] == label
+
+
+@given('a published bundle containing "{text}"')
+def published(context, text):
+    context.world.publish_initial(text)
+
+
+@when('the service restarts')
+def restart(context):
+    context.world.h.restart()
+
+
+@then('the content is rejected')
+def invalid_content(context):
+    assert context.world.last_status in (400, 413)

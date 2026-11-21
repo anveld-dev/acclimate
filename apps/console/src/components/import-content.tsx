@@ -1,25 +1,10 @@
-import type { BundleScope } from '../server/selection';
-import { useEffect, useId, useRef, useState } from 'react';
-import { compatibilityIssues, validatePayload } from '@acclimate/sdk/validation';
-import type { CompatibilityTarget, BundleFile, BundlePayload } from '@acclimate/sdk';
-import { runDraftCommand } from '../server/content-actions';
+import { useEffect, useRef, useState } from 'react';
+import { validatePayload } from '@acclimate/sdk/validation';
+import type { BundleFile, BundlePayload } from '@acclimate/sdk';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from './ui/disclosure';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from './ui/dialog';
-import { FolderOpen, Files, Upload } from 'lucide-react';
-import { NativeSelect } from './ui/native-select';
-import { SyntaxCode } from './syntax-code';
-import { FileGlyph } from './shared';
+import { FolderOpen, Files } from 'lucide-react';
 type ImportEntry = { file: File; path: string };
 type Conflict = { path: string; reason: string };
 
@@ -119,44 +104,21 @@ export function readImportBatch(
 export function ImportContent({
   payload,
   onApply,
-  embedded = false,
   disabled,
-  commandScope,
-  compatibilityTarget = 'generic',
-  purpose = 'draft',
   onReadingChange,
-  presentation = 'inline',
-  iconOnly = false,
 }: {
   payload: BundlePayload;
-  onApply: (p: BundlePayload) => void;
-  embedded?: boolean;
+  onApply: (payload: BundlePayload) => void;
   disabled: boolean;
-  commandScope?: BundleScope;
-  compatibilityTarget?: CompatibilityTarget;
-  purpose?: 'draft' | 'creation';
-  onReadingChange?: (reading: boolean) => void;
-  presentation?: 'inline' | 'dialog';
-  iconOnly?: boolean;
+  onReadingChange: (reading: boolean) => void;
 }) {
-  const [preview, setPreview] = useState<BundleFile[] | null>(null),
-    [error, setError] = useState('');
-  const [selectedPath, setSelectedPath] = useState('');
-  const [showPickers, setShowPickers] = useState(false);
-  const pickerId = useId();
-  const reviewHeading = useRef<HTMLHeadingElement>(null);
+  const [error, setError] = useState('');
   const [collision, setCollision] = useState<ImportCollision | null>(null);
   const pickerType = useRef(false);
-  const previewId = useId();
-  const selectedFile = preview?.find((file) => file.path === selectedPath) ?? preview?.[0];
   const [reading, setReading] = useState(false);
-  const [open, setOpen] = useState(false);
-  const importTrigger = useRef<HTMLButtonElement>(null);
   const readSequence = useRef(0);
   useEffect(() => {
     readSequence.current++;
-    setPreview(null);
-    setSelectedPath('');
     setError('');
     setCollision(null);
     setReading(false);
@@ -164,14 +126,10 @@ export function ImportContent({
     return () => {
       readSequence.current++;
     };
-  }, [payload, commandScope?.workspaceId, commandScope?.bundleId, commandScope?.channel]);
+  }, [payload, onReadingChange]);
   useEffect(() => () => onReadingChange?.(false), [onReadingChange]);
-  async function read(entries: ImportEntry[], recoveryTrigger?: HTMLElement) {
-    const originDialog = recoveryTrigger?.closest('[role="dialog"]');
+  async function read(entries: ImportEntry[]) {
     const sequence = ++readSequence.current;
-    setShowPickers(false);
-    setPreview(null);
-    setSelectedPath('');
     setCollision(null);
     setError('');
     setReading(true);
@@ -180,40 +138,7 @@ export function ImportContent({
       const combined = await readPlannedBatch(entries, payload);
       // New bundles have no bundle scope yet. The creation endpoint revalidates this
       // same payload under workspace permissions before publishing it atomically.
-      if (purpose === 'draft') {
-        if (!commandScope) throw Error('Explicit import scope is required.');
-        const result = await runDraftCommand({
-          data: { action: 'validate', scope: commandScope, payload: combined },
-        });
-        if (!result.ok) throw Error(result.message);
-      }
-      if (readSequence.current === sequence) {
-        if (purpose === 'creation') onApply(combined);
-        else {
-          setPreview(combined.files.slice(payload.files.length));
-          requestAnimationFrame(() => {
-            if (readSequence.current !== sequence || (originDialog && !originDialog.isConnected))
-              return;
-            const active = document.activeElement;
-            if (recoveryTrigger) {
-              if (active !== document.body && active !== originDialog && active !== recoveryTrigger)
-                return;
-              const review = reviewHeading.current?.closest('.import-review');
-              const controls = review?.querySelectorAll<HTMLElement>(
-                'button[aria-pressed=true],select',
-              );
-              Array.from(controls ?? [])
-                .find((control) => control.getClientRects().length)
-                ?.focus();
-            } else if (
-              active === document.body ||
-              (active instanceof HTMLInputElement && active.type === 'file')
-            ) {
-              reviewHeading.current?.focus();
-            }
-          });
-        }
-      }
+      if (readSequence.current === sequence) onApply(combined);
     } catch (e) {
       if (readSequence.current === sequence) {
         if (e instanceof ImportCollision) setCollision(e);
@@ -232,46 +157,14 @@ export function ImportContent({
     void read(planBatch(Array.from(input.files), directory));
     input.value = '';
   }
-  function returnToPicker() {
-    const id = pickerType.current ? 'import-directory' : 'import-files';
-    document.getElementById(id)?.focus();
-  }
-  const dialog = presentation === 'dialog' && purpose === 'draft';
-  const Container = purpose === 'creation' || embedded ? 'section' : Disclosure;
-  const Body = purpose === 'creation' || embedded || dialog ? 'div' : DisclosureContent;
-  const description = (
-    <>
-      Bring in your existing instructions or skills. Choose a folder to keep nested paths, or add
-      individual text files.{' '}
-      {purpose === 'creation'
-        ? 'Review their content below before publishing your bundle.'
-        : 'You’ll review them before adding to this draft.'}
-    </>
-  );
-  const body = (
-    <Body
-      className={
-        dialog
-          ? 'content-import import-dialog-body space-y-4'
-          : embedded
-            ? 'space-y-4'
-            : 'space-y-4 border-t p-4'
-      }
-    >
-      {preview && (
-        <Button
-          size="sm"
-          variant="ghost"
-          type="button"
-          aria-controls={pickerId}
-          aria-expanded={showPickers}
-          onClick={() => setShowPickers((v) => !v)}
-        >
-          {showPickers ? 'Hide file pickers' : 'Choose different files'}
-        </Button>
-      )}
-      <div id={pickerId} hidden={Boolean(preview) && !showPickers} className="space-y-3">
-        {!dialog && <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>}
+  return (
+    <section className="content-import rounded-lg border bg-card">
+      <h3 className="px-4 py-3 text-sm font-medium">Choose files to import</h3>
+      <div className="space-y-4 border-t p-4">
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          Choose a folder to keep nested paths, or add individual text files. Review their content
+          before publishing your bundle.
+        </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-2 rounded-lg border p-3">
             <Label htmlFor="import-directory" className="flex items-center gap-2">
@@ -310,232 +203,51 @@ export function ImportContent({
         <p className="text-xs text-muted-foreground">
           UTF-8 text · 256 KB per file · 1 MB per import · 128 entries per bundle
         </p>
-      </div>
-      {reading && (
-        <p role="status" className="text-sm text-muted-foreground">
-          Reading and checking your files…
-        </p>
-      )}
-      {error && (
-        <p role="alert" className="import-problem">
-          {error} Nothing was imported.
-        </p>
-      )}
-      {collision && (
-        <section className="import-conflict">
-          <div role="alert">
-            <h3>Path collision: {collision.conflicts[0].path}</h3>
-            <p>
-              Nothing was imported. Rename the conflicting paths or choose a different selection.
-            </p>
-          </div>
-          <ul>
-            {collision.conflicts.map((item, index) => (
-              <li key={index}>
-                <code>{item.path}</code>
-                <span>{item.reason}</span>
-              </li>
-            ))}
-          </ul>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={disabled || reading}
-              onClick={() => {
-                const input = document.getElementById(
-                  pickerType.current ? 'import-directory' : 'import-files',
-                ) as HTMLInputElement | null;
-                input?.click();
-              }}
-            >
-              Choose {pickerType.current ? 'folder' : 'files'} again
-            </Button>
-            {purpose === 'draft' && collision.remaining.length > 0 && (
+        {reading && (
+          <p role="status" className="text-sm text-muted-foreground">
+            Reading and checking your files…
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="import-problem">
+            {error} Nothing was imported.
+          </p>
+        )}
+        {collision && (
+          <section className="import-conflict">
+            <div role="alert">
+              <h3>Path collision: {collision.conflicts[0].path}</h3>
+              <p>
+                Nothing was imported. Rename the conflicting paths or choose a different selection.
+              </p>
+            </div>
+            <ul>
+              {collision.conflicts.map((item, index) => (
+                <li key={index}>
+                  <code>{item.path}</code>
+                  <span>{item.reason}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 disabled={disabled || reading}
-                onClick={(e) =>
-                  void read(collision.remaining, e.detail === 0 ? e.currentTarget : undefined)
-                }
+                onClick={() => {
+                  const input = document.getElementById(
+                    pickerType.current ? 'import-directory' : 'import-files',
+                  ) as HTMLInputElement | null;
+                  input?.click();
+                }}
               >
-                Review {collision.remaining.length} nonconflicting{' '}
-                {collision.remaining.length === 1 ? 'file' : 'files'}
+                Choose {pickerType.current ? 'folder' : 'files'} again
               </Button>
-            )}
-          </div>
-        </section>
-      )}
-      {preview && selectedFile && (
-        <>
-          <section className="import-review" aria-label="Import preview">
-            <header>
-              <h3 ref={reviewHeading} tabIndex={-1}>
-                Ready to add · {preview.length} {preview.length === 1 ? 'file' : 'files'}
-              </h3>
-              <span>Draft preview</span>
-            </header>
-            <div className="import-review-layout" data-many={preview.length > 6 || undefined}>
-              {preview.length > 6 && (
-                <NativeSelect
-                  className="import-compact-file-select"
-                  aria-label="File to preview"
-                  value={selectedFile.path}
-                  onChange={(e) => setSelectedPath(e.target.value)}
-                >
-                  {preview.map((file) => (
-                    <option key={file.path} value={file.path}>
-                      {file.path} · {file.kind}
-                    </option>
-                  ))}
-                </NativeSelect>
-              )}
-              <ul aria-label="Files to add">
-                {preview.map((file) => (
-                  <li key={file.path}>
-                    <button
-                      type="button"
-                      aria-pressed={selectedFile.path === file.path}
-                      aria-controls={previewId}
-                      onClick={() => setSelectedPath(file.path)}
-                    >
-                      <FileGlyph kind={file.kind} />
-                      <span>
-                        <strong>{file.path}</strong>
-                        <small>{file.kind}</small>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <section
-                className="import-source"
-                id={previewId}
-                aria-label={'Preview of ' + selectedFile.path}
-              >
-                <header>
-                  <strong>Preview · {selectedFile.path}</strong>
-                  <span>
-                    {new TextEncoder().encode(selectedFile.text).length.toLocaleString()} bytes
-                  </span>
-                </header>
-                {selectedFile.text ? (
-                  <SyntaxCode
-                    code={selectedFile.text}
-                    path={selectedFile.path}
-                    lineNumbers={selectedFile.text.length < 24_000}
-                    wrap
-                    aria-label={'Contents of ' + selectedFile.path}
-                  />
-                ) : (
-                  <p>Empty file</p>
-                )}
-              </section>
             </div>
           </section>
-          {compatibilityIssues(
-            { ...payload, files: [...payload.files, ...preview] },
-            compatibilityTarget,
-          ).map((issue, index) => (
-            <p role="status" key={index}>
-              {issue.path || issue.package || issue.code}: {issue.message}. Import can be saved as
-              an incomplete draft.
-            </p>
-          ))}
-          <div className="import-review-actions">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={disabled || reading}
-              onClick={() => {
-                setPreview(null);
-                setSelectedPath('');
-                requestAnimationFrame(returnToPicker);
-              }}
-            >
-              Discard preview
-            </Button>
-            <Button
-              type="button"
-              disabled={disabled || reading}
-              onClick={() => {
-                onApply({ ...payload, files: [...payload.files, ...preview] });
-                setPreview(null);
-                if (dialog) setOpen(false);
-              }}
-            >
-              <Upload aria-hidden="true" /> Add {preview.length}{' '}
-              {preview.length === 1 ? 'file' : 'files'} to draft
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Adds to your browser edits. Save the draft when you’re ready.
-          </p>
-        </>
-      )}
-    </Body>
-  );
-  // Keep this stateful component mounted while the dialog's portal comes and goes.
-  // Closing the dialog preserves a pending read, preview, and validation errors.
-  if (dialog) {
-    const trigger = (
-      <DialogTrigger asChild data-slot="button">
-        <Button
-          ref={importTrigger}
-          type="button"
-          variant="ghost"
-          size={iconOnly ? 'icon' : 'sm'}
-          className={
-            iconOnly
-              ? 'file-icon-action import-dialog-trigger'
-              : 'draft-utility-disclosure import-dialog-trigger cursor-pointer text-left text-sm font-medium'
-          }
-          aria-label="Import files into this draft"
-          disabled={disabled}
-        >
-          {iconOnly ? <Upload aria-hidden="true" /> : 'Import files into this draft'}
-        </Button>
-      </DialogTrigger>
-    );
-    return (
-      <Dialog open={open} onOpenChange={setOpen}>
-        {iconOnly ? (
-          <Tooltip>
-            <TooltipTrigger asChild data-slot="button">
-              {trigger}
-            </TooltipTrigger>
-            <TooltipContent>Import files into this draft</TooltipContent>
-          </Tooltip>
-        ) : (
-          trigger
         )}
-        <DialogContent className="import-dialog sm:max-w-[54rem]" returnFocusRef={importTrigger}>
-          <DialogHeader>
-            <DialogTitle>Import files into this draft</DialogTitle>
-            <DialogDescription>
-              {preview
-                ? 'Select a file to inspect its source before adding it to your browser edits.'
-                : description}
-            </DialogDescription>
-          </DialogHeader>
-          {body}
-        </DialogContent>
-      </Dialog>
-    );
-  }
-  return (
-    <Container className={embedded ? 'content-import' : 'content-import rounded-lg border bg-card'}>
-      {embedded ? null : purpose === 'draft' ? (
-        <DisclosureTrigger className="px-4 py-3 text-sm font-medium">
-          Import files
-        </DisclosureTrigger>
-      ) : (
-        <h3 className="px-4 py-3 text-sm font-medium">Choose files to import</h3>
-      )}
-      {body}
-    </Container>
+      </div>
+    </section>
   );
 }

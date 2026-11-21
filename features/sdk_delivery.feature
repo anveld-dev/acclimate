@@ -4,7 +4,6 @@ Feature: Application SDK delivery
 
   Background:
     Given a published bundle containing "Review code."
-    And the application enrolls this bundle for automatic delivery
 
   @SDK-01
   Scenario: Resolve and prepare real files from a verified release
@@ -13,9 +12,13 @@ Feature: Application SDK delivery
     And its selected version and digest match the original release
 
   @SDK-02
-  Scenario: A fresh job cannot select a version by ID
-    When a fresh job requests the original version by ID
-    Then the job rejects the pinned version
+  Scenario: A fresh job can request the original version by ID after publication
+    Given I have uploaded a version containing "Review retries."
+    When I released the uploaded version
+    And a fresh job requests the original version by ID
+    Then its prepared instruction file contains "Review code."
+    And its selected version and digest match the original release
+    And the latest channel still contains the newer release
 
   @SDK-03
   Scenario: An unavailable service does not silently enable offline delivery
@@ -25,26 +28,29 @@ Feature: Application SDK delivery
     Then delivery fails rather than returning cached content
 
   @SDK-04
-  Scenario: A legacy offline option cannot bypass the connection
+  Scenario: A channel job requires online confirmation even with offline permission
     Given an application resolved and prepared the stable release
     When the service becomes unavailable
     And the application permits bounded offline delivery
     Then delivery fails rather than returning cached content
 
   @SDK-05
-  Scenario: Another SDK identity cannot reuse the first identity's offline mapping
-    Given an application resolved and prepared the stable release
+  Scenario: Another SDK identity cannot reuse the first identity's offline version
+    Given an application cached the original version by ID
     When the service becomes unavailable
     And another SDK identity requests bounded offline delivery
     Then no cached mapping is disclosed
 
   @SDK-06
   Scenario: Known revocation is not treated as an offline outage
-    Given I issued a content-read credential
+    Given I created an integration for this bundle and channel
+    And I issued a content-read credential
     And that integration cached the published release
     When the service becomes unavailable
     And that integration requests bounded offline delivery
-    Then delivery fails rather than returning cached content
+    Then its prepared instruction file contains "Review code."
+    And its selected version and digest match the original release
+    And the returned mapping is marked stale
     When the service restarts
     And I revoke that credential
     And that integration requests bounded offline delivery
@@ -69,7 +75,6 @@ Feature: Application SDK delivery
   @SDK-10
   Scenario Outline: Native plugins stage the supported resources without a model call
     Given the bundle contains an instruction and a packaged skill
-    And the application enrolls this bundle for automatic delivery
     When the application prepares it for <plugin>
     Then the native instruction is named "<instruction>" and the skill is present
     Examples:
@@ -82,7 +87,6 @@ Feature: Application SDK delivery
   @SDK-11
   Scenario Outline: Cursor memory staging requires explicit path approval
     Given the bundle also contains reusable memory
-    And the application enrolls this bundle for automatic delivery
     When Cursor preparation has <approval> memory approval
     Then exactly <count> memory resources are staged
     Examples:
@@ -92,32 +96,23 @@ Feature: Application SDK delivery
 
   @SDK-12
   Scenario: A temporary reporting outage preserves the original prepared receipt
-    Given I issued both credential kinds
+    Given I created an integration for this bundle and channel
+    And I issued both credential kinds
     When the application prepares content during a reporting outage and recovers within the retry window
     Then the prepared file is usable while the service has no receipt for it
     And recovery records the original prepared event exactly once
 
   @SDK-13
   Scenario: Reporter stages reflect explicit application actions
-    Given I issued both credential kinds
+    Given I created an integration for this bundle and channel
+    And I issued both credential kinds
     When the application reports resolution, verification, preparation and its own start
     Then exactly those observed stages are recorded for the selected version
 
   @SDK-14
   Scenario: Expired queued observations are dropped instead of reminted
-    Given I issued both credential kinds
+    Given I created an integration for this bundle and channel
+    And I issued both credential kinds
     When the application prepares content during a reporting outage and recovers after the retry window
     Then the prepared file is usable while the service has no receipt for it
     And recovery drops every expired event without sending another request
-
-  @SDK-15
-  Scenario: A mutating failed grader does not change the next grading attempt
-    Given I have saved a draft containing "Review retries."
-    When the SDK retries a grader that changes its input before failing
-    Then execution happened once per version and both retries saw the original output
-
-  @SDK-16
-  Scenario: Asynchronous caller changes cannot relabel executed versions
-    Given I have saved a draft containing "Review retries."
-    When the caller changes version and runtime labels during comparison
-    Then the SDK report still names the versions and settings it executed

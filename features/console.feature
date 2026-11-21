@@ -26,32 +26,32 @@ Feature: Work with content through the console
     When I filter published entries and download the memory file
     Then the downloaded file contains the published memory
 
-  @UI-CONTENT-02
-  Scenario: Published instructions can be inspected from the console
+  @UI-RECOVERY-02
+  Scenario: Authorization loss cannot settle an uncertain restore
     Given a published bundle containing "Review code."
-    And I opened its Content page
-    Then the content shows the instructions without a manual edit action
-
-  @UI-DRAFT-02
-  Scenario: A historical draft bookmark shows its saved change after restart
-    Given a published bundle containing "Review code."
-    And I have saved a draft containing "Review retries."
-    When the service restarts
-    And I reopen the saved draft bookmark
-    Then I can inspect its change without a publication action
-
-  @UI-EVAL-02
-  Scenario: Incomplete evidence shows all missing grades and unknown cost
-    Given a draft with a comparison that has no returned grades
-    When I inspect that comparison in the console
-    Then the page shows 4 missing grades and unknown cost
-    And measured publication is unavailable
+    When the browser loses a successful restore response
+    And the operator loses mutation rights and retries or looks up that pending operation
+    Then the exact recovery record remains until rights return and the commit is reconciled
 
   @UI-RELEASE-01
-  Scenario: Inspect the initial release and the absence of manual restore
+  Scenario: Inspect, download and restore a historical release with a reason
     Given a published bundle containing "Review code."
-    When I open its release history
-    Then the console shows the seed and has no restore action
+    And I have uploaded a version containing "Review retries."
+    And I released the uploaded version
+    When I inspect the old release and restore it through the console
+    Then the original content is current at revision 3 with the restore reason
+
+  @UI-RELEASE-03
+  Scenario: Review the new current release before retrying a stale restore
+    Given a published bundle containing "Review code."
+    And I have uploaded a version containing "Review retries."
+    And I released the uploaded version
+    When I open a restore of revision 1 against revision 2
+    And another operator publishes "Review retry limits."
+    And I confirm the restore I reviewed
+    Then the console explains the conflict and the other operator's revision 3 still serves
+    When I review the current release and confirm a new restore against revision 3
+    Then exactly one restore follows the other operator's release in history
 
   @UI-INTEGRATION-01
   Scenario: Issue a one-time credential and revoke it through the console
@@ -60,55 +60,6 @@ Feature: Work with content through the console
     Then its secret is shown once and missing delivery is labelled unknown
     When I close the secret dialog and revoke that credential
     Then the closed secret is not displayed and its next fetch is denied
-
-  @UI-LEARNING-01 @provider_fixture
-  Scenario: Inspect a blocked release and its rejection reason
-    Given a published bundle containing "Review code."
-    And I signed in as the configured operator
-    And I created an integration for this bundle and channel
-    And I issued a content-read credential
-    And a connected audit is blocked by a recorded application policy
-    Then the connection shows the rejection reason without an approval action
-
-  @UI-LEARNING-02 @provider_fixture
-  Scenario: Trace a failed job to the withdrawn release and its independent audit
-    Given a published bundle containing "Review code."
-    And I signed in as the configured operator
-    And I created an integration for this bundle and channel
-    And I issued a content-read credential
-    And I issued a receipt-write credential
-    And an independently graded field job triggered automatic rollback
-    When I look up the triggering job on the connection
-    Then its outcome identifies the withdrawn release, the restored revision and the triggering verdict
-    When I follow its audit evidence
-    Then the console opens the independent audit for the exact served candidate
-    When I return and look up the job graded after the rollback
-    Then its regression identifies the same withdrawn release without claiming it triggered rollback
-
-  @UI-LEARNING-03 @provider_fixture @learning
-  Scenario: A reviewer traces a rejected rollout to the regressed audit case
-    Given a published bundle containing "Review code."
-    And I signed in as the configured operator
-    And I created an integration for this bundle and channel
-    And I issued a content-read credential
-    And a candidate improved development but lost a protected code-review instruction in audit
-    When I open the rejected round on the connection
-    Then I see the audit rejection reason and cannot approve that round
-    When I follow the round's audit evidence to the regressed case
-    Then the case shows the parent earned 1 and the candidate earned 0
-    And the next application job uses the original revision and instructions
-
-  @UI-LEARNING-04 @provider_fixture @learning
-  Scenario: Stopping learning during a passing audit prevents a late automatic rollout
-    Given a published bundle containing "Review code."
-    And I signed in as the configured operator
-    And I created an integration for this bundle and channel
-    And I issued a content-read credential
-    And an automatic rollout is waiting for its evaluator to finish a passing audit
-    When I confirm Stop learning on the connection
-    And the evaluator delivers the late audit completion and the service restarts
-    Then the stopped connection shows a rejected round and assigns no further work
-    And the next application job uses the original revision and instructions
 
   @UI-STATUS-01
   Scenario: A failed refresh shows the last observation without displaying stale content as current
@@ -139,3 +90,17 @@ Feature: Work with content through the console
     And a connection for its bundle and channel
     When I follow App setup to Connections and back from the selected connection
     Then App setup remains active for the same bundle and channel
+
+  @UI-KEYBOARD-01
+  Scenario: Search, inspect and change tabs using the keyboard
+    Given a published bundle with instructions, a skill and reusable memory
+    And I opened its Content page
+    When I search and select an entry using only the keyboard
+    Then the published entry is readable and tabs remain keyboard reachable
+
+  @UI-POLL-01
+  Scenario: Published content updates without a refresh button
+    Given a published bundle containing "Review code."
+    And I opened its Content page
+    When another operator publishes "Updated policy."
+    Then the published entry becomes "Updated policy." without a refresh control

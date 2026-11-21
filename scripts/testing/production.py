@@ -17,7 +17,7 @@ def service_env(*, database_url, bind, tokens, login_token, console_token,
                    workspaceId='other-' + project if principal == 'outsider' else project,
                    rights=['read'] if principal in ('viewer', 'outsider') else
                    ['read', 'write'] if principal in ('evaluator', 'other') else
-                   ['read', 'write', 'propose', 'promote'])
+                   ['read', 'write', 'promote'])
               for principal, token in tokens.items()
               if principal not in ('login-authority', 'console-transport')]
     env.update(DATABASE_URL=database_url, ACCLIMATE_BIND=bind,

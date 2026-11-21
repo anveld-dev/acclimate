@@ -45,7 +45,7 @@ try:
     call('PUT',membership,transport,{'role':'editor'},operator['secret'],204)
     call('GET',bundle+'/channels/stable',transport,session=member['secret'])
     call('PUT',membership,transport,{'role':'viewer'},operator['secret'],204)
-    call('POST',bundle+'/channels/stable/drafts',transport,{'baseVersionId':setup['version']['id'],'baseRevision':'1','payload':payload('Denied edit.')},member['secret'],403)
+    call('POST',bundle+'/versions',transport,{'parentVersionId':setup['version']['id'],'payload':payload('Denied edit.')},member['secret'],403)
     call('DELETE',membership,transport,session=operator['secret'],status=204)
     call('GET',bundle+'/channels/stable',transport,session=member['secret'],status=403)
     call('DELETE','/v1/auth/session',transport,session=member['secret'],status=204)

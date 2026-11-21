@@ -42,10 +42,6 @@ export default defineConfig(async ({ command }): Promise<UserConfig> => {
       alias: [
         { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
         {
-          find: /^@acclimate\/sdk\/evaluation\/policy$/,
-          replacement: fileURLToPath(new URL('../../packages/sdk/src/evaluation/policy.ts', import.meta.url)),
-        },
-        {
           find: /^@acclimate\/sdk\/validation$/,
           replacement: fileURLToPath(
             new URL('../../packages/sdk/src/validation.ts', import.meta.url),

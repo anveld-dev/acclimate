@@ -18,13 +18,12 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from playwright.sync_api import expect
-from scripts.bdd.interactions import close_draft_details
 from scripts.bdd.editor import editor_value
 from scripts.bdd.run import pg_bin
 from scripts.bdd.world import World
-from scripts.bdd.interactions import open_files, open_details, draft_action
+from scripts.bdd.interactions import open_files, open_details
 from scripts.bdd.layout import inspect_layout, tab_to
-from scripts.testing.compact_console import FILES, visit
+from scripts.testing.compact_console import FILES, select_release, visit
 
 
 class Evidence:
@@ -123,97 +122,6 @@ def content(w,b,p,e,prefix,coarse):
     escape(e,p,trigger,prefix+'-published-actions')
 
 
-def draft(w,b,p,e,prefix,coarse):
-    route=b.bundle_path('changes',draft=w.draft['id'],path='skills/review/SKILL.md')
-    visit(p,b,route)
-    e.capture(p,prefix+'-draft-collapsed',coarse)
-    open_files(p)
-    add=p.get_by_role('button',name='Add entry',exact=True)
-    tab_to(p,add);p.keyboard.press('Enter')
-    menu=p.get_by_role('menuitem',name='Add instruction',exact=True)
-    expect(menu).to_be_visible()
-    m=e.capture(p,prefix+'-add-entry-keyboard-menu',coarse)
-    if coarse:
-        e.check(prefix+'-coarse-menu-minimum44',all(x['bounds']['height']>=44 for x in m['interaction']['menus']),m['interaction']['menus'])
-    p.keyboard.press('ArrowDown');p.keyboard.press('Escape')
-    expect(add).to_be_focused()
-    if p.get_by_role('button',name='Files',exact=True).is_visible():
-        p.get_by_role('button',name='Files',exact=True).click()
-    trigger=p.get_by_role('button',name='Entry actions',exact=True)
-    trigger.click()
-    p.get_by_label('Rename entire skill package',exact=True).fill('Invalid Name!')
-    p.get_by_role('button',name='Apply package rename',exact=True).click()
-    m=e.capture(p,prefix+'-entry-invalid-package',coarse)
-    field=p.get_by_label('Rename entire skill package',exact=True)
-    e.check(prefix+'-package-error-field-local',field.get_attribute('aria-invalid')=='true' and bool(field.get_attribute('aria-describedby')),m['interaction']['fieldErrors'])
-    escape(e,p,trigger,prefix+'-entry-actions')
-    # Reset through navigation to avoid preserving an intentionally invalid package form.
-    visit(p,b,route)
-    open_files(p)
-    import_trigger=p.get_by_role('button',name='Import files into this draft',exact=True)
-    if e.baseline:
-        open_details(p,'Import files into this draft')
-        open_details(p,'Import files')
-        import_trigger.scroll_into_view_if_needed()
-    else:
-        import_trigger.click()
-        expect(p.get_by_role('dialog',name='Import files into this draft',exact=True)).to_be_visible()
-    e.capture(p,prefix+'-import-expanded',coarse)
-    if not e.baseline:
-        escape(e,p,import_trigger,prefix+'-import')
-    details=open_details(p,'Draft details')
-    expect(details.get_by_role('heading',name='Saved snapshot history',exact=True)).to_be_visible()
-    e.capture(p,prefix+'-draft-history-details',coarse)
-    close_draft_details(p)
-    visit(p,b,route)
-    editor=p.get_by_role('textbox', name='Content', exact=True)
-    editor.fill(editor_value(editor)+'\nBrowser-only pending edit.\n')
-    action=draft_action(p,'Evaluate saved generation 1')
-    action.click()
-    expect(p.get_by_role('alertdialog')).to_be_visible()
-    e.capture(p,prefix+'-draft-navigation-alert',coarse)
-    p.keyboard.press('Escape')
-    expect(p.get_by_role('alertdialog')).to_have_count(0)
-    returned=p.get_by_role('button',name='Draft actions',exact=True)
-    if not returned.count() or not returned.is_visible():
-        returned=p.get_by_role('link',name='Evaluate saved generation 1',exact=True)
-    e.check(prefix+'-navigation-escape-restores-trigger',returned.evaluate('el=>el===document.activeElement'))
-    e.check(prefix+'-navigation-keeps-unsaved-source','Browser-only pending edit.' in editor_value(editor))
-
-
-def evaluation(w,b,p,e,prefix,coarse):
-    route=b.bundle_path('changes',draft=w.draft['id'],candidate=w.draft['snapshotVersion']['id'],generation=1)
-    visit(p,b,route)
-    for label, comparison in [('incomplete',w.incomplete),('mismatched',w.mismatched)]:
-        p.get_by_role('tab',name='Details',exact=True).click()
-        p.get_by_label('Comparison ID',exact=True).fill(comparison['id'])
-        p.get_by_role('button',name='Inspect comparison',exact=True).click()
-        expect(p.get_by_text('Selected comparison: '+comparison['id'],exact=True)).to_be_visible()
-        expect(p.get_by_role('button',name='Inspect comparison',exact=True)).to_be_enabled()
-        if label=='mismatched':
-            expect(p.get_by_role('alert').filter(has_text='This evidence does not match the saved candidate')).to_be_visible()
-            expect(p.get_by_role('region',name='Observed paired rewards',exact=True)).to_have_count(0)
-        p.get_by_role('tab',name='Details',exact=True).scroll_into_view_if_needed()
-        e.capture(p,prefix+'-evidence-'+label,coarse)
-        review=p.get_by_role('button',name='Review release with this evidence',exact=True)
-        expect(review).to_be_visible()
-        e.check(prefix+'-'+label+'-cannot-review-evidenced-release',review.is_disabled())
-    visit(p,b,route)
-    link=p.get_by_role('link',name=re.compile(r'^Inspect evidence for '))
-    link.first.click()
-    trigger=p.get_by_role('button',name='Review release with this evidence',exact=True)
-    expect(trigger).to_be_visible();trigger.click()
-    expect(p.get_by_role('dialog')).to_contain_text(w.draft['snapshotVersion']['id'])
-    e.capture(p,prefix+'-evidenced-publish-confirm',coarse)
-    escape(e,p,trigger,prefix+'-evidenced-publish')
-    visit(p,b,route)
-    open_details(p,'Publish without evaluation')
-    p.get_by_label('Manual release reason',exact=True).fill('Disposable review only; do not publish.')
-    trigger=p.get_by_role('button',name='Review manual release',exact=True);trigger.click()
-    e.capture(p,prefix+'-manual-publish-confirm',coarse)
-    escape(e,p,trigger,prefix+'-manual-publish')
-
-
 def members(w,b,p,e,prefix,coarse):
     w.enable_email()
     visit(p,b,b.workspace_path('members'))
@@ -235,7 +143,6 @@ def members(w,b,p,e,prefix,coarse):
     expect(p.get_by_role('menuitem',name='Copy user ID',exact=True)).to_be_visible()
     e.capture(p,prefix+'-member-actions-menu',coarse)
     escape(e,p,trigger,prefix+'-member-actions')
-
 
 
 def connections(w,b,p,e,prefix,coarse,secret=False):
@@ -282,6 +189,7 @@ def releases(w,b,p,e,prefix,coarse):
     expect(p.get_by_text('Loading version…',exact=True)).to_have_count(0)
     e.capture(p,prefix+'-version-inspector',coarse)
     p.keyboard.press('Escape')
+    select_release(p, 1)
     trigger=p.get_by_role('button',name=re.compile(r'^Restore revision ')).first;trigger.click()
     open_details(p,'Selected version details')
     p.get_by_label('Reason for restoring',exact=True).fill('Review-only restore reason.')
@@ -308,11 +216,6 @@ def short_dialogs(w,b,p,e):
         m=e.capture(p,'native200-short-'+name)
         box=action.bounding_box()
         e.check('native200-short-'+name+'-decision-visible',box is not None and box['y']>=0 and box['y']+box['height']<=m['viewportHeight']+1,box)
-    route=b.bundle_path('changes',draft=w.draft['id'],candidate=w.draft['snapshotVersion']['id'],generation=1,comparison=w.report['id'])
-    visit(p,b,route)
-    trigger=p.get_by_role('button',name='Review release with this evidence',exact=True)
-    trigger.click();capture('evidenced-publish',p.get_by_role('button',name='Publish with selected evidence',exact=True))
-    escape(e,p,trigger,'native200-short-evidenced')
     visit(p,b,b.workspace_path('connections'))
     trigger=p.get_by_role('button',name='New connection',exact=True);trigger.click()
     p.get_by_label('Display name',exact=True).fill('Short viewport review')
@@ -326,51 +229,19 @@ def short_dialogs(w,b,p,e):
     p.get_by_role('button',name='Keep member',exact=True).click()
     expect(trigger).to_be_focused()
     visit(p,b,b.bundle_path('releases',bundle_id=w.history_setup['bundle']['id']))
+    select_release(p, 1)
     trigger=p.get_by_role('button',name=re.compile(r'^Restore revision ')).first;trigger.click()
     p.get_by_label('Reason for restoring',exact=True).fill('Short viewport review only.')
     capture('restore',p.get_by_role('button',name='Restore version',exact=True))
     escape(e,p,trigger,'native200-short-restore')
-    # The import task must remain usable in a short, genuinely zoomed viewport.
-    visit(p,b,b.bundle_path('changes',draft=w.draft['id'],path='AGENTS.md'))
-    open_files(p)
-    trigger=p.get_by_role('button',name='Import files into this draft',exact=True)
-    trigger.click()
-    dialog=p.get_by_role('dialog',name='Import files into this draft',exact=True)
-    expect(dialog).to_be_visible()
-    files=[dict(name=f'native-import-{i}.md',mimeType='text/markdown',buffer=b'# Native zoom preview\n') for i in range(12)]
-    dialog.get_by_label('Individual files',exact=True).set_input_files(files)
-    expect(dialog.get_by_role('heading',name='Ready to add · 12 files',exact=True)).to_be_visible()
-    e.capture(p,'native200-short-import-preview')
-    add=dialog.get_by_role('button',name='Add 12 files to draft',exact=True)
-    tab_to(p,add)
-    capture('import-action',add)
-    scrolls=dialog.evaluate('''el => [el,...el.querySelectorAll('*')].filter(e => e.getClientRects().length && /auto|scroll/.test(getComputedStyle(e).overflowY) && e.scrollHeight>e.clientHeight+1).map(e=>e.getAttribute('data-slot')||e.tagName)''')
-    e.check('native200-short-import-single-content-scroller',scrolls==['dialog-content'],scrolls)
-    escape(e,p,trigger,'native200-short-import')
-    trigger.click()
-    expect(dialog.get_by_role('heading',name='Ready to add · 12 files',exact=True)).to_be_visible()
-    e.check('native200-short-import-preview-retained',True)
-    p.wait_for_function('element => element.contains(document.activeElement)', arg=dialog.element_handle())
-    escape(e,p,trigger,'native200-short-import-reopened')
-
-
 def prepare(w):
     w.start();w.fresh_scenario(SimpleNamespace(effective_tags=[]));w.publish_initial('',files=FILES)
     candidate=dict(schemaVersion=1,files=[dict(f,text=f['text']+'\nReview saved candidate.\n' if f['path']=='AGENTS.md' else f['text']) for f in FILES])
-    w.draft=w.call('POST',w.channel+'/drafts',dict(baseVersionId=w.original['version']['id'],baseRevision=w.original['revision'],payload=candidate))
-    w.draft_path=w.channel+'/drafts/'+w.draft['id']
-    w.request_evaluation();w.start_attempt()
-    w.comparison('missing grades');w.incomplete=w.report
-    other_payload=dict(schemaVersion=1,files=[dict(f,text=f['text']+'\nDifferent comparison candidate.\n') for f in FILES])
-    other=w.call('POST',w.channel+'/drafts',dict(baseVersionId=w.original['version']['id'],baseRevision=w.original['revision'],payload=other_payload))['snapshotVersion']
-    good=dict(executionStatus='completed',gradingStatus='scored',reward=1,usage=dict(costUsd=0))
-    mismatched=dict(w.settings,candidateVersionId=other['id'],candidateDigest=other['digest'],results=[dict(**case,parent=good,candidate=good) for case in w.settings['expectedCases']])
-    w.mismatched=w.call('POST',w.bundle+'/comparisons',mismatched,actor='evaluator')
-    w.comparison();w.finish();w.create_integration()
+    w.create_integration()
     w.history_setup=w.call('POST',w.root+'/bundle-setups',dict(name='Restore history fixture',origin='created',channel='stable',payload=dict(schemaVersion=1,files=FILES),reason='Disposable history fixture.'))
     bundle=w.root+'/bundles/'+w.history_setup['bundle']['id'];channel=bundle+'/channels/stable';base=w.history_setup['resolution']
-    d=w.call('POST',channel+'/drafts',dict(baseVersionId=base['version']['id'],baseRevision=base['revision'],payload=candidate))
-    w.call('POST',channel+'/releases',dict(versionId=d['snapshotVersion']['id'],expectedRevision=base['revision'],unevaluatedReason='Disposable second release for Restore dialog.'))
+    d=w.call('POST',bundle+'/versions',dict(parentVersionId=base['version']['id'],payload=candidate))
+    w.call('POST',channel+'/releases',dict(versionId=d['id'],expectedRevision=base['revision'],unevaluatedReason='Disposable second release for Restore dialog.'))
 
 
 def main():
@@ -384,7 +255,7 @@ def main():
         touch=b.browser.new_context(ignore_https_errors=True,viewport=dict(width=390,height=844),has_touch=True,storage_state=b.context.storage_state())
         mobile=touch.new_page();mobile.set_default_timeout(7000);mobile.on('pageerror',lambda error:b.errors.append(str(error)))
         for page,prefix,coarse in ([] if args.only=='native' else [(p,'desktop',False),(mobile,'mobile390',True)]):
-            for name,fn in [('content',content),('draft',draft),('evaluation',evaluation),('members',members),('connections',connections),('releases',releases),('sdk',sdk)]:
+            for name,fn in [('content',content),('members',members),('connections',connections),('releases',releases),('sdk',sdk)]:
                 if args.only=='all' or name=='connections':
                     e.run(prefix+'-'+name,page,lambda fn=fn,page=page,prefix=prefix,coarse=coarse:fn(w,b,page,e,prefix,coarse))
         mobile.set_viewport_size(dict(width=320,height=844))
@@ -425,8 +296,7 @@ def main():
             knownIssues=[c for c in e.checks if not c['passed']] if args.baseline else [],
             fixture='disposable PostgreSQL + real service + existing built console + OIDC/TLS',paidModelCalls=0,
             secretScreenshots='Ordinary captures mask data-sensitive/one-time secret locators; native CDP captures refuse visible sensitive locators. No raw DOM saved',
-            sourceOnly=[dict(state='SDK/native ID hint tooltips',reason='shared.tsx ShortId uses a native title={value}; SDK uses visible expandable ID details. Native browser tooltip rendering is source-only, not a visual tooltip claim.'),
-                        dict(state='Live evaluator/model execution and pending network recovery',reason='Intentionally not invoked; navigation pending edit alert is captured. Existing BDD recovery coverage remains separate.')])
+            sourceOnly=[dict(state='SDK/native ID hint tooltips',reason='shared.tsx ShortId uses a native title={value}; SDK uses visible expandable ID details. Native browser tooltip rendering is source-only, not a visual tooltip claim.')])
         (output/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
         print(json.dumps(dict(passed=summary['passed'],capturedStates=len(e.states),failures=len(e.failures),knownIssues=len(summary['knownIssues'])),indent=2),flush=True)
     return 0 if (summary['traversalComplete'] if args.baseline else summary['passed']) else 1

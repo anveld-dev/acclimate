@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { VerifiedVersion, FileKind, DeliveryReceiptRequest } from './types.js';
 import { validatePayload, DeliveryError, resolveAndCache } from './cache.js';
-import type { CachePolicy } from './cache.js';
+import type { Selection, CachePolicy } from './cache.js';
 import type { AcclimateClient } from './client.js';
 import type { DeliveryObserver } from './reporting.js';
 
@@ -22,11 +22,8 @@ export interface PrepareOptions {
   collision?: 'error';
 }
 
-export type PrepareDeliveryOptions = {
-  workspaceId: string;
-  bundleId: string;
-  channel: string;
-} & Omit<CachePolicy, 'cacheDir' | 'reporter' | 'offline'> & {
+export type PrepareDeliveryOptions = Selection &
+  Omit<CachePolicy, 'cacheDir' | 'reporter'> & {
     cacheDir?: string;
     destination?: string;
     reporter?: DeliveryObserver & {
@@ -60,16 +57,25 @@ export async function prepareDelivery(
   client: AcclimateClient,
   options: PrepareDeliveryOptions,
 ): Promise<PreparedDelivery> {
-  const { workspaceId, bundleId, destination, cacheDir, reporter, maxCacheBytes } = options;
-  if (!client.connectionId || !('channel' in options) || !options.channel || 'versionId' in options)
-    throw new AcclimateUsageError(
-      'Start jobs with an enrolled connection and its channel',
-      'selection',
-    );
-  const selection = { workspaceId, bundleId, channel: options.channel };
+  const {
+    workspaceId,
+    bundleId,
+    destination,
+    cacheDir,
+    reporter,
+    offline,
+    maxCacheBytes,
+  } = options;
+  const hasChannel = 'channel' in options;
+  if (hasChannel === 'versionId' in options)
+    throw new AcclimateUsageError('Select exactly one channel or versionId', 'selection');
+  const selection = hasChannel
+    ? { workspaceId, bundleId, channel: options.channel }
+    : { workspaceId, bundleId, versionId: options.versionId };
   const verified = await resolveAndCache(client, selection, {
     cacheDir: cacheDir ?? (await defaultCacheDir()),
     reporter,
+    offline,
     maxCacheBytes,
   });
   const directory =

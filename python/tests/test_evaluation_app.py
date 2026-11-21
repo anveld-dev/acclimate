@@ -21,10 +21,10 @@ class ApplicationRevisionTests(unittest.TestCase):
             )
             lock = directory / "dependency.lock"
             lock.write_text("tool=1")
-            with installed_application(directory) as (app, _):
+            with installed_application(directory) as app:
                 before = app.descriptor
             lock.write_text("tool=2")
-            with installed_application(directory) as (app, _):
+            with installed_application(directory) as app:
                 after = app.descriptor
             self.assertEqual(after["datasetRevision"], before["datasetRevision"])
             self.assertNotEqual(after["graderRevision"], before["graderRevision"])
@@ -57,7 +57,7 @@ class ApplicationRevisionTests(unittest.TestCase):
             )
             with patch.object(sys, "path", [str(root), *sys.path]):
                 coverage = {}
-                with installed_application(root, selection="incident_evals.adapter", coverage=coverage) as (app, _):
+                with installed_application(root, selection="incident_evals.adapter", coverage=coverage) as app:
                     before = app.descriptor
                     self.assertEqual(app._execute(SimpleNamespace()).output, "east")
                     self.assertEqual(set(coverage["importedFiles"]), {"__init__.py", "agent.py", "rules.py"})
@@ -80,7 +80,6 @@ class ApplicationRevisionTests(unittest.TestCase):
 
         with patch("acclimate.evaluation_app.installed_application", side_effect=AssertionError("read command imported application")), \
              patch("acclimate.evaluation_cli.evaluation_main", return_value=0) as dispatch:
-            for command, args in (("status", ["--read-config", "reader", "--handoff", "request"]),
-                                  ("verify-export", ["--manifest", "manifest"])):
-                self.assertEqual(main([command, *args]), 0)
-                dispatch.assert_called_with(None, [command, *args])
+            args = ["pull", "--config", "config", "--bundle", "bundle", "--out", "bundle.json"]
+            self.assertEqual(main(args), 0)
+            dispatch.assert_called_once_with(None, args)

@@ -20,15 +20,17 @@ def selected(context):
     assert w.delivery['version'] == w.original['version']
 
 
+@given('an application cached the original version by ID')
 @when('a fresh job requests the original version by ID')
 def pin(context):
     w = context.world
     w.delivery = w.sdk('delivery', versionId=w.original['version']['id'])
 
 
-@then('the job rejects the pinned version')
-def rejected_pin(context):
-    assert context.world.delivery['error']['name'] == 'AcclimateUsageError'
+@then('the latest channel still contains the newer release')
+def current(context):
+    w = context.world
+    assert w.call('GET', w.channel)['version'] == w.uploaded_version
 
 
 @when('the service becomes unavailable')
@@ -60,7 +62,8 @@ def stale(context):
 
 @when('another SDK identity requests bounded offline delivery')
 def other_identity(context):
-    context.world.delivery = context.world.sdk('delivery', actor='other', offline=True)
+    w = context.world
+    w.delivery = w.sdk('delivery', actor='other', versionId=w.original['version']['id'], offline=True)
 
 
 @then('no cached mapping is disclosed')
@@ -72,7 +75,7 @@ def no_mapping(context):
 @given('that integration cached the published release')
 def integration_cache(context):
     w = context.world
-    w.delivery = w.sdk('delivery', actor='content-reader')
+    w.delivery = w.sdk('delivery', actor='content-reader', versionId=w.original['version']['id'])
     assert w.delivery['version'] == w.original['version']
 
 
@@ -80,7 +83,7 @@ def integration_cache(context):
 def integration_offline(context):
     w = context.world
     w.prepared_before_request = set(w.sdk_directory.glob('prepared-*'))
-    w.delivery = w.sdk('delivery', actor='content-reader', offline=True)
+    w.delivery = w.sdk('delivery', actor='content-reader', versionId=w.original['version']['id'], offline=True)
 
 
 @then('delivery is denied despite the cached files')
@@ -210,31 +213,3 @@ def dropped(context):
     w = context.world
     assert w.reporting['pendingAfter'] == 0 and w.reporting['sentAfter'] == []
     assert w.call('GET', w.integration_path + '/receipts')['items'] == []
-
-
-@when('the SDK retries a grader that changes its input before failing')
-def grader_mutation(context):
-    w = context.world
-    w.delivery = w.sdk('compareMutation',parentVersionId=w.original['version']['id'],candidateVersionId=w.draft['snapshotVersion']['id'],mutation='grader')
-
-
-@then('execution happened once per version and both retries saw the original output')
-def independent(context):
-    result = context.world.delivery
-    assert result['executions'] == 2
-    assert result['observed'] == [['first','second']] * 4
-    assert result['report']['results'][0]['parent']['reward'] == 2
-    assert result['report']['results'][0]['candidate']['reward'] == 2
-
-
-@when('the caller changes version and runtime labels during comparison')
-def input_mutation(context):
-    w = context.world
-    w.delivery = w.sdk('compareMutation',parentVersionId=w.original['version']['id'],candidateVersionId=w.draft['snapshotVersion']['id'],mutation='identities')
-
-
-@then('the SDK report still names the versions and settings it executed')
-def fixed_inputs(context):
-    result = context.world.delivery
-    for key,value in result['original'].items():
-        assert result['report'][key] == value, key

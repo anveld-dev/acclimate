@@ -1,5 +1,5 @@
 import { EvaluationError, EvaluationUsageError } from './errors.js';
-import type { Outcome } from '../types.js';
+import type { Outcome } from './types.js';
 
 /** Selects part of the inventory. Unselected pairs stay in the report as `not_selected`. */
 export type CaseSelection =

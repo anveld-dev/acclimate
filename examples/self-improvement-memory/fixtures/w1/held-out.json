@@ -1,0 +1,1240 @@
+[
+  {
+    "caseId": "h-b25a71be",
+    "input": "Return six entries from conversation migration-review as JSON, with token counts.",
+    "expected": "llm logs list --count 6 --conversation migration-review --json --usage",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "logs",
+        "list",
+        "--count",
+        "6",
+        "--conversation",
+        "migration-review",
+        "--json",
+        "--usage",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-fc1ce72a",
+    "input": "Give me only the response from the newest log matching 'schema migration'.",
+    "expected": "llm logs list --latest --query 'schema migration' --response",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "logs",
+        "list",
+        "--latest",
+        "--query",
+        "schema migration",
+        "--response",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-6415aab4",
+    "input": "List twelve responses by model cedar in short form.",
+    "expected": "llm logs list --count 12 --model cedar --short",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "logs",
+        "list",
+        "--count",
+        "12",
+        "--model",
+        "cedar",
+        "--short",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-8f45b78c",
+    "input": "Show logs where the lookup and clock tools both returned results, with fragments expanded.",
+    "expected": "llm logs list --tool lookup --tool clock --expand",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "logs",
+        "list",
+        "--tool",
+        "lookup",
+        "--tool",
+        "clock",
+        "--expand",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-ab643b57",
+    "input": "Get the final fenced block from the newest log for model willow.",
+    "expected": "llm logs list --latest --model willow --extract-last",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "logs",
+        "list",
+        "--latest",
+        "--model",
+        "willow",
+        "--extract-last",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-395b7e80",
+    "input": "Export the current conversation in JSON with token usage.",
+    "expected": "llm logs list --current --json --usage",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "logs",
+        "list",
+        "--current",
+        "--json",
+        "--usage",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-75fe9490",
+    "input": "Show four entries with IDs at least 01JH4YP7X2, in short form.",
+    "expected": "llm logs list --id-gte 01JH4YP7X2 --count 4 --short",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "logs",
+        "list",
+        "--id-gte",
+        "01JH4YP7X2",
+        "--count",
+        "4",
+        "--short",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-f7f271cb",
+    "input": "Print the most recent response using model kestrel.",
+    "expected": "llm logs list --model kestrel --latest --response",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "logs",
+        "list",
+        "--model",
+        "kestrel",
+        "--latest",
+        "--response",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-2962470e",
+    "input": "Export seven log entries matching 'disk pressure' in short form.",
+    "expected": "llm logs list --query 'disk pressure' --count 7 --short",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "logs",
+        "list",
+        "--query",
+        "disk pressure",
+        "--count",
+        "7",
+        "--short",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-22d4f5ba",
+    "input": "Find the first fenced block in the newest log mentioning 'rate sheet'.",
+    "expected": "llm logs list --query 'rate sheet' --latest --extract",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "logs",
+        "list",
+        "--query",
+        "rate sheet",
+        "--latest",
+        "--extract",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-225d88f6",
+    "input": "Export every log of the pricing-review conversation to JSON with long strings truncated.",
+    "expected": "llm logs list --conversation pricing-review --count 0 --json --truncate",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "logs",
+        "list",
+        "--conversation",
+        "pricing-review",
+        "--count",
+        "0",
+        "--json",
+        "--truncate",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-7223ffd7",
+    "input": "Show three logs containing a calculator result, with token usage.",
+    "expected": "llm logs list --tool calculator --count 3 --usage",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "logs",
+        "list",
+        "--tool",
+        "calculator",
+        "--count",
+        "3",
+        "--usage",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-b0f8c11d",
+    "input": "Print options for async models matching 'sparrow'.",
+    "expected": "llm models list --options --async --query sparrow",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "models",
+        "list",
+        "--options",
+        "--async",
+        "--query",
+        "sparrow",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-aa885cf8",
+    "input": "Return JSON for models named rye and barley.",
+    "expected": "llm models list --model rye --model barley --json",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "models",
+        "list",
+        "--model",
+        "rye",
+        "--model",
+        "barley",
+        "--json",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-b19f57eb",
+    "input": "Show options for models that accept both tools and schemas.",
+    "expected": "llm models list --options --tools --schemas",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "models",
+        "list",
+        "--options",
+        "--tools",
+        "--schemas",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-8eb7587e",
+    "input": "Give me async models matching both 'cedar' and 'v2' as JSON.",
+    "expected": "llm models list --async --query cedar --query v2 --json",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "models",
+        "list",
+        "--async",
+        "--query",
+        "cedar",
+        "--query",
+        "v2",
+        "--json",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-737c55cf",
+    "input": "Show options for tool-capable models matching 'offline'.",
+    "expected": "llm models list --options --tools --query offline",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "models",
+        "list",
+        "--options",
+        "--tools",
+        "--query",
+        "offline",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-9e791712",
+    "input": "Find schema-capable models matching both 'orchid' and 'preview'.",
+    "expected": "llm models list --schemas --query orchid --query preview",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "models",
+        "list",
+        "--schemas",
+        "--query",
+        "orchid",
+        "--query",
+        "preview",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-2518d839",
+    "input": "List options for model wren.",
+    "expected": "llm models list --model wren --options",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "models",
+        "list",
+        "--model",
+        "wren",
+        "--options",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-f9b93976",
+    "input": "Return JSON for tool-capable models matching 'ridge'.",
+    "expected": "llm models list --tools --query ridge --json",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "models",
+        "list",
+        "--tools",
+        "--query",
+        "ridge",
+        "--json",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-562c06c0",
+    "input": "Give full stored schema definitions mentioning 'waybill' as newline-delimited JSON.",
+    "expected": "llm schemas list --full --query waybill --nl",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "schemas",
+        "list",
+        "--full",
+        "--query",
+        "waybill",
+        "--nl",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-62936dba",
+    "input": "Return schemas matching both 'shipment' and 'warehouse' as JSON.",
+    "expected": "llm schemas list --query shipment --query warehouse --json",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "schemas",
+        "list",
+        "--query",
+        "shipment",
+        "--query",
+        "warehouse",
+        "--json",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-c2bdfbe4",
+    "input": "List complete definitions for stored schemas matching both 'product' and 'dimensions'.",
+    "expected": "llm schemas list --full --query product --query dimensions",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "schemas",
+        "list",
+        "--full",
+        "--query",
+        "product",
+        "--query",
+        "dimensions",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-20a4c5f3",
+    "input": "Give a JSON list of schemas mentioning 'rail station'.",
+    "expected": "llm schemas list --query 'rail station' --json",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "schemas",
+        "list",
+        "--query",
+        "rail station",
+        "--json",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-3642ed47",
+    "input": "List schema records mentioning 'renewable energy' as newline-delimited JSON.",
+    "expected": "llm schemas list --query 'renewable energy' --nl",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "schemas",
+        "list",
+        "--query",
+        "renewable energy",
+        "--nl",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-d12baec9",
+    "input": "Show full schema definitions containing 'part number' as JSON.",
+    "expected": "llm schemas list --full --query 'part number' --json",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "schemas",
+        "list",
+        "--full",
+        "--query",
+        "part number",
+        "--json",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-f8a97608",
+    "input": "Show definitions of stored schemas mentioning 'crop rotation'.",
+    "expected": "llm schemas list --full --query 'crop rotation'",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "schemas",
+        "list",
+        "--full",
+        "--query",
+        "crop rotation",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-98d71c99",
+    "input": "List schema records matching both 'survey' and 'respondent'.",
+    "expected": "llm schemas list --query survey --query respondent",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "schemas",
+        "list",
+        "--query",
+        "survey",
+        "--query",
+        "respondent",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-04f4e031",
+    "input": "Get JSON for stored fragments that match both 'workshop' and 'schedule'.",
+    "expected": "llm fragments list --query workshop --query schedule --json",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "fragments",
+        "list",
+        "--query",
+        "workshop",
+        "--query",
+        "schedule",
+        "--json",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-2e53d456",
+    "input": "List aliased fragments matching 'release checklist'.",
+    "expected": "llm fragments list --aliases --query 'release checklist'",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "fragments",
+        "list",
+        "--aliases",
+        "--query",
+        "release checklist",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-33420a83",
+    "input": "Return JSON for aliased fragments matching 'training'.",
+    "expected": "llm fragments list --aliases --query training --json",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "fragments",
+        "list",
+        "--aliases",
+        "--query",
+        "training",
+        "--json",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-f8df032b",
+    "input": "Find fragments matching 'rain gauge'.",
+    "expected": "llm fragments list --query 'rain gauge'",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "fragments",
+        "list",
+        "--query",
+        "rain gauge",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-7e65c644",
+    "input": "List aliased fragments that match both 'deploy' and 'arm64'.",
+    "expected": "llm fragments list --aliases --query deploy --query arm64",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "fragments",
+        "list",
+        "--aliases",
+        "--query",
+        "deploy",
+        "--query",
+        "arm64",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-4b716fc8",
+    "input": "Export matching fragments for the phrase 'build manifest' as JSON.",
+    "expected": "llm fragments list --query 'build manifest' --json",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "fragments",
+        "list",
+        "--query",
+        "build manifest",
+        "--json",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-ef1d179c",
+    "input": "Find fragments matching all of 'recall', 'batch', and 'ingredient'.",
+    "expected": "llm fragments list --query recall --query batch --query ingredient",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "fragments",
+        "list",
+        "--query",
+        "recall",
+        "--query",
+        "batch",
+        "--query",
+        "ingredient",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-28c4ddb5",
+    "input": "Give JSON for aliased fragments that match both 'travel' and 'approval'.",
+    "expected": "llm fragments list --aliases --query travel --query approval --json",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "fragments",
+        "list",
+        "--aliases",
+        "--query",
+        "travel",
+        "--query",
+        "approval",
+        "--json",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-9105ec4c",
+    "input": "Find three neighbors of item room-14 in venue-notes and print them in plain format.",
+    "expected": "llm similar venue-notes room-14 --number 3 --plain",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "similar",
+        "venue-notes",
+        "room-14",
+        "--number",
+        "3",
+        "--plain",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-627ece92",
+    "input": "Find ten items in support-handbook similar to the text 'invoice address changed'.",
+    "expected": "llm similar support-handbook --content 'invoice address changed' --number 10",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "similar",
+        "support-handbook",
+        "--content",
+        "invoice address changed",
+        "--number",
+        "10",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-7f6ed628",
+    "input": "Find five items like museum-3 in archive-notes using curators.db.",
+    "expected": "llm similar archive-notes museum-3 --number 5 --database curators.db",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "similar",
+        "archive-notes",
+        "museum-3",
+        "--number",
+        "5",
+        "--database",
+        "curators.db",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-3fb7824e",
+    "input": "Find two entries in garden-journal similar to 'leaves with brown edges', printing plain output.",
+    "expected": "llm similar garden-journal --content 'leaves with brown edges' --number 2 --plain",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "similar",
+        "garden-journal",
+        "--content",
+        "leaves with brown edges",
+        "--number",
+        "2",
+        "--plain",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-ccf990f4",
+    "input": "Find four items like memo-62 in collection plans using internal.db and plain output.",
+    "expected": "llm similar plans memo-62 --number 4 --database internal.db --plain",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "similar",
+        "plans",
+        "memo-62",
+        "--number",
+        "4",
+        "--database",
+        "internal.db",
+        "--plain",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-604a82be",
+    "input": "List six neighbors of issue-81 in the bug-notes collection.",
+    "expected": "llm similar bug-notes issue-81 --number 6",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "similar",
+        "bug-notes",
+        "issue-81",
+        "--number",
+        "6",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-60aa6cfb",
+    "input": "Find eight neighbors of the text 'replace worn bearing' in repairs using shop.db.",
+    "expected": "llm similar repairs --content 'replace worn bearing' --number 8 --database shop.db",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "similar",
+        "repairs",
+        "--content",
+        "replace worn bearing",
+        "--number",
+        "8",
+        "--database",
+        "shop.db",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-a5f4fb9f",
+    "input": "Find nine entries similar to 'heat pump sizing' in installers; use catalog.db and print plain output.",
+    "expected": "llm similar installers --content 'heat pump sizing' --number 9 --database catalog.db --plain",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "similar",
+        "installers",
+        "--content",
+        "heat pump sizing",
+        "--number",
+        "9",
+        "--database",
+        "catalog.db",
+        "--plain",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-81a0f666",
+    "input": "Show the saved template called 'bug-digest'.",
+    "expected": "llm templates show bug-digest",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "templates",
+        "show",
+        "bug-digest",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-f35b0d3e",
+    "input": "Show stored schema shipment-v3.",
+    "expected": "llm schemas show shipment-v3",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "schemas",
+        "show",
+        "shipment-v3",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-13000018",
+    "input": "Display the saved model options for oryx-mini.",
+    "expected": "llm models options show oryx-mini",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "models",
+        "options",
+        "show",
+        "oryx-mini",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-7f77d2b5",
+    "input": "Clear the saved top_p option for the model cedar-chat.",
+    "expected": "llm models options clear cedar-chat top_p",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "models",
+        "options",
+        "clear",
+        "cedar-chat",
+        "top_p",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-144aa87c",
+    "input": "Make atlas-embed the default embedding model.",
+    "expected": "llm embed-models default atlas-embed",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "embed-models",
+        "default",
+        "atlas-embed",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-6b930a24",
+    "input": "Make willow-chat the default model for chat.",
+    "expected": "llm models default willow-chat",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "models",
+        "default",
+        "willow-chat",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-c1eea503",
+    "input": "Remove the model alias newsroom.",
+    "expected": "llm aliases remove newsroom",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "aliases",
+        "remove",
+        "newsroom",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-c07dd624",
+    "input": "Remove the alias 'build-rules' for a stored fragment.",
+    "expected": "llm fragments remove build-rules",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "fragments",
+        "remove",
+        "build-rules",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-1047958e",
+    "input": "Back up the logs database to desktop-logs.db.",
+    "expected": "llm logs backup desktop-logs.db",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "logs",
+        "backup",
+        "desktop-logs.db",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-6efbf2a4",
+    "input": "Show the saved key labeled warehouse.",
+    "expected": "llm keys get warehouse",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "keys",
+        "get",
+        "warehouse",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-897915ef",
+    "input": "List embedding models matching both 'dense' and 'search'.",
+    "expected": "llm embed-models list --query dense --query search",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "embed-models",
+        "list",
+        "--query",
+        "dense",
+        "--query",
+        "search",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-eda085cf",
+    "input": "Show the installed plugins that register embedding models.",
+    "expected": "llm plugins --hook register_embedding_models",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "plugins",
+        "--hook",
+        "register_embedding_models",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-6b6e8cb8",
+    "input": "Point alias 'tiny-chat' at model 'cedar-v2'.",
+    "expected": "llm aliases set tiny-chat cedar-v2",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "aliases",
+        "set",
+        "tiny-chat",
+        "cedar-v2",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-f022bfe2",
+    "input": "Turn prompt logging on.",
+    "expected": "llm logs on",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "logs",
+        "on",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-323cd5e9",
+    "input": "Show the template named 'supplier-brief'.",
+    "expected": "llm templates show supplier-brief",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "templates",
+        "show",
+        "supplier-brief",
+        "--invalid-control-option"
+      ]
+    ]
+  },
+  {
+    "caseId": "h-343711f7",
+    "input": "Display the saved model options for finch-2.",
+    "expected": "llm models options show finch-2",
+    "negativeControls": [
+      [
+        "llm",
+        "--help"
+      ],
+      [
+        "llm",
+        "models",
+        "options",
+        "show",
+        "finch-2",
+        "--invalid-control-option"
+      ]
+    ]
+  }
+]

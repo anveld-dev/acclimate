@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
 import { ArrowRight, ChevronRight, Radio, RefreshCw } from 'lucide-react';
 import { Button } from './ui/button';
-import { OutcomeLookup } from './outcome-lookup';
 import { PageTitle } from './shared';
 import { WorkspaceEmptyState } from './workspace-empty-state';
 import { workspaceHref } from '../navigation';
@@ -109,8 +108,7 @@ export function WorkspaceDelivery({
               </h2>
               <ul>
                 {apps.map((app) => {
-                  const href =
-                    home + '?connection=' + encodeURIComponent(app.id) + '#delivery-app';
+                  const href = home + '?connection=' + encodeURIComponent(app.id) + '#delivery-app';
                   return (
                     <li key={app.id}>
                       <a
@@ -165,7 +163,6 @@ export function WorkspaceDelivery({
                   workspaceId={workspaceId}
                   canManage={canManage}
                 />
-                <OutcomeLookup target={{ workspaceId, connectionId: selected.id }} />
               </div>
             ) : (
               <div className="p-4">
@@ -177,7 +174,7 @@ export function WorkspaceDelivery({
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            A delayed observation can refer to an older version. Evaluations measure agent quality.
+            A delayed observation can refer to an older version.
           </p>
         </>
       )}

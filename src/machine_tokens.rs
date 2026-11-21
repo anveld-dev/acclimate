@@ -275,7 +275,7 @@ async fn issue(
     }
     if !valid_rights(&rights) {
         return Err(invalid(
-            "Rights must be distinct values from read, evaluate, write, propose and promote",
+            "Rights must be distinct values from read, evaluate, write and promote",
         ));
     }
     if !(1..=MAX_DAYS).contains(&days) {

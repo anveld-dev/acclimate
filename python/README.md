@@ -1,8 +1,8 @@
 # Acclimate Python SDK
 
-Evaluate changes to your agent's instructions, skills and memory against saved cases, and deliver the released version to each job. [Acclimate](https://github.com/anveld-dev/acclimate) is a self-hosted service; this package is its Python client and evaluator. It needs Python 3.11 or later on Linux or macOS and has no third-party dependencies.
+Deliver versioned agent instructions, skills and memory to jobs with the Acclimate Python SDK. It requires Python 3.11 or later on Linux or macOS and has no third-party dependencies.
 
-## Quickstart: evaluate a change
+## Test an evaluator adapter
 
 ```sh
 pip install acclimate-sdk
@@ -23,21 +23,12 @@ def grade(run):
     return GradeResult(reward=score_result(run.output, run.expected))
 ```
 
-Try the change on your laptop first. Put the current files in `parent/` and your edit in `candidate/`:
-
-```sh
-acclimate try --live --payload candidate
-acclimate compare --local --parent parent --candidate candidate --live
-```
-
-`try` runs one case and checks every value your callbacks return. `compare --local` grades both versions with the same pairing as a service run and writes an advisory report that is never release evidence. Neither needs a service, config or handoff. Then compare against the service to gate a release:
-
 ```sh
 acclimate describe
-acclimate compare --config "$EVALUATOR_CONFIG" --handoff "$HANDOFF" --live
+acclimate try --live --payload ./bundle
 ```
 
-`describe` prints the public descriptor: revision hashes and case IDs, never inputs or expected answers. `compare` runs both versions through `execute` and `grade` and records the comparison for review. `python -m acclimate` runs the same CLI as the `acclimate` command.
+`try` runs the selected cases and checks the values your callbacks return. `describe` prints revision hashes and case IDs while keeping inputs and expected answers local. `python -m acclimate` runs the same CLI as `acclimate`.
 
 For a complete agent you can run without a model provider, see the [Python support agent example](https://github.com/anveld-dev/acclimate/tree/main/examples/python-support-agent). To start your own, copy the [Python evaluation starter](https://github.com/anveld-dev/acclimate/tree/main/examples/python-evaluation-starter).
 
@@ -78,7 +69,7 @@ Set the connection UUID in `ACCLIMATE_CONNECTION`. Each new job checks its conne
 - The client rejects redirects, so the token never leaves the configured origin, and bounds every response.
 - The client has every method of the TypeScript client, in snake_case. See the [Python SDK reference](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/reference/python-sdk.mdx).
 
-The client, delivery helpers and evaluation runner are synchronous. `define_evaluation` accepts coroutine callbacks and runs them to completion. To run a whole evaluation from an asyncio application, await `acclimate.evaluation.run_evaluation_async`, which runs it in a worker thread, signals cancellation and waits for the worker to finish. The starter's `async_eval.py` shows the call.
+The client and delivery helpers are synchronous. `define_evaluation` accepts coroutine callbacks and runs them to completion.
 
 ## Report delivery
 
@@ -93,16 +84,14 @@ export ACCLIMATE_URL=http://127.0.0.1:3000
 export ACCLIMATE_WORKSPACE=YOUR_WORKSPACE ACCLIMATE_BUNDLE=YOUR_BUNDLE
 export ACCLIMATE_SCOPE=your-stable-app-identity
 # Set ACCLIMATE_TOKEN privately to your content-read credential.
-export ACCLIMATE_CONNECTION=YOUR_ENROLLED_CONNECTION_ID
+export ACCLIMATE_CONNECTION=YOUR_CONNECTION_ID
 # Optional: set ACCLIMATE_RECEIPT_TOKEN privately to report delivery.
 PYTHONPATH=python python3.11 python/examples/delivery_check.py
 ```
 
 ## Diagnose an evaluation
 
-If a comparison reports `output_invalid`, read `output-validation.json` in the private job directory for the failing field and a suggested fix. When a callback raises, the worker writes `callback-error.json` to that private job directory with the phase, exception class, redacted message and traceback, and the command output names the first failure's file. The file never leaves the machine. Set `"captureCallbackErrors": false` in the evaluator configuration to opt out. Add `--verbose` or set `ACCLIMATE_DEBUG=1` to see the full traceback of a setup error such as an `ImportError` in your module. Every error has a documented code and exit status; see [error codes](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/reference/error-codes.mdx).
-
-Durable evaluation needs a stable, private, local journal directory. Keep its path, the service URL, the principal and the SDK language and release the same until a run finishes. A sealed report retries its saved request without rerunning callbacks. A run that started executing without a sealed report needs inspection; see [recovery decisions](https://github.com/anveld-dev/acclimate/blob/main/docs/evaluator-operations.md#recovery-decisions).
+Run `acclimate try --json` to see callback shape issues. Use `--verbose` for a setup error traceback. Run `acclimate doctor --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID"` to check configuration, local storage and bundle access.
 
 ## Develop the SDK
 

@@ -27,7 +27,7 @@ const thread = new Codex({ env }).startThread({
 
 Your app supplies the model, credentials and any selected memory context. Codex also reads `CODEX_HOME`, which holds your global `config.toml`, MCP servers and `AGENTS.md`. Pass an `env` whose `CODEX_HOME` contains only `auth.json` if those must not affect the job; the native repository starter does this for each job. Retain the prepared files until the thread has finished, then call `await prepared.cleanup()`.
 
-For the [native repository starter](/docs/guides/deliver-content#stage-a-repository-for-evaluation), Codex is the default harness and its adapter already runs the thread. Install the pinned SDK and matching platform executable from your approved npm cache. The starter's check prints the CLI version without requiring credentials.
+For the [native repository starter](/docs/guides/deliver-content#prepare-an-existing-repository), Codex is the default harness and its adapter already runs the thread. Install the pinned SDK and matching platform executable from your approved npm cache. The starter's check prints the CLI version without requiring credentials.
 
 ```sh
 npm install --prefix "$app" --workspaces=false --offline --include=optional --ignore-scripts --no-audit --no-fund \

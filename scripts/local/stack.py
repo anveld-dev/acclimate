@@ -477,7 +477,7 @@ def api(opener, ports, method, route, token, session=None, body=None, mutation=F
 
 
 def seed_example(call):
-    """Publish a small example bundle so the first comparison has a parent."""
+    """Publish a small example bundle to its default channel."""
     scope = f'/v1/workspaces/{PROJECT}/bundles'
     bundles = call('GET', scope + '?limit=100')['items']
     bundle = next((item for item in bundles if item['name'] == EXAMPLE_BUNDLE), None)

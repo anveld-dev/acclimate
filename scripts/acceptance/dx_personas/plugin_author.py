@@ -314,7 +314,7 @@ def verify_starter_helpers(fixture):
 
 
 def remove_one_use_sdk_config(path, live_evidence):
-    """Remove only our one-use handoff after a normally completed, drained SDK run."""
+    """Remove only our one-use configuration after a normally completed, drained SDK run."""
     if not (live_evidence and live_evidence.get('turnCompleted') is True
             and live_evidence.get('facts', {}).get('confirmedStopped') is True
             and live_evidence.get('cleanupAfter') == 'normal-sdk-stream-exhaustion-awaits-codex-exec-exit'):

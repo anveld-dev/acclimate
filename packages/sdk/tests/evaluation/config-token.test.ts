@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { EVALUATOR_TOKEN_ENV, readEvaluatorConfig, readReaderConfig } from '../../src/evaluation/config.js';
+import { EVALUATOR_TOKEN_ENV, readEvaluatorConfig } from '../../src/evaluation/config.js';
 import { EvaluationError } from '../../src/evaluation/errors.js';
 
 async function fixture() {

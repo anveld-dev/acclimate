@@ -1,60 +1,14 @@
 import json
 import re
-import shlex
-import subprocess
-import sys
-import time
 from pathlib import Path
 from behave import given, when, then
 from playwright.sync_api import expect
-from scripts.bdd.editor import expect_editor_value
-from scripts.bdd.interactions import close_draft_details
-from scripts.productization.qualify import ROOT, payload
-from scripts.bdd.interactions import open_entry_actions, close_entry_actions, open_content_actions, open_details, reveal, submit_and_wait
+from scripts.productization.qualify import payload
+from scripts.bdd.interactions import open_content_actions, open_details, submit_and_wait
 
 
 def page(context):
     return context.world.browser().page
-
-
-def saved_draft(w):
-    return w.call('GET',w.channel+'/drafts')['items'][0]
-
-
-def ensure_editor(context):
-    p=page(context)
-    if p.get_by_role('textbox', name='Content', exact=True).count()==0:
-        p.get_by_role('link',name='Edit entry',exact=True).click()
-    expect(p.get_by_role('textbox', name='Content', exact=True)).to_be_visible()
-
-
-def save_browser(context):
-    w=context.world
-    p=page(context)
-    before=w.call('GET',w.channel+'/drafts')['items']
-    old={(row['id'],row['generation']) for row in before}
-    submit_and_wait(p,p.get_by_role('button',name='Save draft',exact=True))
-    for _ in range(100):
-        rows=w.call('GET',w.channel+'/drafts')['items']
-        saved=rows[0] if rows else None
-        if saved and (saved['id'],saved['generation']) not in old: break
-        time.sleep(.05)
-    else: raise AssertionError('Browser save did not commit a new draft generation')
-    expect(p).to_have_url(re.compile(r'[?&]draft='+saved['id']))
-    # The URL can change before the saved-draft component has finished opening.
-    # Wait for that real navigation/read boundary before editing another generation.
-    p.wait_for_load_state('networkidle')
-    expect(p.get_by_role('textbox', name='Content', exact=True)).to_be_enabled(timeout=30000)
-    expect(p.get_by_role('button',name='Save draft',exact=True)).to_be_disabled(timeout=30000)
-    expect(p.get_by_role('link',name='Continue to evaluation',exact=True)).to_be_focused(timeout=30000)
-    open_details(p,'Draft details')
-    details=p.get_by_role('dialog',name='Draft details',exact=True)
-    expect(details).to_contain_text(saved['id'])
-    expect(details).to_contain_text('generation '+str(saved['generation']))
-    close_draft_details(p)
-    expect(p.get_by_role('textbox', name='Content', exact=True)).to_be_visible()
-    # Reopening a saved route also reads its snapshot and history.
-    expect(p.get_by_role('textbox', name='Content', exact=True)).to_be_enabled(timeout=30000)
 
 
 @given('I opened an empty console workspace')
@@ -102,8 +56,6 @@ def selected_origin(context,origin):
     bundle=w.root+'/bundles/'+entries[0]['id']
     releases=w.call('GET',bundle+'/channels/stable/releases')['items']
     assert len(releases)==1 and releases[0]['unevaluatedReason']
-    assert releases[0].get('comparisonId') is None
-    assert w.call('GET',bundle+'/evaluation-requests')['items']==[]
     expect(page(context).get_by_test_id('entry-content')).to_be_visible()
 
 
@@ -170,223 +122,6 @@ def downloaded(context):
     assert context.world.downloaded=='Reusable project notes.'
 
 
-@when('I add and rename an entry as shared memory')
-def add_memory(context):
-    ensure_editor(context)
-    p=page(context)
-    p.get_by_role('button',name='Add entry',exact=True).click()
-    p.get_by_role('menuitem',name='Add instruction',exact=True).click()
-    open_entry_actions(p)
-    p.get_by_label('Entry path (rename)',exact=True).fill('memory/team.md')
-    p.get_by_label('Entry kind',exact=True).select_option('memory')
-    close_entry_actions(p)
-    p.get_by_role('textbox', name='Content', exact=True).fill('Reusable project notes.')
-    p.get_by_role('button',name='Review changes',exact=True).click()
-    expect(p.get_by_text('Added: memory/team.md',exact=True)).to_be_visible()
-
-
-@when('I save the browser draft')
-def save(context):
-    save_browser(context)
-
-
-@then("reopening the draft preserves that entry's path, kind and text")
-def memory_saved(context):
-    w=context.world
-    draft=saved_draft(w)
-    w.browser().visit(w.browser_fixture.bundle_path('changes',draft=draft['id']))
-    page(context).get_by_role('treeitem',name='Open memory/team.md',exact=True).click()
-    expect_editor_value(page(context).get_by_role('textbox', name='Content', exact=True), 'Reusable project notes.')
-    assert w.call('GET',w.bundle+'/versions/'+draft['snapshotVersion']['id']+'/payload')['files'][-1]==dict(path='memory/team.md',kind='memory',text='Reusable project notes.')
-
-
-@when('I add a skill with a support file and rename the package')
-def rename_skill(context):
-    ensure_editor(context)
-    p=page(context)
-    p.get_by_role('button',name='Add entry',exact=True).click()
-    p.get_by_role('menuitem',name='Add skill package',exact=True).click()
-    open_entry_actions(p)
-    p.get_by_role('button',name='Add skill support file',exact=True).click()
-    close_entry_actions(p)
-    p.get_by_role('textbox', name='Content', exact=True).fill('Supporting review notes.')
-    open_entry_actions(p)
-    p.get_by_label('Rename entire skill package',exact=True).fill('review-rules')
-    p.get_by_role('button',name='Apply package rename',exact=True).click()
-    close_entry_actions(p)
-
-
-@then('both skill paths and the manifest name use the new package name')
-def renamed(context):
-    w=context.world
-    draft=saved_draft(w)
-    files=w.call('GET',w.bundle+'/versions/'+draft['snapshotVersion']['id']+'/payload')['files']
-    skills=[entry for entry in files if entry['kind']=='skill']
-    assert len(skills)==2
-    assert all(entry['path'].startswith('skills/review-rules/') for entry in skills)
-    assert 'name: review-rules' in next(entry['text'] for entry in skills if entry['path'].endswith('SKILL.md'))
-
-
-@when('I remove that skill package and save again')
-def remove_skill(context):
-    p=page(context)
-    p.get_by_role('treeitem',name='Open skills/review-rules/SKILL.md',exact=True).click()
-    open_entry_actions(p)
-    p.get_by_role('button',name='Remove skill package',exact=True).click()
-    close_entry_actions(p)
-    save_browser(context)
-
-
-@then('neither its manifest nor its support files remain')
-def no_orphans(context):
-    w=context.world
-    draft=saved_draft(w)
-    files=w.call('GET',w.bundle+'/versions/'+draft['snapshotVersion']['id']+'/payload')['files']
-    assert files==[dict(path='AGENTS.md',kind='instruction',text='Review code.')]
-
-
-@when('I select a bundle folder containing a skill and support file')
-def folder(context):
-    ensure_editor(context)
-    w=context.world
-    root=w.h.dir/'import-root'
-    (root/'skills/import-review/references').mkdir(parents=True)
-    (root/'skills/import-review/SKILL.md').write_text('---\nname: import-review\ndescription: Review imported changes.\n---\nCheck retries.')
-    (root/'skills/import-review/references/notes.md').write_text('Supporting import notes.')
-    page(context).get_by_role('button',name='Import files into this draft',exact=True).click()
-    expect(page(context).get_by_role('dialog',name='Import files into this draft',exact=True)).to_be_visible()
-    page(context).get_by_label('Bundle folder',exact=True).set_input_files(str(root))
-
-
-@then('both relative skill paths appear in the import preview')
-def preview(context):
-    p=page(context)
-    expect(p.get_by_role('heading',name='Ready to add · 2 files',exact=True)).to_be_visible()
-    for path in ['skills/import-review/SKILL.md','skills/import-review/references/notes.md']:
-        row=p.get_by_role('listitem').filter(has=p.get_by_text(path,exact=True))
-        expect(row.get_by_text(path,exact=True)).to_be_visible()
-        expect(row.get_by_text('skill',exact=True)).to_be_visible()
-
-
-@when('I apply the preview and save the browser draft')
-def apply(context):
-    page(context).get_by_role('button',name=re.compile(r'^Add \d+ files? to draft$')).click()
-    save_browser(context)
-
-
-@then('the saved bundle contains the complete skill package')
-def imported(context):
-    w=context.world
-    draft=saved_draft(w)
-    paths=[entry['path'] for entry in w.call('GET',w.bundle+'/versions/'+draft['snapshotVersion']['id']+'/payload')['files']]
-    assert set(paths)=={'AGENTS.md','skills/import-review/SKILL.md','skills/import-review/references/notes.md'}
-
-
-@when('I select an import with {invalid}')
-def bad_import(context,invalid):
-    ensure_editor(context)
-    if invalid=='a collision': name,content='AGENTS.md',b'Do not replace published instructions.'
-    elif invalid=='invalid UTF-8': name,content='invalid.md',b'\xff\xfe'
-    elif invalid=='a flat skill': name,content='SKILL.md',b'---\nname: review\ndescription: Review changes.\n---\nCheck.'
-    else: raise AssertionError(invalid)
-    page(context).get_by_role('button',name='Import files into this draft',exact=True).click()
-    expect(page(context).get_by_role('dialog',name='Import files into this draft',exact=True)).to_be_visible()
-    page(context).get_by_label('Individual files',exact=True).set_input_files(dict(name=name,mimeType='text/plain',buffer=content))
-
-
-@then('the import is rejected and the original text remains')
-def rejected_import(context):
-    p=page(context)
-    expect(p.get_by_role('alert').filter(has_text='Nothing was imported.')).to_be_visible()
-    expect(p.get_by_role('button',name=re.compile(r'^Add \d+ files? to draft$'))).to_have_count(0)
-    # Modal isolation correctly removes the background editor from the accessible tree.
-    # Dismiss the rejected import through native Escape before checking its exact bytes.
-    p.keyboard.press('Escape')
-    expect(p.get_by_role('dialog',name='Import files into this draft',exact=True)).to_have_count(0)
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), 'Review code.')
-
-
-@when('I edit text and try to navigate away')
-def leave(context):
-    ensure_editor(context)
-    p=page(context)
-    p.get_by_role('textbox', name='Content', exact=True).fill('Unsaved browser edits.')
-    p.get_by_role('link',name='Releases',exact=True).click()
-    expect(p.get_by_role('heading',name='Leave current edits?',exact=True)).to_be_visible()
-
-
-@when('I choose to {choice}')
-def navigation_choice(context,choice):
-    page(context).get_by_role('button',name='Keep editing' if choice=='keep editing' else 'Leave editor',exact=True).click()
-
-
-@then('the unsaved edit is {outcome}')
-def navigation_result(context,outcome):
-    w=context.world
-    p=page(context)
-    if outcome=='preserved':
-        expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), 'Unsaved browser edits.')
-    else:
-        expect(p).to_have_url(w.browser_fixture.base+w.browser_fixture.bundle_path('releases'))
-        w.browser_fixture.visit('/content')
-        expect(p.get_by_test_id('entry-content')).to_contain_text('Review code.')
-
-
-@when('I save two browser draft generations')
-def generations(context):
-    ensure_editor(context)
-    w=context.world
-    p=page(context)
-    p.get_by_role('textbox', name='Content', exact=True).fill('Review retries.')
-    save_browser(context)
-    p.get_by_role('textbox', name='Content', exact=True).fill('Review duplicate retries.')
-    save_browser(context)
-    w.browser_saved=saved_draft(w)
-    w.browser_bookmark=p.url
-
-
-@when('I close the browser and restart the service')
-def browser_restart(context):
-    w=context.world
-    w.browser_fixture.restart_browser()
-    w.h.restart()
-
-
-@then('the saved generation reopens with its exact snapshot and history')
-def browser_reopened(context):
-    w=context.world
-    w.browser_fixture.visit(w.browser_bookmark.removeprefix(w.browser_fixture.base))
-    p=page(context)
-    expect_editor_value(p.get_by_role('textbox', name='Content', exact=True), 'Review duplicate retries.')
-    open_details(p,'Draft details')
-    details=p.get_by_role('dialog',name='Draft details',exact=True)
-    expect(details).to_contain_text(w.browser_saved['id'])
-    expect(details).to_contain_text(w.browser_saved['snapshotVersion']['id'])
-    expect(details.get_by_role('heading',name='Saved snapshot history',exact=True)).to_be_visible()
-    expect(p.get_by_text('Generation 1:',exact=False)).to_be_visible()
-    expect(details.get_by_text('Generation 2:',exact=False)).to_be_visible()
-    close_draft_details(p)
-
-
-@when('I edit text and choose to leave the editor during refresh')
-def discard_refresh(context):
-    ensure_editor(context)
-    p=page(context)
-    p.get_by_role('textbox', name='Content', exact=True).fill('Unsaved browser edits.')
-    p.once('dialog',lambda dialog:dialog.accept())
-    p.reload(wait_until='networkidle')
-
-
-@then('the unsaved text is replaced with the published content')
-def refresh_discarded(context):
-    expect_editor_value(page(context).get_by_role('textbox', name='Content', exact=True), 'Review code.')
-
-
-@given('I opened a new draft for that entry')
-def new_editor(context):
-    ensure_editor(context)
-
-
 @when('another operator publishes "{text}"')
 def other_release(context,text):
     w=context.world
@@ -401,240 +136,14 @@ def refresh(context):
     page(context).reload(wait_until='networkidle')
 
 
-@then('a new browser draft starts with "{text}"')
-def fresh_new(context,text):
-    expect_editor_value(page(context).get_by_role('textbox', name='Content', exact=True), text)
-
-
-def install_browser_evaluator(w, p):
-    from scripts.packaging.fixture_application import install_test_application
-
-    app = w.h.dir / ('evaluation-app-' + w.h.project)
-    app.mkdir(mode=0o700)
-    cases = install_test_application(app, "python")
-    w.evaluator_app = app
-    w.evaluator_env = dict(w.h.env, PYTHONPATH=str(ROOT/'python'), PYTHONDONTWRITEBYTECODE='1',
-                           ACCLIMATE_EVALUATOR_CASES=cases, SSL_CERT_FILE=str(w.browser_fixture.ca_path))
-    described = subprocess.run([sys.executable, '-m', 'acclimate', 'describe'], cwd=app,
-                               env=w.evaluator_env, text=True, capture_output=True, check=True)
-    section = p.get_by_role('region', name='Create evaluation request', exact=True)
-    section.get_by_label('Evaluator language', exact=True).select_option('python')
-    section.get_by_label('Public evaluator configuration (JSON)', exact=True).filter(visible=True).fill(described.stdout)
-
-
-@when('I save a browser draft and request its evaluation')
-def browser_evaluation(context):
-    ensure_editor(context)
-    w=context.world
-    p=page(context)
-    p.get_by_role('textbox', name='Content', exact=True).fill('Review retries.')
-    save_browser(context)
-    w.browser_saved=saved_draft(w)
-    p.get_by_role('link',name='Continue to evaluation',exact=True).click()
-    open_details(p,'Set up evaluation request')
-    expect(p.get_by_role('button',name='Create evaluation request',exact=True)).to_be_disabled()
-    install_browser_evaluator(w, p)
-    p.get_by_role('button',name='Create evaluation request',exact=True).click()
-    expect(p.get_by_role('status').filter(has_text='Evaluation request created. Run it in your app, then return here for the results.')).to_be_visible()
-    w.browser_request=w.call('GET',w.bundle+'/evaluation-requests')['items'][0]
-
-
-@when('the test application runs the downloaded handoff using the displayed command')
-def external_app(context):
-    w=context.world
-    import json
-    config_root=w.evaluator_app
-    config_root.mkdir(mode=0o700,exist_ok=True)
-    config_path=config_root/'evaluator.json'
-    config=dict(schemaVersion=1,serviceUrl=w.browser_fixture.base,workspaceId=w.h.project,
-                evaluatorToken=w.h.tokens['evaluator'],evaluatorPrincipalId='evaluator',
-                journalRoot=str(config_root/'journal'))
-    config_path.write_text(json.dumps(config))
-    config_path.chmod(0o600)
-    p=w.browser_fixture.page
-    p.get_by_role('button',name='Copy instructions for evaluator owner',exact=True).click()
-    instructions=p.evaluate('navigator.clipboard.readText()')
-    assert w.browser_fixture.base+'/evaluator-setup.html#python' in instructions and 'python -m acclimate doctor' in instructions
-    assert json.loads(instructions[instructions.index('{'):])['requestId']==w.browser_request['id']
-    guide=p.request.get(w.browser_fixture.base+'/evaluator-setup.html')
-    assert guide.ok and 'def execute(run)' in guide.text() and 'def grade(run)' in guide.text()
-    p.get_by_role('button',name='Copy request ID',exact=True).click()
-    assert p.evaluate('navigator.clipboard.readText()') == w.browser_request['id']
-    p.get_by_role('button',name='Copy handoff JSON',exact=True).click()
-    handoff=json.loads(p.evaluate('navigator.clipboard.readText()'))
-    assert handoff['workspaceId']==w.h.project and handoff['bundleId']==w.setup['bundle']['id']
-    assert handoff['requestId']==w.browser_request['id']
-    assert not any(key in handoff for key in ('evaluatorToken','journalRoot','consoleToken','loginToken'))
-    with p.expect_download() as pending_download:
-        p.get_by_role('button',name='Download handoff',exact=True).click()
-    download=pending_download.value
-    assert download.suggested_filename=='handoff.json'
-    downloaded_path=config_root/'downloaded-handoff.json'
-    download.save_as(downloaded_path)
-    downloaded_text=downloaded_path.read_text()
-    downloaded=json.loads(downloaded_text)
-    assert downloaded==handoff, 'Downloaded public request must equal the clipboard handoff'
-    forbidden={'evaluatorToken','journalRoot','consoleToken','loginToken','readToken',
-               'configPath','privateJobDirectory','stateRoot','journalPath'}
-    def assert_public_fields(value):
-        if isinstance(value,dict):
-            assert not forbidden.intersection(value), 'Download contains private configuration fields'
-            for nested in value.values(): assert_public_fields(nested)
-        elif isinstance(value,list):
-            for nested in value: assert_public_fields(nested)
-    assert_public_fields(downloaded)
-    for private_value in [*w.h.tokens.values(),w.console_token,w.login_token,
-                          str(config_path),config['journalRoot']]:
-        assert private_value not in downloaded_text, 'Download contains private fixture material'
-    p.get_by_role('button', name='Copy evaluator run command', exact=True).click()
-    command=shlex.split(p.evaluate('navigator.clipboard.readText()'))
-    assert command == ['python','-m','acclimate','compare','--config','/absolute/private/evaluator.json',
-                       '--handoff','handoff.json','--live']
-    command[0]=sys.executable
-    command[command.index('--config')+1]=str(config_path)
-    command[command.index('--handoff')+1]=str(downloaded_path)
-    # This evaluator directory contains only the test application installed above.
-    result=subprocess.run(command,cwd=w.evaluator_app,env=w.evaluator_env,capture_output=True,text=True,timeout=60)
-    assert result.returncode==0,'Installed app evaluator failed: '+result.stderr[-1500:]
-
-
-
-def inspect_case_and_scores(p):
-    workspace = p.get_by_role('region',name='Evaluation case comparison',exact=True)
-    matrix = workspace.get_by_role('table',name='Selected parent and candidate outcomes')
-    expect(matrix).to_be_visible(timeout=30000)
-    expect(matrix.get_by_role('columnheader',name=re.compile(r'^Parent'))).to_be_visible()
-    expect(matrix.get_by_role('columnheader',name=re.compile(r'^Candidate'))).to_be_visible()
-    workspace.get_by_role('button',name='View case JSON',exact=True).click()
-    case = json.loads(workspace.get_by_label('Case evidence JSON').inner_text())
-    assert case['comparisonId'] and case['parentVersionId'] and case['candidateVersionId']
-    workspace.get_by_role('button',name='View case JSON',exact=True).click()
-    p.get_by_role('button',name='Run details',exact=True).click()
-    return p.get_by_role('region',name='Observed paired rewards',exact=True)
-
-
-@when('I review the failed policy and publish with an override reason')
-def review_publish(context, expected_verdict='fail'):
-    p=page(context)
-    p.reload()
-    # The review opens on the newest completed result; return to its runs to inspect it.
-    expect(p).to_have_url(re.compile(r'[?&]comparison='),timeout=30000)
-    p.get_by_role('tab',name=re.compile(r'^Evaluation runs')).click()
-    evidence=p.get_by_role('link',name=re.compile(r'^Inspect evidence for '))
-    href=evidence.get_attribute('href')
-    evidence.click()
-    expect(p).to_have_url(context.world.browser_fixture.base+href,timeout=30000)
-    rewards=inspect_case_and_scores(p)
-    expect(rewards.get_by_text('Complete evidence',exact=True)).to_be_visible(timeout=30000)
-    expect(rewards.get_by_text('Missing grades · expected outcomes',exact=True).locator('..').locator('dd')).to_have_text('0')
-    expected_pairs=len(context.world.browser_request['expectedCases'])
-    expect(rewards.get_by_text('Scored pairs',exact=True).locator('..').locator('dd')).to_have_text(f'{expected_pairs} / {expected_pairs}')
-    expect(rewards.get_by_text('Execution failures · expected outcomes',exact=True).locator('..').locator('dd')).to_have_text('0')
-    p.get_by_role('tab',name='Evaluation runs',exact=False).click()
-    policy=p.get_by_label('Application policy check', exact=True)
-    policy.get_by_role('button',name='Policy check command',exact=True).click()
-    expect(policy.get_by_label('Evaluator language', exact=True)).to_have_value('python')
-    expect(policy.get_by_text('No policy verdict has been reported for this comparison.',exact=True)).to_be_visible()
-    policy.get_by_role('button',name='Copy policy check command',exact=True).click()
-    command=shlex.split(p.evaluate('navigator.clipboard.readText()'))
-    assert command == ['python','-m','acclimate','check','--config','/absolute/private/evaluator.json',
-                       '--handoff','handoff.json','--policy','quality-policy.json']
-    w=context.world
-    command[0]=sys.executable
-    command[command.index('--config')+1]=str(w.evaluator_app/'evaluator.json')
-    command[command.index('--handoff')+1]=str(w.evaluator_app/'downloaded-handoff.json')
-    result=subprocess.run(command,cwd=w.evaluator_app,env=w.evaluator_env,capture_output=True,text=True,timeout=60)
-    assert result.returncode=={'fail':2,'pass':0}[expected_verdict] and json.loads(result.stdout)['verdict']==expected_verdict
-    policy.get_by_role('button',name='Refresh policy checks',exact=True).click()
-    expect(policy.get_by_text({'fail':'Failed','pass':'Passed'}[expected_verdict],exact=True)).to_be_visible()
-    if expected_verdict=='fail':
-        expect(policy.get_by_text('Minimum mean improvement',exact=True)).to_be_visible()
-    p.get_by_role('button',name='Review release with this evidence',exact=True).click()
-    dialog=p.get_by_role('dialog',name='Publish to stable?',exact=True)
-    expect(dialog).to_contain_text('generation')
-    if expected_verdict=='fail':
-        publish=dialog.get_by_role('button',name='Override policy and publish',exact=True)
-        expect(publish).to_be_disabled()
-        dialog.get_by_label('Reason for overriding policy',exact=True).fill('Reviewer accepted the unchanged score for a scoped rollout.')
-    else:
-        expect(dialog.get_by_label('Reason for overriding policy',exact=True)).to_have_count(0)
-        publish=dialog.get_by_role('button',name='Publish with selected evidence',exact=True)
-    submit_and_wait(p,publish)
-    expect(p.get_by_role('status').filter(has_text='Release recorded.')).to_be_visible()
-
-
-@then('the release records the evaluated snapshot, overridden policy and reviewer reason')
-def exact_published(context):
-    w=context.world
-    assert w.call('GET',w.channel)['version']==w.browser_saved['snapshotVersion']
-    promotion=w.call('GET',w.channel+'/releases')['items'][0]
-    receipt=w.call('GET',w.bundle+'/comparisons/'+promotion['comparisonId']+'/policy-receipts')['items'][0]
-    assert promotion['policyOverride']=={'reason':'Reviewer accepted the unchanged score for a scoped rollout.',
-        'receipts':[{'comparisonId':receipt['comparisonId'],'policyDigest':receipt['policy']['sha256']}]}
-    p=page(context)
-    expect(p.get_by_role('button',name='Review release with this evidence',exact=True,include_hidden=True)).to_have_count(0)
-    expect(p.get_by_role('button',name='Review manual release',exact=True,include_hidden=True)).to_have_count(0)
-    expect(p.get_by_role('button',name='Publish without evaluation',exact=True,include_hidden=True)).to_have_count(0)
-    expect(p.get_by_label('Manual release reason',exact=True)).to_have_count(0)
-    expect(p.locator('[data-slot=disclosure-trigger]').filter(has_text='Publish without evaluation')).to_have_count(0)
-
-
-@given('a draft with a comparison that has no returned grades')
-def no_grades(context):
-    w=context.world
-    w.publish_initial('Review code.')
-    w.save_new('Review retries.')
-    w.request_evaluation()
-    w.start_attempt()
-    w.comparison(outcome='missing grades')
-    w.finish()
-    endpoint=w.bundle+'/comparisons/'+w.report['id']+'/policy-receipts'
-    receipt={'requestId':w.evaluation['id'],'attemptId':w.attempt,
-             'policy':{'id':'coverage','revision':'1','sha256':'sha256:'+'1'*64},
-             'verdict':'indeterminate','checks':[{'code':'evidence.incomplete','result':'unknown'}]}
-    denied=w.call('POST',endpoint,receipt,actor='other',expected=409)
-    assert denied['error']['code']=='policy_binding_mismatch'
-    saved=w.call('POST',endpoint,receipt,actor='evaluator')
-    assert saved==w.call('POST',endpoint,receipt,actor='evaluator'), 'Same evidence and policy must yield the original receipt'
-    invalid=dict(receipt,checks=[{'code':'private.output','result':'unknown'}])
-    w.call('POST',endpoint,invalid,actor='evaluator',expected=400)
-    w.call('POST',endpoint,dict(receipt,policy=dict(receipt['policy'],revision='changed')),actor='evaluator',expected=409)
-    assert w.call('GET',endpoint)['items']==[saved]
-    assert w.call('GET',w.bundle+'/versions/'+w.draft['snapshotVersion']['id']+'/policy-receipts')['items']==[saved]
-
-
-
-@when('I inspect that comparison in the console')
-def inspect_partial(context):
-    w=context.world
-    w.browser().select_bundle()
-    w.browser_fixture.visit(w.browser_fixture.bundle_path('changes',draft=w.draft['id'],candidate=w.draft['snapshotVersion']['id'],generation=w.draft['generation'],comparison=w.report['id']))
-    p=page(context)
-    rewards=inspect_case_and_scores(p)
-    expect(rewards.get_by_text('Partial evidence',exact=True)).to_be_visible()
-
-
-@then('the page shows 4 missing grades and unknown cost')
-def honest_incomplete(context):
-    p=page(context)
-    rewards=p.get_by_role('region',name='Observed paired rewards',exact=True)
-    expect(rewards.get_by_text('Missing grades · expected outcomes',exact=True).locator('..').locator('dd')).to_have_text('4')
-    expect(rewards.get_by_text('Reported cost · expected outcomes',exact=True).locator('..').locator('dd')).to_have_text('Unknown')
-
-
-@then('measured publication is unavailable')
-def no_measured(context):
-    expect(page(context).get_by_role('button',name='Review release with this evidence',exact=True)).to_have_count(0)
-
-
 @when('I inspect the old release and restore it through the console')
 def restore(context):
     w=context.world
     w.browser().select_bundle()
     w.browser_fixture.visit('/releases')
     p=page(context)
-    p.get_by_role('button',name=re.compile(r'^Compare Revision 1\b',re.I)).click()
-    detail=p.get_by_role('region',name='Comparison for revision 1',exact=True)
+    p.get_by_role('article', name='Revision 1', exact=True).get_by_role('button').click()
+    detail=p.get_by_role('region',name='Selected release',exact=True)
     detail.get_by_role('button',name='Inspect content for revision 1',exact=True).click()
     expect(p.get_by_role('heading',name='Version content',exact=True)).to_be_visible()
     expect(p.get_by_label('Content of AGENTS.md',exact=True)).to_contain_text('Review code.')
@@ -660,7 +169,7 @@ def restored(context):
 
 
 def open_restore_review(p, current_revision):
-    p.get_by_role('button', name=re.compile(r'^Compare Revision 1\b', re.I)).click()
+    p.get_by_role('article', name='Revision 1', exact=True).get_by_role('button').click()
     p.get_by_role('button', name='Restore revision 1', exact=True).click()
     dialog = p.get_by_role('dialog', name='Restore revision 1?', exact=True)
     expect(dialog).to_contain_text(f'current stable release (revision {current_revision})')
@@ -698,7 +207,7 @@ def review_new_restore(context):
     p = page(context)
     p.get_by_role('button', name='Review current release', exact=True).click()
     expect(p.get_by_role('article', name='Revision 3 · Current', exact=True)).to_be_visible()
-    current = p.get_by_role('region', name='Comparison for revision 3', exact=True)
+    current = p.get_by_role('region', name='Selected release', exact=True)
     expect(current).to_be_visible()
     current.get_by_role('button', name='Inspect content for revision 3', exact=True).click()
     expect(p.get_by_label('Content of AGENTS.md', exact=True)).to_contain_text('Review retry limits.')
@@ -777,7 +286,6 @@ def failed_read(context):
     expect(p.get_by_text(re.compile(r'Last read at .*Content is hidden until a verified refresh succeeds\.'))).to_be_visible()
     expect(p.get_by_test_id('entry-content')).to_have_count(0)
     expect(p.get_by_role('textbox', name='Content', exact=True)).to_have_count(0)
-    expect(p.get_by_role('button',name='Save draft',exact=True)).to_have_count(0)
 
 
 @when('I visit every main route at desktop and mobile sizes')
@@ -789,7 +297,6 @@ def routes(context):
     # Wait for a data-backed result or route action before measuring each layout.
     routes = {
         '/content': lambda page: page.get_by_test_id('entry-content'),
-        '/improvement': lambda page: page.get_by_role('link', name='View connections and learning rounds', exact=True),
         '/releases': lambda page: page.get_by_test_id('release-decision').first,
         '/setup': lambda page: page.get_by_role('link', name='BDD bundle', exact=True),
         '/integrations': lambda page: page.get_by_role('button', name='New connection', exact=True),
@@ -847,72 +354,3 @@ def automatically_updated_content(context,text):
     expect(p.get_by_test_id('entry-content')).to_contain_text(text,timeout=22000)
     expect(p.get_by_role('button',name=re.compile(r'^Refresh'))).to_have_count(0)
     expect(p.get_by_role('alertdialog')).to_have_count(0)
-
-
-@when('I type "{text}" in a new draft')
-def pending_background_edit(context, text):
-    ensure_editor(context)
-    page(context).get_by_role('textbox', name='Content', exact=True).fill(text)
-
-
-def leave_draft_for_content(context, choice):
-    p = page(context)
-    p.get_by_role('navigation', name='Bundle navigation').get_by_role('link', name='Content', exact=True).click()
-    p.get_by_role('alertdialog', name='Leave current edits?').get_by_role('button', name=choice, exact=True).click()
-
-
-@when('I return to Content but choose to keep editing')
-def keep_unsaved_edit(context):
-    leave_draft_for_content(context, 'Keep editing')
-
-
-@then('the draft editor still contains "{text}"')
-def still_editing(context, text):
-    expect_editor_value(page(context).get_by_role('textbox', name='Content', exact=True), text)
-
-
-@when('I discard the unsaved edit and return to Content')
-def discard_unsaved_edit(context):
-    leave_draft_for_content(context, 'Leave editor')
-
-
-@then('the published entry shows "{text}" and no draft was saved')
-def discarded_to_current(context, text):
-    w = context.world
-    expect(page(context).get_by_test_id('entry-content')).to_contain_text(text)
-    assert w.call('GET', w.channel + '/drafts')['items'] == []
-
-@then('the content shows the instructions without a manual edit action')
-def view_published(context):
-    p = page(context)
-    expect(p.get_by_test_id('entry-content')).to_have_text('Review code.')
-    expect(p.get_by_role('link', name='Edit entry', exact=True)).to_have_count(0)
-
-
-@when('I reopen the saved draft bookmark')
-def reopen_saved_change(context):
-    w = context.world
-    browser = w.browser()
-    browser.visit(browser.bundle_path('changes', draft=w.draft['id']))
-
-
-@then('I can inspect its change without a publication action')
-def inspect_saved_change(context):
-    p = page(context)
-    expect(p.get_by_text('Saved draft', exact=True)).to_be_visible()
-    expect(p.locator('.content-diff')).to_contain_text('Review retries.')
-    expect(p.get_by_role('button', name='Review manual release')).to_have_count(0)
-
-
-@when('I open its release history')
-def open_seed_history(context):
-    browser = context.world.browser()
-    browser.visit(browser.bundle_path('releases'))
-
-
-@then('the console shows the seed and has no restore action')
-def view_seed_history(context):
-    p = page(context)
-    expect(p.get_by_test_id('release-decision')).to_have_count(1)
-    expect(p.get_by_test_id('release-decision')).to_contain_text('Revision 1')
-    expect(p.get_by_role('button', name=re.compile('restore', re.I))).to_have_count(0)

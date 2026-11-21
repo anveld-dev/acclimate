@@ -77,12 +77,10 @@ def main():
                     page.wait_for_function('expected => Math.abs(innerWidth-expected)<2', arg=outer_width/2)
                     routes = dict(
                         content=fixture.bundle_path('content'),
-                        changes=fixture.bundle_path('changes'),
                         releases=fixture.bundle_path('releases'),
                         library=fixture.workspace_path(),
                         connections=fixture.workspace_path('connections'),
                         setup=fixture.bundle_path('connect'),
-                        editor=fixture.bundle_path('changes',draft='new',path='AGENTS.md'),
                     )
                     for name,path in routes.items():
                         page.goto(fixture.base+path,wait_until='networkidle')
@@ -90,7 +88,7 @@ def main():
                         results.append(dict(surface=name,outerWidth=outer_width,
                             cssWidth=metrics['viewport'],dpr=page.evaluate('devicePixelRatio')))
                     page.goto(fixture.base+fixture.bundle_path('releases'),wait_until='networkidle')
-                    page.get_by_role('button',name='Inspect',exact=True).click()
+                    page.get_by_role('button',name='Inspect content for revision 1',exact=True).click()
                     dialog=page.get_by_role('dialog',name='Version content',exact=True)
                     expect(dialog.get_by_text('Loading version…',exact=True)).to_have_count(0)
                     bounds=dialog.evaluate('el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,height:r.height,viewport:innerWidth,screen:innerHeight}}')

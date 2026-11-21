@@ -137,9 +137,7 @@ class SDKTest(unittest.TestCase):
             self.assertFalse(Path(job.directory).exists())
             job.cleanup()
             destination = Path(tmp).resolve() / "job"
-            with self.assertRaises(TypeError):
-                self.client.prepare("p", "b1", version_id=VERSION["id"], cache_dir=cache)
-            with self.client.prepare("p", "b1", channel="stable", cache_dir=cache, destination=destination) as pinned:
+            with self.client.prepare("p", "b1", version_id=VERSION["id"], cache_dir=cache, destination=destination) as pinned:
                 self.assertEqual(pinned.version["version"]["id"], job.version["version"]["id"])
                 retained = destination / "app-result.json"
                 retained.write_text("ok")

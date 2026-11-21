@@ -5,7 +5,7 @@ import { gradeAgreement, passAtK, repeatGrade } from '../../src/evaluation/gradi
 
 const vectors = JSON.parse(
   readFileSync(
-    new URL('../../../../contracts/fixtures/evaluation-analysis/grading.json', import.meta.url),
+    new URL('./fixtures/grading.json', import.meta.url),
     'utf8',
   ),
 );

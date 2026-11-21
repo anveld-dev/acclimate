@@ -18,7 +18,7 @@ When the API receives SIGTERM, it withdraws readiness before draining requests a
 
 ## Verify access and activity
 
-Run a scoped authenticated workspace read after deployment. Run the installed evaluator's `doctor` to verify the worker can access the target workspace. Sign in and out through the public console to check the actual Keycloak issuer and client.
+Run a scoped authenticated workspace read after deployment. Resolve the target channel using the application credential. Sign in and out through the public console to check the actual Keycloak issuer and client.
 
 The repository includes explicit probes for live deployment. Run the following from the checkout with your public API URL, workspace ID, and a scoped token in `ACCLIMATE_TOKEN`. Give `--output` a new private evidence path.
 
@@ -37,5 +37,3 @@ python3 scripts/productization/external.py --execute --gate oidc --interactive \
 ```
 
 See `deploy/README.md` for the limits of each gate.
-
-To inspect a comparison's reported activity, use [evaluator status](/docs/reference/evaluator-cli). The service can report activity as unknown when progress is unavailable. Check the original worker to establish whether a model or tool invocation is still running.

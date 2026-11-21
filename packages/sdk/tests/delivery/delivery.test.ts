@@ -328,7 +328,6 @@ test('client.prepare pins a real selection, owns per-job files and reports obser
   });
   const root = await mkdtemp(join(await realpath(tmpdir()), 'prepare-delivery-'));
   try {
-    const unconnected = new AcclimateClient({ baseUrl: f.baseUrl, token: 'read', scope: 'app' });
     const client = new AcclimateClient({ baseUrl: f.baseUrl, token: 'read', scope: 'app', connectionId: 'a7100000-0000-4000-8000-000000000001' });
     const stages: string[] = [];
     const options = { workspaceId: 'p', bundleId: 'b1', cacheDir: join(root, 'cache') };
@@ -370,10 +369,7 @@ test('client.prepare pins a real selection, owns per-job files and reports obser
     await first[Symbol.asyncDispose]();
     await first.cleanup();
     await assert.rejects(readFile(first.files[0]!.absolutePath), { code: 'ENOENT' });
-    await assert.rejects(unconnected.prepare({ ...options, channel: 'stable' }), /connection/i);
-    // @ts-expect-error Old clients may supply a version for a new job.
-    await assert.rejects(client.prepare({ ...options, versionId: version.id }), /channel/i);
-    const second = await client.prepare({ ...options, channel: 'stable' });
+    const second = await client.prepare({ ...options, versionId: version.id });
     assert.equal(second.version.version.id, version.id);
     assert.notEqual(second.directory, first.directory);
     await second.cleanup();

@@ -1,7 +1,7 @@
 {
   "name": "@acclimate/sdk",
   "version": "0.1.0",
-  "description": "TypeScript SDK for Acclimate: deliver versioned agent instructions, skills and memory, and evaluate changes against saved cases.",
+  "description": "TypeScript SDK for delivering versioned agent instructions, skills and memory.",
   "keywords": [
     "agents",
     "evaluation",
@@ -39,39 +39,23 @@
       "types": "./dist/evaluation/cli.d.ts",
       "import": "./dist/evaluation/cli.js"
     },
-    "./evaluation/policy": {
-      "types": "./dist/evaluation/policy.d.ts",
-      "import": "./dist/evaluation/policy.js"
-    },
-    "./evaluation/artifacts": {
-      "types": "./dist/evaluation/artifacts.d.ts",
-      "import": "./dist/evaluation/artifacts.js"
-    },
-    "./evaluation/analysis": {
-      "types": "./dist/evaluation/analysis.d.ts",
-      "import": "./dist/evaluation/analysis.js"
-    },
     "./evaluation/manifest": {
       "types": "./dist/evaluation/manifest.d.ts",
       "import": "./dist/evaluation/manifest.js"
     },
-    "./evaluation/progress": {
-      "types": "./dist/evaluation/progress.d.ts",
-      "import": "./dist/evaluation/progress.js"
+    "./evaluation/app-cli": {
+      "types": "./dist/evaluation/app-cli.d.ts",
+      "import": "./dist/evaluation/app-cli.js"
     },
     "./learning": {
       "types": "./dist/learning/index.d.ts",
       "import": "./dist/learning/index.js"
-    },
-    "./evaluation/app-cli": {
-      "types": "./dist/evaluation/app-cli.d.ts",
-      "import": "./dist/evaluation/app-cli.js"
     }
   },
   "bin": {
-    "acclimate-learning": "./dist/learning/serve-cli.js",
+    "acclimate": "./dist/learning/learn-cli.js",
     "acclimate-eval": "./dist/evaluation/bin.js",
-    "acclimate-operator": "./dist/operator/bin.js"
+    "acclimate-learning": "./dist/learning/serve-cli.js"
   },
   "files": [
     "dist",

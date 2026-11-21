@@ -34,7 +34,7 @@ These routes are backed by [SDK research](../research/sdk-file-delivery.md). Cod
 
 ## Small SDK surface
 
-Start with resolve/cache/prepare support plus service calls for versions, proposals, comparison reports, and releases. Fetch errors distinguish denial, missing content, offline cache miss, stale data, integrity failure, and unsupported schema. Retried mutations reuse a scoped idempotency key and the same payload.
+Start with resolve/cache/prepare support plus service calls for versions and releases. Fetch errors distinguish denial, missing content, offline cache miss, stale data, integrity failure, and unsupported schema. Retried mutations reuse a scoped idempotency key and the same payload.
 
 The first implementation uses TypeScript with a Codex example and Claude/Pi preparation mappings. Add a thin Python client/helper and additional native examples after the delivery contract settles. Avoid generating multiple SDKs or a plugin marketplace before the common bundle contract works.
 

@@ -1,10 +1,12 @@
 @browser @native_walk
-Feature: Complete a native bundle improvement with an installed application
+Feature: Deliver a native bundle with an installed application
   This is model-free orchestration evidence. Live native provider sessions have separate qualification.
 
   @NATIVE-WALK-01
-  Scenario: Enroll an imported native bundle and run it through the installed SDK
+  Scenario: Repair, release, deliver and roll back one native-target bundle
     Given I import a Codex-target bundle with a native skill and declarative payment memory in the browser
-    And the application enrolls this bundle for automatic delivery
-    When an isolated app installs the packed SDK and native plugin and retains its original prepared workspace
-    Then the connected native job starts on the verified seed and reports its delivery
+    And an isolated app installs the packed SDK and native plugin and retains its original prepared workspace
+    When I upload an incomplete native version, repair it and release the compatible version
+    Then the installed app prepares the released native bytes, observes its actual start and records only optional delivery evidence
+    When I roll back through the browser and the next installed job has an unavailable optional reporting credential
+    Then rollback delivery succeeds while both earlier prepared workspaces keep their exact pinned bytes

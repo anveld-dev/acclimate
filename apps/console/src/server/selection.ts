@@ -29,7 +29,7 @@ export function bundleEnvironment(env: Environment, scope: BundleScope): Environ
   if (!validSelection(scope)) throw new Error('Choose an explicit bundle and channel.');
   return scopedEnvironment(env, scope);
 }
-export const SESSION_COOKIE = 'acclimate_session';
+const SESSION_COOKIE = 'acclimate_session';
 const COOKIE = 'acclimate_selection';
 function key(env: Environment) {
   return createHash('sha256')

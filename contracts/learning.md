@@ -10,9 +10,9 @@ All paths below are relative to `/v1/workspaces/{workspaceId}/bundles/{bundleId}
 
 | Method and path | Caller | Response |
 | --- | --- | --- |
-| `PUT /` | Administrator | `LearningLoop` |
+| `PUT /` | Workspace administrator or machine principal with `promote` | `LearningLoop` |
 | `GET /` | Reader | `LearningLoop`, active round summary and ten recent round summaries |
-| `POST /pause`, `/resume`, `/stop` | Administrator | `LearningLoop` |
+| `POST /pause`, `/resume`, `/stop` | Workspace administrator or machine principal with `promote` | `LearningLoop` |
 | `GET /rounds?before=&limit=` | Reader | `{items, next}`, ordered by round number descending |
 | `GET /rounds/{roundId}?evaluation=` | Reader | `LearningRound`, with an optional full evolve report |
 | `GET /memory?revision=` | Reader, excluding the app principal | `LearningMemory` |
@@ -23,7 +23,7 @@ All paths below are relative to `/v1/workspaces/{workspaceId}/bundles/{bundleId}
 | `POST /evaluations/{evaluationId}/start` | App principal | `{evaluation, cases, heldOut, reportedCaseIds}` |
 | `POST /evaluations/{evaluationId}/report` | App principal | `LearningEvaluation` |
 
-Workspace administrators and machine principals with `promote` administer a loop. Its app principal must be a static grant or active workspace machine token with `evaluate` authority and is excluded from administering its own loop. A signed-in console user cannot act as the evaluator.
+Workspace administrators and machine principals with `promote` administer a loop. Its app principal must be a static grant or active workspace machine token with `evaluate` authority. A signed-in console user cannot act as the evaluator.
 
 ## Enrollment and status
 
@@ -81,7 +81,7 @@ Each optimizer request includes the whole harness, current evolve feedback with 
 
 `GET /memory` returns the current revision, the rendered revision, the digest of the canonical `improvementMemory` document and operator records for the attempts at that revision. An invalid revision returns 400 and an unknown revision returns 404. The exact snapshot the optimizer receives is in `improvementMemory`. Operator records also include pinned evolve revision, held-out digest and optimizer model. Memory is append-only and per bundle. Only adopted candidates add attempts. Adoption groups identical whitespace-normalized root causes under the same problem ID. Jobs receive the bundle payload through the usual delivery routes.
 
-See the [candidate and selection fixture](fixtures/learning-selection-v1.json) and the [memory fixture](fixtures/learning-memory-v1.json) for sample responses.
+See the [memory fixture](fixtures/learning-memory-v1.json) for a sample response. `LearningCandidate` and `LearningSelection` in [openapi.json](openapi.json) define the round detail shapes.
 
 ## Retries and errors
 

@@ -13,31 +13,20 @@ This file defines how the improvement memory (the paper's SIM, arXiv 2611.18856)
 | # | Rule |
 | --- | --- |
 | 1 | Memory is per workspace + bundle (`project_id`, `bundle_id`). One loop owns it. It starts empty, and nothing is imported or backfilled. |
-| 2 | Only an adopted candidate writes memory. `memory::write_back` inserts exactly one attempt, inside the adopt transaction, while the `learning_loops` row is locked. A `kept`, `failed` or `stopped` round writes nothing. |
+| 2 | Only an adopted candidate writes memory. `memory::write_back` inserts exactly one attempt, inside the adopt transaction, while the `learning_loops` row is locked. Keep and failure append nothing. Stopping after adoption preserves the committed append. |
 | 3 | Rows are append-only. A trigger refuses every `UPDATE` and `DELETE` on both tables. Memory is never rewound, by a keep, a stop, a setting change, a manual channel release or anything else. |
-| 4 | `fixed`, `missed`, `passed` and `total` are computed once at write-back from two evaluations of the same round on the same `evolve_revision`: the `incumbent` evaluation and the adopted sample's `candidate` evaluation. A case passes under `CASE_PASS_ROLLOUTS`. |
+| 4 | `fixed`, `missed`, `passed` and `total` are computed once at write-back from two evaluations of the same round on the same `evolve_revision`: the `incumbent` evaluation and the adopted sample's `candidate` evaluation. A case passes with at least three passing rollouts. |
 | 5 | Identical root-cause text, after whitespace is collapsed, is one problem (`root_cause_key`). There are no aliases and no fuzzy matching. |
 | 6 | `render_memory` is a pure function of (bundle, revision). Every model call in a round renders the round's pinned `memory_revision` and must get the stored `memory_digest`. `GET /memory?revision=r` returns the same bytes and digest. |
 | 7 | Memory holds no held-out data. The rendered provenance is the paper's domain, benchmark, policy model and round only, so the stored `heldOutDigest` never reaches the optimizer, and no held-out score, case ID or trace is ever read by this module. |
 | 8 | Memory is never delivered to jobs. It is not part of `BundlePayload` and no payload, resolve or work route reads it. |
-| 9 | Nothing is truncated or capped by Acclimate. When the rendered input no longer fits the optimizer model, the round fails with `optimizer-context-too-large` ([optimizer.md](optimizer.md)). |
+| 9 | The renderer includes every problem and attempt visible at the pinned revision. When the rendered input no longer fits the optimizer model, the round fails with `optimizer-context-too-large` ([optimizer.md](optimizer.md)). |
 
 ## 2. What it replaces
 
-Today the only memory-like input is the bounded prior-attempt history that connected learning builds per round. It is read and never stored, and [removal.md](removal.md) deletes it with `src/connected_learning_worker.rs`. Its limits are the reason this store exists.
+Connected learning supplied bounded per-connection prior-attempt summaries. The new loop stores append-only adopted attempts per bundle and renders same-setting round history independently. The old implementation is preserved at the pre-removal commit. [Prior-attempt history](https://github.com/anveld-dev/acclimate/blob/4096ff1b60098554b0cb932866a338cadf29601c/src/connected_learning_worker.rs#L503-L625)
 
-| Today | Where | Here |
-| --- | --- | --- |
-| History is rebuilt from rounds on every admission, scoped to one connection | `src/connected_learning_worker.rs:503-539` | Memory is stored, per bundle, and only grows |
-| At most 12 rounds, 8192 bytes in all, 4096 bytes per entry | `src/connected_learning_worker.rs:538`, `:542`, `:619` | No limit (rule 9) |
-| Rationale cut to 160 characters | `src/connected_learning_worker.rs:609` | The full rationale, up to the proposer's own 4096-byte limit (`src/proposal_edits.rs:155`) |
-| Edit excerpts of 4 files, 100 characters each | `src/proposal_edits.rs:109-127` (`take(4)` `:115`, `take(100)` `:123`) | The adopted candidate's full `changes` |
-| Improved and regressed sets walk per `CaseKey`, which includes `repetition`, so one case can be both | `src/connected_learning_worker.rs:584-589`; `src/types.rs:174-177` | One classification per case, from its 5 rollouts (§6) |
-| The direction comes from the current policy, not the round's | `src/connected_learning_worker.rs:584` | No direction: a rollout reports `passed` |
-| An audit result reaches the proposer as `audit-rejected` | `src/connected_learning_worker.rs:562`, `:567` | No held-out fact enters memory (rule 7) |
-| No predictions are recorded before evaluation | | `predicted` is copied from `learning_candidates.diagnosis`, written before the candidate is evaluated |
-
-Bundle files under `memory/` (today's `noteOperations`, `src/proposal_edits.rs:30`, `contracts/learning.md:87`) are a different thing. They are part of the harness H, delivered to jobs, and editable by the proposer like any other bundle file. The improvement memory is optimizer-only and lives outside the bundle.
+Bundle files under `memory/` are part of the delivered harness and the proposer can edit them. Improvement memory lives outside the bundle.
 
 ## 3. Paper fields
 
@@ -52,7 +41,7 @@ The paper's Problem is `{id, root cause, opened_round, attempts}`. Its Attempt i
 | `round` | `round` | `round` | `learning_rounds.number` |
 | `sample` | `sample` | `sample` | The adopted sample, 1 to 5 |
 | `accepted` | not stored | `true` | "the selector chose the edit in that round" (App. D.3). Only adopted candidates are written. |
-| `backfilled` | `backfilled`, always `false` | `false` | Memory is never backfilled (D6). README open question 8. |
+| `backfilled` | `backfilled`, always `false` | `false` | Memory is never backfilled (D6). The stored field remains for paper fidelity. |
 | `what` | `what` | `what` | `{rationale, changes}` (§5.1) |
 | `files` | `files` | `files` | Paths the adopted version changed |
 | `predicted` | `predicted` | `predicted` | From the candidate's `diagnosis`, written before evaluation |
@@ -125,9 +114,10 @@ CREATE TRIGGER learning_memory_attempts_append_only
     FOR EACH ROW EXECUTE FUNCTION learning_memory_append_only();
 ```
 
-Notes:
-- The append-only trigger follows `machine_token_events` (`migrations/0015_evaluator_machine_tokens.sql:49-57`).
-- The `(project_id, bundle_id, round)` key makes an attempt name a round of its own bundle. `write_back` sets `round_id` and `round` from one row, and a test checks they agree.
+The migration uses the following constraints.
+
+- The append-only trigger follows `machine_token_events` ([0015](../../../migrations/0015_evaluator_machine_tokens.sql#L49-L57)).
+- The `(project_id, bundle_id, round)` key makes an attempt name a round of its own bundle. `write_back` sets `round_id` and `round` from one round.
 - The array checks make `fixed` and `missed` a partition of `predicted`. Case-ID arrays are stored sorted and without duplicates.
 - No head table, no snapshot table and no `next_problem` counter are needed. The `learning_loops` row is the head, the pin plus append-only rows make a re-render exact, and the next problem number is the count of the bundle's problems plus one (problems are never deleted).
 - No rows are created by the migration. Connected-learning rounds are gone after `0018` ([removal.md](removal.md)), so there is nothing to backfill even by accident.
@@ -148,7 +138,7 @@ Notes:
 
 `what.rationale` is `learning_candidates.rationale` and `what.changes` is `learning_candidates.changes`, copied whole. Nothing is excerpted. The full new payload stays reachable through the round's `adopted_version_id`, which the operator route shows (§10).
 
-`files` is the sorted list of paths from `proposal_edits::changed_files(parent, adopted)`, which phase 4 restores after phase 2 deletes it with its last caller (the 4096ff1b version is at `src/proposal_edits.rs:77-107`), where `parent` is the payload of `learning_rounds.parent_version_id` and `adopted` is the payload of the candidate's `version_id`. It lists paths whose text actually changed, including created and deleted files.
+`files` is the sorted list of paths from `proposal_edits::changed_files(parent, adopted)`, which phase 4 restores after phase 2 deletes it with its last caller ([current implementation](../../../src/proposal_edits.rs#L130)), where `parent` is the payload of `learning_rounds.parent_version_id` and `adopted` is the payload of the candidate's `version_id`. It lists paths whose text actually changed, including created and deleted files.
 
 ### 5.2 `provenance`
 
@@ -160,7 +150,8 @@ Notes:
   "round": 7,
   "evolveRevision": 12,
   "heldOutDigest": "sha256:…",
-  "optimizerModel": "gpt-6.2-astra"
+  "optimizerModel": "gpt-6.2-astra",
+  "optimizerReasoningEffort": "high"
 }
 ```
 
@@ -175,16 +166,16 @@ Notes:
 
 Policy epochs, the dataset descriptor and the grader are provenance only (D7). The dataset is the evolve revision. A grader change is expressed by changing `setting.benchmark` through `PUT`, since the grader lives in the evaluator. Connection and runtime provenance are gone with connected learning (decisions.md, M2).
 
-The rendered provenance is exactly the paper's: domain, benchmark, policy model and round (App. D.3). `evolveRevision`, `heldOutDigest` and `optimizerModel` are stored for operators and for the experiment's integrity checks, and `GET /memory` returns them in `records` (§10). Keeping `heldOutDigest` out of the rendered document also makes "no held-out bytes in optimizer input" a simple, testable rule. The stored values are the round's pins, not the loop's current values: `learning_rounds.held_out` is pinned at `start_round` ([loop.md](loop.md)), and a mid-round change to `heldOut` is refused.
+The rendered provenance is exactly the paper's: domain, benchmark, policy model and round (App. D.3). `evolveRevision`, `heldOutDigest`, `optimizerModel` and optional `optimizerReasoningEffort` are stored for operators and for the experiment's integrity checks, and `GET /memory` returns them in `records` (§10). Keeping `heldOutDigest` out of the rendered document also makes "no held-out bytes in optimizer input" a simple, testable rule. The stored values are the round's pins, not the loop's current values: `learning_rounds.held_out` is pinned at `start_round` ([loop.md](loop.md)), and a mid-round change to `heldOut` is refused.
 
 ### 5.3 The rendered document
 
-`render_memory` returns this document, which is the `improvementMemory` prompt value and the body of the operator route.
+`render_memory` returns this document, which is the `improvementMemory` prompt value and the `improvementMemory` property on the operator route.
 
 ```json
 {
   "schemaVersion": 1,
-  "memoryRevision": 2,
+  "memoryRevision": 1,
   "problems": [
     {
       "id": "P1",
@@ -212,8 +203,8 @@ The rendered provenance is exactly the paper's: domain, benchmark, policy model 
 | Rows | Problems with `opened_revision <= revision`, attempts with `revision <= revision` |
 | Order | Problems by `opened_revision` (the same order as their numbers), attempts by `revision`, case IDs and paths in byte order |
 | Empty | `{"memoryRevision":0,"problems":[],"schemaVersion":1}`. The key is always present in optimizer input. |
-| Bytes | `serde_json::to_vec` of a `serde_json::Value`. The crate does not enable `preserve_order` (`Cargo.toml:13`, and no dependency in `Cargo.lock` pulls in `indexmap` for `serde_json`), so object keys serialize in sorted order. A unit test pins this. |
-| Digest | `crate::digest` over those bytes (`src/lib.rs:160-162`), giving `sha256:<hex>` |
+| Bytes | `serde_json::to_vec` of a `serde_json::Value`. The crate does not enable `preserve_order` in this build, so object keys serialize in sorted order. A unit test pins this. |
+| Digest | `crate::digest` over those bytes ([digest](../../../src/lib.rs#L91)), giving `sha256:<hex>` |
 | No retrieval | Every problem and attempt is rendered. Nothing is ranked, filtered by setting or summarized. Rules 2, 4 and 8 ask the model to weigh settings itself. |
 
 The current round's own `setting` is not in this document, so that the document depends only on the revision. The eight rules compare each entry's provenance with the current setting, so [optimizer.md](optimizer.md) places the round's `setting` in the request beside `improvementMemory`.
@@ -223,7 +214,7 @@ The current round's own `setting` is not in this document, so that the document 
 `memory::attempt_outcome` is a pure function over two parsed evaluation reports and the prediction.
 
 ```rust
-pub(crate) struct AttemptOutcome {
+pub(super) struct AttemptOutcome {
     pub fixed: Vec<String>,     // sorted
     pub missed: Vec<String>,    // sorted
     pub passed: i32,
@@ -232,14 +223,14 @@ pub(crate) struct AttemptOutcome {
 
 /// `incumbent` and `candidate` are scored evolve reports of the same round,
 /// on the same evolve revision. `predicted` is sorted and deduplicated.
-pub(crate) fn attempt_outcome(
-    incumbent: &EvaluationReport,
-    candidate: &EvaluationReport,
+pub(super) fn attempt_outcome(
+    incumbent: &Report,
+    candidate: &Report,
     predicted: &[String],
 ) -> Result<AttemptOutcome, &'static str>;
 ```
 
-Let `before(c)` and `after(c)` be `evaluations::case_passes` for case `c` in the incumbent and candidate reports: true when at least `CASE_PASS_ROLLOUTS` (3) of its `ROLLOUTS_PER_CASE` (5) rollouts report `passed: true`.
+Let `before(c)` and `after(c)` be `evaluations::case_passes` for case `c` in the incumbent and candidate reports: true when at least three of its `ROLLOUTS_PER_CASE` (5) rollouts report `passed: true`.
 
 | Output | Definition |
 | --- | --- |
@@ -251,11 +242,11 @@ Let `before(c)` and `after(c)` be `evaluations::case_passes` for case `c` in the
 Each case is classified once from its 5 rollouts. `score` does not enter the classification. It stays in the evaluation and in `feedback`. The paper's Attempt has no regression field, so none is stored. The selector's `regressed` list for each evaluated candidate ([optimizer.md](optimizer.md)) uses the same `case_passes` classification and exists only in the `select` input.
 
 `attempt_outcome` returns an error, and `write_back` fails the transaction, when:
-- the two reports do not cover the same case IDs;
-- a case does not have exactly 5 rollouts;
-- a predicted ID is not a case in the reports.
+- either report repeats an ID, both are empty, or the reports cover different case IDs,
+- a case does not have exactly five rollouts,
+- a predicted ID falls outside the reports, or the rollout totals overflow the stored integer range.
 
-[evaluator-and-contracts.md](evaluator-and-contracts.md) refuses an incomplete report and [optimizer.md](optimizer.md) refuses predicted IDs outside the round's `evolve_revision`, so these errors mean a broken invariant, not a normal path.
+[evaluator-and-contracts.md](evaluator-and-contracts.md) only scores a complete report and [optimizer.md](optimizer.md) refuses predicted IDs outside the round's `evolve_revision`, so these errors mean a broken invariant, not a normal path.
 
 Incidental fixes (a case that passes now but was not predicted) show only in `passed`. The paper records no such list (open question 1).
 
@@ -264,14 +255,14 @@ Incidental fixes (a case that passes now but was not predicted) show only in `pa
 ### 7.1 Normalization and key
 
 ```rust
-pub(crate) const ROOT_CAUSE_MAX_BYTES: usize = 1024;
+const ROOT_CAUSE_MAX_BYTES: usize = 1024;
 
 /// Trim, collapse each run of `char::is_whitespace` to one space, reject any
 /// `char::is_control`, then require 1..=ROOT_CAUSE_MAX_BYTES bytes.
-pub(crate) fn normalize_root_cause(text: &str) -> Option<String>;
+pub(super) fn normalize_root_cause(text: &str) -> Option<String>;
 
 /// hex(sha256("acclimate-root-cause-v1\n" || normalized))
-pub(crate) fn root_cause_key(normalized: &str) -> String;
+fn root_cause_key(normalized: &str) -> String;
 ```
 
 A root cause is a one-sentence hypothesis, and the rationale carries the argument, so 1024 bytes is a format limit, not a growth cap. `validate_diagnosis` ([optimizer.md](optimizer.md)) calls `normalize_root_cause` on `{new}` text, and a `None` result is a format error inside the call's one retry. The normalized text is what the scanner sees and what is stored. Matching is case-sensitive, with no Unicode normalization (the crate has no normalization dependency), so "identical" means the same characters after whitespace is collapsed.
@@ -280,9 +271,8 @@ A root cause is a one-sentence hypothesis, and the rationale carries the argumen
 
 ```rust
 async fn resolve_problem(
-    tx: &mut Tx<'_>, project: &str, bundle: Uuid,
-    problem: &DiagnosisProblem, round: i32, revision: i32,
-) -> ApiResult<String> // the problem_id
+    tx: &mut Tx<'_>, round: &Pins, problem: DiagnosisProblem, revision: i32,
+) -> Result<String, sqlx::Error> // the problem_id
 ```
 
 1. `{id: "P3"}`: `validate_diagnosis` already checked that `P3` is in the round's rendered memory. Problems are never deleted, so the row exists. Attach.
@@ -299,18 +289,18 @@ A problem's text never changes. The paper's rule 5, revising a diagnosis, is a n
 | Step | Where | What memory does |
 | --- | --- | --- |
 | `start_round` | [loop.md](loop.md), under the bundle row lock | Copies `learning_loops.memory_revision` to `learning_rounds.memory_revision` |
-| `proposing` | outside any lock | `render_memory(project, bundle, round.memory_revision)`, stores `memory_digest` on the round |
-| Each `propose`, `screen` and `select` call | outside any lock | Renders again at the pinned revision. A digest that differs from the call's `input_digest` fails the call with `provider-failed` and `error = 'input drift'` ([optimizer.md](optimizer.md)). |
+| First `optimizer::enqueue` | under the loop row lock | Stores the digest of the pinned memory on the round |
+| Each `propose`, `screen` and `select` call | outside any lock | Renders again at the pinned revision. A mismatch with the pinned memory digest or the full input digest fails the call with `provider-failed` and `error = 'input drift'` ([optimizer.md](optimizer.md)). |
 
 The render needs no lock and no snapshot isolation. Rows at or below the pin are complete (a problem and its first attempt commit together) and immutable (§4). Because one loop owns the bundle and it has at most one active round, nothing appends between the pin and the round's own adopt. The pin still matters: it makes every call in the round, and every later read of that round, reproducible from the revision alone.
 
 ### 8.2 `write_back`
 
 ```rust
-/// Called by `worker::adopt` inside its transaction, after it has locked the
+/// Called by `worker::advance::adopt` inside its transaction, after it has locked the
 /// `learning_loops` row, checked `channel_revision`, written `selection`,
 /// set `adopted_sample` and inserted the promotion. Returns the new revision.
-pub(crate) async fn write_back(tx: &mut Tx<'_>, round_id: Uuid) -> ApiResult<i32>;
+pub(super) async fn write_back(tx: &mut Tx<'_>, round: &Pins) -> Result<i32, sqlx::Error>;
 ```
 
 1. If an attempt with this `round_id` exists, return its revision. The adopt transaction is atomic, so this is only a guard.
@@ -340,98 +330,39 @@ The `learning_loops` row is the only lock memory relies on. `adopt` takes it fir
 | `pause`, `resume`, `stop`, then `PUT` again | Memory and the revision continue |
 | An operator releases another version on the learning channel | No write and no rewind. Earlier attempts stay, including ones whose version is no longer on the channel. |
 | An evolve case is retired | Attempts keep the case ID. New predictions are limited to the current evolve revision ([optimizer.md](optimizer.md)). |
-| A new bundle, even with identical content | Empty memory. There is no copy, import or export. Harness Transfer and Cold Start are new bundles ([experiment.md](experiment.md)). |
+| A new bundle, even with identical content | Empty memory. The product has no memory copy or import path. Operators can read a snapshot through the memory route. Harness Transfer and Cold Start are new bundles ([experiment.md](experiment.md)). |
 | A later round shows an adopted change hurt | The attempt stays as written. Later attempts and the run history record what followed. |
 
 There is no delete path. Purging memory would take a migration that drops the trigger (open question 3).
 
 ## 10. Operator read route
 
-`GET /v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/memory[?revision=r]` is a workspace read: `auth::read_transaction(..., "read")` (`src/auth.rs:501-509`), refused with `403 denied` for the loop's app principal. The `evaluate` right includes `read` (`src/auth.rs:9-15`), so the handler compares the caller with `learning_loops.app_principal` after the read check. Memory is optimizer-only and never delivered to jobs (D6), and the app principal is the credential an app's jobs run beside. The handler is in `src/learning.rs` and calls `memory::render_memory`. [evaluator-and-contracts.md](evaluator-and-contracts.md) owns the DTO in OpenAPI and the TS and Python types.
+`GET /v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/memory[?revision=r]` checks workspace `read` and denies the app principal with `403 denied`. `memory::get` uses `actor_tx` and calls `render_memory` at the requested or current revision. [Handler](../../../src/learning/memory.rs#L235)
 
-```json
-{
-  "currentRevision": 9,
-  "memoryRevision": 7,
-  "memoryDigest": "sha256:…",
-  "improvementMemory": {"schemaVersion": 1, "memoryRevision": 7, "problems": []},
-  "records": [
-    {"revision": 1, "problemId": "P1", "roundId": "…", "round": 3, "versionId": "…",
-     "provenance": {"domain": "…", "benchmark": "…", "policyModel": "…", "round": 3,
-                    "evolveRevision": 4, "heldOutDigest": "sha256:…", "optimizerModel": "…"}}
-  ]
-}
-```
+The response has `{currentRevision, memoryRevision, memoryDigest, improvementMemory, records}`. A record is `{revision, problemId, roundId, round, versionId, provenance}`.
 
 | Field | Meaning |
 | --- | --- |
 | `currentRevision` | `learning_loops.memory_revision` now |
 | `memoryRevision` | The revision rendered: `?revision=` or the current one |
-| `memoryDigest` | Digest of `improvementMemory`. It equals `learning_rounds.memory_digest` for every round pinned at that revision, so an operator can check exactly what the optimizer saw. |
+| `memoryDigest` | Digest of `improvementMemory`. It equals `learning_rounds.memory_digest` for every round that reached proposing with that revision, so an operator can check exactly what the optimizer saw. |
 | `improvementMemory` | The exact document of §5.3 |
-| `records` | One entry per attempt at or below the revision: its round ID, the adopted version (`learning_rounds.adopted_version_id`) and the stored `provenance` in full, with `evolveRevision`, `heldOutDigest` and `optimizerModel`. These are for operators and are never in optimizer input. |
+| `records` | One entry per attempt at or below the revision: its round ID, the adopted version (`learning_rounds.adopted_version_id`) and the stored `provenance` in full, with `evolveRevision`, `heldOutDigest`, `optimizerModel` and optional `optimizerReasoningEffort`. These are for operators and are never in optimizer input. |
 
 Errors: a bundle that is not enrolled, or a `revision` above `currentRevision`, returns `404 not_found`. A `revision` that is not a nonnegative integer returns `400 invalid_content`.
 
 ## 11. Never delivered to jobs
 
-- `BundlePayload` is `{schema_version, files}` (`src/types.rs:25-28`). Memory is not a bundle file and is never added to one.
-- The payload, channel resolve, `GET /work` and evaluation routes never read the memory tables. `GET /work` sends the evaluator versions and case inputs only.
-- The `@acclimate/sdk` fetch, cache, verify and prepare paths have no memory field. The `GET /memory` client method is in the learning entry only ([evaluator-and-contracts.md](evaluator-and-contracts.md)).
+- `BundlePayload` is `{schema_version, files}` ([types.rs](../../../src/types.rs#L23-L26)). Memory is not a bundle file and is never added to one.
+- The payload, channel resolve, `GET /work` and evaluation routes never read the memory tables. `GET /work` sends the evaluator evaluation identities and pins. The start route provides evolve inputs and expected values.
+- The `@acclimate/sdk` fetch, cache, verify and prepare paths have no memory field. The SDK clients provide a learning memory read method ([evaluator-and-contracts.md](evaluator-and-contracts.md)).
 
-## 12. Files to touch
+## 12. Code and tests
 
-| File | Change |
-| --- | --- |
-| `migrations/0020_learning_optimizer.sql` | §4, after the candidate and optimizer-call tables |
-| `src/learning/memory.rs` (new) | `render_memory`, `write_back`, `resolve_problem`, `root_cause_key`, `normalize_root_cause`, `attempt_outcome`, `ROOT_CAUSE_MAX_BYTES`, unit tests |
-| `src/learning/worker.rs` | `adopt` calls `memory::write_back` last in its transaction. `start_round` pins `memory_revision`. The `proposing` step stores `memory_digest`. ([loop.md](loop.md)) |
-| `src/learning/optimizer.rs` | `validate_diagnosis` uses `normalize_root_cause` and checks `{id}` against the rendered document. Input building checks the digest. ([optimizer.md](optimizer.md)) |
-| `src/learning.rs` | The `GET /memory` handler ([evaluator-and-contracts.md](evaluator-and-contracts.md)) |
-| `tests/learning_memory.rs` (new) | §13 |
+`worker::advance::adopt` calls `memory::write_back` before queuing retained evaluation, all in the release transaction. Local unit tests cover normalization, attempt outcomes and digest fixtures. The PostgreSQL integration tests exercise adoption, same-cause merging, historical memory reads and access control. There is no standalone `tests/learning_memory.rs` suite. [Adopt](../../../src/learning/worker/advance.rs#L292), [unit tests](../../../src/learning/memory.rs#L280), [integration tests](../../../tests/learning_loop/optimizer.rs)
 
-## 13. Tests
+## 13. Open questions
 
-Unit tests in `src/learning/memory.rs`:
-
-| Test |
-| --- |
-| Whitespace variants (`"a  b"`, `" a\tb\n"`) give one key. `"A b"` gives another. A control character, empty text and 1025 bytes are refused. 1024 bytes of multibyte text is accepted. |
-| `root_cause_key` is 64 hex characters and changes with the domain prefix |
-| A predicted case at incumbent 2 of 5 and candidate 3 of 5 is fixed. A predicted case at 2 of 5 to 2 of 5, or at 3 of 5 to 2 of 5, is missed. |
-| A predicted case the incumbent already passed is `missed`. `AttemptOutcome` has no regression field. |
-| 30 cases give `total = 150`, and `passed` counts rollouts, not cases |
-| Different case sets, a case with 4 rollouts, and a predicted ID outside the reports each return an error |
-| The empty document serializes to the exact bytes in §5.3 |
-| A fixture with two problems and three attempts, inserted out of order, renders in revision order with sorted arrays and matches a golden digest. Two renders give the same bytes. |
-| Rendered attempts have `accepted: true`, `backfilled: false`, no `regressed` key, and `provenance` with exactly `domain`, `benchmark`, `policyModel` and `round` |
-| Object keys serialize in sorted order (guards against `preserve_order` being enabled) |
-
-Integration tests in `tests/learning_memory.rs`, marked `#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]` as in `tests/production_schema.rs:5-6`:
-
-| Test |
-| --- |
-| A newly enrolled bundle renders the empty document at revision 0 |
-| An adopted round writes exactly one attempt and bumps `memory_revision` by one. `kept` (each reason), `failed` and `stopped` rounds write nothing. |
-| The four losing samples keep their `diagnosis` on `learning_candidates`, and no problem is created from their `{new}` text |
-| `{new}` text equal to an existing root cause after whitespace collapse attaches to that problem. Different text opens the next `P<n>`. `{id}` attaches to the named problem. |
-| `fixed` and `missed` come from the adopted sample's own evaluation when a sibling's evaluation differs |
-| After a later append, rendering at an earlier round's `memory_revision` reproduces that round's `memory_digest`. `GET /memory?revision=` returns the same digest. |
-| `UPDATE` and `DELETE` on either table raise `improvement memory is append-only` |
-| `write_back` called twice for one round returns the same revision and inserts one row |
-| `write_back` refuses, and the adopt transaction leaves no `selection`, promotion or attempt, when the candidate is not `evaluated`, its scan is not clean, an evaluation is on another `evolve_revision`, or `memory_revision` moved |
-| `kept` / `channel-moved` writes no attempt |
-| A `stop` that commits before `adopt` leaves memory unchanged |
-| A `PUT` that changes `setting.policyModel` gives the next attempt the new `policyModel` and leaves earlier rows unchanged |
-| A manual release on the learning channel changes no memory row and no revision |
-| A sentinel root cause and rationale never appear in a payload, channel resolve, `GET /work` or evaluation response |
-| No held-out digest appears in any rendered `improvementMemory` (with [optimizer.md](optimizer.md)'s test that no held-out value reaches any optimizer input) |
-| `GET /memory` refuses the loop's app principal with `403` although it holds `read`, and refuses a caller without `read` on the workspace, a bundle in another workspace, an unenrolled bundle and an out-of-range revision. `records` carry the stored provenance in full. |
-
-## 14. Open questions
-
-1. **Incidental fixes.** Cases fixed without being predicted show only in `passed`. Should the attempt list them, beyond the paper's fields?
-2. **Root-cause matching.** Matching is exact after whitespace collapse. Should it fold case or apply Unicode normalization?
-3. **Retention.** Memory has no delete path and the tables refuse deletes. Is a bundle or workspace purge needed, and how does it interact with run history and the experiment's integrity rules?
-4. **Duplicated diffs.** `what.changes` repeats the adopted diff that `history` also carries. The paper keeps both. If context becomes the limit, which copy should go first?
-5. **Partial-credit graders.** `fixed` uses the per-rollout `passed` flag only. A grader that reports only continuous scores must set `passed` itself.
+1. Should memory list unpredicted fixes as well as the rollout totals?
+2. Should root-cause matching account for case or Unicode equivalents?
+3. How should a future workspace purge handle append-only records and their associated run history?

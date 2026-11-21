@@ -19,10 +19,10 @@ Use Python 3.11 or later.
 cd examples/python-support-agent
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install ../../python
 ```
 
-To use the SDK from this checkout instead, run `pip install ../../python`. For an air-gapped machine, install the release wheel with `pip install --no-index --no-deps /path/to/acclimate_sdk-0.1.0-py3-none-any.whl`.
+To use a verified release wheel, run `python -m pip install --no-index --no-deps /path/to/acclimate_sdk-0.1.0-py3-none-any.whl`. The pinned `requirements.txt` works after that SDK version is published to PyPI.
 
 ## Describe the evaluation
 

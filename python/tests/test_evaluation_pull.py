@@ -1,4 +1,4 @@
-"""pull saves a published payload for compare --payload, without application code."""
+"""pull saves a published payload for local evaluation, without application code."""
 from contextlib import redirect_stderr, redirect_stdout
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer

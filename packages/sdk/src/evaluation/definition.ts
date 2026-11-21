@@ -16,9 +16,7 @@ import type {
 import { COLLECTION_RUNTIME_KEYS, collectionRuntime, collectionSchedule } from './collection.js';
 import type { CollectionSchedule } from './collection.js';
 export { OutputValidationError } from './errors.js';
-import type { RunControls } from './controls.js';
-export const MAX_ARTIFACT = 1024 * 1024,
-  MAX_PRIVATE = 128 * 1024 * 1024;
+const MAX_ARTIFACT = 1024 * 1024;
 export interface CapturedDefinition<I = unknown, E = unknown, O = unknown> {
   descriptor: EvaluationDescriptor;
   execution: 'model-free' | 'live';
@@ -26,8 +24,6 @@ export interface CapturedDefinition<I = unknown, E = unknown, O = unknown> {
   execute: (input: Omit<ExecuteInput<I>, VersionHelper>) => Promise<EvaluationExecutionResult<O>>;
   grade: (input: Parameters<EvaluationDefinition<I, E, O>['grade']>[0]) => Promise<EvaluationGradeResult>;
   collection?: CollectionSchedule;
-  /** Invocation controls bound by the command line; never part of the descriptor. */
-  controls?: RunControls;
   /** Native harnesses whose compatibility rules payloads must meet. Never part of the descriptor. */
   compatibilityTargets?: readonly CompatibilityTarget[];
 }
@@ -135,58 +131,6 @@ export function captureDefinition(
     throw new DefinitionError('app', 'Pass the value returned by defineEvaluation().');
   return value;
 }
-/** Preserve the installed callbacks, fixtures and schedule while binding runtime evidence. */
-export function bindEvaluationRuntime<I, E, O>(
-  app: EvaluationApp<I, E, O>,
-  commitments: Record<string, string>,
-): EvaluationApp<I, E, O> {
-  const captured = captureDefinition(app);
-  if (Object.keys(commitments).some((key) => Object.hasOwn(captured.descriptor.runtime, key)))
-    throw new DefinitionError('runtime', 'Runtime commitments cannot replace existing settings.');
-  const descriptor = deepFreeze(
-    validateEvaluationDescriptor({
-      ...captured.descriptor,
-      runtime: { ...captured.descriptor.runtime, ...commitments },
-    }),
-  );
-  const bound = Object.freeze({ descriptor }) as EvaluationApp<I, E, O>;
-  definitions.set(bound, { ...captured, descriptor });
-  return bound;
-}
-/** Bind a connected request's trial inventory after capturing the installed fixtures. */
-export function bindEvaluationRepetitions<I, E, O>(
-  app: EvaluationApp<I, E, O>,
-  expectedCases: EvaluationDescriptor['expectedCases'],
-): EvaluationApp<I, E, O> {
-  const captured = captureDefinition(app);
-  if (captured.collection) return app;
-  const repetitions = new Map<string, Set<number>>();
-  for (const key of expectedCases) {
-    const indices = repetitions.get(key.caseId) ?? new Set<number>();
-    indices.add(key.repetition);
-    repetitions.set(key.caseId, indices);
-  }
-  if (repetitions.size !== captured.cases.length) return app;
-  const cases = captured.cases.map((item) => ({
-    ...item,
-    repetitions: repetitions.get(item.caseId)?.size ?? 0,
-  }));
-  if (
-    expectedCases.length !== cases.reduce((sum, item) => sum + item.repetitions, 0) ||
-    cases.some((item) => {
-      const indices = repetitions.get(item.caseId);
-      return !indices || [...indices].some((index) => index < 0 || index >= item.repetitions);
-    })
-  )
-    return app;
-  const descriptor = deepFreeze(
-    validateEvaluationDescriptor({ ...captured.descriptor, expectedCases }),
-  );
-  const bound = Object.freeze({ descriptor }) as EvaluationApp<I, E, O>;
-  definitions.set(bound, { ...captured, descriptor, cases: deepFreeze(cases) });
-  return bound;
-}
-
 const filesOf = (version: ExecuteInput['version'], kind: BundleFile['kind']) =>
   Object.freeze((version?.payload?.files ?? []).filter((file) => file.kind === kind));
 /** Add read-only helpers for the version's instructions, skills and memory files. */
@@ -374,16 +318,6 @@ export function defineEvaluation<I, E, O>(
     ...(collection ? { collection } : {}),
   });
   return app;
-}
-/** Bind invocation controls without changing the descriptor or the callbacks. */
-export function bindRunControls<I, E, O>(
-  app: EvaluationApp<I, E, O>,
-  controls: RunControls,
-): EvaluationApp<I, E, O> {
-  const captured = captureDefinition(app);
-  const bound = Object.freeze({ descriptor: app.descriptor }) as EvaluationApp<I, E, O>;
-  definitions.set(bound, { ...captured, controls: { ...captured.controls, ...controls } });
-  return bound;
 }
 /** Fingerprint declared scheduling. Defaults keep existing descriptors byte-identical. */
 export function declaredScheduling(definition: {

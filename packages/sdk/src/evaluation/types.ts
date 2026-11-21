@@ -125,7 +125,7 @@ export interface EvaluationDefinition<I = Json, E = Json, O = Json> {
   collection?: EvaluationCollection;
   /**
    * Native harnesses this evaluation prepares bundles for, such as `'claude'`. `doctor --payload`,
-   * `compare --payload`, `compare --local` and `try --payload` check payloads against their
+   * `try --payload` checks payloads against their
    * compatibility rules before any callback runs. Not part of the descriptor.
    */
   compatibilityTarget?: CompatibilityTarget | readonly CompatibilityTarget[];
@@ -205,8 +205,4 @@ export interface Outcome {
   usage: Usage | null;
   /** Optional named numeric grade components, such as correctness. Present only on scored arms. */
   components?: Record<string, number>;
-}
-export interface CasePair extends CaseKey {
-  parent: Outcome;
-  candidate: Outcome;
 }

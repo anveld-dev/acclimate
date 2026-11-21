@@ -1,4 +1,4 @@
-import { EvaluationError, EvaluationUsageError } from './errors.js';
+import { EvaluationUsageError } from './errors.js';
 import type { Outcome } from './types.js';
 
 /** Selects part of the inventory. Unselected pairs stay in the report as `not_selected`. */
@@ -62,14 +62,6 @@ export interface RunSummary {
    */
   outputs: { comparedPairs: number; identicalPairs: number };
 }
-
-/** Outcome error codes the runner writes when it skips or stops a trial. */
-export const CONTROL_ERRORS = {
-  notSelected: 'not_selected',
-  timeout: 'timeout',
-  deadline: 'deadline_exceeded',
-  costLimit: 'cost_limit_reached',
-} as const;
 
 const DURATION = /^(\d+(?:\.\d+)?)(ms|s|m|h)?$/;
 /** Parse `90`, `90s`, `1.5m`, `2h` or `500ms` into milliseconds. Bare numbers are seconds. */
@@ -142,38 +134,6 @@ export function describeSelection(selection: RunSummary['selection']): string {
   return `${scope} · ${selection.selectedPairs} of ${selection.totalPairs} pairs`;
 }
 
-/** Validate controls supplied by library callers, using the same rules as the flags. */
-export function validateRunControls(controls: RunControls | undefined): RunControls {
-  if (controls === undefined) return {};
-  if (!controls || typeof controls !== 'object') throw new EvaluationError('config.schema');
-  const positive = (value: unknown) =>
-    value === undefined || (typeof value === 'number' && Number.isFinite(value) && value > 0);
-  if (
-    !positive(controls.deadlineMs) ||
-    !positive(controls.caseTimeoutMs) ||
-    !positive(controls.maxCostUsd) ||
-    (controls.progress !== undefined && typeof controls.progress !== 'function')
-  )
-    throw new EvaluationError('config.schema');
-  const selection = controls.selection;
-  if (
-    selection !== undefined &&
-    !(
-      (selection.kind === 'cases' &&
-        Array.isArray(selection.caseIds) &&
-        selection.caseIds.length > 0 &&
-        selection.caseIds.every((id) => typeof id === 'string' && id)) ||
-      (selection.kind === 'shard' &&
-        Number.isInteger(selection.index) &&
-        Number.isInteger(selection.count) &&
-        selection.index >= 1 &&
-        selection.index <= selection.count)
-    )
-  )
-    throw new EvaluationError('config.schema');
-  return controls;
-}
-
 /** An invalid run-control flag. A usage error (exit 1) that names the flag. */
 export class RunControlError extends EvaluationUsageError {
   constructor(message: string, field?: string) {
@@ -189,14 +149,6 @@ const label = (id: string) =>
     /[\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/gu,
     (char) => '\\u' + char.charCodeAt(0).toString(16).padStart(4, '0'),
   );
-
-/**
- * Progress goes to stderr when it is a terminal, or when --progress asks for it
- * (CI logs). Without a terminal, stderr otherwise stays a single JSON diagnostic.
- */
-export function wantsProgress(mode: 'auto' | 'on' | 'off', stream: { isTTY?: boolean } = process.stderr) {
-  return mode === 'on' || (mode === 'auto' && stream.isTTY === true);
-}
 
 /** One progress line for stderr. Never includes outputs or expected values. */
 export function progressLine(event: TrialProgress): string {
@@ -260,8 +212,6 @@ function formatMs(value: number | null): string {
 }
 
 /** Flags shared by live and local runs. Values are strings unless noted. */
-export const RUN_CONTROL_FLAGS = ['deadline', 'case-timeout', 'max-cost-usd', 'cases', 'shard'] as const;
-
 /** Parse run-control flags into controls. Unknown names are the caller's concern. */
 export function runControlsFromFlags(flags: Record<string, string | boolean | undefined>): RunControls {
   const text = (name: string) => {

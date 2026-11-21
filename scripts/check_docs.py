@@ -99,19 +99,11 @@ def main():
     coverage = {str((ROOT / item['source']).resolve()) for item in manifest}
     expected = {str(p.resolve()) for p in (ROOT / 'docs/design').rglob('*.md')}
     expected |= {str(p.resolve()) for p in (ROOT / 'docs/architecture').rglob('*.md')}
-    expected |= {str(p.resolve()) for p in (ROOT / 'docs/implementation').rglob('*.md')}
-    expected |= {str(p.resolve()) for p in (ROOT / 'docs/research').glob('*.md')}
-    expected |= {str(p.resolve()) for p in (ROOT / 'docs/research/continuous-harness-review').rglob('*.md')}
-    expected |= {str(p.resolve()) for p in (ROOT / 'docs/research/real-app-learning-experiment').rglob('*.md')}
-    expected.add(str((ROOT / 'docs/research/archive/README.md').resolve()))
-    expected.add(str((ROOT / 'CONTEXT.md').resolve()))
-    expected.add(str((ROOT / 'docs/development.md').resolve()))
-    expected.add(str((ROOT / 'docs/evaluator-operations.md').resolve()))
-    expected |= {str((ROOT / name).resolve()) for name in ('apps/console/README.md', 'deploy/README.md','deploy/sign-in.md','deploy/keycloak/README.md')}
-    for archived in (ROOT / 'docs/research/archive/runtime-platform').rglob('*.md'):
-        copy = SITE / 'source' / archived.relative_to(ROOT / 'docs')
-        if not copy.is_file() or copy.read_bytes() != archived.read_bytes():
-            errors.append('Missing/stale archived source copy: ' + str(archived.relative_to(ROOT)))
+    expected |= {str((ROOT / name).resolve()) for name in (
+        'CONTEXT.md', 'docs/development.md', 'docs/evaluator-operations.md',
+        'docs/getting-started.md', 'docs/releasing.md', 'apps/console/README.md',
+        'deploy/README.md', 'deploy/sign-in.md', 'deploy/keycloak/README.md',
+    )}
     if coverage != expected: errors.append(f'Source coverage mismatch: {sorted(coverage ^ expected)}')
     print(json.dumps({'pages': len(pages), 'local_links_and_fragments': checked, 'search_targets': search_checked, 'figures': sum(p.figures for p in pages.values()), 'pending_diagrams': sum(p.pending for p in pages.values()), 'errors': errors}, indent=2))
     return bool(errors)

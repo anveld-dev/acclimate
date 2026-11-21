@@ -11,7 +11,7 @@ Acclimate uses a shared `major.minor.patch` release version for the service, con
 
 ## Upgrade the deployment
 
-Installations on the 0015 schema can upgrade in place. Keep older schema baselines with their matching service build.
+On startup the service runs the pending SQLx migrations for its checkout. Keep each database backup with its matching service build.
 
 <Steps>
 <Step>
@@ -59,10 +59,10 @@ Check service and console readiness. Start the proxy with `docker compose up -d 
 
 ## Upgrade from migration 0015 or 0016
 
-Migrations 0017 and 0018 permanently drop the old change and connection-learning records. Keep the backup as the archive.
+Migrations 0017 and 0018 permanently drop the old change and connection-learning records. Keep the backup as the archive. Remove rejected legacy environment settings before starting the new service. Startup identifies the first obsolete setting it encounters.
 
-1. Take a full backup:`python3 scripts/operations/backup.py dump /private/backups/acclimate-pre-loop.dump`. Restore it into a database with the `pre-learning-loop` build to read old rounds.
-2. Before phase 2, find connections that receive a learned version. After `0018` they receive their own channel's version instead:
+1. Take a full backup with `python3 scripts/operations/backup.py dump /private/backups/acclimate-pre-loop.dump`. Restore it into a separate database with the matching pre-upgrade build to read old rounds.
+2. Before applying migration 0018, find connections that receive a learned version. After `0018` they receive their own channel's version instead:
 
    ```sql
    SELECT e.project_id, e.bundle_id, e.integration_id, e.source_channel, e.delivery_channel,
@@ -74,5 +74,5 @@ Migrations 0017 and 0018 permanently drop the old change and connection-learning
    ```
 
    Before upgrading, record the delivered version ID for each affected connection. After upgrading, you can release that version on the source channel with a reason. This also updates any other connection using that channel.
-3. No drain is needed. Queued rounds, proposals and evaluation requests are dropped. Evaluators still polling `…/learning/work` get `404 not_found` and must be stopped.
+3. Stop evaluators for the removed workflows before the upgrade. Migration 0018 drops their queued rounds, proposals and evaluation requests. Configure the new evaluator against a bundle and channel in the [learning loop guide](/docs/guides/learning-loop).
 4. `learn-<connectionId>` channels stay as ordinary channels with their release history.

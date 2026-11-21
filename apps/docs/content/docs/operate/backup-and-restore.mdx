@@ -30,7 +30,7 @@ Point `DATABASE_URL` at the isolated target. Restore refuses a database with exi
 python3 scripts/operations/backup.py restore /private/backups/acclimate.dump --pg-bin /path/to/postgresql-16/bin
 ```
 
-Start the matching service build against the restored database in isolation. Verify stored payload bytes, channel revisions, decision history and application access. For Keycloak, verify the realm, client settings and sign-in with a matching identity server. Check the target URL and scoped grants before switching a stopped service to a restored database. Run an authenticated read and monitor the service after startup. See [Upgrade and recover](/docs/operate/upgrades-and-recovery) for the order of operations.
+Start the matching service build against the restored database in isolation. Verify stored payload bytes, channel revisions, learning rounds and improvement memory, and application access. For Keycloak, verify the realm, client settings and sign-in with a matching identity server. Check the target URL and scoped grants before switching a stopped service to a restored database. Run an authenticated read and monitor the service after startup. See [Upgrade and recover](/docs/operate/upgrades-and-recovery) for the order of operations.
 
 ## Rehearse the tooling
 

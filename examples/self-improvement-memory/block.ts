@@ -85,7 +85,6 @@ function check(value: unknown, message: string): asserts value {
 }
 
 const terminal = (r: { state: string }) => ['completed', 'failed', 'stopped'].includes(r.state);
-const json = <T>(file: string): T => JSON.parse(readFileSync(file, 'utf8')) as T;
 const save = (file: string, data: unknown) =>
   writeFileSync(file, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 });
 

@@ -14,7 +14,7 @@ import {
 import { acquireFileLock } from '../evaluation/journal.js';
 import { redactDiagnosticText } from '../evaluation/runner.js';
 import { withVersionHelpers } from '../evaluation/definition.js';
-import { retryInfrastructureOnce } from '../evaluation/trials.js';
+import { InfrastructureError } from '../compare.js';
 import type { EvaluatorConfig, ExecuteInput, GradeInput, Json } from '../evaluation/types.js';
 import { createEvaluatorClient } from '../internal/evaluation-transport.js';
 import type {
@@ -448,5 +448,14 @@ export async function serveLearningLoop<I, E, O>(
     } catch (error) {
       if (!signal.aborted) throw error;
     }
+  }
+}
+
+async function retryInfrastructureOnce<T>(execute: () => T | Promise<T>): Promise<T> {
+  try {
+    return await execute();
+  } catch (error) {
+    if (!(error instanceof InfrastructureError)) throw error;
+    return execute();
   }
 }

@@ -9,13 +9,13 @@ Install the SDK in the environment that runs your agent. Use the SDK release tha
 
 | To use | You need |
 | --- | --- |
-| TypeScript SDK and `acclimate-eval` | Node.js 22.22 or later |
+| TypeScript SDK, `acclimate-eval`, `acclimate learn` and `acclimate-learning` | Node.js 22.22 or later |
 | Python SDK and `acclimate` (or `python -m acclimate`) | Python 3.11 or later |
 | File preparation | Linux or macOS, and a private local staging directory |
 | The [local stack](/docs/get-started/run-locally) | Docker with Compose v2.24 or later, an Acclimate checkout, Node.js with npm, and Python 3.9 or later |
 
 
-The TypeScript and Python SDKs include the `openai` learning adapter. Acclimate learning supports OpenAI-compatible endpoints only. [Use Codex through CLIProxyAPI](/docs/guides/learning-loop#use-codex-through-cliproxyapi)
+The TypeScript and Python SDKs include the `openai` learning adapter. The built-in learning adapter supports OpenAI-compatible Chat Completions endpoints. [Use Codex through CLIProxyAPI](/docs/guides/learning-loop#use-codex-through-cliproxyapi)
 
 ## Install from the registry
 
@@ -29,7 +29,7 @@ npm install @acclimate/sdk
 npx acclimate-eval --help
 ```
 
-The SDK includes `acclimate-eval` and `acclimate learn`. [Learning loop quick start](/docs/guides/learning-loop) Install a plugin package, such as `@acclimate/codex-plugin`, alongside the SDK when you need [native preparation](/docs/guides/deliver-content#choose-a-native-integration).
+Run `npx acclimate learn --help` for the learning CLI. See the [learning loop guide](/docs/guides/learning-loop). Install a plugin package, such as `@acclimate/codex-plugin`, alongside the SDK when you need [native preparation](/docs/guides/deliver-content#choose-a-native-integration).
 
 </Tab>
 <Tab value="Python">
@@ -42,7 +42,7 @@ python3.11 -m venv .venv
 .venv/bin/acclimate --help
 ```
 
-The distribution is named `acclimate-sdk`. Import it as `acclimate`. The `acclimate` command and `python -m acclimate` run the same CLI. On Python 3.10 or earlier, importing the package fails with a message that names the version it found.
+The distribution is named `acclimate-sdk`. Import it as `acclimate`. The `acclimate` command and `python -m acclimate` run the same CLI. Run `.venv/bin/python -m acclimate learn --help` for the learning subcommand. On Python 3.10 or earlier, importing the package fails with a message that names the version it found.
 
 </Tab>
 </Tabs>
@@ -58,7 +58,7 @@ Choose a version on the [GitHub Releases page](https://github.com/anveld-dev/acc
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
 
-Run the install command from your app directory with the matching file. For an offline install, prepopulate the npm cache with the release’s runtime dependencies, including `tsx` and its platform-specific `esbuild` package. This example uses release 0.1.0.
+Run the install command from your app directory with the matching file. The SDK tarball has no npm runtime dependencies. This example uses release 0.1.0.
 
 ```sh
 npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz

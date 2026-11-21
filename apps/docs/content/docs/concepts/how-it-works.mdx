@@ -11,8 +11,8 @@ On each job start, the SDK resolves the channel, fetches and verifies the payloa
 
 ## Learning loop
 
-Each round scores the incumbent on the evolve split, then proposes five candidates. The optimizer receives the full incumbent harness, evolve case inputs, scores, rollout traces and errors, prior round summaries and diffs for the current setting, and pinned improvement memory. A workspace member with write access can add setup cases. App outcomes with a known expected result also become evolve cases.
+Each round scores the incumbent on the evolve split, then proposes five candidates. The optimizer receives the full incumbent harness, evolve case inputs, scores, rollout traces and errors, prior round summaries and diffs for the current setting, and pinned improvement memory. A workspace member with write access can add setup cases. The enrolled app principal can also report production inputs and known expected answers as evolve cases.
 
-The scanner checks the proposed content and the selector screens candidates before evaluation. The evaluator grades five rollouts per case for each survivor. The selector adopts a candidate or keeps the incumbent. An adoption immediately releases the version and adds an attempt to improvement memory, which future rounds use and jobs never receive. The evaluator scores the retained version against its private held-out split for monitoring only.
+The scanner checks the proposed content and the selector screens candidates before evaluation. The evaluator grades five rollouts per case for each survivor. The selector adopts a candidate or keeps the incumbent. An adoption immediately releases the version and adds an attempt to improvement memory, which future rounds use and jobs never receive. The evaluator scores the retained version against its private held-out split for monitoring only. Inspect scores, candidates and improvement memory in the bundle’s **Learning** tab.
 
 [Enroll a learning loop](/docs/guides/learning-loop)

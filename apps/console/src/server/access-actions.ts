@@ -1,12 +1,6 @@
 import { createServerFn } from '@tanstack/react-start';
 import { setResponseHeader } from '@tanstack/react-start/server';
 import type { AccessCommand } from './access-core';
-export const readAccess = createServerFn({ method: 'GET' }).handler(async () => {
-  setResponseHeader('Cache-Control', 'private, no-store');
-  const { requestEnvironment } = await import('./selection');
-  const { readAccessState } = await import('./access-core');
-  return readAccessState(await requestEnvironment());
-});
 export const readWorkspaceAccess = createServerFn({ method: 'GET' })
   .validator((input: { workspaceId: string }) => input)
   .handler(async ({ data }) => {

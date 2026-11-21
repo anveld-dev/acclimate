@@ -174,6 +174,10 @@ Caddy obtains certificates for all three public names. Open your console URL, si
 </Step>
 </Steps>
 
+## Enable learning
+
+Set the optimizer options in the private service environment file and recreate the service container to load them. Configure the evaluator separately with its own endpoint and workspace token. [Optimizer settings](/docs/reference/configuration#learning) · [Learning setup](/docs/guides/learning-loop)
+
 ## Deliver a bundle
 
 Open **Bundles**, import a bundle and choose its initial channel. Create a connection and issue a content-read credential. Use the connection's setup recipe to prepare files in your application. [Deliver content to jobs](/docs/guides/deliver-content)

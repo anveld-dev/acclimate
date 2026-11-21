@@ -7,6 +7,5 @@ Acclimate delivers versioned instructions, skills and memory to applications. En
 - [SDKs and plugins](sdk-and-plugins.md)
 - [Service interface](service.md)
 - [Self-improvement](improvement.md)
-- [Roadmap](roadmap.md)
 
-The [architecture guide](../architecture/README.md) links to implementation details. The [research index](../research/README.md) preserves historical records.
+The [architecture guide](../architecture/README.md) links to implementation details.

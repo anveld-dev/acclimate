@@ -48,7 +48,7 @@ const reporter = createReceiptReporter({
 const prepared = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
 ```
 
-At the job's real start event, call `prepared.reportStarted()` (Python `prepared.report_started()`) and retain the returned receipt with its job ID. It returns `null` when reporting is unavailable. When the job ends, `await reporter.flush()` and call `reporter.close()`.
+At the job's real start event, call `prepared.reportStarted()` (Python `prepared.report_started()`) and retain the returned receipt with its job ID. It returns `null` when reporting is unavailable. For the TypeScript reporter, `await reporter.flush()` and call `reporter.close()` when the job ends. For Python, call `wait(timeout)` and then `close(timeout)`.
 
 ## Choose a native integration
 

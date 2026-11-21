@@ -24,17 +24,13 @@ def inspect_layout(page, *, coarse=False):
       const heading=document.querySelector('.compact-selected-file');
       const navigator=document.querySelector('.file-navigator');
       const picker=navigator?.querySelector('.file-navigator-toggle');
-      const source=document.querySelector('[data-code-editor] .cm-scroller, textarea#draft-text, [data-testid=entry-content]');
+      const source=document.querySelector('[data-testid=entry-content]');
       const sourceRect=rect(source);
       const path=document.querySelector('.selected-file-path');
       const navigatorLines=navigator?.innerText.split(/\\n/).map(line=>line.trim()).filter(Boolean) ?? [];
       return {bundleHeaderRows:{back:rect(document.querySelector('.bundle-scope-return-row')),primary:rect(document.querySelector('.bundle-scope-primary')),secondary:rect(document.querySelector('.bundle-scope-secondary'))},
         bundleNavigation: bundleNav ? {bounds:rect(bundleNav),links:[...bundleNav.querySelectorAll('a')].filter(visible).map(el=>({name:el.textContent.trim(),...rect(el)}))} : null,
-        hasDetailBackLink:[...document.querySelectorAll('.bundle-scope-return, .workspace-detail-back-link')].some(el=>(el.getAttribute('aria-label') || el.textContent.trim())==='Back to changes'),
-        detailBackLinkCount:task.filter(el=>el.tagName==='A' && (el.getAttribute('aria-label') || el.textContent.trim())==='Back to changes').length,
         viewport: innerWidth, viewportHeight:innerHeight, width: document.documentElement.scrollWidth,
-        editor: rect(document.querySelector('[data-code-editor] .cm-scroller, textarea#draft-text')),
-        editorScrollTop: document.querySelector('[data-code-editor] .cm-scroller, textarea#draft-text')?.scrollTop ?? null,
         scrollY, visualViewportOffsetTop:visualViewport?.offsetTop ?? null,
         publishedContent: rect(document.querySelector('[data-testid=entry-content]')),
         sourceVisibleHeight:sourceRect ? Math.max(0,Math.min(innerHeight,sourceRect.bottom)-Math.max(0,sourceRect.top)) : null,
@@ -48,7 +44,7 @@ def inspect_layout(page, *, coarse=False):
         fileRows: [...document.querySelectorAll('.content-file-button')].filter(visible).map(rect),
         pointerCoarse: matchMedia('(pointer: coarse)').matches, anyPointerCoarse: matchMedia('(any-pointer: coarse)').matches,
         smallText: controls.filter(el => el.font < 14),
-        smallReadingText:[...document.querySelectorAll('.draft-status p,.selected-file-path,.file-row-directory,.file-tree-label,.file-navigator-footer,.review-identity,.review-boundary,.content-diff pre,.cm-line')].filter(visible).filter(el=>parseFloat(getComputedStyle(el).fontSize)<14).map(el=>({text:el.textContent.slice(0,90),font:parseFloat(getComputedStyle(el).fontSize)})),
+        smallReadingText:[...document.querySelectorAll('.selected-file-path,.file-row-directory,.file-tree-label,.file-navigator-footer')].filter(visible).filter(el=>parseFloat(getComputedStyle(el).fontSize)<14).map(el=>({text:el.textContent.slice(0,90),font:parseFloat(getComputedStyle(el).fontSize)})),
         smallTargets: coarse ? controls.filter(el => (['BUTTON','INPUT','TEXTAREA','SELECT','A'].includes(el.tag) || ['menuitem','textbox'].includes(el.role)) && (el.height < 44 || el.width < 44)) : [],
         controls};
     }''', dict(coarse=coarse))
@@ -141,33 +137,18 @@ def assert_focus_visible(target):
       const animations=ancestors.flatMap(parent=>parent.getAnimations()).filter(animation=>animation.playState==='running');
       await Promise.all(animations.map(animation=>animation.finished.catch(()=>{})));
 
-      // A virtualized editor's content canvas can be thousands of lines tall.
-      // Hit-test the actual editor viewport while retaining the native focus check.
-      const viewport=el.closest('[data-code-editor]')?.querySelector('.cm-scroller');
-      const r=(viewport ?? el).getBoundingClientRect();
+      const r=el.getBoundingClientRect();
       const x=Math.max(0, Math.min(innerWidth-1, (r.left+r.right)/2));
       const y=Math.max(0, Math.min(innerHeight-1, (r.top+r.bottom)/2));
       const top=document.elementFromPoint(x,y);
       return {focused:el===document.activeElement, visible:r.width>0 && r.height>0 && r.bottom>0 && r.top<innerHeight && r.right>0 && r.left<innerWidth,
-        uncovered:!!top && (el===top || el.contains(top) || viewport?.contains(top)), name:(el.getAttribute('aria-label')||el.textContent).trim().slice(0,160)};
+        uncovered:!!top && (el===top || el.contains(top)), name:(el.getAttribute('aria-label')||el.textContent).trim().slice(0,160)};
     }''')
     assert result['focused'] and result['visible'] and result['uncovered'], result
 
 
-def assert_compact_editor(metrics):
-    """Check the usable editor dimensions and visible file rows on desktop."""
-    assert metrics['viewport']==1440 and metrics['viewportHeight']==900, metrics
-    editor=metrics['editor']
-    assert editor, 'No editable draft surface was rendered'
-    assert editor['top'] <= 250, editor
-    assert editor['width'] >= 1080, editor
-    assert editor['height'] >= 640, editor
-    assert len(metrics['fileRows']) >= 4, metrics['fileRows']
-    return metrics
-
-
 def assert_navigation_metrics(metrics):
-    """Keep every bundle tab fully visible and the narrow detail back-link unique."""
+    """Keep every bundle tab fully visible."""
     navigation=metrics.get('bundleNavigation')
     rows=metrics.get('bundleHeaderRows',{})
     if metrics['viewport']>1000 and navigation:
@@ -183,8 +164,6 @@ def assert_navigation_metrics(metrics):
         assert bounds and [link['name'] for link in navigation['links']] == ['Content', 'Releases', 'Learning'], navigation
         clipped=[link for link in navigation['links'] if link['left'] < bounds['left']-1 or link['right'] > bounds['right']+1 or link['top'] < bounds['top']-1 or link['bottom'] > bounds['bottom']+1]
         assert not clipped, dict(navigation=bounds,clippedTabs=clipped)
-    if metrics['viewport']<=600 and metrics.get('hasDetailBackLink'):
-        assert metrics['detailBackLinkCount']==1, dict(viewport=metrics['viewport'],visibleBackLinks=metrics['detailBackLinkCount'])
     return metrics
 
 

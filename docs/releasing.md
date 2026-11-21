@@ -1,6 +1,6 @@
 # Publish an Acclimate release
 
-1. Set the same `MAJOR.MINOR.PATCH` version in the root and console `package.json` files, the SDK and plugin manifests under `packages/`, `python/pyproject.toml`, and `Cargo.toml`. Update any inter-package version references, pin the CI action at `anveld-dev/acclimate/examples/ci@vMAJOR.MINOR.PATCH` in `examples/` and the docs (`npm run pack:verify` fails on any other tag), and refresh `package-lock.json` with `npm install --package-lock-only --ignore-scripts` and `Cargo.lock` with `cargo update --workspace`.
+1. Set the same `MAJOR.MINOR.PATCH` version in the root and console `package.json` files, the SDK and plugin manifests under `packages/`, `python/pyproject.toml`, and `Cargo.toml`. Update any inter-package version references and refresh `package-lock.json` with `npm install --package-lock-only --ignore-scripts` and `Cargo.lock` with `cargo update --workspace`.
 2. Update `CHANGELOG.md` with a section headed `## [MAJOR.MINOR.PATCH] - YYYY-MM-DD`. Run `npm run pack:verify` and commit the refreshed `scripts/packaging/release-metadata.json` along with the version and changelog changes.
 3. From the release commit on `main`, create and push the matching tag, for example `git tag -a v0.1.0 -m "Release 0.1.0"` followed by `git push origin v0.1.0`.
 

@@ -27,6 +27,11 @@ const entries = [
     body: 'Release versions to channels and prepare them for jobs.',
   },
   {
+    title: 'Learning loop',
+    href: '/docs/guides/learning-loop',
+    body: 'Enroll a bundle, sync cases and run the evaluator.',
+  },
+  {
     title: 'Integrations',
     href: '/docs/integrations/codex',
     body: 'Prepare content for Codex, the Claude Agent SDK, Pi and Cursor.',
@@ -48,8 +53,8 @@ export default function HomePage() {
         </h1>
         <p className="max-w-2xl text-lg text-fd-muted-foreground text-pretty">
           Acclimate versions and delivers your agent’s instructions, skills and memory. The
-          self-improvement loop ships in a later phase. It will propose five changes per round,
-          evaluate those that pass screening and remember what adopted changes fixed.
+          learning loop proposes five candidates per round for an enrolled bundle, evaluates the
+          candidates that pass screening and records what adopted changes fixed.
         </p>
         <div className="flex flex-wrap gap-3">
           <Link

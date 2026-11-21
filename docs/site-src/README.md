@@ -2,7 +2,7 @@
 
 The output is plain, self-contained HTML at [docs/site/index.html](../site/index.html). It works from disk, with no CDN, network calls, server, or browser-side Markdown renderer.
 
-- Page text: `docs/design/`, `docs/architecture/`, `docs/research/`, and `docs/development.md`.
+- Page text comes from the current design, architecture, and operations guides listed in the builder.
 - Page order, routes, navigation, and shell: [build_docs.py](../../scripts/build_docs.py).
 - Appearance and browser behavior: [styles.css](styles.css), [app.js](app.js).
 - Diagrams: HTML fragments under `diagrams/`, styled by [diagrams.css](diagrams.css).

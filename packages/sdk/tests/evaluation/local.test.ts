@@ -1,32 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { defineEvaluation } from '../../src/evaluation/index.js';
 import type { EvaluationDefinition } from '../../src/evaluation/types.js';
 import {
   loadLocalPayload,
-  localPayloadDigest,
   tryEvaluation,
   LocalRunError,
 } from '../../src/evaluation/local.js';
-import {
-  runControlsFromFlags,
-  parseDuration,
-  parseSelection,
-  selectedCaseIds,
-} from '../../src/evaluation/controls.js';
-import type { BundlePayload } from '../../src/types.js';
-
-const parentPayload: BundlePayload = {
-  schemaVersion: 1,
-  files: [{ path: 'AGENTS.md', kind: 'instruction', text: 'Be brief.' }],
-};
-const candidatePayload: BundlePayload = {
-  schemaVersion: 1,
-  files: [{ path: 'AGENTS.md', kind: 'instruction', text: 'Be polite.' }],
-};
 type Definition = EvaluationDefinition<number, number, { text: string; n: number }>;
 function definition(overrides: Partial<Definition> = {}): Definition {
   return {

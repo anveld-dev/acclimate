@@ -88,6 +88,66 @@ test('sync pages then adds missing and retires removed setup cases without touch
   assert(live.some(item => item.caseId === 'outcome:123'));
 });
 
+test('runs beforeWrite once before the first write, and not at all when nothing changes', async () => {
+  const events: string[] = [];
+  let live: LearningEvolveCasesPage['items'] = [];
+  const client = {
+    async listLearningEvolveCases() {
+      return { items: live, next: null, evolveRevision: 1 };
+    },
+    async addLearningEvolveCases(_workspace: string, _bundle: string, body: LearningEvolveCasesRequest) {
+      events.push('write');
+      live = (body.cases ?? []).map(item => ({ ...item, addedRevision: 2 }));
+      return { evolveRevision: 2, added: live.length, retired: 0, liveCases: live.length };
+    },
+  };
+  const cases = [{ caseId: 'a', input: 1, expected: 1 }];
+  await syncEvolveCases(client, 'w', 'b', cases, async () => { events.push('pause'); });
+  assert.deepEqual(events, ['pause', 'write']);
+  await syncEvolveCases(client, 'w', 'b', cases, async () => { events.push('pause'); });
+  assert.deepEqual(events, ['pause', 'write']);
+});
+
+test('halves the evolve-case page size when a listing response is too large', async () => {
+  const limits: (number | undefined)[] = [];
+  const client = {
+    async listLearningEvolveCases(_workspace: string, _bundle: string, options?: { after?: string; limit?: number }) {
+      limits.push(options?.limit);
+      if ((options?.limit ?? 100) > 25) throw new ApiError(502, 'response_too_large', 'Response too large', 'req');
+      return options?.after
+        ? { items: [], next: null, evolveRevision: 1 }
+        : { items: [{ caseId: 'keep', input: 1, expected: 1, addedRevision: 1 }], next: 'keep', evolveRevision: 1 };
+    },
+    async addLearningEvolveCases() {
+      throw new Error('nothing to change');
+    },
+  };
+  await syncEvolveCases(client, 'w', 'b', [{ caseId: 'keep', input: 1, expected: 1 }]);
+  assert.deepEqual(limits, [100, 50, 25, 25]);
+});
+
+test('splits evolve-case additions so each request stays under the 2 MiB body limit', async () => {
+  // 18 cases with 60 KiB input and 60 KiB expected each: count-only batching sent one ~2.2 MiB body.
+  const big = 'x'.repeat(60 * 1024);
+  const cases = Array.from({ length: 18 }, (_, index) => ({ caseId: `big-${index}`, input: big, expected: big }));
+  const bodies: number[] = [];
+  const sent: string[] = [];
+  const client = {
+    async listLearningEvolveCases() {
+      return { items: [], next: null, evolveRevision: 1 };
+    },
+    async addLearningEvolveCases(_workspace: string, _bundle: string, body: LearningEvolveCasesRequest) {
+      bodies.push(Buffer.byteLength(JSON.stringify(body)));
+      sent.push(...(body.cases ?? []).map(item => item.caseId));
+      return { evolveRevision: 2, added: body.cases?.length ?? 0, retired: 0, liveCases: sent.length };
+    },
+  };
+  await syncEvolveCases(client, 'w', 'b', cases);
+  assert(bodies.length >= 2);
+  assert(bodies.every(size => size < 2 * 1024 * 1024));
+  assert.deepEqual(sent, cases.map(item => item.caseId));
+});
+
 test('enrolls once, reconciles an active model transition, and explains held-out conflicts', async () => {
   const desired: LearningLoopRequest = {
     channel: 'stable', appPrincipalId: 'machine:test',

@@ -64,7 +64,22 @@ def _serve_config(definition: LoopDefinition, filename: Path, once: bool) -> Non
     if token := os.getenv("ACCLIMATE_ENROLL_TOKEN"):
         admin = AcclimateClient(client.base_url, token, "learn-enrollment")
     loop = _enroll(client, workspace, bundle, definition, held_out, os.getenv("ACCLIMATE_APP_PRINCIPAL"), admin)
-    _sync_cases(client, workspace, bundle, evolve)
+    # A running loop starts a round as soon as it has live cases. Pause it while a multi-request sync
+    # writes, so no round pins a partial evolve revision; resume only a loop this command paused.
+    controller = admin or client
+    paused = False
+
+    def pause() -> None:
+        nonlocal paused
+        if loop["status"] == "running":
+            controller.pause_learning_loop(workspace, bundle)
+            paused = True
+
+    try:
+        _sync_cases(client, workspace, bundle, evolve, pause)
+    finally:
+        if paused:
+            controller.resume_learning_loop(workspace, bundle)
 
     active = loop["activeRound"]
     finished = (active["number"] if active else loop["nextRound"]) - 1

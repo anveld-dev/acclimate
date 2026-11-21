@@ -4,15 +4,15 @@ This example runs the Acclimate learning loop on W1, an LLM CLI support workload
 
 ## Prepare and check the fixtures
 
-Run from the repository root with Node, Rust, PostgreSQL 16 and Python 3.11 or newer. Install the grader into a dedicated virtual environment. The requirements pin the LLM version and commit used for Click grading. Task models receive only the harness and case request.
+Run from the repository root with Node.js 22.22 or newer, Rust, PostgreSQL 16 and Python 3.12 or newer. Install the grader into a dedicated virtual environment. The requirements pin the LLM version and commit used for Click grading. Task models receive only the harness and case request.
 
 ```sh
 npm ci --ignore-scripts
 cargo build --locked --bin acclimate-service
-python3 -m venv /tmp/w1-sim-venv
+python3.12 -m venv /tmp/w1-sim-venv
 /tmp/w1-sim-venv/bin/python -m pip install -r examples/self-improvement-memory/requirements.txt
 SIM_PYTHON=/tmp/w1-sim-venv/bin/python \
-  npm --prefix examples/self-improvement-memory run test:sim-experiment
+  npm run test:sim-experiment
 /tmp/w1-sim-venv/bin/python -m pytest examples/self-improvement-memory
 /tmp/w1-sim-venv/bin/python examples/self-improvement-memory/freeze.py --check
 ```

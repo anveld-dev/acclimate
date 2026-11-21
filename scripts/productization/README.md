@@ -5,7 +5,7 @@ Both runners create a private PostgreSQL cluster with test-owned credentials on 
 ```sh
 python3 scripts/productization/qualify.py --pg-bin /path/to/postgresql/bin
 npm run build --workspace @acclimate/console
-python3 scripts/test_productization_browser.py --pg-bin /path/to/postgresql/bin
+npm run test:bdd -- --lane browser --pg-bin /path/to/postgresql/bin
 ```
 
 `qualify.py` checks workspace scope, immutable version uploads and channel releases. It recovers an upload by its original operation key after service restart and simulated expiration of the short-lived receipt. The same bytes replay, a different principal cannot recover the result, and changed bytes conflict.

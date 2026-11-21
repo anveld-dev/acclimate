@@ -1,0 +1,24 @@
+---
+title: Release and roll back
+description: Point a channel at an immutable version and record the reason.
+---
+
+## Release a version
+
+Creating a bundle in the console imports its content and creates its first release. Use the SDK or [HTTP API](/docs/reference/http-api) to upload a new version to an existing bundle. A release requires the target version ID, the channel's expected revision, and a reason in `unevaluatedReason`. Use a credential with the `promote` right to release.
+
+```ts
+const release = await client.createRelease(workspaceId, bundleId, 'stable', {
+  versionId,
+  expectedRevision: currentRevision,
+  unevaluatedReason: 'Ship updated instructions',
+}, operationId);
+```
+
+Use a fresh idempotency key for each operation. If the channel moved, re-read its revision before deciding whether to release.
+
+## Roll back a channel
+
+Open the bundle's **Releases** tab, select the earlier release and inspect its content. Choose **Restore**, enter a reason and confirm. This creates a new release with a higher revision pointing to the existing immutable version. New jobs resolve to it; already prepared jobs keep their pinned versions.
+
+If the console loses the response, check the pending operation in **Releases**. Retry the exact saved request or close the operation before submitting a new one.

@@ -52,7 +52,7 @@ def main():
                     }''')
                     errors.extend(f"{item['route']} {width}/{appearance}: {failure}" for failure in failures)
         page.set_viewport_size({'width': 1440, 'height': 1000})
-        page.goto((SITE / 'research/sdk-file-delivery.html').as_uri())
+        page.goto((SITE / 'sdk.html').as_uri())
         page.locator('[data-search-open]').click()
         page.locator('#docs-search').fill('cache')
         assert page.locator('.search-results li').count() > 0, 'Search returned no cache results'

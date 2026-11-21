@@ -70,7 +70,7 @@ impl OpenAiModel {
                     && url.username().is_empty()
                     && url.password().is_none()
             })
-            .ok_or_else(|| io::Error::other("Invalid ACCCLIMATE_MODEL_ENDPOINT"))?;
+            .ok_or_else(|| io::Error::other("Invalid ACCLIMATE_MODEL_ENDPOINT"))?;
         if token.trim().is_empty() || token.chars().any(char::is_control) {
             return Err(io::Error::other("Invalid ACCLIMATE_MODEL_TOKEN"));
         }
@@ -78,7 +78,7 @@ impl OpenAiModel {
             || model.trim().len() > 256
             || model.trim().chars().any(char::is_control)
         {
-            return Err(io::Error::other("Invalid ACCCLIMATE_MODEL"));
+            return Err(io::Error::other("Invalid ACCLIMATE_MODEL"));
         }
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())

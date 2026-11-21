@@ -4,7 +4,7 @@ This file plans the paper-sized test of the main transfer claim of [arXiv 2611.1
 
 The product loop is the experiment loop. The driver sets up bundles, starts and pauses loops, runs the evaluator with the right policy model, and reads the held-out curves. It never proposes, screens, selects, releases or writes memory. The service does all of that, as it would for any enrolled bundle.
 
-This is a draft. Before the pilot, freeze the protocol and inputs with SHA-256 digests. After the pilot passes, archive the final preregistration with its pilot results before S1. It follows the conventions of `docs/research/real-app-learning-experiment/preregistration.md`: frozen inputs with digests, zero-call checks, run order, turn accounting and a deviations log.
+Phase 5 tooling is complete. Phase 6, including the live pilot and paper-sized runs, has not started. The driver requires a frozen protocol and passing pilot report before S1 and S2. It follows the conventions of [the preregistration](https://github.com/anveld-dev/acclimate/blob/ab0d8d3b5ba7fd33a468d6526edcd5d87cb722ef/docs/research/real-app-learning-experiment/preregistration.md): frozen inputs with digests, zero-call checks, run order, turn accounting and a deviations log.
 
 ## 1. What the paper reports
 
@@ -40,8 +40,8 @@ A **block** b = 1…10 is one source run and its three target runs.
 | Harness Transfer (HT) | New bundle B_HT | H_S, the same bytes | `gpt-6.2-sol` | Empty | Empty |
 | Cold Start (CS) | New bundle B_CS | H0 | `gpt-6.2-sol` | Empty | Empty |
 
-- **H_S** is the version on B_S's learning channel when source round 10 ends: round 10's `adopted_version_id` when it adopted, else its `parent_version_id`.
-- **H0** is `examples/self-improvement-memory/fixtures/w1/baseline.json`, adapted from `examples/real-app-learning/baseline.json` for prompt-only W1. Its digest is frozen with the fixtures. Earlier calibration used the previous baseline and repository access (§9.1).
+- **H_S** is the version on B_S's learning channel when the tenth completed source round ends. It is that round’s `adopted_version_id` on adopt or `parent_version_id` on keep. K1 rejects channel movement during a run.
+- **H0** is `examples/self-improvement-memory/fixtures/w1/baseline.json`, adapted from the [pre-removal baseline](https://github.com/anveld-dev/acclimate/blob/4096ff1b60098554b0cb932866a338cadf29601c/examples/real-app-learning/baseline.json) for prompt-only W1. Its digest is frozen with the fixtures. Earlier calibration used the previous baseline and repository access (§9.1).
 - **Memory** is per workspace + bundle (D6), so a new bundle starts empty. HT and CS build their own memory during the target run, where the paper's conditions have none (deviation V1).
 - **Setting.** Every loop has `setting = {domain: "cli-support", benchmark: "llm-0.38-argv", policyModel}`. Only `policyModel` changes at the transition, so rules 2 and 4 see it in each attempt's `provenance`. The evolve split and the held-out split are the same in every run, so `evolve_revision` contents and `heldOut.digest` match across conditions.
 - **Optimizer model.** `ACCLIMATE_MODEL=gpt-6.2-astra` and `ACCLIMATE_MODEL_REASONING_EFFORT=high` are frozen for `propose`, `screen` and `select` in every stage and condition. The study uses a separate, stronger optimizer, following the paper’s optimizer ablation (Appendix E.4.2). Both task models use low effort.
@@ -51,13 +51,13 @@ Problem-Only is not run: it needs a memory view, which would be a mode (D2).
 
 ## 4. Workload and splits
 
-All conditions use the same Codex-authenticated CLIProxyAPI endpoint. The source task model is `gpt-6-luna` and the target task model is `gpt-6.2-sol`, both at `low` effort. The optimizer is fixed at `gpt-6.2-astra` with `high` effort. Its loopback audit relay preserves the service’s OpenAI-compatible request.
+All conditions use the same Codex-authenticated CLIProxyAPI endpoint. The driver reads its API key from `SIM_PROXY_API_KEY`. The source task model is `gpt-6-luna` and the target task model is `gpt-6.2-sol`, both at `low` effort. The optimizer is fixed at `gpt-6.2-astra` with `high` effort. Its loopback audit relay preserves the service’s OpenAI-compatible request.
 
 ### 4.1 Workload
 
 | ID | Workload | Grader | Source |
 | --- | --- | --- | --- |
-| W1 | LLM CLI support: `llm` 0.38 at `46f0461d…`, Click 8.5.1 | Exact Click route and parameters (`click-argv-v2`), binary (`fixtures/w1/grade.py`, from `examples/real-app-learning/grade.py:38-46` at 4096ff1b) | `examples/self-improvement-memory/fixtures/w1/`, moved in phase 2 |
+| W1 | LLM CLI support: `llm` 0.38 at `46f0461d9b1ea9e898cac8a1d7333ab9bc6c8f7f`, Click 8.5.1 | Exact Click route and parameters (`click-argv-v2`), binary ([grader](../../../examples/self-improvement-memory/fixtures/w1/grade.py)) | `examples/self-improvement-memory/fixtures/w1/`, moved in phase 2 |
 
 The task model receives two Chat Completions messages. The system message is the delivered harness rendered as instruction files, skills and memory files, in that order, each under a `# path` heading. The user message is the case input. The model returns a JSON object containing an `argv` array. The task model has no tools or repository access. The harness supplies the version-specific W1 knowledge, so the optimizer can learn which CLI details to write into skills. The pinned LLM package is used by the grader.
 
@@ -65,12 +65,12 @@ The task model receives two Chat Completions messages. The system message is the
 
 | Split | Product name | Size and origin | Reaches the optimizer? |
 | --- | --- | --- | --- |
-| E | The **evolve split**, rows of `learning_evolve_cases` with `source = setup` | 40: the 30 development cases from `fixtures/w1/tasks.py` (`examples/real-app-learning/tasks.py:97-105` at 4096ff1b) plus the 10 development additions in `fixtures/w1/40-case-additions.json` | Yes, as `feedback` and through `history` and memory |
+| E | The **evolve split**, rows of `learning_evolve_cases` with `source = setup` | 40: the 30 development cases from [tasks.py](../../../examples/self-improvement-memory/fixtures/w1/tasks.py) plus the 10 development additions in `fixtures/w1/40-case-additions.json` | Yes, as `feedback` and through `history` and memory |
 | H | The **held-out split**, in the driver's evaluator store, committed by `heldOut = {digest, cases: 60}` | 60 new cases | Never |
 
 - **H is all new.** The 70 existing audit cases (30 original, 30 in `fixtures/w1/replication-audit.json`, 10 additions) informed earlier engineering, so none is reused. The 10 field cases are not used.
-- Each H case has a reference argv and two negative controls, checked against every earlier case ID, input and parsed target, as `fixtures/w1/check-replication.py` does (`examples/real-app-learning/check-replication.py:11-36` at 4096ff1b). H case IDs are opaque (`h-` plus 8 random hex digits) so a leak is detectable without content.
-- **E is fixed for the whole experiment.** The driver adds it once with `POST /evolve-cases` and never calls `POST /outcomes` or retires a case. Every round of every run therefore pins the same `evolve_revision` content, which is what the paper's fixed X_evo needs (D4 stays available to apps; the experiment does not use it).
+- Each H case has a reference argv and two negative controls, checked against every earlier case ID, input and parsed target, by [freeze.py](../../../examples/self-improvement-memory/freeze.py#L37). H case IDs are opaque (`h-` plus eight lowercase hex digits) so a leak is detectable without content.
+- **E is fixed for the whole experiment.** The driver seeds each new bundle once with `POST /evolve-cases` and never calls `POST /outcomes` or retires a case. Every round of every run therefore pins the same `evolve_revision` content, which is what the paper's fixed X_evo needs (D4 stays available to apps; the experiment does not use it).
 - **Traces.** For W1 a rollout's `trace` is the argv JSON the agent returned and `error` is the turn or parse error message, if any. Held-out reports carry only `score` and `passed`. The pilot records trace sizes (§11).
 
 ### 4.3 Why 60 held-out cases
@@ -82,16 +82,16 @@ At five rollouts, measurement noise of one held-out difference is about 2.0 to 2
 | Stage | What | Gate to the next stage |
 | --- | --- | --- |
 | S0a | Model-free dry run of the driver with a fake optimizer and a fake policy (§13) | All integrity checks pass |
-| S0b | Author and freeze H: zero-call checks, disjointness, digests, the frozen preregistration | Preregistration committed |
+| S0b | Validate and freeze the checked-in H fixture: zero-call checks, disjointness and digests | Preregistration committed |
 | S0c | Live pilot: 2 source runs of 3 rounds, then 1 round of each target condition from one of them | Pilot gates (§10, K3), including the target round-zero ceiling check. Pilot data is excluded from efficacy analysis. |
 | S1 | 10 independent source runs of 10 rounds | Harm stop only (K4 applies to S2) |
 | S2 | For each block, the 3 target runs of 10 rounds, plus round-0 and retention scoring | none |
 | C (optional) | Pre-change Flat control (§16) | none. Runs alongside S1 and S2. |
 
-- **One cluster per source run.** Each block's S1 runs on its own disposable PostgreSQL cluster and service, owned by `scripts/productization/qualify.py` `Harness` (`:31`, `start_database` at `:55`), which phase 1 keeps ([removal.md](removal.md)), as `examples/real-app-learning/run.py:23-33` did at tag `pre-learning-loop`.
+- **One cluster per source run.** Each block's S1 runs on its own disposable PostgreSQL cluster and service, owned by [run.py](../../../examples/self-improvement-memory/run.py#L86) using [Harness.start_database](../../../scripts/productization/qualify.py#L69).
 - **Checkpoint.** When source round 10 has `completed` and the loop is `paused`, the driver stops the service and copies the stopped data directory. That copy is the block's checkpoint.
 - **One copy per target condition.** Each target run gets its own service on a fresh checkpoint copy. Full SIM continues B_S in its copy. HT and CS create new bundles in theirs; B_S stays `paused` there and never runs. Separate copies keep the conditions from sharing a worker queue, and a restart (K5) needs only a new copy, because memory is never rewound.
-- **Start order.** The three target runs of a block start together in a seeded order (§7).
+- **Start order.** The three target runs are submitted concurrently in a seeded order (§7). Blocks are visited sequentially by one driver invocation.
 
 ## 6. Per-run protocol
 
@@ -125,7 +125,7 @@ On the Full SIM copy of the checkpoint, B_S is `paused` after round 10.
 
 ### 6.3 Counting rounds and stopping at 10
 
-The loop runs rounds back to back, so the driver stops it. A run's **counted rounds** are its `completed` rounds. A `failed` round makes no decision and is not counted, and it is logged against K5. When the run has 9 counted rounds and a round is active, the driver calls `POST /pause`. That round runs to its end and no new round starts. If it fails, the driver calls `POST /resume` and repeats. If a round after the 10th counted round is ever observed, the driver calls `POST /stop` and the run is invalid if that round reached `selecting` (K1).
+A run counts `completed` rounds. Failed rounds are logged separately. The driver pauses during the final counted round, including a pause from the evaluator's incumbent context lookup, so that round can finish without a successor. If it fails and the loop is paused without an active round, the driver resumes. On reaching the count it requires a paused loop, no active round and the next expected round number. A mismatch stops the loop and invalidates the run (K1). [Round counting](../../../examples/self-improvement-memory/block.ts#L465)
 
 The target index `r` counts completed rounds. Keep the separate bundle round number in the ledger. When no rounds fail, Full SIM's bundle rounds 11 to 20 are r = 1 to 10.
 
@@ -135,28 +135,9 @@ The driver does nothing inside a round except serve evaluations. After each roun
 
 1. Reads `GET …/learning/rounds/{roundId}` (candidates, evaluations, selection) and `GET …/learning/memory?revision=` at the round's `memory_revision`.
 2. Matches the retained evaluation's version to the round's adopted or kept version and its score to the local log (§8.1). At the end, checks that the final retained version equals the learning channel head.
-3. Writes the public round document with its pinned memory, retained-evaluation identity, optimizer request records and turn counts to `artifacts/sim-experiment/<stage>/b<block>/<code>/rounds.jsonl`. `<code>` is the blinded condition code. The following illustrates the evidence represented by each row.
+3. Writes the public round fields plus `block`, `code`, `r`, `parent`, `retained`, `memory`, `optimizer` and `turns` to `artifacts/sim-experiment/<stage>/b<block>/<code>/rounds.jsonl`. `r` is the counted index for a completed round and null otherwise. `optimizer` contains the request ledger entries for that round. `turns` is keyed by `incumbent`, `candidate`, `retained` and `rescore`.
 
-```json
-{
-  "block": 3, "code": "B", "number": 14, "r": 4, "state": "completed",
-  "decision": "adopted", "reason": null,
-  "parent": {"versionId": "…", "digest": "sha256:…"},
-  "retained": {"versionId": "…", "digest": "sha256:…", "heldOutScore": 0.4133, "heldOutError": null,
-               "cases": 60, "rollouts": 300, "infraFailures": 0},
-  "incumbentScore": 0.3550, "evolveRevision": 1, "memoryRevision": 9,
-  "memoryDigest": "sha256:…", "historyDigest": "sha256:…", "optimizerModel": "gpt-6.2-astra",
-  "optimizerReasoningEffort": "high",
-  "samples": [{"sample": 1, "status": "evaluated", "dropReason": null, "screen": "evaluate",
-               "problem": "P3", "predicted": 4, "evolveScore": 0.39,
-               "diagnosisBeforeEvaluation": true}],
-  "selection": {"decision": "adopt", "sample": 2},
-  "optimizer": {"calls": 7, "requests": 8, "inputBytes": 412233, "inputTokens": 0, "outputTokens": 0},
-  "turns": {"incumbent": 200, "candidate": 800, "heldOut": 300}
-}
-```
-
-`summary.json` per run holds the totals, the final retained version and the memory document at the end. `ledger.json` hashes the run files and, for each source, the stopped database checkpoint.
+When retained evidence fails or exceeds the per-evaluation infrastructure threshold, the driver measures the retained version offline and records it in `retained.replacement`. For a successful in-loop measurement, the driver reconciles the score against the local rollout log within 1e-9. `summary.json` records the final version, pins, round-zero measurement and counts. `ledger.json` hashes the run files and, for a source run, the stopped database checkpoint. [Evidence writing](../../../examples/self-improvement-memory/block.ts#L540), [artifact verification](../../../examples/self-improvement-memory/run.py#L133)
 
 ## 7. Randomization and blinding
 
@@ -164,10 +145,10 @@ No paired comparison exists in the loop, so there is no arm order to balance. Th
 
 | What | Rule |
 | --- | --- |
-| Target start order in a block | Sort the three conditions by SHA-256 of the JSON array `[preregDigest, "start", block, originalIndex]`. Submit them in that order to separate services. |
-| Rollout order in every evaluation | Offline evaluations sort case/rollout pairs by SHA-256 of `[preregDigest, block, code, number, role, sample, originalIndex]`. The SDK owns the in-loop case schedule. Apply the seed with case ID added to assign local rollout labels within each case. |
-| Condition labels | Coded A, B, C per block by sorting conditions on SHA-256 of `[preregDigest, "codes", block, originalIndex]`. The key is sealed in `artifacts/sim-experiment/key.json` and opened only after `analyze.py` is frozen and run on coded data. |
-| Case IDs | E keeps its `cli-…` IDs. H IDs are random (§4.2). |
+| Target start order in a block | Sort the three conditions by SHA-256 of the JSON array `[seed, "start", block, originalIndex]`. Submit them in that order to separate services. |
+| Rollout order in every evaluation | Offline evaluations sort case/rollout pairs by SHA-256 of `[seed, block, code, number, role, sample, originalIndex]`. The SDK owns the in-loop case schedule. Apply the seed with case ID added to assign local rollout labels within each case. |
+| Condition labels | Coded A, B, C per block by sorting conditions on SHA-256 of `[seed, "codes", block, originalIndex]`. The driver writes the private mapping to `artifacts/sim-experiment/key.json`. It uses the key for the harm check and retention. Final analysis writes `coded.json` before reading the key to label contrasts. |
+| Case IDs | E keeps its fixture IDs. H IDs are opaque (§4.2). |
 
 The assignment of condition to bundle is not random: Full SIM is by definition the continued bundle. Bundles, versions and requests carry no label, so the optimizer and graders cannot see it.
 
@@ -175,7 +156,7 @@ The assignment of condition to bundle is not random: Full SIM is by definition t
 
 ### 8.1 The score
 
-`Y(c, b, r)` is the `held_out_score` of the `retained` held-out evaluation of target round r of condition c in block b: the mean over the 60 H cases, weighted equally, of each case's mean rollout `score` over its 5 rollouts, under `gpt-6.2-sol`. The analysis recomputes it from the evaluator's local rollout log and requires agreement with the service within 1e-9.
+`Y(c, b, r)` is the `held_out_score` of the `retained` held-out evaluation of target round r of condition c in block b: the mean over the 60 H cases, weighted equally, of each case's mean rollout `score` over its 5 rollouts, under `gpt-6.2-sol`. The driver reconciles scored evidence against its local rollout log. Analysis recomputes the endpoint from the rollout ledger and checks it against the recorded service score or offline replacement.
 
 `Y(c, b, 0)` is the start harness's held-out score under the target model. The loop does not score a version before round 1, so the driver scores it with the same evaluator function outside the loop (deviation V4). H_S is scored once per block for both Full SIM and HT.
 
@@ -185,7 +166,7 @@ The assignment of condition to bundle is not random: Full SIM is by definition t
 | --- | --- |
 | Target final (primary) | `Y(c, b, 10)` |
 | Jump start | `Y(c, b, 3) − Y(c, b, 0)` |
-| Curve area | Mean over r = 1…10 of `Y(c, b, r) − Y(c, b, 0)`. Curves are plotted per round with 95% intervals across blocks and **no running maximum**. |
+| Curve area | Mean over r = 1…10 of `Y(c, b, r) − Y(c, b, 0)`. The driver writes per-round means and 95% intervals across blocks to `curves.tsv` without a running maximum. |
 | Retention | `R(c, b) = Y_luna(final harness of c) − Y_luna(H_S)`, all three scored by the driver on H under `gpt-6-luna` in one window after S2, for Full SIM and HT |
 | Source gain | `Y(Source, b, 10) − Y(Source, b, 0)`, descriptive |
 
@@ -194,14 +175,14 @@ The assignment of condition to bundle is not random: Full SIM is by definition t
 | Metric | Definition, from rounds, evaluations and memory |
 | --- | --- |
 | Keep rate and reasons | Share of counted rounds with `kept`, by `reason` |
-| Screening yield | `screened_out` share of `generated` samples, and `drop_reason` counts |
-| Problem reuse | Share of target samples whose `diagnosis.problem` names an existing ID. For Full SIM, the share naming a problem opened in the source run (`opened_round ≤ 10`). |
+| Screening yield | `screened_out` share of `generated` samples, and `dropReason` counts |
+| Problem reuse | Share of target samples whose `diagnosis.problem` names an existing ID. For Full SIM, the share naming a problem with `openedRound` at or before the source run’s `lastNumber`. |
 | Prediction precision | Over adopted attempts, the number of `fixed` cases divided by the number of `predicted` cases. Null comparison: the fix rate among incumbent-failing E cases the attempt did not predict. Interpreted only with at least 100 pooled predictions. Cases with 1 to 4 passing incumbent rollouts are reported separately as flaky. |
-| Unpredicted regressions | Per adopted attempt, E cases that pass on the incumbent and fail on the candidate (`CASE_PASS_ROLLOUTS`) and were not predicted |
-| Winner's curse | For each adopted round, the adopted candidate's `evolve_score` minus the next round's `incumbent_score`, which re-measures the same version with fresh rollouts. For the final adoption, use the offline final evolve measurement. This is the best-of-5 inflation. It needs the loop to keep re-scoring the incumbent every round ([loop.md](loop.md) open question 5). |
+| Unpredicted regressions | Per adopted attempt, E cases that pass on the incumbent and fail on the candidate (at least three passing rollouts) and were not predicted |
+| Winner's curse | For each adopted round, the adopted candidate's `evolve_score` minus the next round's `incumbent_score`, which re-measures the same version with fresh rollouts. For the final adoption, use the offline final evolve measurement. This estimates best-of-five inflation using the loop’s fresh incumbent evaluation each round. |
 | Overfitting gap | Evolve gain from the round-1 incumbent score to an offline remeasurement of the final retained harness, minus the held-out gain. The offline measurement runs after the loop is paused and creates no learning round. |
 | Context growth | Rendered optimizer input bytes by prompt key, and total provider-reported tokens per request and round |
-| Turns and tokens | Per condition, and per adopted step still on the channel at round 10. Information only. |
+| Turns and tokens | Per condition and per adopted round. Information only. |
 
 ## 9. Statistics
 
@@ -236,10 +217,10 @@ S0c re-measures repeat-rollout noise and cost on the prompt-only task. Record th
 
 | Source | Cases | Reps per arm | Paired SD of case means |
 | --- | ---: | ---: | ---: |
-| First experiment (`README.md:21`) | 30 | 1 | 0.43994 |
-| 30-case replication (`replication.md:26`) | 30 | 2 | 0.25400 |
-| 40-case run (`40-case.md:22`) | 40 | 2 | 0.27050 |
-| Five-admission rerun (`5-admission-rerun.md:15`) | 40 | 2 | 0.24693 |
+| First experiment ([README.md](https://github.com/anveld-dev/acclimate/blob/ab0d8d3b5ba7fd33a468d6526edcd5d87cb722ef/docs/research/real-app-learning-experiment/README.md#L21)) | 30 | 1 | 0.43994 |
+| 30-case replication ([replication.md](https://github.com/anveld-dev/acclimate/blob/ab0d8d3b5ba7fd33a468d6526edcd5d87cb722ef/docs/research/real-app-learning-experiment/replication.md#L26)) | 30 | 2 | 0.25400 |
+| 40-case run ([40-case.md](https://github.com/anveld-dev/acclimate/blob/ab0d8d3b5ba7fd33a468d6526edcd5d87cb722ef/docs/research/real-app-learning-experiment/40-case.md#L22)) | 40 | 2 | 0.27050 |
+| Five-admission rerun ([5-admission-rerun.md](https://github.com/anveld-dev/acclimate/blob/ab0d8d3b5ba7fd33a468d6526edcd5d87cb722ef/docs/research/real-app-learning-experiment/5-admission-rerun.md#L15)) | 40 | 2 | 0.24693 |
 
 If the disagreement is trial noise, the SD of a case-mean difference scales as `sqrt(2/r)` from r = 2. From 0.247 to 0.271, one held-out difference between conditions has noise of:
 
@@ -251,7 +232,7 @@ If the disagreement is trial noise, the SD of a case-mean difference scales as `
 
 ### 9.2 Power at n = 10
 
-Each `D_b` also carries run-to-run variation of the loop, `σ_b`, which no existing data measures after 10 rounds. The only proxy is five candidates from one baseline in the five-admission rerun, with development gains +2.5, +2.5, 0, −1.25 and +15 pp (`5-admission-rerun.md:48-52`): SD 6.5 pp, about 5 pp after removing the 3.9 pp measurement SE. Full SIM and HT start from the same bytes, which may correlate them and shrink `σ_D`. The historical 2.1 pp noise gives the illustrative uncorrelated calculation `σ_D ≈ sqrt(2σ_b² + 2.1²)`. Update it with S0c measurements.
+Each `D_b` also carries run-to-run variation of the loop, `σ_b`, which no existing data measures after 10 rounds. The only proxy is five candidates from one baseline in the five-admission rerun, with development gains +2.5, +2.5, 0, −1.25 and +15 pp ([5-admission-rerun.md](https://github.com/anveld-dev/acclimate/blob/ab0d8d3b5ba7fd33a468d6526edcd5d87cb722ef/docs/research/real-app-learning-experiment/5-admission-rerun.md#L48-L52)): SD 6.5 pp, about 5 pp after removing the 3.9 pp measurement SE. Full SIM and HT start from the same bytes, which may correlate them and shrink `σ_D`. The historical 2.1 pp noise gives the illustrative uncorrelated calculation `σ_D ≈ sqrt(2σ_b² + 2.1²)`. Update it with S0c measurements.
 
 Two-sided paired t at α = 0.05, noncentral t, computed:
 
@@ -273,63 +254,20 @@ These checks live in the driver and in read-only queries on the driver's own clu
 
 | ID | Trigger | Action |
 | --- | --- | --- |
-| K1 Integrity | Any of: an H case ID or the fingerprint of a whole H input appears in an optimizer request; a held-out report carries `trace` or `error`; the fenced data of an optimizer request holds a key outside its kind's set (`setting`, `harness`, `feedback`, `history` and `improvementMemory` for every kind, plus `candidates` for `screen` and `select`, plus `parserError` on a retry, as in [optimizer.md](optimizer.md) "Data keys"); a condition code or bundle slug appears in an optimizer request or a delivered payload; memory JSON or a `P<n>` ID appears in a delivered payload or task prompt; a sample's evaluation appears in `GET /work` before the adapter returned that sample's `propose` reply, or the stored `diagnosis` differs from that reply; an adopted attempt's `predicted` differs from its candidate's `diagnosis.predicted`; Full SIM's round 11 does not pin the source run's final memory revision, or an HT or CS round 1 pins a nonzero one; Full SIM and HT start digests differ; `evolve_revision`, the E content digest or `heldOut.digest` differs within a block; the round’s optimizer model or reasoning effort differs from the frozen protocol, or task and optimizer call ledgers differ from the frozen Chat Completions endpoint, model or effort; an evaluation ran under a policy model other than its round's `setting.policyModel`; the rendered `history` lists fewer rounds than the earlier rounds with the same `setting`, or `improvementMemory` lists fewer attempts than `memory_revision`; any `POST /outcomes`, evolve-case change, manual channel release or `channel-moved` round during a run; a round after the 10th counted round reached `selecting` | Stop the stage. Fix. Restart every affected run (target runs from a fresh checkpoint copy). |
+| K1 Integrity | Any of: an H case ID or the fingerprint of a whole H input appears in an optimizer request; a held-out report carries `trace` or `error`; the fenced data of an optimizer request holds a key outside its kind's set (`setting`, `harness`, `feedback`, `history` and `improvementMemory` for every kind, plus `candidates` for `screen` and `select`, plus `parserError` on a retry, as in [optimizer.md](optimizer.md) "Data keys"); a condition code or bundle slug appears in an optimizer request or a delivered payload; memory JSON or a `P<n>` ID appears in a delivered payload or task prompt; a sample's evaluation appears in `GET /work` before the adapter returned that sample's `propose` reply, or the stored `diagnosis` differs from that reply; an adopted attempt's `predicted` differs from its candidate's `diagnosis.predicted`; Full SIM's round 11 does not pin the source run's final memory revision, or an HT or CS round 1 pins a nonzero one; Full SIM and HT start digests differ; `evolve_revision`, the E content digest or `heldOut.digest` differs within a block; the round’s optimizer model or reasoning effort differs from the frozen protocol, or task and optimizer call ledgers differ from the frozen Chat Completions endpoint, model or effort; an evaluation ran under a policy model other than its round's `setting.policyModel`; the rendered `history` lists fewer rounds than the earlier rounds with the same `setting`, or `improvementMemory` lists fewer attempts than `memory_revision`; any `POST /outcomes`, evolve-case change, manual channel release or `channel-moved` round during a run; the loop advanced beyond its counted round limit | Stop the stage. Fix. Restart every affected run (target runs from a fresh checkpoint copy). |
 | K2 Context | Any round `failed` with `optimizer-context-too-large`. Memory and history only grow within a run, so the loop cannot continue on that bundle. Full SIM, which carries up to 20 attempts of memory beside 10 rounds of target history, is hit first. | Stop the stage for a maintainer decision. A larger-context optimizer model is an amendment and restarts every block. |
 | K3 Pilot | Either target round-zero W1 held-out score (H0 or H_S under `gpt-6.2-sol`) is ≥ 85%; `format-rejected` above 20% of samples; no `adopted` round in the 6 pilot source rounds; the pilot's measured input growth projects Full SIM's round-20 input (10 rounds of history, up to 20 attempts) above 50% of the optimizer's context; missing token usage for either task model; any K1 event | Stop before S1 for a maintainer decision if either baseline reaches the ceiling threshold. For other failures, fix and repeat the pilot or pause for a maintainer decision. Pilot data is excluded from efficacy analysis. |
 | K4 Harm | After 5 completed blocks, the upper 95% bound of mean T1 is below −5 pp. `analyze.py` reports only whether it fired. | Stop and report. Harm-only, so it does not inflate T1's type I error. |
-| K5 Infrastructure | A service exit, a run stuck for 2 hours, a loop paused with `failed-rounds`, or more than 5% of a run's rollouts failing for infrastructure reasons (the evaluator retries such a rollout once before reporting it). The first experiment lost its lease under concurrent lint (`docs/research/real-app-learning-experiment/README.md:69`). | Restart the run with the same seeds, at most twice: a source run from scratch, a target run from a fresh checkpoint copy. No repository lint or builds during live stages. |
+| K5 Infrastructure | A service exit, a run stuck for 2 hours, a loop paused with `failed-rounds`, or more than 5% of a run's rollouts failing for infrastructure reasons (the evaluator retries such a rollout once before reporting it). The first experiment lost its lease under concurrent lint ([README.md](https://github.com/anveld-dev/acclimate/blob/ab0d8d3b5ba7fd33a468d6526edcd5d87cb722ef/docs/research/real-app-learning-experiment/README.md#L69)). | Restart the run with the same seeds, at most twice: a source run from scratch, a target run from a fresh checkpoint copy. No repository lint or builds during live stages. |
 | K6 Drift | The provider announces a change to `gpt-6-luna`, `gpt-6.2-sol` or `gpt-6.2-astra` during a stage | Pause. Blocks from before and after are not mixed in one contrast without a recorded amendment. |
 
 There is no efficacy stop and no efficacy peeking. Analysts see only integrity and infrastructure counts until every block is done.
 
 In Appendix E.4.2, the stronger optimizer’s held-out edge shrank to 0.05 points on the higher-scoring seed. S0c records both target round-zero measurements in the pilot report. S1 requires a passing report in the final preregistration.
 
-### 10.1 SQL sketches
+### 10.1 SQL integrity checks
 
-Run read-only after the service stops, while the private PostgreSQL instance is still available. `$1, $2` are the workspace and bundle, `$3, $4` the run's first and last round numbers.
-
-```sql
--- One setting, evolve revision and optimizer configuration per run
-SELECT count(DISTINCT setting) AS settings, count(DISTINCT evolve_revision) AS revisions,
-       count(DISTINCT (optimizer_model, optimizer_reasoning_effort)) AS optimizer_configurations
-FROM learning_rounds
-WHERE (project_id, bundle_id) = ($1, $2) AND number BETWEEN $3 AND $4;   -- expect 1, 1, 1
-
--- Memory grows by exactly one attempt per adopted round and is never rewound
-SELECT r.number, r.memory_revision,
-       (SELECT count(*) FROM learning_rounds p
-         WHERE (p.project_id, p.bundle_id) = (r.project_id, r.bundle_id)
-           AND p.number < r.number AND p.decision = 'adopted') AS adopted_before,
-       (SELECT count(*) FROM learning_memory_attempts a
-         WHERE (a.project_id, a.bundle_id) = (r.project_id, r.bundle_id)
-           AND a.revision <= r.memory_revision) AS attempts_visible
-FROM learning_rounds r
-WHERE (r.project_id, r.bundle_id) = ($1, $2)
-  AND r.memory_revision IS DISTINCT FROM (SELECT count(*) FROM learning_rounds p
-         WHERE (p.project_id, p.bundle_id) = (r.project_id, r.bundle_id)
-           AND p.number < r.number AND p.decision = 'adopted');           -- expect no rows
-
--- The retained evaluation scored the channel head on the held-out split
-SELECT r.number FROM learning_rounds r
-JOIN learning_evaluations e ON e.round_id = r.id AND e.role = 'retained'
-WHERE (r.project_id, r.bundle_id) = ($1, $2) AND r.state = 'completed'
-  AND (e.split <> 'held_out'
-       OR e.version_id IS DISTINCT FROM coalesce(r.adopted_version_id, r.parent_version_id));
-
--- Held-out reports carry no traces or errors
-SELECT e.id FROM learning_evaluations e JOIN learning_rounds r ON r.id = e.round_id
-WHERE (r.project_id, r.bundle_id) = ($1, $2) AND e.split = 'held_out'
-  AND jsonb_path_exists(e.report, '$.cases[*].rollouts[*] ? (exists(@.trace) || exists(@.error))');
-
--- The adopted attempt keeps the prediction stored before evaluation
-SELECT r.number FROM learning_rounds r
-JOIN learning_candidates c ON c.round_id = r.id AND c.sample = r.adopted_sample
-JOIN learning_memory_attempts a ON a.round_id = r.id
-WHERE (r.project_id, r.bundle_id) = ($1, $2) AND r.decision = 'adopted'
-  AND a.predicted IS DISTINCT FROM c.diagnosis -> 'predicted';
-```
-
-The column types are memory.md's and evaluator-and-contracts.md's. Adjust the sketches to them.
+The read-only checks validate the setting and evolve pins, optimizer model and effort, memory revision, retained version, held-out report fields, diagnosis presence and adopted predictions. `run.py` supplies the workspace and bundle, round range and frozen optimizer identity. Each row returned names a failed invariant. [Executable SQL](../../../examples/self-improvement-memory/checks.sql)
 
 ## 11. What the driver needs from the product
 
@@ -342,7 +280,7 @@ Everything here is in the README names. N1 and N2 are specified by their owners.
 | Held-out cases that never leave the evaluator | `heldOut`, `retained` evaluations, the `400` for a held-out report with traces | evaluator-and-contracts.md |
 | Per-round candidates, diagnoses, screens, evaluations and selection | `GET /rounds/{roundId}` | evaluator-and-contracts.md |
 | Memory at the revision a round pinned | `GET /memory?revision=` | memory.md |
-| The optimizer endpoint as a local adapter | `ACCLIMATE_MODEL_ENDPOINT`, `ACCLIMATE_MODEL_TOKEN`, as `examples/real-app-learning/run.ts:198-229`, `:258-261` did at tag `pre-learning-loop` | optimizer.md |
+| The optimizer endpoint as a local adapter | `ACCLIMATE_MODEL_ENDPOINT`, `ACCLIMATE_MODEL_TOKEN` and the [audit relay](../../../examples/self-improvement-memory/adapter.ts) | optimizer.md |
 | A failure, never a trim, on overflow | `optimizer-context-too-large` | optimizer.md |
 | **N1.** No round starts on an empty evolve split, so a new bundle's round 1 sees the setup cases | `start_round` precondition | loop.md |
 | **N2.** A per-evaluation case concurrency, for wall clock only (§14 uses 8) | `serveLearningLoop` option `caseConcurrency`, default 1 | evaluator-and-contracts.md |
@@ -368,17 +306,19 @@ The SDK renders task prompts. The service constructs optimizer requests and owns
 
 ### 12.2 Files
 
-All in `examples/self-improvement-memory/`, following the layout of `examples/real-app-learning/` at tag `pre-learning-loop`. Phase 2 creates the folder with `fixtures/w1/`. Phase 5 adds the rest.
+All files in this table live under `examples/self-improvement-memory/`. The driver uses `tsx` internally. Native TypeScript loading applies to the SDK’s `acclimate learn` configuration.
 
 | File | Role |
 | --- | --- |
-| `run.py` | Entry point: `python3 examples/self-improvement-memory/run.py --stage S1 --blocks 1-10 --pg-bin …`. Owns clusters through `qualify.Harness`, takes checkpoints and makes target copies. `--service-bin` selects the frozen service executable. Resumes by block and condition. Stage C needs its own pre-change driver. |
-| `block.ts` | One block: §6 setup, the Full SIM transition, round counting and pause, round records. The Python entry point submits targets in the seeded order. |
+| `run.py` | Entry point for `S0a`, `S0c`, `S1` and `S2`. Live stages require `--live`, `--freeze` and `--proxy-config`. Owns clusters through `qualify.Harness`, takes checkpoints and makes target copies. `--service-bin` selects the frozen service executable. Resumes by block and condition. Stage C needs its own pre-change driver. |
+| `main.ts` | Node entry for a condition, freeze metadata or retention. |
+| `fake_proxy.py` | OpenAI-compatible fixture for model-free runs. |
+| `block.ts` | One condition: §6 setup, the Full SIM transition, round counting and pause, round records. The Python entry point submits targets in the seeded order. |
 | `conditions.ts` | The §3 table as data |
-| `evaluator.ts` | The `serveLearningLoop` handler: SDK OpenAI-compatible call, grading (from `run.ts:165-177`), seeded offline rollout order and in-loop labels, the infrastructure retry, the local rollout log, the policy-model check |
+| `evaluator.ts` | The `serveLearningLoop` handler: SDK OpenAI-compatible call, grading with the pinned Python grader, seeded offline rollout order and in-loop labels, the infrastructure retry, the local rollout log, the policy-model check |
 | `heldout.ts` | The local H store, `heldOut.digest`, and round-0 and retention scoring |
 | `adapter.ts` | The optimizer audit relay. Checks each service request and forwards the body unchanged to the same frozen CLIProxyAPI endpoint used by the task model. Logs endpoint, model, effort, bytes, digest and token usage. |
-| `checks.sql` | §10.1 |
+| `checks.sql` | Read-only integrity checks (§10.1) |
 | `fixtures/w1/baseline.json`, `tasks.py`, `40-case-additions.json`, `grade.py`, `check-replication.py`, `replication-audit.json`, `SOURCES.json` | H0, E, the grader and the earlier audit cases, moved in phase 2. `SOURCES.json` holds each file's original path and SHA-256. |
 | `fixtures/w1/held-out.json` | The 60 H cases with references and negative controls |
 | `freeze.py` | Zero-call checks, disjointness by fingerprint, SHA-256 digests for the preregistration |
@@ -392,7 +332,7 @@ Raw evidence stays under `artifacts/sim-experiment/` and is not published, as wi
 
 | Test | Checks |
 | --- | --- |
-| `examples/self-improvement-memory/tests/sim-experiment.test.ts` (`npm run test:sim-experiment`, model-free, owned PostgreSQL) | A fake optimizer returns fixed edits, diagnoses, screens and selections, and a fake policy returns seeded argv. One block runs a 2-round source and the 3 target conditions for 2 rounds on tiny fixtures from a real checkpoint copy. Asserts: Astra at high effort in round provenance and optimizer requests; 5 samples per round; Full SIM's first target round pins the source memory revision and renders an empty history, and HT and CS start at 0; diagnoses predate their evaluations; Full SIM and HT start digests match; no H ID reaches the adapter; held-out reports carry no traces; the retained evaluation binds the channel head; the pause stops at exactly the planned count; the §10.1 queries return the expected rows. |
+| `examples/self-improvement-memory/tests/sim-experiment.test.ts` (`npm run test:sim-experiment`, model-free, owned PostgreSQL) | A fake optimizer returns fixed edits, diagnoses, screens and selections, and a fake policy returns seeded argv. One block runs a 2-round source and the 3 target conditions for 2 rounds on tiny fixtures from a real checkpoint copy. Asserts: Astra at high effort in round provenance and optimizer requests; 5 samples per round; Full SIM's first target round pins the source memory revision and renders an empty history, and HT and CS start at 0; diagnoses predate their evaluations; Full SIM and HT start digests match; no H case ID is accepted by the relay; held-out reports carry no traces; the retained evaluation binds the channel head; the pause stops at exactly the planned count; the §10.1 queries return the expected rows. |
 | `examples/self-improvement-memory/test_analyze.py` | Synthetic blocks with a known effect. The paired t, signed-rank, intervals, d_z and Holm results match SciPy references. |
 | `examples/self-improvement-memory/test_freeze.py` | Disjointness rejects a duplicated input under a new ID. Each negative control fails the grader. |
 | K1 unit tests in `tests/adapter.test.ts` | A request with an H case ID, a whole H input, a condition code or a key outside its kind's set is refused and aborts the stage. `setting` on every kind and `parserError` on a retry are not flagged. An input shared with E is not flagged. |
@@ -405,10 +345,10 @@ Planning information only. No stage stops or pauses on spend (D9).
 
 | Anchor | Source | Input tokens per turn | Output tokens per turn | Seconds per turn |
 | --- | --- | ---: | ---: | ---: |
-| Main | Five-admission rerun: 1,304 turns, 22,174,986 input and 54,649 output tokens, 2 h 0 min 48 s (`5-admission-rerun.md:111`, `:113`) | 17,005 | 42 | 5.56 |
-| Slow | First experiment: 255 attempts in about 44 minutes, 6,329,265 input tokens over 253 (`README.md:40`) | 25,017 | — | 10.35 |
+| Main | Five-admission rerun: 1,304 turns, 22,174,986 input and 54,649 output tokens, 2 h 0 min 48 s ([5-admission-rerun.md](https://github.com/anveld-dev/acclimate/blob/ab0d8d3b5ba7fd33a468d6526edcd5d87cb722ef/docs/research/real-app-learning-experiment/5-admission-rerun.md#L111-L113)) | 17,005 | 42 | 5.56 |
+| Slow | First experiment: 255 attempts in about 44 minutes, 6,329,265 input tokens over 253 ([README.md](https://github.com/anveld-dev/acclimate/blob/ab0d8d3b5ba7fd33a468d6526edcd5d87cb722ef/docs/research/real-app-learning-experiment/README.md#L40)) | 25,017 | — | 10.35 |
 
-The earlier proposer averaged about 15,000 input tokens (`5-admission-rerun.md:106`). The planning estimate reserves 60,000 input tokens per high-effort Astra optimizer call because full history, memory and five evaluated candidates can make requests larger. S0c measures Astra’s actual input, output and latency.
+The earlier proposer averaged about 15,000 input tokens ([5-admission-rerun.md](https://github.com/anveld-dev/acclimate/blob/ab0d8d3b5ba7fd33a468d6526edcd5d87cb722ef/docs/research/real-app-learning-experiment/5-admission-rerun.md#L106)). The planning estimate reserves 60,000 input tokens per high-effort Astra optimizer call because full history, memory and five evaluated candidates can make requests larger. S0c measures Astra’s actual input, output and latency.
 
 ### 14.2 Per round and per run
 
@@ -419,7 +359,7 @@ A round's rollouts are `5·|E|` for the incumbent, up to `5·5·|E|` for the sur
 | Incumbent on E | 200 |
 | Survivors on E, worst case 5 | ≤ 1,000 |
 | Retained on H | 300 |
-| **Round** | **≤ 1,500**, plus 7 optimizer calls (5 `propose`, `screen`, `select`) and up to 5 format retries |
+| **Round** | **≤ 1,500**, plus 7 optimizer calls (5 `propose`, `screen`, `select`) and up to 7 format retries, plus any provider transport retries |
 | **Run, 10 rounds** | **≤ 15,000** |
 
 Per block: source 15,000 + H0 round 0 under luna 300; targets 3 × 15,000 + round 0 of H_S and H0 under sol 600 + retention 900. **62,400 rollouts**, including 600 offline evolve rollouts, and 280 optimizer calls.
@@ -450,9 +390,9 @@ Per block: source 15,000 + H0 round 0 under luna 300; targets 3 × 15,000 + roun
 
 ## 16. Optional descriptive control: pre-change Flat
 
-Today's product carries flat `priorAttempt` history: at most 12 rounds (`src/connected_learning_worker.rs:538`) and 8,192 bytes (`:542`). The new build has no second path, so this control runs on the **pre-change release build**: the last commit before phase 1 lands, pinned at freeze. Per block it runs one source leg (H0, `gpt-6-luna`, 10 rounds of today's connected learning, k = 1 with today's gates, triggered by corrections from the 10 field cases) and renews the same connection across the model change with `POST /renew` (`contracts/learning.md:23`, `:62`). The driver scores its released version on the same H after each round with its local evaluator.
+The pre-removal product carried flat `priorAttempt` history: at most 12 rounds and 8,192 bytes. [Pre-removal implementation](https://github.com/anveld-dev/acclimate/blob/4096ff1b60098554b0cb932866a338cadf29601c/src/connected_learning_worker.rs#L538-L542) This optional control would run against the pre-change build identified by `pre-learning-loop`, with a separate driver. It is outside the implemented stage runner. Per block it runs one source leg (H0, `gpt-6-luna`, 10 rounds of connected learning with k = 1 and the pre-removal gates, triggered by corrections from the 10 field cases) and renews the same connection across the model change with the [pre-removal renewal route](https://github.com/anveld-dev/acclimate/blob/4096ff1b60098554b0cb932866a338cadf29601c/contracts/learning.md). The driver scores its released version on the same H after each round with its local evaluator.
 
-It is unpaired and differs from the new loop in k, memory, gating, triggers and feedback at once, so it is descriptive only: how today's product compares with the new one on the same workload and transition. Its exact protocol is frozen in the preregistration only if it runs (open question 1).
+It is unpaired and differs from the new loop in k, memory, gating, triggers and feedback at once, so it is descriptive only: how the pre-removal loop compares with the current one on the same workload and transition. Its exact protocol is frozen in the preregistration only if it runs (open question 1).
 
 ## 17. Threats to validity
 
@@ -493,4 +433,4 @@ Shared questions are in the [README](README.md#open-questions). These are owned 
 
 1. **Stage C.** Run the pre-change Flat control? It is descriptive only (§16).
 2. **Codex model access through CLIProxyAPI.** Entitlement for the three exact model IDs, effective output limits, JSON validity, rate limits, latency and token use await live verification.
-3. **Optimizer context.** Full SIM's round 20 carries 10 rounds of target history and up to 20 attempts. The pilot’s projection checks whether the frozen Astra configuration fits. A failure stops progression before S1 (K2, K3).
+3. **Optimizer context.** Full SIM's round 20 carries 10 rounds of target history and up to 20 attempts. The pilot’s projection checks whether the frozen Astra configuration fits. A failing pilot stops progression before S1 (K2, K3).

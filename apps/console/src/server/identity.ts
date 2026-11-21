@@ -79,7 +79,7 @@ export function createOidcProvider(discover = configuration): IdentityProvider {
     },
   };
 }
-export const identityProvider = createOidcProvider();
+const identityProvider = createOidcProvider();
 function cookie(request: Request, name: string) {
   return request.headers
     .get('cookie')

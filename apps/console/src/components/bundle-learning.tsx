@@ -220,7 +220,7 @@ function AddCase({
   );
 }
 
-export function ScoreCurves({ rounds }: { rounds: LearningRoundSummary[] }) {
+function ScoreCurves({ rounds }: { rounds: LearningRoundSummary[] }) {
   const completed = rounds
     .filter(({ state }) => state === 'completed')
     .sort((a, b) => a.number - b.number);

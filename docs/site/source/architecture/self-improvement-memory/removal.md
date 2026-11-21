@@ -1,8 +1,10 @@
 # Self-improvement memory: removal
 
-This file lists everything D7 and D8 remove: each server module, migration, table, route, setting, SDK and Python module, CLI command, console surface, example, workflow, doc and test. It also gives the order that keeps the repository building after every step. It owns phases 1 and 2 of the [phased plan](README.md#phased-plan), migrations `0017_remove_manual_changes.sql` and `0018_remove_connected_learning.sql`, the data-archive question (README question 5) and the `CONTEXT.md` glossary.
+**Status: completed.** Phases 1 and 2 shipped through `0017_remove_manual_changes.sql` and `0018_remove_connected_learning.sql`, after `0016_automatic_delivery.sql`. The inventory below records the removal plan and the pre-removal implementation.
 
-Names follow the [README](README.md#names). Line numbers are for commit 4096ff1b. Line counts are `wc -l`.
+This file lists what D7 and D8 removed: each server module, migration, table, route, setting, SDK and Python module, CLI command, console surface, example, workflow, doc and test. It also gives the order that keeps the repository building after every step. It owns phases 1 and 2 of the [phased plan](README.md#phased-plan), migrations `0017_remove_manual_changes.sql` and `0018_remove_connected_learning.sql`, the data-handling decision and the `CONTEXT.md` glossary.
+
+Names follow the [README](README.md#names). All inventory code citations and line counts refer to the [pre-removal tree](https://github.com/anveld-dev/acclimate/tree/4096ff1b60098554b0cb932866a338cadf29601c). Line counts are `wc -l`.
 
 ## Decisions
 
@@ -184,7 +186,7 @@ Delete the **Changes** bundle view and everything only it uses. The **Content** 
 | `reference/evaluator-cli.mdx` (252), `reference/typescript-sdk.mdx`, `reference/python-sdk.mdx`, `reference/http-api.mdx`, `get-started/quickstart.mdx` (195), `get-started/install.mdx`, `get-started/run-locally.mdx` | Remove `compare`, `--policy`, `check`, `plan`, export, drafts and the operator CLI |
 | `tools/operator/README.md` and `scripts/full-roadmap/README.md` | Delete, with their `PAGES` rows (`scripts/build_docs.py:58`, `:63`) |
 | `docs/evaluator-operations.md:24-31` (Policy receipts), `docs/development.md:69-102` (improvement loop, service edit, real review, full roadmap) | Delete |
-| `docs/architecture/productization/drafts-and-content.md`, `improvement-and-evaluation.md` | Keep as history |
+| `docs/architecture/productization/drafts-and-content.md`, `improvement-and-evaluation.md` | Kept as history during the removal; deleted in the later docs cleanup (in git history at `ab0d8d3b`) |
 
 ### Order inside phase 1
 
@@ -232,7 +234,7 @@ After phase 2 the service delivers versions and runs no learning. `contracts/lea
 
 ### Migration `0018_remove_connected_learning.sql`
 
-Tested against a database migrated through `0017`. The final schema holds 19 tables, no views and one function (`machine_token_events_append_only`).
+Tested against a database migrated through `0017`. The schema immediately after removal holds 19 tables, no views and one function (`machine_token_events_append_only`). The later learning migrations add eight tables.
 
 ```sql
 -- Phase 2: remove connected learning and the comparison machinery (D7, D8).
@@ -426,7 +428,7 @@ The upgrade note in `deploy/README.md` and `apps/docs/content/docs/operate/upgra
 3. No drain is needed. Queued rounds, proposals and evaluation requests are dropped. Evaluators still polling `…/learning/work` get `404 not_found` and must be stopped.
 4. `learn-<connectionId>` channels stay as ordinary channels with their release history.
 
-Retention of the new loop's rounds, evaluations and traces is README question 4 and belongs to evaluator-and-contracts.md.
+Retention of the new loop’s rounds, evaluations and traces is [deferred](README.md#deferred-after-the-mvp).
 
 ## Product pitch
 
@@ -467,7 +469,7 @@ Internal terms: keep **Operation result** and **Delivery receipt**. Delete Propo
 
 | Test | Checks |
 | --- | --- |
-| `tests/production_schema.rs` | Apply migrations through `0015`, seed one row in every dropped table, a connected-learning `durable_commands` row, a `learn-*` channel, a propose-only token and a `read`+`propose` token, apply `0016_automatic_delivery.sql`, then run to the latest. Assert the exact kept table set of 19, no views, the `promotions` columns `(…, unevaluated_reason, reviewer, created_at)` with no `comparison_id`, `policy_override` or `policy_approval_promotion_id`, an empty `durable_commands`, the revoked token with its `revoked` event, the trimmed rights, and that the `learn-*` channel resolves. |
+| `tests/production_schema.rs` | Apply migrations through `0015`, seed one row in every dropped table, a connected-learning `durable_commands` row, a `learn-*` channel, a propose-only token and a `read`+`propose` token, apply `0016_automatic_delivery.sql`, then run to the latest. Assert the 19 kept tables plus the eight learning tables, no views, the `promotions` columns `(…, unevaluated_reason, reviewer, created_at)` with no `comparison_id`, `policy_override` or `policy_approval_promotion_id`, only the non-learning fixture row in `durable_commands`, the revoked token with its `revoked` event, the trimmed rights, and that the `learn-*` channel resolves. |
 | `tests/http_contract.rs` `only_canonical_route_spellings_exist…` | Every route in both removal tables returns `404 not_found` |
 | `tests/runtime_preflight.rs` | Each removed setting fails startup with its name |
 | `tests/grant_preflight.rs` | A grant with `propose` is rejected |
@@ -476,7 +478,6 @@ Internal terms: keep **Operation result** and **Delivery receipt**. Delete Propo
 | `apps/console/tests/navigation.test.ts` | `/w/{w}/bundles/{b}/changes` does not parse |
 | `npm run lint:docs` | No page links to a deleted file |
 
-## Open questions
+## Shipped behavior
 
-1. **The `learn-*` channels.** They become ordinary channels. Should `0018` instead delete channels whose only releases came from connected learning?
-2. **`try`, `describe`, `coverage`, `doctor` and `pull`.** They help an app author write the evaluation the loop runs, so they stay. Should they move to the `acclimate-learning` bin in phase 3 and `acclimate-eval` go?
+The `learn-*` channels remained as ordinary channels. The evaluation authoring CLI and the learning runner ship as separate bins.

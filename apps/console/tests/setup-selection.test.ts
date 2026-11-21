@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { openSelection, sealSelection, selectedEnvironment } from '../src/server/selection';
 import {
-  authorizeSelection,
   createSetup,
   listSetup,
   setupFailure,
@@ -43,7 +42,6 @@ test('hosted requests fail closed before a service request without a session', a
     assert.match(state.message, /^Sign in to access your workspaces\./);
   }
   assert.equal(calls, 0);
-  await assert.rejects(authorizeSelection({ ...env, CONSOLE_SESSION_TOKEN: undefined }, selection));
 });
 test('empty authorized project list is a successful empty state', async () => {
   const state = await listSetup(env, async () => Response.json({ items: [], nextCursor: null }));
@@ -212,19 +210,6 @@ test('invalid imported payload is a definitive validation failure before transpo
     },
   );
   assert.equal(calls, 0);
-});
-
-test('selection rechecks the exact scoped channel with current session', async () => {
-  const result = await authorizeSelection(
-    { ...env, CONSOLE_SESSION_TOKEN: 'current' },
-    selection,
-    async (url, init) => {
-      assert.match(String(url), /workspaces\/one\/bundles\/bundle-one\/channels\/stable$/);
-      assert.equal((init?.headers as Record<string, string>)['X-Acclimate-Session'], 'current');
-      return Response.json({ channel: 'stable', revision: '1', version: { id: 'v' } });
-    },
-  );
-  assert.deepEqual(result, selection);
 });
 
 test('invalid setup is a definitive rejection while lost responses stay uncertain', async () => {

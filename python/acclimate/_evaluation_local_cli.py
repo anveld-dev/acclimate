@@ -90,7 +90,7 @@ def _try_text(result) -> str:
         lines.extend(f'    {issue["severity"]}  {issue["field"]}: {issue["message"]}' for issue in grade["issues"])
         if "explanation" in grade:
             lines.extend("    │ " + line for line in _shorten(grade["explanation"], 600).split("\n"))
-    lines.append("All shapes are valid. Next: compare --local --parent PAYLOAD --candidate PAYLOAD." if result["ok"]
+    lines.append("All shapes are valid." if result["ok"]
                  else "Fix the errors above; a real run records them as evidence gaps.")
     return "\n".join(lines)
 

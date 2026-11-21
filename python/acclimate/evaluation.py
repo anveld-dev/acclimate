@@ -29,8 +29,7 @@ from ._evaluation_shared import (
     ensure_private_directory, guided_uuid, json_bytes, make_client,
     read_evaluator_config, safe_error, sha256, validate_descriptor,
 )
-from ._evaluation_trials import reported_usage
-from ._evaluation_controls import RunControls, merge_controls, validate_run_controls
+from ._evaluation_usage import reported_usage
 
 I = TypeVar("I")
 E = TypeVar("E")
@@ -186,7 +185,6 @@ class EvaluationApp(Generic[I,E,O]):
         self._cases, self._execute, self._grade = cases,execute,grade
         self._execution = execution
         self._collection = collection
-        self._controls: RunControls | None = None
 
     @property
     def descriptor(self) -> EvaluationDescriptor:
@@ -386,16 +384,6 @@ def declared_scheduling(concurrency: Any = 1, grade_retries: Any = 0) -> dict[st
     if type(grade_retries) is not int or not 0 <= grade_retries <= 5:
         raise DefinitionError("grade_retries", "Use an integer from 0 to 5.")
     return {"concurrency": str(concurrency), "gradeRetries": str(grade_retries)}
-
-
-def bind_run_controls(app: EvaluationApp, controls: RunControls) -> EvaluationApp:
-    """Bind invocation controls without changing the descriptor or the callbacks."""
-    if not isinstance(app, EvaluationApp):
-        raise DefinitionError("app", "Pass the value returned by define_evaluation().")
-    bound = EvaluationApp(app._descriptor, app._cases, app._execute, app._grade, app._execution,
-                          collection=app._collection, _token=_APP_TOKEN)
-    bound._controls = merge_controls(app._controls, validate_run_controls(controls))
-    return bound
 
 
 def _assert_bundle_exists(client,workspace_id: str,bundle_id: str):

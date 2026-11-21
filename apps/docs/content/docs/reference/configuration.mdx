@@ -7,7 +7,7 @@ Configure each process with its own credentials and addresses. Use the [self-hos
 
 ## Application and CLI recipes
 
-These variables are used by the repository's app setup recipes and command-line examples. In SDK code, pass the values to the client or preparation call.
+The SDK’s job helpers and learning CLIs read `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` directly. Other delivery variables below are app setup conventions. Read them in your app and pass them to the client or preparation call.
 
 | Variable | Purpose |
 | --- | --- |
@@ -18,6 +18,10 @@ These variables are used by the repository's app setup recipes and command-line 
 | `ACCLIMATE_CACHE`, `ACCLIMATE_JOB_DIR` | Cache and staging directory overrides in the console recipes. |
 | `ACCLIMATE_CONNECTION`, `ACCLIMATE_RECEIPT_TOKEN` | Connection ID and separate optional delivery reporting credential. |
 | `ACCLIMATE_EVALUATOR_CASES` | Absolute path to a private JSON array that overrides the installed adapter's cases. Use mode 0600. |
+| `ACCLIMATE_APP_PRINCIPAL` | Optional learning evaluator principal ID. Usually discovered from the evaluator token. |
+| `ACCLIMATE_ENROLL_TOKEN` | Optional separate machine token with `promote` access for learning enrollment. |
+| `OPENAI_BASE_URL`, `OPENAI_API_KEY` | Defaults for the SDK learning adapter’s base URL and optional bearer key. The URL defaults to `https://api.openai.com/v1`. Adapter options override these values. |
+| `ACCLIMATE_DEBUG` | Enables verbose evaluator CLI diagnostics when nonempty and other than `0`, `false` or `no` (case-insensitive). |
 | `AGENT_TASK` | Task input for the console's connected agent recipe. |
 
 
@@ -31,20 +35,24 @@ These variables are used by the repository's app setup recipes and command-line 
 | `ACCLIMATE_LOGIN_TOKEN` | Required login authority token. Match `CONSOLE_LOGIN_TOKEN`. |
 | `ACCLIMATE_CONSOLE_TOKEN` | Required console transport token. Match `CONSOLE_SERVICE_TOKEN`. Use a different token from the login authority and every machine grant. The login authority and machine tokens must also be distinct. |
 | `ACCLIMATE_OPERATORS` | Required nonempty JSON array of objects with `issuer` and `subject`. Each pair must be unique, use the exact configured issuer and have a nonempty subject of at most 512 bytes. |
-| `ACCLIMATE_AUTH` | Required JSON array of static machine grants with `token`, `principalId`, `workspaceId` and `rights`. Use `[]` when every machine token is issued from the console. Rights are `read`, `evaluate`, `write` and `promote`. `evaluate` includes `read`, and `write` includes `evaluate`. A token identifies one principal and can appear once per workspace. Keep colons out of principal IDs. Changing this value requires a restart; console-issued [machine tokens](/docs/operate/evaluator-access) do not. |
+| `ACCLIMATE_AUTH` | Required JSON array of static machine grants with `token`, `principalId`, `workspaceId` and `rights`. Use `[]` when every machine token is issued from the console. Rights are `read`, `evaluate`, `write` and `promote`. `evaluate` grants `read`. `write` grants `evaluate`. Explicitly include `read` or `evaluate` if a writer also needs read access. A token identifies one principal and can appear once per workspace. Keep colons out of principal IDs. Changing this value requires a restart; console-issued [machine tokens](/docs/operate/evaluator-access) do not. |
 | `ACCLIMATE_SERVICE_BINARY` | Absolute path to the executable used by the native `npm start` wrapper. Defaults to `target/release/acclimate-service` under the checkout. |
 
 Remove `ACCLIMATE_MODE` and `CONSOLE_MODE` from both the Rust and console environments. Startup rejects any defined value.
+
+### Learning
+
+The evaluation queue timeout, evaluation timeout and failed-round threshold accept integers from 1 to 4,294,967,295. An unset or invalid value falls back to its default. Invalid optimizer timeout, token limit or reasoning effort settings prevent startup, even when the endpoint is unset.
 
 | Learning setting | Purpose |
 | --- | --- |
 | `ACCLIMATE_LEARNING_EVALUATION_QUEUE_SECONDS` | Time allowed to start a queued evaluation. Defaults to 604,800 seconds (7 days). |
 | `ACCLIMATE_LEARNING_EVALUATION_SECONDS` | Time allowed to finish a started evaluation. Defaults to 86,400 seconds (24 hours). |
-| `ACCLIMATE_MODEL_ENDPOINT` | Full OpenAI-compatible Chat Completions URL, including `/v1/chat/completions` for CLIProxyAPI. An unset endpoint leaves the optimizer unavailable. |
-| `ACCLIMATE_MODEL_TOKEN` | Optimizer endpoint credential. Required when the endpoint is set. |
-| `ACCLIMATE_MODEL` | Model for proposing, screening and selecting. Required when the endpoint is set. The round pins this value at its start. |
+| `ACCLIMATE_MODEL_ENDPOINT` | Full HTTP or HTTPS OpenAI-compatible Chat Completions URL without embedded credentials, including `/v1/chat/completions` for CLIProxyAPI. An unset endpoint leaves the optimizer unavailable. |
+| `ACCLIMATE_MODEL_TOKEN` | Nonblank optimizer endpoint bearer credential without control characters. Required when the endpoint is set. |
+| `ACCLIMATE_MODEL` | Model for proposing, screening and selecting. Required when the endpoint is set. The trimmed model ID must have 1–256 bytes and no control characters. The round pins this value at its start. |
 | `ACCLIMATE_MODEL_REASONING_EFFORT` | Optional reasoning effort for optimizer requests. Accepts `low`, `medium`, `high`, `xhigh`, `max` or `ultra`. The round pins this value at its start. When unset, requests omit `reasoning_effort`. |
-| `ACCLIMATE_MODEL_TIMEOUT_SECONDS` | Whole-request timeout in seconds. Integer from 30 to 3,600, defaults to 600. |
+| `ACCLIMATE_MODEL_TIMEOUT_SECONDS` | Timeout per optimizer HTTP attempt in seconds. Integer from 30 to 3,600, defaults to 600. |
 | `ACCLIMATE_MODEL_MAX_COMPLETION_TOKENS` | Value sent as `max_completion_tokens` for each optimizer call. Integer from 1,024 to 262,144, defaults to 32,768. |
 | `ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS` | Consecutive failed rounds before the loop pauses. Defaults to 3. |
 
@@ -63,7 +71,7 @@ Set these values in the service environment.
 | `ACCLIMATE_MODEL` | `gpt-6.2-astra` for the experiment, or the model ID served by your proxy. |
 | `ACCLIMATE_MODEL_REASONING_EFFORT` | `high` for the experiment. |
 
-The optimizer requests JSON mode and includes `max_completion_tokens` (default 32,768). The inspected CLIProxyAPI Codex translator maps `max_completion_tokens` to `max_output_tokens` and `reasoning_effort` to `reasoning.effort`. Its format switch has no `json_object` case, so JSON mode is unenforced on that route. The optimizer prompts for JSON and validates the returned content. The service retries HTTP 429 using its fixed 5- and 30-second backoffs. [Codex Chat Completions translator](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/internal/translator/codex/openai/chat-completions/codex_openai_request.go)
+The optimizer requests JSON mode and includes `max_completion_tokens` (default 32,768). The inspected CLIProxyAPI Codex translator maps `max_completion_tokens` to `max_output_tokens` and `reasoning_effort` to `reasoning.effort`. Its format switch has no `json_object` case, so JSON mode is unenforced on that route. The optimizer prompts for JSON and validates the returned content. The service retries HTTP 429, HTTP 5xx, and qualifying connection or timeout errors with 5- and 30-second backoffs. [Codex Chat Completions translator](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/internal/translator/codex/openai/chat-completions/codex_openai_request.go)
 
 ### Invitation email
 
@@ -74,7 +82,7 @@ Set `ACCLIMATE_SMTP_HOST` to enable application invitation email. Configure Keyc
 | `ACCLIMATE_SMTP_HOST` | SMTP relay hostname. Required when another `ACCLIMATE_SMTP_*` variable is set. |
 | `ACCLIMATE_SMTP_PORT` | Integer from 1 to 65,535. Defaults to 465 with `tls` and 587 otherwise. |
 | `ACCLIMATE_SMTP_FROM` | Required sender mailbox when SMTP is enabled, for example `Acclimate <noreply@example.com>`. |
-| `ACCLIMATE_SMTP_TLS` | `starttls` by default. Use `tls` for implicit TLS. The `none` setting is limited to localhost, loopback or `mailpit` without credentials. |
+| `ACCLIMATE_SMTP_TLS` | `starttls` by default. Use `tls` for implicit TLS. The `none` setting requires `localhost`, `127.0.0.1`, `::1` or `mailpit`, with no SMTP credentials. |
 | `ACCLIMATE_SMTP_USERNAME`, `ACCLIMATE_SMTP_PASSWORD` | Optional authentication. Set both to nonempty values for a TLS relay that requires credentials. |
 | `ACCLIMATE_CONSOLE_ORIGIN` | Required HTTPS console origin when SMTP is enabled. Use the same public origin as `CONSOLE_ORIGIN` for invitation links. |
 

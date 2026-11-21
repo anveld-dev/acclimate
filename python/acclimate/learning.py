@@ -233,7 +233,11 @@ def _enroll(
 
 
 def _sync_cases(
-    client: AcclimateClient, workspace: str, bundle: str, cases: Sequence[LearningEvolveCase]
+    client: AcclimateClient,
+    workspace: str,
+    bundle: str,
+    cases: Sequence[LearningEvolveCase],
+    before_write: Callable[[], None] | None = None,
 ) -> None:
     # Restart the collection if a concurrent outcome or mutation changes its revision.
     limit = 100
@@ -268,6 +272,8 @@ def _sync_cases(
     additions = [case for case in cases if case["caseId"] not in live]
     retired = sorted(case_id for case_id in live.keys() - desired.keys() if not case_id.startswith("outcome:"))
     added, removed = 0, 0
+    if (additions or retired) and before_write is not None:
+        before_write()
     while added < len(additions) or removed < len(retired):
         batch: list[LearningEvolveCase] = []
         size = 0

@@ -1,0 +1,136 @@
+---
+title: Run a learning loop
+description: Enroll a released bundle, sync cases and serve evaluations with one TypeScript config.
+---
+
+## TypeScript setup
+
+Release your bundle on a channel and configure the service optimizer. Issue a workspace machine token with **Promote** and **Evaluate** (or use separate [enrollment and evaluator credentials](#separate-enrollment-or-use-the-console)) and set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` in your shell. Use Node.js 22.22 or later and set up an OpenAI-compatible endpoint. The example uses [CLIProxyAPI with Codex sign-in](#use-codex-through-cliproxyapi). [Optimizer settings](/docs/reference/configuration) · [Machine-token access](/docs/operate/evaluator-access)
+
+```bash
+npm install @acclimate/sdk
+export OPENAI_BASE_URL=http://127.0.0.1:8317/v1
+```
+
+In an ESM project (`"type": "module"`), save this as `acclimate.loop.ts`. Node.js 22.22+ loads it directly by stripping types, so no TypeScript loader is needed; use erasable syntax only (no `enum` or `namespace`), or name it `acclimate.loop.mjs`. Ask the agent for a final JSON object with an `action` field.
+
+```ts
+import { defineLoop, exact, openai } from '@acclimate/sdk/learning';
+
+export default defineLoop({
+  bundle: 'support-agent',
+  channel: 'stable',
+  agent: openai({ model: 'gpt-6.2-sol', parse: text => JSON.parse(text) as { action: string } }),
+  cases: './cases.jsonl',
+  grade: exact('action'),
+});
+```
+
+Save your labeled examples next to the config. Each line in `cases.jsonl` is one case.
+
+```jsonl
+{"caseId":"case-0","input":"Duplicate charge. Return an action as JSON.","expected":"refund"}
+{"caseId":"case-2","input":"Account locked. Return an action as JSON.","expected":"escalate"}
+```
+
+```bash
+npx acclimate learn
+```
+
+The CLI looks up your token's principal, finds the bundle by name, enrolls it, commits the held-out digest and syncs the evolve split. It serves evaluations from the same process and prints incumbent, candidate, selection and held-out results. Keep the `.acclimate/` journal across restarts and out of version control. Use `--once` to exit after a completed round or `--config` to select a different config file.
+
+For Python, configure `define_loop` and run `python -m acclimate learn`. [Python learning setup](/docs/reference/python-sdk#learning)
+
+## Use Codex through CLIProxyAPI
+
+Install CLIProxyAPI, then sign in with your Codex account and start the proxy. On macOS with Homebrew, run the following. The sample config includes client keys. Edit `$(brew --prefix)/etc/cliproxyapi.conf` to set your own under `access.api-keys` (`api-keys` in older configurations). For a local-only proxy, set `server.host` to `127.0.0.1`. [CLIProxyAPI install guide](https://github.com/router-for-me/CLIProxyAPIDocs/blob/main/docs/en/introduction/quick-start.md) · [Example configuration](https://github.com/router-for-me/CLIProxyAPI/blob/main/config.example.yaml)
+
+```sh
+brew install cliproxyapi
+cliproxyapi -codex-login
+brew services start cliproxyapi
+export OPENAI_BASE_URL=http://127.0.0.1:8317/v1
+# Set this only when the proxy requires a client key.
+export OPENAI_API_KEY='<proxy-client-key>'
+```
+
+Use a model listed by your proxy at `/v1/models`. For a service optimizer running on the same host, set these variables in the **service** environment. Use a reachable proxy address if the service runs elsewhere.
+
+```sh
+export ACCLIMATE_MODEL_ENDPOINT=http://127.0.0.1:8317/v1/chat/completions
+export ACCLIMATE_MODEL=gpt-6.2-astra
+export ACCLIMATE_MODEL_TOKEN='<proxy-client-key>'
+```
+
+The optimizer requires a nonempty `ACCLIMATE_MODEL_TOKEN`. Use a placeholder value if the local proxy has client authentication disabled.
+
+## Cases and settings
+
+- Supply a relative `.jsonl` or `.json` path, or an inline array of `{ caseId?, input, expected }`. Input and expected each accept up to 64 KiB of JSON. Use unique IDs of 1–128 ASCII letters, digits or `._:-` characters. The `outcome:` prefix is reserved. Omitted IDs hash the canonical JSON input.
+- The default split is 0.5. A case is held out when the SHA-256 hash of its case ID falls below that fraction of the hash space. This implements the paper's disjoint random halves with stable assignment and approximately equal counts. Set `split` to a fraction strictly between 0 and 1 to override it. Provide at least one evolve case and 1–10,000 held-out cases. [Paper, Appendix B.2](https://arxiv.org/html/2611.18856v1#A2.SS2)
+- Held-out cases stay in the evaluator's dataset. Acclimate receives their digest, count and scores. The adapter sends each case input to its configured model as the prompt, including held-out inputs. Use a local `execute` when prompts must stay on the machine.
+- Rerunning syncs setup cases. It adds missing cases, retires live setup cases absent from the configuration (including cases added in the console), and preserves outcomes. Give edited cases new IDs, as case data is immutable and retired IDs cannot be reused. Keep case IDs and the split fixed to preserve the boundary between evolve and held-out data. Pause the loop and let the active round finish before changing the held-out commitment.
+- The setting defaults to the bundle name for `domain`, the cases filename for `benchmark` (or `inline`), and the adapter's model for `policyModel`. A model change starts the paper's continual setting transition on the next round, while the active round keeps its pinned setting. Let the active round finish with the previous evaluator before switching the running model. Override any field with `setting`. Custom execution defaults to `model-free` or, when `live: true`, `custom`. Set `setting.policyModel` to identify the model you run. [Continual harness optimization](https://arxiv.org/abs/2611.18856)
+
+## Run and grade your agent
+
+The built-in adapter supports OpenAI-compatible Chat Completions endpoints. Supply an execution callback to use your own runtime. The `openai` adapter makes a Chat Completions call per rollout, with the verified bundle as the system message and the case input as the user message. The default render groups instruction, skill and memory files in that order. It preserves the payload order within each group and uses `# path` headers. Pass `render(version)` to customize the system message and `parse(text)` to transform the assistant text before grading. `effort` sets `reasoning_effort` on endpoints that support it.
+
+The adapter reads `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) and `OPENAI_API_KEY`. You can override them with `baseURL` and `apiKey`. The adapter can retry HTTP 429 and 5xx twice when the retry delay is at most five seconds. Evolve traces contain compact JSON with the assistant text, finish reason and usage, or the error body on failure. The runner caps traces at 16 KiB.
+
+For your own runtime, replace `agent` with `execute({ version, input, signal, ... })` and return `{ output, trace? }`. Adapters default to live execution. Custom callbacks default to model-free, so set `live: true` if yours calls a model. `caseConcurrency` defaults to 1.
+
+- `exact()` tests the full output for deep equality with `expected`. `exact('action')` tests just the top-level `action` field.
+- `tests(command, { cwd })` copies the optional fixture directory to a temporary workspace, writes the JSON output as `output.json` and runs your shell command there. Exit code 0 scores 1. Use a trusted command and fixture.
+- A custom `grade(output, expected)` may return a score from 0 to 1 or `{ score, passed }`. A numeric score of 1 passes. Inline cases infer the expected type, and `execute` or the adapter's parser infers the output type.
+
+## Report a production outcome
+
+Install `@acclimate/codex-plugin` for the native file preparation in this example. Create a job by bundle name to pin its verified release. Use the same evaluator principal as the loop to report outcomes.
+
+```ts
+import { createAcclimate } from '@acclimate/sdk';
+import { prepare } from '@acclimate/codex-plugin';
+
+const acclimate = createAcclimate();
+const input = 'Duplicate charge. Return an action as JSON.';
+const job = await acclimate.job('support-agent', { channel: 'stable', input });
+const staged = await job.prepare(prepare);
+try {
+  // Run your agent in staged.cwd. Report the known answer when available.
+  await job.expect('refund');
+} finally {
+  await staged.cleanup();
+}
+```
+
+`expect` binds the first valid outcome to the job's version and generated `outcomeId`. To report after a restart, persist the ID, `job.version.version.id` and input, and recreate the job with `{ versionId, outcomeId, input }`. Use `expect(expected, { input })` to supply input at reporting time. The receipt identifies the new evolve case as `outcome:<outcomeId>`.
+
+## Separate enrollment or use the console
+
+Set `ACCLIMATE_APP_PRINCIPAL` to use an explicit app principal instead of looking it up. Set `ACCLIMATE_ENROLL_TOKEN` to use a separate enrollment credential with **Promote**. The evaluator token still needs **Evaluate** and its principal must match the app principal. Use `--evaluator-config /private/evaluator.json` to read the service URL, workspace, evaluator credential and journal location from an existing private evaluator config.
+
+For manual setup, default-export `{ execution, execute, grade, heldOut }` from your evaluator module. Print its local digest with `acclimate-learning held-out --app ./learning-app.mjs`. In the bundle's **Learning** tab, select the released channel, supply the app principal and setting, then paste the digest and case count. Add evolve cases in **Learning → Evolve cases** or with `addEvolveCases` from the SDK.
+
+```bash
+acclimate-learning --config /private/evaluator.json --bundle "$ACCLIMATE_BUNDLE" --app ./learning-app.mjs
+```
+
+Add `--live` for a manual live evaluator. The runner grades five rollouts per case and resumes journaled work after a restart. [Evaluator CLI reference](/docs/reference/evaluator-cli#learning-evaluator)
+
+## Follow a round
+
+1. The service pins the channel revision, evolve revision, setting and improvement memory. It scores the incumbent on the evolve split.
+2. The optimizer proposes five candidates. Each has a rationale, a diagnosis tied to an existing problem or a new root cause, predicted case IDs and file changes. The scanner checks new content for secrets and personal information. The selector screens candidates before execution.
+3. The evaluator scores the survivors on the same evolve cases. The selector uses their results to choose a candidate to adopt or keep the incumbent. Adoption releases the version immediately on the learning channel and records the attempt in improvement memory.
+4. The evaluator scores the retained version on its fixed held-out split. Held-out scores are for monitoring only. They never influence selection or release and never reach the optimizer.
+
+The optimizer receives the pinned setting, the full incumbent harness, evolve feedback with case IDs, inputs, scores, rollout traces and errors, prior rounds in the current setting with feedback summaries and diffs, and the full pinned improvement memory. Screening and selection also receive the relevant candidates and selection receives their evolve results.
+
+## Monitor and control rounds
+
+Refresh the **Learning** tab to see progress, recent decisions and historical scores. Each plotted point is the measured score for that round. The evolve score is measured on the incumbent at the start of the round. The held-out score is measured on the retained version for monitoring only. A failed held-out evaluation appears in the round list and the round can still complete. Open a round to see candidate diagnoses, diffs, scanner findings, screen verdicts, scores, the selection reason and any adopted release.
+
+Open **Memory** to inspect the latest or a historical revision. Each problem lists its adopted attempts, the files that changed, predicted, fixed and missed cases, passed and total rollouts, and the round, model and evolve revision that produced it. Improvement memory is optimizer input and never delivered to jobs.
+
+**Pause** lets the active round finish and prevents new rounds. **Resume** starts scheduling again. **Stop** cancels open evaluations. To restart a stopped loop, enroll it again from the same tab. The evolve split, round history and improvement memory carry forward. The loop also pauses when it reaches the configured consecutive failure threshold or when the optimizer input exceeds its context limit.

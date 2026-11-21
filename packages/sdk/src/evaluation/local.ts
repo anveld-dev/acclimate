@@ -1,6 +1,6 @@
 import { privateDirectory } from './private-state.js';
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, open, readdir, readFile, realpath } from 'node:fs/promises';
+import { lstat, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { TaskExecutionError } from '../compare.js';
 import type { BundleFile, BundlePayload, VerifiedVersion } from '../types.js';
@@ -9,7 +9,7 @@ import type { CaseSelection } from './controls.js';
 import { selectedCaseIds } from './controls.js';
 import { assertEvaluationOutput, captureDefinition, OutputValidationError } from './definition.js';
 import { CallbackCancelled, EvaluationError } from './errors.js';
-import { reportedUsage } from './trials.js';
+import { reportedUsage } from './usage.js';
 import type { EvaluationApp, ExecutionContext } from './types.js';
 
 /**

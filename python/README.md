@@ -4,9 +4,7 @@ Deliver versioned agent instructions, skills and memory to jobs with the Acclima
 
 ## Test an evaluator adapter
 
-```sh
-pip install acclimate-sdk
-```
+[Install the wheel](#install) in your application's Python environment.
 
 ```python
 # application.py, next to your agent
@@ -34,7 +32,7 @@ For a complete agent you can run without a model provider, see the [Python suppo
 
 ## Install
 
-`pip install acclimate-sdk` installs from PyPI. For an air-gapped machine, verify the release files against `SHA256SUMS` and install the wheel without an index:
+Use the wheel from a GitHub release or build it from a checkout. Verify release artifacts against `SHA256SUMS` and install the wheel without an index. Registry installation with `pip install acclimate-sdk` requires a separate PyPI publication.
 
 ```sh
 python3.11 -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
@@ -61,13 +59,31 @@ with client.prepare(workspace_id, bundle_id, channel="stable") as prepared:
 
 Set the connection UUID in `ACCLIMATE_CONNECTION`. Each new job checks its connection online. Verified file contents can then be reused from disk. A job already running keeps its prepared files until cleanup.
 
+## Run a learning loop
+
+With your bundle released and the service optimizer configured, set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` for a machine principal with `evaluate` and `promote`. Save `acclimate_loop.py` in your app directory.
+
+```python
+from acclimate.learning import define_loop, exact, openai
+
+loop = define_loop(
+    bundle="support-agent",
+    channel="stable",
+    agent=openai(model="gpt-6.2-sol"),
+    cases="cases.jsonl",
+    grade=exact(),
+)
+```
+
+Each case needs `input` and `expected`. This example grades raw model text, so use string answers. Configure `OPENAI_API_KEY` and, for a compatible endpoint such as CLIProxyAPI, `OPENAI_BASE_URL`. Run `python -m acclimate learn` to enroll and serve the loop. Use `Acclimate().job(bundle, channel="stable", input=task)` to pin a production version. The enrolled app principal can call `job.expect(expected)` when a known answer is available.
+
 ## Client conventions
 
 - Method names, keyword arguments and attributes are snake_case. HTTP dictionaries keep the service's camelCase keys, described by the TypedDicts in `acclimate.types`.
-- Every mutation takes an explicit printable ASCII idempotency key. Retry with the same key and request.
+- Use the same idempotency key and request when retrying a mutation that accepts an explicit key. Learning outcomes use their outcome UUID for durable replay.
 - `ApiError` has `status`, `code`, `request_id` and `details`. Transport failures raise `TransportError`.
 - The client rejects redirects, so the token never leaves the configured origin, and bounds every response.
-- The client has every method of the TypeScript client, in snake_case. See the [Python SDK reference](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/reference/python-sdk.mdx).
+- See the [Python SDK reference](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/reference/python-sdk.mdx).
 
 The client and delivery helpers are synchronous. `define_evaluation` accepts coroutine callbacks and runs them to completion.
 

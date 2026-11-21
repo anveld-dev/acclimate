@@ -3,27 +3,31 @@ title: Evaluator CLI
 description: Check an application adapter locally and download released payloads.
 ---
 
-Use `acclimate-eval` for TypeScript, or `acclimate` (also `python -m acclimate`) for Python. Run from the directory with `application.mjs`, `application.mts` or `application.py`. Use `--app` to choose an explicit module. The [TypeScript starter](https://github.com/anveld-dev/acclimate/tree/main/examples/evaluation-starter) and [Python starter](https://github.com/anveld-dev/acclimate/tree/main/examples/python-evaluation-starter) show the adapter contract.
+Use `acclimate-eval` for TypeScript, or `acclimate` (also `python -m acclimate`) for Python. Run from the directory with `application.mjs`, `application.mts` or `application.py`. Use `--app` to choose an explicit module. Use `--json` for JSON diagnostics or `--verbose` for more diagnostic detail. The [TypeScript starter](https://github.com/anveld-dev/acclimate/tree/main/examples/evaluation-starter) and [Python starter](https://github.com/anveld-dev/acclimate/tree/main/examples/python-evaluation-starter) show the adapter contract.
 
 | Command | Purpose |
 | --- | --- |
-| `try --payload PATH` | Run one local case with the supplied bundle JSON or directory. Add `--case ID` to choose the case, `--case-timeout DURATION` for its time limit and `--live` if it makes live calls. |
+| `try [--payload PATH]` | Run execute and grade once per selected case. Defaults to the first case. Optionally supply a bundle JSON file or directory. Add `--case ID[,ID...]` to select cases, `--case-timeout DURATION` for its time limit and `--live` if it makes live calls. |
 | `describe` | Print the public descriptor for the installed adapter. |
 | `coverage` | Inspect files and inputs that contribute to the descriptor. This output may contain private paths. |
-| `doctor --config FILE --bundle ID` | Check adapter setup and access to the target bundle. Optionally provide `--payload PATH` to check compatibility. |
-| `pull --config FILE --bundle ID --channel stable --out FILE` | Save the verified payload currently released on `stable`. This command can run without an adapter. |
+| `doctor --config FILE --bundle ID` | Check adapter setup and access to the target bundle. With `acclimate-eval`, optionally provide `--payload PATH` to check compatibility. |
+| `pull --config FILE --bundle ID --channel stable --out FILE` | Save a JSON copy of the verified payload to a new file. The channel defaults to `stable`. This command can run without an adapter. |
 
-For `try`, files under `skills/` become skills, files under `memory/` become memory files, and other text files become instructions. The application supplies private cases, an execution callback and a grading callback. A model-free adapter can run `try` without `--live`. The check runs locally and leaves channel state untouched.
+For `try`, files under `skills/` become skills, files under `memory/` become memory files, and other text files become instructions. The application supplies private cases, an execution callback and a grading callback. A live adapter requires `--live`. Omit the flag for a model-free adapter. The check runs locally and leaves channel state untouched.
 
-The private configuration for `doctor` and `pull` supplies the HTTPS service URL, workspace and token. See the [evaluator operations runbook](https://github.com/anveld-dev/acclimate/blob/main/docs/evaluator-operations.md) for configuration and [error codes](/docs/reference/error-codes) for diagnostic output.
+The private configuration for `doctor` and `pull` uses the same evaluator JSON fields listed below. Use a service origin over HTTPS, or HTTP on loopback for local development. See the [evaluator operations runbook](https://github.com/anveld-dev/acclimate/blob/main/docs/evaluator-operations.md) for configuration and [error codes](/docs/reference/error-codes) for diagnostic output.
 
 ## Learning evaluator
 
 The TypeScript SDK installs the `acclimate` executable. Run `npx acclimate learn [--config acclimate.loop.ts] [--once]` to enroll a bundle, sync evolve cases, serve evaluations and stream round progress. The config default-exports a `defineLoop` result. TypeScript and JavaScript modules are supported, and case paths resolve relative to that module.
 
-Set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN`. The command discovers the machine principal and checks for **Evaluate** and **Promote**. Set `ACCLIMATE_APP_PRINCIPAL` to supply the principal explicitly, and `ACCLIMATE_ENROLL_TOKEN` to use a separate credential with **Promote**. Use `--evaluator-config /private/evaluator.json` to reuse an existing evaluator connection and journal. Otherwise the journal lives under `.acclimate/` next to the loop config. `--once` exits after one completed round. [Learning loop quick start](/docs/guides/learning-loop)
+Set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN`. The evaluator token needs **Evaluate**. It also needs **Promote** when the same token handles enrollment. Set `ACCLIMATE_APP_PRINCIPAL` to supply the principal explicitly, and `ACCLIMATE_ENROLL_TOKEN` to use a separate credential with **Promote**. Use `--evaluator-config /private/evaluator.json` to reuse an existing evaluator connection and journal. Otherwise the journal lives under `.acclimate/` next to the loop config. `--once` exits after one completed round. [Learning loop quick start](/docs/guides/learning-loop)
 
-### Manual evaluator
+### Python learning CLI
+
+Run `python -m acclimate learn [--config acclimate_loop.py] [--once]` or the equivalent `acclimate learn`. The Python file exports `loop = define_loop(...)`. Its case file path is relative to the Python config. Set the same service, workspace and token variables described above. Use the environment variables for an explicit principal or separate enrollment credential. [Python learning configuration](/docs/reference/python-sdk#learning)
+
+### Serve a pre-enrolled loop
 
 `acclimate-learning` is included in the TypeScript SDK. Its module default-exports `execution` (`model-free` or `live`), `execute`, `grade` and `heldOut`.
 
@@ -32,7 +36,7 @@ Set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN`. The command di
 | `acclimate-learning held-out --app ./learning-app.mjs` | Prints the held-out commitment as JSON without contacting the service. |
 | `acclimate-learning --config /private/evaluator.json --bundle UUID --app ./learning-app.mjs` | Polls and serves an enrolled bundle's evaluations. Add `--live` for live execution. |
 
-The private JSON config uses `schemaVersion: 1`, `serviceUrl`, `workspaceId`, `evaluatorPrincipalId`, `evaluatorToken` (or `evaluatorTokenFile`) and `journalRoot`. The principal must match the enrolled app principal. The journal directory must persist across restarts.
+The private JSON config uses `schemaVersion: 1`, `serviceUrl`, `workspaceId`, `evaluatorPrincipalId`, `evaluatorToken` (or `evaluatorTokenFile`) and `journalRoot`. The principal must match the enrolled app principal. For `doctor` and `pull`, it identifies the credential in the config. These commands do not require a learning enrollment. The journal directory must persist across restarts.
 
 `execute` receives a verified version, prepared bundle content, case ID, input, rollout index and abort signal. Return an `output` and optional `trace`. `grade` receives the output and expected result, plus case ID, rollout index and signal. Return `{ score, passed }`, with a score between 0 and 1 and a boolean pass flag. Each entry of `heldOut` has `caseId`, `input` and `expected`.
 

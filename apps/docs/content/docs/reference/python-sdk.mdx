@@ -3,11 +3,11 @@ title: Python SDK
 description: Deliver pinned versions to Python jobs and work with the workspace API.
 ---
 
-The `acclimate-sdk` package needs Python 3.11 or later on Linux or macOS and has no third-party dependencies. [Install it](/docs/get-started/install) with `pip install acclimate-sdk`, then import it as `acclimate`.
+The `acclimate-sdk` package needs Python 3.11 or later and has no third-party dependencies. File preparation uses POSIX on Linux or macOS. [Install it](/docs/get-started/install) with `pip install acclimate-sdk`, then import it as `acclimate`.
 
 ## Naming
 
-Python names are snake_case: method names, keyword arguments, and attributes such as `ApiError.request_id` and `ExecuteInput.case_id`. HTTP request and response dictionaries keep the wire contract's camelCase keys, such as `version["parentVersionId"]`, because they are the JSON the service sends and accepts. The TypedDicts in `acclimate.types` describe them.
+Python names are snake_case: method names, keyword arguments, and attributes such as `ApiError.request_id` and `ExecuteInput.case_id`. HTTP request and response dictionaries keep the wire contract's camelCase keys, such as `version["parentVersionId"]`, because they are the JSON the service sends and accepts. The TypedDicts in `acclimate.types` describe them. The root package also exports those types, `AcclimateClient`, `Acclimate`, `Job`, the delivery helpers `prepare_files`, `resolve_and_cache` and `validate_payload`, the `PreparedFiles` and `PreparedDelivery` types, and the receipt helpers `DeliveryReporter` and `BoundDeliveryReporter`.
 
 ## Deliver a pinned version to a job
 
@@ -47,7 +47,7 @@ A denial, a missing resource or an integrity failure never falls back. `resolve_
 
 `scope` is a stable name for the authenticated application. It namespaces the cache and must never be a token. Set `connection_id` to the connection UUID when the application reads content for a connection. The client is synchronous, rejects redirects so the token never leaves the configured origin, and bounds every response.
 
-Every mutation takes an explicit idempotency key of 1–128 printable ASCII characters. Retry a lost write with the same key and the same request. Listing methods take `cursor=` and `limit=` keyword arguments and return `{"items": [...], "nextCursor": ...}`; pass `nextCursor` back as `cursor` to read the next page.
+Content writes such as uploading a version take a required idempotency key of 1–128 printable ASCII characters. Learning enrollment, controls and evolve writes take optional keys. Outcome reporting defaults to the outcome ID as its key. Retry a lost write with the same key and the same request. Workspace, bundle, channel and connection listings take `cursor=` and `limit=` keyword arguments and return `{"items": [...], "nextCursor": ...}`; pass `nextCursor` back as `cursor` to read the next page.
 
 The Python client uses snake_case equivalents of the shared TypeScript client methods.
 
@@ -76,16 +76,13 @@ Differences from the TypeScript client:
 | `acclimate.ApiError` | The service returns an error. It has `status`, `code`, `request_id` and optional `details`. Quote `request_id` when you report a problem. |
 | `acclimate.TransportError` | The request fails before a response arrives. |
 | `acclimate.DeliveryError` | Delivery finds a malformed response, cache entry or payload. It has a `code`. |
-| `acclimate.evaluation.EvaluationError` | An evaluation step fails. It has `code`, `phase`, `next_action`, `execution_state` and a printable `diagnostic` dictionary. `acclimate.evaluation.ERROR_CODES` and `EXIT_CODES` list every code and the CLI exit status; see [error codes](/docs/reference/error-codes). |
+| `acclimate.evaluation.EvaluationError` | An evaluation step fails. It has `code`, `phase`, `next_action`, `execution_state` and a printable `diagnostic` dictionary. See [error codes](/docs/reference/error-codes) for diagnostics and exit statuses. |
 | `acclimate.evaluation.DefinitionError` | `define_evaluation` rejects an argument. `field` names it, such as `cases[1].case_id`. Code `definition.invalid`. |
 | `acclimate.evaluation.OutputValidationError` | A callback returned a value that is not plain JSON, or unknown `usage` keys. Code `output.invalid`. |
-| `acclimate.evaluation.EvaluationUsageError` | The evaluator command line is invalid. Code `usage.*`. |
 
 ## Reporters
 
 `DeliveryReporter(client, workspace_id, connection_id, *, max_queue=100)` reports delivery stages for a connection from a background thread. Pass it to `client.prepare(..., reporter=reporter)` and call `prepared.report_started()` when the job starts. Report failures never block delivery. Call `wait(timeout)` and then `close(timeout)` before a short-lived process exits.
-
-`EvaluationProgressReporter(client, *, workspace_id, bundle_id, request_id, attempt_id)` reports optional progress for a running evaluation with `report(sequence=..., phase=..., completed=..., total=...)`. It returns `False` instead of raising when a report fails.
 
 ## Learning
 
@@ -109,8 +106,7 @@ Set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE`, and `ACCLIMATE_TOKEN` for the
 evaluator. The token needs `evaluate` access and must belong to the enrolled
 app principal. The CLI reads the principal ID from the service. You can also
 set `ACCLIMATE_APP_PRINCIPAL` explicitly (for a machine token,
-`machine:<name>`). Enrollment requires `promote` access. If the service
-requires a different principal for enrollment, set `ACCLIMATE_ENROLL_TOKEN`
+`machine:<name>`). Enrollment requires `promote` access. To enroll with a separate principal, set `ACCLIMATE_ENROLL_TOKEN`
 to a separate token with `promote` access. The channel needs an existing release.
 
 ```sh
@@ -127,18 +123,16 @@ defaults.
 
 The default split assigns a case to held-out when the unsigned big-endian
 SHA-256 digest of its UTF-8 case ID is below `2**255`. A missing case ID
-defaults to the SHA-256 hex of the canonical JSON input. Keep examples in both
-splits. The command uploads evolve cases and keeps held-out inputs and
-expectations local. Removing an evolve example retires it. Give edited examples
+defaults to the SHA-256 hex of the canonical JSON input. Use `split` to set a fraction strictly between zero and one. Provide at least one evolve case and 1–10,000 held-out cases. The command uploads evolve cases and keeps held-out inputs and
+expectations local. Sync retires existing setup cases missing from the file, including cases added in the console. Give edited examples
 a new case ID because the service treats case content as immutable. Production
 outcomes survive file sync.
 
-`openai(model, base_url=None, api_key=None, effort=None, parse=None, render=None)` uses an OpenAI-compatible Chat Completions endpoint. It reads `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) and `OPENAI_API_KEY` when the corresponding options are omitted. `render(version)` receives the verified version and returns system text. `parse(text)` transforms the assistant text before grading. Both callbacks are synchronous. HTTP failures raise `OpenAIHttpError` with `.status` and a key-redacted `.trace`. [CLIProxyAPI setup](/docs/guides/learning-loop#use-codex-through-cliproxyapi)
+`openai(model, base_url=None, api_key=None, effort=None, parse=None, render=None)` returns an `OpenAIAgent` and uses an OpenAI-compatible Chat Completions endpoint. It reads `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) and `OPENAI_API_KEY` when the corresponding options are omitted. `render(version)` receives the verified version and returns system text. `parse(text)` transforms the assistant text before grading. Both callbacks are synchronous. HTTP failures raise `OpenAIHttpError` with `.status` and a key-redacted `.trace`. [CLIProxyAPI setup](/docs/guides/learning-loop#use-codex-through-cliproxyapi)
 
 For custom execution, pass `policy_model` and implement `execute(version, input, rollout)` as a synchronous function that
 returns output or `(output, trace)`. Rollout indexes run from zero through four.
-Use `exact()` for whole-output JSON equality or `exact("action")` to compare
-the top-level `action` field to the expected value. Use `tests(command, cwd=None)`
+Use `exact()` for whole-output JSON equality or `exact("action")` to test the top-level `action` field against the expected value. Use `tests(command, cwd=None)`
 to run a shell command against `output.json` in a temporary directory, with an
 optional copy of the fixture directory at `cwd`. Exit status zero scores 1 and
 any other exit status scores 0. A custom `grade(output, expected)` can return
@@ -157,17 +151,17 @@ receipt = job.expect("refund")
 ```
 
 `Acclimate(url, workspace, token, cache_dir=...)` accepts explicit connection
-settings. The outcome expectation uses the same shape as the case file, such
+settings. `job(bundle, *, channel="stable", input=...)` requires the original input. Use the enrolled app principal’s credential to report outcomes. The outcome expectation uses the same shape as the case file, such
 as `"refund"` with `exact("action")` or `{"action": "refund"}` with `exact()`.
 `job.version` exposes the verified version pinned when the job was
 created. `job.prepare(destination=None)` stages that same version using the
-delivery context manager. Use `job.expect(expected, input=...)` to override
+delivery context manager. Use `job.expect(expected, input=...)` with a non-None value to override
 the job input. Retry the same outcome on the same job to reuse `job.outcome_id`
 and its server-side receipt.
 
 ### Learning client reference
 
-Import wire types such as `LearningLoopRequest`, `LearningLoop`, `LearningRoundSummary`, `LearningRound`, `LearningCandidate`, `LearningSelection`, `LearningMemory`, `LearningEvaluation` and `LearningWork` from `acclimate.types`. The client methods take the workspace ID and bundle ID first. JSON keys follow the [HTTP contract](/docs/reference/http-api#learning-loop).
+Import wire types such as `LearningLoopRequest`, `LearningLoop`, `LearningRoundSummary`, `LearningRound`, `LearningCandidate`, `LearningSelection`, `LearningMemory`, `LearningEvaluation` and `LearningWork` from `acclimate.types`. The client methods take the workspace ID and bundle ID first. JSON keys follow the [HTTP contract](/docs/reference/http-api#learning-loop). For evolve cases, call `list_learning_evolve_cases(workspace_id, bundle_id, after=..., limit=...)`. For rounds use `before=` and `limit=`. Both return a `next` cursor.
 
 | Task | Client methods |
 | --- | --- |

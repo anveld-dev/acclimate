@@ -3,17 +3,12 @@ import { createServerFn } from '@tanstack/react-start';
 import { setResponseHeader } from '@tanstack/react-start/server';
 import { requestEnvironment, storeSelection, scopedEnvironment } from './selection';
 import {
-  authorizeSelection,
   createSetup,
   listSetup,
   setupError,
   setupClient,
   setupFailure,
 } from './setup';
-export const readSetup = createServerFn({ method: 'GET' }).handler(async () => {
-  setResponseHeader('Cache-Control', 'private, no-store');
-  return listSetup(await requestEnvironment());
-});
 export const readWorkspaceBundles = createServerFn({ method: 'GET' })
   .validator((input: { workspaceId: string }) => input)
   .handler(async ({ data }) => {
@@ -23,19 +18,6 @@ export const readWorkspaceBundles = createServerFn({ method: 'GET' })
       fetch,
       true,
     );
-  });
-export const chooseWorkspace = createServerFn({ method: 'POST' })
-  .validator((input: unknown) => input)
-  .handler(async ({ data }) => {
-    setResponseHeader('Cache-Control', 'private, no-store');
-    try {
-      const env = await requestEnvironment();
-      const selection = await authorizeSelection(env, data);
-      storeSelection(env, selection);
-      return { ok: true as const, selection };
-    } catch (error) {
-      return { ok: false as const, message: setupError(error) };
-    }
   });
 export const createWorkspaceContent = createServerFn({ method: 'POST' })
   .validator((input: Parameters<typeof createSetup>[1]) => input)

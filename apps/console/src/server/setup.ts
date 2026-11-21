@@ -9,10 +9,8 @@ import {
   creationRecoveryServiceIdentity,
   requireSession,
   SessionRequiredError,
-  validSelection,
   scopedEnvironment,
   type Environment,
-  type Selection,
 } from './selection';
 export function setupClient(env: Environment, fetcher: typeof fetch = fetch) {
   requireSession(env);
@@ -77,17 +75,6 @@ export async function listSetup(
       message: setupError(error),
     };
   }
-}
-export async function authorizeSelection(
-  env: Environment,
-  input: unknown,
-  fetcher: typeof fetch = fetch,
-): Promise<Selection> {
-  if (!validSelection(input)) throw new Error('Invalid selection.');
-  const client = setupClient(env, fetcher);
-  const resolved = await client.resolveChannel(input.workspaceId, input.bundleId, input.channel);
-  if (!resolved.resolution) throw new Error('Channel unavailable.');
-  return input;
 }
 export async function createSetup(
   env: Environment,

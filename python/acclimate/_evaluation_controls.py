@@ -5,19 +5,9 @@ from dataclasses import dataclass
 import json
 import math
 import re
-import sys
 from typing import Any, Callable
 
-from ._evaluation_shared import EvaluationError, EvaluationUsageError
-
-CONTROL_ERRORS = {
-    "notSelected": "not_selected",
-    "timeout": "timeout",
-    "deadline": "deadline_exceeded",
-    "costLimit": "cost_limit_reached",
-}
-RUN_CONTROL_FLAGS = ("deadline", "case-timeout", "max-cost-usd", "cases", "shard")
-
+from ._evaluation_shared import EvaluationUsageError
 
 class RunControlError(EvaluationUsageError):
     """An invalid run-control flag. A usage error (exit 1) that names the flag."""
@@ -41,41 +31,6 @@ class RunControls:
     selection: dict | None = None
     # Called with a progress dict after each arm settles. Exceptions are ignored.
     progress: Callable[[dict], Any] | None = None
-
-
-def merge_controls(base: RunControls | None, override: RunControls | None) -> RunControls:
-    if base is None:
-        return override or RunControls()
-    if override is None:
-        return base
-    values = {name: getattr(override, name) if getattr(override, name) is not None else getattr(base, name)
-              for name in ("deadline_ms", "case_timeout_ms", "max_cost_usd", "selection", "progress")}
-    return RunControls(**values)
-
-
-def validate_run_controls(controls: Any) -> RunControls:
-    if controls is None:
-        return RunControls()
-    if not isinstance(controls, RunControls):
-        raise EvaluationError("config.schema")
-
-    def positive(value):
-        return value is None or (type(value) in (int, float) and math.isfinite(value) and value > 0)
-
-    if not (positive(controls.deadline_ms) and positive(controls.case_timeout_ms) and positive(controls.max_cost_usd)):
-        raise EvaluationError("config.schema")
-    if controls.progress is not None and not callable(controls.progress):
-        raise EvaluationError("config.schema")
-    selection = controls.selection
-    if selection is not None:
-        ok = type(selection) is dict and (
-            (selection.get("kind") == "cases" and type(selection.get("caseIds")) is list and selection["caseIds"]
-             and all(type(x) is str and x for x in selection["caseIds"]))
-            or (selection.get("kind") == "shard" and type(selection.get("index")) is int
-                and type(selection.get("count")) is int and 1 <= selection["index"] <= selection["count"]))
-        if not ok:
-            raise EvaluationError("config.schema")
-    return controls
 
 
 _DURATION = re.compile(r"^(\d+(?:\.\d+)?)(ms|s|m|h)?$")
@@ -159,12 +114,6 @@ def run_controls_from_flags(flags: dict) -> RunControls:
         max_cost_usd=parse_cost(cost) if cost else None,
         selection=parse_selection(text("cases"), text("shard")),
     )
-
-
-def wants_progress(mode: str, stream=None) -> bool:
-    """Progress goes to stderr when it is a terminal or --progress asks for it (CI logs)."""
-    stream = sys.stderr if stream is None else stream
-    return mode == "on" or (mode == "auto" and bool(getattr(stream, "isatty", lambda: False)()))
 
 
 def _label(case_id: str) -> str:

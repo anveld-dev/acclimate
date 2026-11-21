@@ -34,22 +34,6 @@ def submit_and_wait(page, control, method='POST'):
     page.wait_for_load_state('networkidle')
 
 
-def open_entry_actions(page):
-    """Open the selected entry's real dialog without replacing its editor state."""
-    dialog=page.get_by_role('dialog', name='Entry actions', exact=True)
-    if dialog.count()==0:
-        page.get_by_role('button', name='Entry actions', exact=True).click()
-    expect(dialog).to_be_visible()
-    return dialog
-
-
-def close_entry_actions(page):
-    dialog=page.get_by_role('dialog', name='Entry actions', exact=True)
-    if dialog.count():
-        dialog.get_by_role('button', name='Close', exact=True).click()
-        expect(dialog).to_have_count(0)
-
-
 def open_content_actions(page):
     """Reveal published Copy/Download through the selected entry's real popover."""
     panel=page.get_by_role('dialog', name='Published entry actions', exact=True)

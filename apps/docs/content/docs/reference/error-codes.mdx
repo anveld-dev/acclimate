@@ -3,17 +3,17 @@ title: Error codes and exit codes
 description: Look up what an evaluator diagnostic or exit code means and what to do next.
 ---
 
-Every error the SDKs raise on purpose has a stable `code`. The TypeScript and Python SDKs use the same codes, messages, next actions and exit codes. Both test suites check them against this page.
+Use `code` on SDK errors and evaluator diagnostics to identify failures in program logic. The generated table covers evaluator diagnostics and their default exit codes. The learning adapters also expose `OpenAIHttpError`, with the provider’s HTTP status and a key-redacted trace.
 
 ## Error classes
 
-Catch the base class to handle any SDK error, then branch on `code`.
+Catch `AcclimateError` to handle errors in the SDK’s coded hierarchy, then branch on `code`.
 
 | TypeScript | Python | Codes |
 | --- | --- | --- |
-| `AcclimateError` | `acclimate.errors.AcclimateError` | Base class for every error below. |
+| `AcclimateError` | `acclimate.errors.AcclimateError` | Base class for coded SDK errors. |
 | `AcclimateUsageError` | `acclimate.errors.UsageError` | `usage.invalid_argument`: an SDK function received an invalid argument. The Python class also subclasses `ValueError`. |
-| `TransportError` | `acclimate.TransportError` | `transport.unreachable` or `transport.timeout`: the service could not be reached. Only this error means an outage. It carries `serviceUrl` (`service_url` in Python). |
+| `TransportError` | `acclimate.TransportError` | The service request failed at the transport layer. Python uses `transport.unreachable`. TypeScript can also use `transport.timeout`. It carries `serviceUrl` (`service_url` in Python). |
 | `ApiError` | `acclimate.ApiError` | The service's error code, such as `not_found` or `revision_conflict`, with the HTTP `status`. |
 | `DeliveryError` | `acclimate.DeliveryError` | Delivery and cache codes such as `invalid_payload`, `unsafe_cache` and `cache_miss`. |
 | `EvaluationError` | `acclimate.evaluation.EvaluationError` | The diagnostic codes in the table below. `diagnostic` holds the safe fields. |
@@ -27,7 +27,7 @@ The [TypeScript SDK reference](/docs/reference/typescript-sdk) lists public expo
 
 ## Reading a diagnostic
 
-The evaluator CLI prints errors to stderr. On a terminal you get readable text. Otherwise, or with `--json`, you get one JSON line:
+The local evaluator CLI (`acclimate-eval` in TypeScript, or `python -m acclimate` for the local evaluation commands) prints errors to stderr. On a terminal you get readable text. Otherwise, or with `--json`, you get one JSON line:
 
 ```json
 {"schemaVersion":1,"command":"try","error":{"code":"usage.missing_flag","field":"--live","reason":"This evaluator is live. Add --live to authorize model calls.","phase":"configure","executionState":"not_started","nextAction":"fix_command","message":"A required flag is missing. --live: This evaluator is live. Add --live to authorize model calls."}}

@@ -3,7 +3,6 @@ import { StatusBadge } from './status-badge';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
-import { Badge } from '@/components/ui/badge';
 import { CircleCheck, GitCommitHorizontal } from 'lucide-react';
 import { ChangeRecordDetails } from './change-record-details';
 import { SyntaxCode } from './syntax-code';

@@ -10,6 +10,7 @@ npm ci --ignore-scripts
 python3 -m venv .venv-bdd
 .venv-bdd/bin/pip install -r scripts/bdd/requirements.txt
 .venv-bdd/bin/python -m playwright install chromium
+source .venv-bdd/bin/activate
 
 # Builds the service, packages and console, then runs every behavior.
 npm run test:bdd
@@ -23,19 +24,19 @@ For a smaller development loop:
 npm run test:bdd -- --lane browser
 npm run test:bdd -- --lane runtime
 npm run test:bdd -- --tags '@setup or @releases'
-npm run test:bdd -- --name 'Reopen the exact saved generation'
+npm run test:bdd -- --name 'Recover from a bookmarked content path'
 npm run test:bdd -- --dev-console --tags @UI-CONTENT-01
 ```
 
 `--skip-build` uses existing builds. Leave it off when checking a code change. Partial runs report the behaviors they didn't exercise; they don't count as complete coverage.
 
-All pushes to `main` run the full workflow. On pull requests, changes limited to the static documentation and its exports run the docs rebuild, link checks and PR quality gate. Public docs content also runs the unit and SDK reference checks. Changes to feature specifications or the reviewed inventory run all behavior shards. These selections combine when a PR touches multiple areas. Runtime, dependency, workflow and unrecognized paths run the full suite.
+All pushes to `main` run the full workflow. On pull requests, changes limited to the static documentation and its exports run the docs rebuild and link checks. Public docs content also runs the unit and SDK reference checks. Changes to feature specifications or the reviewed inventory run all behavior shards. These selections combine when a PR touches multiple areas. Runtime, dependency, workflow and unrecognized paths run the full suite.
 
 When behaviors are selected, CI builds the service, packages and console once, then runs three shards on separate runners. The shards divide the sorted behavior IDs and keep each scenario's examples together. The `behaviors` job combines their results and requires every reviewed variant to pass. The `behavior-results` artifact contains the combined report and the shard artifacts contain JUnit files and browser failure captures.
 
 For local parallel runs, `npm run test:bdd -- --parallel` runs `console.feature` alongside the remaining features. Each process starts its own service and PostgreSQL cluster. The runner combines their results in `artifacts/bdd/` and checks the same inventory as the serial run.
 
-`--dev-console` runs the real Vite server and checks UI module imports before the story. This catches Node-only imports that production bundling can hide. CI runs a focused browser flow in development mode too. Its reports use `artifacts/bdd-dev/` so a focused dev run preserves the full suite's report.
+`--dev-console` runs the real Vite server and checks UI module imports before the story. This catches Node-only imports that production bundling can hide. Its reports use `artifacts/bdd-dev/` so a focused dev run preserves the full suite's report.
 
 | Stories | What actually runs |
 |---|---|
@@ -49,7 +50,7 @@ For local parallel runs, `npm run test:bdd -- --parallel` runs `console.feature`
 | [Navigation](navigation.feature) | Canonical scope, cross-tab form targets, published content history, role changes, legacy recovery and unsaved-work guards |
 | [Local recovery](local_recovery.feature) | Real backend/console processes and private PostgreSQL: stalled/dropped ownership connection, exact release after restart, same console process and clean shutdown; real OIDC browser authentication through the private TLS proxy |
 | [Identity boundary](identity.feature) | Public callback handler against real Rust sessions; fixture external identity provider, transaction binding, expiry, logout and cookie flags |
-| [UX refinements](ux_refinement.feature) | Missing published entries and initial folder import |
+| [UX refinements](ux_refinement.feature) | Recover from a bookmarked content path and initial folder import |
 
 The reviewed [inventory](../scripts/bdd/inventory.json) records 98 behaviors and 123 scenario variants. Every expected variant must run and pass. A missing, skipped, undefined or failing variant leaves that behavior uncovered. The coverage checker has its own regression tests.
 
@@ -96,7 +97,7 @@ fail-before-listen tests; there is no unconfigured application entrypoint.
 
 ### Email invitations
 
-Members now invites by email and role. `UI-ACCESS-02` checks that sending an invite
+Workspace administrators invite members by email and role. `UI-ACCESS-02` checks that sending an invite
 alone grants no access; the verified recipient must accept. `NAV-12` checks that
 losing admin access closes an in-progress invitation form. These fixtures start a
 private Mailpit inbox and preserve the reviewed story IDs.

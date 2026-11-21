@@ -104,6 +104,17 @@ class DefinitionTest(unittest.TestCase):
             _sync_cases(client, "w", "b", [case("keep", expected=True)])
         client.add_learning_evolve_cases.assert_not_called()
 
+    def test_sync_runs_before_write_once_and_only_when_it_writes(self):
+        client = Mock(spec=AcclimateClient)
+        events: list[str] = []
+        client.add_learning_evolve_cases.side_effect = lambda *args, **kwargs: events.append("write")
+        client.list_learning_evolve_cases.return_value = {"items": [], "next": None, "evolveRevision": 1}
+        _sync_cases(client, "w", "b", [case("a")], lambda: events.append("pause"))
+        self.assertEqual(events, ["pause", "write"])
+        client.list_learning_evolve_cases.return_value = {"items": [case("a")], "next": None, "evolveRevision": 2}
+        _sync_cases(client, "w", "b", [case("a")], lambda: events.append("pause"))
+        self.assertEqual(events, ["pause", "write"])
+
     def test_grades(self):
         self.assertEqual(exact()({"a": [1, None], "b": 2}, {"b": 2, "a": [1.0, None]}), 1)
         self.assertEqual(exact()({"a": [True]}, {"a": [1]}), 0)
@@ -144,6 +155,7 @@ class LearningService:
         self.evolve_updates = []
         self.configuration = None
         self.cli_mode = False
+        self.controls = []
 
     def respond(self, path, method, body, key, authorization):
         if path.endswith("/principal"):
@@ -164,6 +176,11 @@ class LearningService:
                 return self.loop_view()
             if self.configuration is None:
                 return {"error": {"code": "not_found"}}, 404
+            return self.loop_view()
+        if path.endswith("/pause") or path.endswith("/resume"):
+            if authorization != "Bearer admin":
+                return {"error": {"code": "denied"}}, 403
+            self.controls.append(path.rsplit("/", 1)[1])
             return self.loop_view()
         if path.endswith("/evolve-cases"):
             if method == "POST":
@@ -345,6 +362,8 @@ class ProtocolTest(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()) as stdout:
             self.assertEqual(main(["learn", "--config", "demo.py", "--once"], directory=self.tmp), 0)
         self.assertEqual(self.service.evolve_updates, [case("a")])
+        # The running loop is paused around the sync writes and resumed afterwards.
+        self.assertEqual(self.service.controls, ["pause", "resume"])
         self.assertEqual(self.service.configuration["heldOut"], {"cases": 1, "digest": held_out_digest([case("b")])})
         for expected in ("incumbent 0.75", "diagnosis Missed refunds", "predictions 1",
                          "screen evaluate", "evolve 0.80", "Selection kept", "held-out 0.80"):

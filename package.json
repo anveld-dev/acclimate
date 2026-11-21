@@ -41,7 +41,6 @@
     "typecheck:docs": "npm run typecheck --workspace @acclimate/docs",
     "start:console": "tsx scripts/start-production.ts console",
     "qualify:productization": "python3 scripts/productization/qualify.py",
-    "test:productization:browser": "python3 scripts/test_productization_browser.py",
     "test:bdd": "python3 scripts/bdd/run.py",
     "qualify:local-recovery": "python3 scripts/productization/local_recovery.py",
     "example:delivery": "tsx examples/delivery-check.ts",

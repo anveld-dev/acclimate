@@ -19,7 +19,7 @@ from ._evaluation_shared import (
     CallbackCancelled, EvaluationError, EvaluationUsageError, PrivateJsonError, TaskExecutionError, _text,
     atomic_private_write, clone_json, ensure_private_directory, json_bytes, parse_json,
 )
-from ._evaluation_trials import reported_usage
+from ._evaluation_usage import reported_usage
 from .delivery import DeliveryError, validate_payload
 
 MAX_PAYLOAD_FILE = 2 * 1024 * 1024

@@ -72,7 +72,7 @@ export function normalizeSyntaxLanguage(language: string) {
 
 // Loads a language and returns a highlighter for it, or null for a language
 // that is not listed.
-export async function loadHighlighter(language: string) {
+async function loadHighlighter(language: string) {
   const lang = normalizeSyntaxLanguage(language);
 
   if (!lang) {

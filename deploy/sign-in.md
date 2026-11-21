@@ -19,4 +19,4 @@ The client is confidential, uses authorization code with S256 PKCE, and receives
 
 Keycloak identity administration does not grant Acclimate workspace access. Membership and session revocation still happen in Rust. Changing issuer requires an explicit identity migration; existing rows are never silently reassigned by email. Application sign-out revokes its session and does not promise provider-wide logout.
 
-The [research comparison](../docs/research/auth-setups.md) explains the alternatives considered. The provider decision is now settled; live public-deployment qualification remains separate from isolated testing.
+The [research comparison](https://github.com/anveld-dev/acclimate/blob/ab0d8d3b5ba7fd33a468d6526edcd5d87cb722ef/docs/research/auth-setups.md) explains the alternatives considered. The provider decision is now settled; live public-deployment qualification remains separate from isolated testing.

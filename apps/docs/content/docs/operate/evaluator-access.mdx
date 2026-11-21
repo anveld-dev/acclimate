@@ -8,9 +8,9 @@ In **Members**, workspace administrators use **Machine tokens** to issue a crede
 | Right | Access |
 | --- | --- |
 | `read` | Read workspace metadata, versions and payloads. |
-| `evaluate` | Includes `read`. |
-| `write` | Upload versions and create bundles. Includes `evaluate`. |
-| `promote` | Move a channel to a version. |
+| `evaluate` | Includes `read`. On an enrolled loop’s app principal, authorizes evaluator work, evolve case updates and production outcome reporting. |
+| `write` | Upload versions and create bundles. Includes `evaluate`. Add `read` or `evaluate` explicitly for reading. |
+| `promote` | Move a channel to a version and enroll or control learning loops. Include `read` for a separate enrollment credential used by the Python CLI. |
 
 For a delivery credential scoped to one bundle and channel, issue a content-read credential from **Connections**. Use a separate reporting credential to submit optional delivery receipts. [Delivery setup](/docs/guides/deliver-content)
 

@@ -80,7 +80,18 @@ async function main(argv: string[]) {
   const current = await reconcileLoop(client, workspaceId, bundleId, {
     channel: loop.channel, setting: loop.setting, appPrincipalId: evaluatorPrincipalId, heldOut: loop.commitment,
   }, enrollment);
-  await syncEvolveCases(client, workspaceId, bundleId, loop.evolve);
+  // A running loop starts a round as soon as it has live cases. Pause it while a multi-request sync
+  // writes, so no round pins a partial evolve revision; resume only a loop this command paused.
+  let paused = false;
+  try {
+    await syncEvolveCases(client, workspaceId, bundleId, loop.evolve, async () => {
+      if (current.status !== 'running') return;
+      await enrollment.pauseLearningLoop(workspaceId, bundleId);
+      paused = true;
+    });
+  } finally {
+    if (paused) await enrollment.resumeLearningLoop(workspaceId, bundleId);
+  }
 
   const stop = new AbortController();
   const abort = () => stop.abort();

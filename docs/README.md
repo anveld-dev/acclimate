@@ -1,14 +1,17 @@
 # Documentation
 
-**[Open the HTML docs](site/index.html).** The pages include navigation, local search, light/dark themes, and diagrams. Open the file directly; browsing needs no server, installation, or network.
+[Open the HTML docs](site/index.html) for searchable guides to Acclimate’s learning loop and versioned delivery. The pages open directly from disk.
 
-The main site covers current [design](design/README.md) and historical [research](research/README.md) pages. Historical snapshots are linked from the research archive and excluded from main search. The Markdown files remain the editable source; generated HTML lives in `docs/site/`.
+- [Get started with versioned delivery](getting-started.md)
+- [Run Acclimate locally](development.md)
+- [Set up an evaluator](evaluator-operations.md)
+- [Read the design guide](design/README.md)
+- [Explore the implementation architecture](architecture/README.md)
+- [Publish an Acclimate release](releasing.md)
 
-The [architecture folder](architecture/README.md) describes the delivery architecture and links to the planned self-improvement loop.
+## Rebuild the HTML export
 
-## Editing
-
-From the repository root:
+From the repository root, install the build dependencies and regenerate the checked-in export after editing a source page.
 
 ```sh
 python3 -m pip install -r scripts/docs-requirements.txt
@@ -16,6 +19,4 @@ python3 scripts/build_docs.py
 python3 scripts/check_docs.py
 ```
 
-Edit page text under `docs/design/`, `docs/architecture/`, or `docs/research/`. Diagram fragments and shared styles/behavior live under `docs/site-src/`; [the source guide](site-src/README.md) explains the small build setup. Rebuild after changes.
-
-The first service and SDK implementation is available. [Run locally](development.md) for setup and checks. Earlier execution-platform documents are archived.
+[The export source guide](site-src/README.md) covers page registration, diagram fragments, and shared styles.

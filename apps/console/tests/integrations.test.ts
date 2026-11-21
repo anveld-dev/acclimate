@@ -5,7 +5,6 @@ import type { DeliveryReceipt, Page } from '@acclimate/sdk';
 import {
   integrationCommand,
   readConnectionsState,
-  readIntegrationState,
 } from '../src/server/integration-core';
 const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const other = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -93,15 +92,14 @@ function fixture(
   };
   return { fetcher, requests };
 }
-test('list filters selected bundle, reads actual receipts with console session, and never returns secret', async () => {
+test('connection details read only their receipts with the console session and never return secrets', async () => {
   const f = fixture();
-  const result = await readIntegrationState(env, f.fetcher);
+  const result = await readConnectionsState(env, { workspaceId: 'project', connectionId: id }, f.fetcher);
   assert.equal(result.ok, true);
   if (!result.ok || !result.state) throw Error('Expected state');
-  assert.equal(result.state.entries.length, 1);
-  assert.equal(result.state.entries[0].integration.id, id);
-  assert.deepEqual(result.state.entries[0].receipts.items, []);
-  assert.equal(result.state.currentVersionId, 'current');
+  assert.equal(result.state.selected?.integration.id, id);
+  assert.deepEqual(result.state.selected?.receipts.items, []);
+  assert.equal(result.state.selected?.currentVersionId, 'current');
   assert.ok(!JSON.stringify(result).includes('fixture-console'));
   assert.equal(f.requests.filter((r) => r.url.includes('/receipts')).length, 1);
   for (const r of f.requests) {
@@ -109,7 +107,7 @@ test('list filters selected bundle, reads actual receipts with console session, 
     assert.equal(r.headers.get('x-acclimate-session'), 'fixture-session');
   }
 });
-test('all receipt views preserve the selected page and reject a single out-of-scope item', async () => {
+test('connection details and receipt history preserve the selected page and reject a single out-of-scope item', async () => {
   const receipt: DeliveryReceipt = {
     workspaceId: 'project',
     connectionId: id,
@@ -132,7 +130,6 @@ test('all receipt views preserve the selected page and reject a single out-of-sc
   for (const mismatch of [undefined, ...mismatches]) {
     const page = { items: [receipt, { ...receipt, eventId: key, ...mismatch }], nextCursor: other };
     const f = fixture('admin', page);
-    const list = await readIntegrationState(env, f.fetcher);
     const detail = await readConnectionsState(
       { ...env, CONSOLE_BUNDLE: 'other-bundle' },
       { workspaceId: 'project', connectionId: id },
@@ -144,7 +141,7 @@ test('all receipt views preserve the selected page and reject a single out-of-sc
       f.fetcher,
     );
     if (mismatch) {
-      for (const result of [list, detail, history]) {
+      for (const result of [detail, history]) {
         assert.deepEqual(result, {
           ok: false,
           message:
@@ -152,14 +149,13 @@ test('all receipt views preserve the selected page and reject a single out-of-sc
         });
       }
     } else {
-      assert(list.ok && history.ok && detail.ok);
-      assert.deepEqual(list.state?.entries[0].receipts, page);
+      assert(history.ok && detail.ok);
       assert.deepEqual(detail.state.selected?.receipts, page);
       assert.deepEqual(history.receipts, page);
       const queries = f.requests
         .filter((request) => request.url.includes('/receipts'))
         .map((request) => Object.fromEntries(new URL(request.url).searchParams));
-      assert.deepEqual(queries, [{ limit: '20' }, { limit: '20' }, { limit: '20', cursor: key }]);
+      assert.deepEqual(queries, [{ limit: '20' }, { limit: '20', cursor: key }]);
     }
   }
 });
@@ -196,7 +192,7 @@ test('selected scope and edit gates apply before mutation', async () => {
   assert.equal(disabled.requests.length, 0);
   const signedOut = fixture();
   assert.equal(
-    (await readIntegrationState({ ...env, CONSOLE_SESSION_TOKEN: undefined }, signedOut.fetcher))
+    (await readConnectionsState({ ...env, CONSOLE_SESSION_TOKEN: undefined }, { workspaceId: 'project' }, signedOut.fetcher))
       .ok,
     false,
   );
@@ -236,7 +232,7 @@ test('service denial produces safe error and never returns raw service message',
     new Response(JSON.stringify({ error: { code: 'denied', message: 'private-token-value' } }), {
       status: 403,
     });
-  const result = await readIntegrationState(env, fetcher);
+  const result = await readConnectionsState(env, { workspaceId: 'project' }, fetcher);
   assert.equal(result.ok, false);
   assert.ok(!JSON.stringify(result).includes('private-token-value'));
 });

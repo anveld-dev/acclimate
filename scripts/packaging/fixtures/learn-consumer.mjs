@@ -18,6 +18,7 @@ const round = {
 };
 let enrolled;
 let uploaded;
+const controls = [];
 let failure;
 const server = createServer((req, res) => {
   void (async () => {
@@ -42,6 +43,10 @@ const server = createServer((req, res) => {
     }
     if (path === learning)
       return respond({ error: { code: 'not_found', requestId: 'missing', message: 'Not enrolled' } }, 404);
+    if ((path === learning + '/pause' || path === learning + '/resume') && req.method === 'POST') {
+      controls.push(path.slice(learning.length + 1));
+      return respond({ ...enrolled, status: path.endsWith('/pause') ? 'paused' : 'running', nextRound: 1, activeRound: null, rounds: [] });
+    }
     if (path === learning + '/evolve-cases' && req.method === 'POST') {
       uploaded = await read();
       return respond({ evolveRevision: 1, added: 1, retired: 0, liveCases: 1 });
@@ -83,6 +88,8 @@ try {
   assert.ifError(failure);
   assert.equal(enrolled.setting.benchmark, 'inline');
   assert.deepEqual(uploaded, { cases: [{ caseId: 'case-0', input: 1, expected: 1 }], retire: [] });
+  // The running loop is paused around the case upload and resumed afterwards.
+  assert.deepEqual(controls, ['pause', 'resume']);
   assert.match(stdout, /round 1 · incumbent 1\.00/);
   assert.match(stdout, /kept · held-out 1\.00/);
   console.log('Installed acclimate bin: TypeScript config, one-token enrollment and round progress passed.');

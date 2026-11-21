@@ -1,7 +1,6 @@
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { evaluationMain } from './cli.js';
 import { runControlsFromFlags } from './controls.js';
 import { EvaluationUsageError, EXIT_CODES } from './errors.js';
 import { assertPayloadCompatible } from './compatibility-check.js';
@@ -86,7 +85,7 @@ function tryText(result: TryResult): string {
   }
   lines.push(
     result.ok
-      ? 'All shapes are valid. Next: compare --local --parent PAYLOAD --candidate PAYLOAD.'
+      ? 'All shapes are valid.'
       : 'Fix the errors above; a real run records them as evidence gaps.',
   );
   return lines.join('\n');
@@ -117,12 +116,4 @@ export async function tryCommand(app: EvaluationApp<any, any, any>, flags: Flags
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-}
-
-export function localMain(
-  app: EvaluationApp<any, any, any>,
-  argv: readonly string[],
-  directory = process.cwd(),
-): Promise<number> {
-  return evaluationMain(app, argv, { cwd: directory });
 }

@@ -17,7 +17,7 @@ from acclimate._evaluation_controls import (
 )
 from acclimate._evaluation_shared import json_bytes
 from acclimate.evaluation import (
-    Case, EvaluationError, ExecutionResult, ExecutionUncertainError, GradeResult, bind_run_controls, define_evaluation,
+    Case, EvaluationError, ExecutionResult, GradeResult, define_evaluation,
 )
 from acclimate.evaluation_cli import evaluation_main, parse_evaluator_arguments
 from acclimate.evaluation_local import (

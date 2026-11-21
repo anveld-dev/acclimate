@@ -1,0 +1,26 @@
+---
+title: Try Acclimate on your laptop
+description: Start the local stack and deliver a verified version to your application.
+---
+
+## Start the stack
+
+From a source checkout, run:
+
+```sh
+npm run local:up -- --build
+npm run local:trust
+```
+
+Open the printed console URL and sign in with the generated login. On a fresh stack, the script creates a `local-demo` workspace and publishes the example bundle on `stable`. [Local stack prerequisites and TLS setup](/docs/get-started/run-locally)
+
+## Connect your application
+
+1. [Install the SDK](/docs/get-started/install) in the environment that runs your agent.
+2. In the workspace, open **Connections** and create a connection for the example bundle and `stable`. Issue a content-read credential.
+3. Follow the connection's **Setup** recipe. Set the public API URL, private credential and stable cache scope in your application's environment. Run the delivery check to see the resolved version and verified files.
+4. Prepare the version before each job. Keep the version ID and digest with the result, and clean up the prepared files once the job stops. [Deliver content to jobs](/docs/guides/deliver-content)
+
+## Publish your own bundle
+
+Open **Bundles** and create a bundle from files or text. A bundle can include instruction files, skills under `skills/` and memory under `memory/`. Pick a compatibility target and channel. Creating the bundle publishes its first version and release. For automatic improvements, configure the service optimizer and enroll the bundle in a learning loop. [Learning setup](/docs/guides/learning-loop)

@@ -6,25 +6,5 @@
   "cache-update": {
     "source": "docs/design/bundles-and-cache.md",
     "file": "cache-update.html"
-  },
-  "agentrun-architecture": {
-    "source": "docs/research/agentrun.md",
-    "file": "agentrun-architecture.html"
-  },
-  "agentrun-learning": {
-    "source": "docs/research/agentrun.md",
-    "file": "agentrun-learning.html"
-  },
-  "rrsi-search": {
-    "source": "docs/research/rrsi.md",
-    "file": "rrsi-search.html"
-  },
-  "architecture-parallel": {
-    "source": "docs/architecture/parallel-work.md",
-    "file": "architecture-parallel.html"
-  },
-  "productization-paths": {
-    "source": "docs/architecture/productization/README.md",
-    "file": "productization-paths.html"
   }
 }

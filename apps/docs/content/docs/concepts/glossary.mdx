@@ -16,6 +16,6 @@ description: Terms used in delivery and the learning loop.
 | Candidate | One of the five proposed changes in a round, with its diagnosis and predicted fixes. |
 | Evolve split | The cases the loop learns from. Their scores, traces and errors reach the optimizer. |
 | Held-out split | Fixed cases kept in the evaluator's own store. Their scores are shown for monitoring and never reach the optimizer. |
-| Outcome | An application's result for a task with an expected answer. It becomes an evolve case. |
+| Outcome | A reported production task input and its expected answer, tied to the version used for the task. It becomes an evolve case. |
 | Improvement memory | The optimizer-only record of problems and adopted attempts, including predicted fixes and measured results. It is never delivered to jobs. |
 | App principal | The machine identity that submits outcomes and evolve cases and runs the evaluator for a loop. |

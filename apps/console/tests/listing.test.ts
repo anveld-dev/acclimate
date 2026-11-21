@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { allPages } from '../src/server/listing';
 import { readAccessState } from '../src/server/access-core';
-import { readIntegrationState } from '../src/server/integration-core';
+import { readConnectionsState } from '../src/server/integration-core';
 import { listSetup } from '../src/server/setup';
 
 test('listing preserves opaque cursors and rejects direct and longer cursor cycles', async () => {
@@ -43,7 +43,7 @@ const identity = {
 for (const [name, limit, read] of [
   ['setup', 1000, (fetcher: typeof fetch) => listSetup(env, fetcher)],
   ['access', 1001, (fetcher: typeof fetch) => readAccessState(env, fetcher)],
-  ['integration', 1001, (fetcher: typeof fetch) => readIntegrationState(env, fetcher)],
+  ['integration', 1001, (fetcher: typeof fetch) => readConnectionsState(env, { workspaceId: 'project' }, fetcher)],
 ] as const) {
   test(`${name} retains its page limit and rejects continued listings without another read`, async () => {
     for (const continues of [false, true]) {

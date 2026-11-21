@@ -23,7 +23,7 @@ Keep the completed files outside the checkout in a private parent directory. Use
 | `ACCLIMATE_CONSOLE_ENV` | Complete `apps/console/.env.example` with the public HTTPS console and API URLs, private service URL, issuer, confidential client credentials, and matching transport and login credentials. |
 | `ACCLIMATE_POSTGRES_PASSWORD_FILE` | Initial PostgreSQL role password. URL-encode the same password in the service's `DATABASE_URL`. |
 
-Use `http://service:3000` for the private console-to-service URL in Compose. Set `CONSOLE_ALLOW_EDITS=true` to enable authoring and connection mutations for authorized roles. Keep machine credentials separate from both console authority credentials.
+Use `http://service:3000` for the private console-to-service URL in Compose. Set `CONSOLE_ALLOW_EDITS=true` to enable authoring, connection and learning mutations for authorized roles. Keep machine credentials separate from both console authority credentials.
 
 ## Build and start
 
@@ -37,7 +37,7 @@ docker compose up -d --wait
 
 Caddy obtains certificates and forwards the canonical public console host. Open the public `CONSOLE_ORIGIN` to sign in. A verified deployment operator can create a workspace, or explicitly adopt an existing memberless workspace by exact ID and reason. Workspace administrators grant membership for subsequent access.
 
-On first start, the service applies its schema baseline to an empty database. For an existing database, follow [upgrades and recovery](/docs/operate/upgrades-and-recovery). Verify [readiness and authenticated access](/docs/operate/health-and-readiness) before sending traffic.
+On startup, the service applies pending database migrations. For an existing database, follow [upgrades and recovery](/docs/operate/upgrades-and-recovery). Verify [readiness and authenticated access](/docs/operate/health-and-readiness) before sending traffic. Configure the optimizer if you will run learning loops. [Optimizer settings](/docs/reference/configuration#learning)
 
 <Callout type="info" title="Deployment qualification">
 The repository's fixture checks cover isolated test configurations only. Before sending traffic, run the [HTTPS and OIDC gates](/docs/operate/health-and-readiness#verify-access-and-activity) against your own issuer, certificates, and endpoints.

@@ -1,9 +1,0 @@
-{
-  "sourceBuildSha256": "0f5464d8a58e669deee66734d3bd734b0afb5b88339012c89dc79334715c2ff1",
-  "files": {
-    "c.css": "93ac82226029db069bcc02f7daccf7fd413cc4b99c88a468530f7457b2b0c663",
-    "d.css": "5e3ccdc2b15610d420c29f1fbe98e547bc1c1f492031926d79ce9e56f0a6acd6",
-    "d-layout.js": "cadcea259b1530ac63d9067bdd03ee6e4c16da0d911bfdaf34fe05d2f497614a",
-    "source-size.js": "1d15d5c42264b5354712b2b32f746277de027552cb27519dd5ca585895c6e9df"
-  }
-}

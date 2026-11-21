@@ -6,7 +6,7 @@ Your application still runs the agent and grades its work. Acclimate versions th
 
 Each round proposes five candidates, screens them, evaluates the survivors and selects one to adopt or keeps the current release. An adoption releases the version and adds an attempt to improvement memory. The evaluator scores the retained version on private held-out cases for monitoring.
 
-Acclimate is open source under Apache-2.0 and self-hosted. Your agents, prompts, tasks, and model credentials stay in your environment.
+Acclimate is open source under Apache-2.0 and self-hosted. Your application runs the agents and keeps its own model credentials. The service sends the harness and evolve feedback to the configured optimizer. Held-out inputs and expected answers stay with the evaluator.
 
 ## Run the local stack
 
@@ -21,7 +21,7 @@ The first start pulls the released images, or builds from source in 10 to 20 min
 
 ## Run a learning loop
 
-Install `@acclimate/sdk` in your TypeScript project. Acclimate learning supports OpenAI-compatible endpoints only. For Codex, sign in through CLIProxyAPI and set `OPENAI_BASE_URL=http://127.0.0.1:8317/v1`. Set `OPENAI_API_KEY` if your proxy requires one. [CLIProxyAPI setup](apps/docs/content/docs/guides/learning-loop.mdx#use-codex-through-cliproxyapi) Set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` using a machine token with **Promote** and **Evaluate**. With a bundle released and the service optimizer configured, save this as `acclimate.loop.ts`.
+Install the TypeScript SDK from a verified tarball or build it from a checkout. [SDK installation](packages/sdk/README.md) The built-in `openai()` adapter and service optimizer use OpenAI-compatible Chat Completions endpoints. For Codex, sign in through CLIProxyAPI and set `OPENAI_BASE_URL=http://127.0.0.1:8317/v1`. Set `OPENAI_API_KEY` if your proxy requires one. [CLIProxyAPI setup](apps/docs/content/docs/guides/learning-loop.mdx#use-codex-through-cliproxyapi) Set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` using a machine token with **Promote** and **Evaluate**. With a bundle released and the service optimizer configured, save this as `acclimate.loop.ts`.
 
 ```ts
 import { defineLoop, exact, openai } from '@acclimate/sdk/learning';
@@ -35,9 +35,9 @@ export default defineLoop({
 });
 ```
 
-Add labeled tickets to `cases.jsonl`, then run `npx acclimate learn`. [Learning loop quick start](apps/docs/content/docs/guides/learning-loop.mdx)
+Add labeled tickets with `input` and `expected` fields to `cases.jsonl`, then run `npx acclimate learn`. The CLI splits cases by a stable hash and needs at least one case in each split. Python users can define and run the same loop with `python -m acclimate learn`. [Learning loop quick start](apps/docs/content/docs/guides/learning-loop.mdx)
 
-Report production jobs that have a known answer, and they become evolve cases for the next round:
+Use the enrolled app principal to report a known answer for a production job. It becomes an evolve case for the next round.
 
 ```ts
 import { createAcclimate } from '@acclimate/sdk';
@@ -51,7 +51,7 @@ To move to a new model, change `openai({ model })` and run `npx acclimate learn`
 
 ## Deliver content to jobs
 
-**Deliver content to jobs.** The SDK fetches and verifies the released version when your application starts a job, and prepares files for agents such as Codex or the Claude Agent SDK. In the console, **App setup** shows the client configuration for a bundle and channel. [Native integration](examples/native-repository/README.md)
+The SDK fetches and verifies the released version when your application starts a job, and prepares files for agents such as Codex or the Claude Agent SDK. In the console, **App setup** shows the client configuration for a bundle and channel. [Native integration](examples/native-repository/README.md)
 
 ## Operate or develop Acclimate
 

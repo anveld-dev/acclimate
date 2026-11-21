@@ -13,6 +13,7 @@ Every workspace route starts with `/v1/workspaces/{workspaceId}`.
 
 | Operation | Method and path relative to the workspace prefix |
 | --- | --- |
+| Read the caller’s identity and effective rights | `GET /principal` returns `{principalId, kind, rights}`. Requires workspace read access. `kind` is `machine` or `user`. |
 | List or create bundles | `GET` or `POST /bundles` |
 | Create a bundle, its first version and its first release | `POST /bundle-setups` |
 | Create a version | `POST /bundles/{bundleId}/versions` |
@@ -22,7 +23,12 @@ Every workspace route starts with `/v1/workspaces/{workspaceId}`.
 | List or create releases | `GET` or `POST /bundles/{bundleId}/channels/{channel}/releases` |
 | List or create connections | `GET` or `POST /connections` |
 | List connection observations | `GET /connection-observations` |
-| Manage machine tokens | `GET` or `POST /machine-tokens` and its subpaths |
+| Issue or list machine tokens | `GET` or `POST /machine-tokens` |
+| Rotate or revoke a machine token | `POST /machine-tokens/{tokenId}/rotate` or `POST /machine-tokens/{tokenId}/revoke` |
+| List machine token events | `GET /machine-token-events` |
+| Revoke a connection | `POST /connections/{connectionId}/revoke` |
+| Issue or revoke a connection credential | `POST /connections/{connectionId}/credentials` or `POST /connections/{connectionId}/credentials/{credential}/revoke` |
+| List or submit delivery receipts | `GET` or `POST /connections/{connectionId}/receipts` |
 | Look up or close a retained write | `GET /operations/{operationId}` or `POST /operations/{operationId}/close` |
 
 `GET /v1/workspaces` lists the workspaces the caller can access.
@@ -48,9 +54,9 @@ Bundle entries are UTF-8 text with a portable relative path and a kind of `instr
 
 ## Retry a mutation
 
-For scoped content writes, provide an `Idempotency-Key` of 1–128 printable ASCII characters. Retry with the same key and exact request bytes. A different body with that key can return a 409 conflict. Bundle setup and release writes support retained results. Send `X-Acclimate-Durable-Operation: true` with a UUID idempotency key. Look up or close a lost write with `GET /operations/{key}?operationPath=...` or `POST /operations/{key}/close`.
+For content writes that require an idempotency key, provide an `Idempotency-Key` of 1–128 printable ASCII characters. Retry with the same key and exact request bytes. A different body with that key can return a 409 conflict. Bundle setup, version creation and release writes support retained results. Send `X-Acclimate-Durable-Operation: true` with a UUID idempotency key. Look up a lost write with `GET /operations/{key}?operationPath=...`. To close it, send `POST /operations/{key}/close` with the same `Idempotency-Key` and a JSON body containing `operationPath`. Use the full original API path for `operationPath`.
 
-Release writes take `versionId`, `expectedRevision` and `unevaluatedReason`. On a revision conflict, re-read the channel before submitting a new release.
+Release writes take `versionId`, `expectedRevision` as a string (use `"0"` for a new channel), and a nonblank `unevaluatedReason`. On a revision conflict, re-read the channel before submitting a new release.
 
 ## Learning loop
 
@@ -64,15 +70,16 @@ Paths below are relative to `/v1/workspaces/{workspaceId}/bundles/{bundleId}/lea
 | `GET /rounds` | Reader | Optional `before` round cursor and `limit` (default 20, max 100). Returns `{items, next}` with round summaries. |
 | `GET /rounds/{roundId}` | Reader | Returns `LearningRound`, including summary fields, pinned settings, candidates, selection and evaluations. Optional `evaluation` ID includes the full report for one evolve evaluation. |
 | `GET /memory` | Reader other than the app principal | Returns `LearningMemory` with the rendered document and full attempt provenance. Optional `revision` selects a historical revision, including revision 0. |
-| `POST /evolve-cases` | App principal or signed-in workspace member with write access | Send `cases: [{caseId, input, expected}]` and/or `retire: [caseId]`. Returns `{evolveRevision, added, retired, liveCases}`. |
+| `GET /evolve-cases` | App principal or signed-in workspace member with read access | Lists live cases in ascending ASCII case ID order. Each item contains `caseId`, `input`, `expected` and `addedRevision`. Use the exclusive `after` cursor and `limit` (1–100, default 20). Returns `{items, next, evolveRevision}`. Pass `next` as `after` until it is null. Restart pagination if the revision changes. |
+| `POST /evolve-cases` | App principal or signed-in workspace member with write access | Send `cases: [{caseId, input, expected}]` and/or `retire: [caseId]`. Send at most 100 IDs per list and at least one addition or retirement in total. Returns `{evolveRevision, added, retired, liveCases}`. |
 | `POST /outcomes` | App principal | Send `outcomeId`, `versionId`, `digest`, `input` and `expected`. Returns `{outcomeId, caseId, evolveRevision}`. |
 | `GET /work` | App principal | Returns `{bundleId, status, items}` with queued or running evaluations. |
 | `POST /evaluations/{evaluationId}/start` | App principal | Send `attemptId`. Returns `{evaluation, cases, heldOut, reportedCaseIds}`. |
 | `POST /evaluations/{evaluationId}/report` | App principal | Send `attemptId` with `cases: [{caseId, rollouts}]` or an `error`. Returns `LearningEvaluation`. |
 
-Administrators are signed-in workspace admins or machine principals with `promote`. The enrolled app principal must hold `evaluate` and be distinct from the enrolling administrator. The service returns 409 if enrollment changes the channel, principal or held-out commitment while a round is active. Pause and wait for the round to end before changing those fields.
+Administrators are signed-in workspace admins or machine principals with `promote`. The enrolled app principal must be a machine identity with `evaluate` access. A machine principal with both `promote` and `evaluate` may enroll itself. The service returns 409 if enrollment changes the channel, principal or held-out commitment while a round is active. Pause and wait for the round to end before changing those fields.
 
-Start and report require `Idempotency-Key`. Keep the same attempt ID on restart and skip the assignment's `reportedCaseIds`. A case report contains exactly five rollout scores and pass flags. Evolve rollouts can carry optional `trace` and `error` strings. Held-out rollouts carry only `score` and `passed`. Each completed evaluation's score is the mean of its case means.
+Start and report require `Idempotency-Key`. Keep the same attempt ID on restart and skip the assignment's `reportedCaseIds`. A case report contains exactly five rollouts with `score` (0–1) and `passed` (boolean). Evolve rollouts can carry optional `trace` and `error` strings. Held-out rollouts carry only `score` and `passed`. Each completed evaluation's score is the mean of its case means.
 
 Each round records candidates with their diagnoses, predicted evolve cases, changes, scanner findings, screen verdicts and evolve scores as they become available. The selection records the decision to adopt or keep and its reason. An adoption immediately releases the selected version and writes a memory attempt. Held-out results are for monitoring only.
 

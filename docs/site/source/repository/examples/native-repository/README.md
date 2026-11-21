@@ -1,6 +1,6 @@
-# Evaluate a change with your coding agent
+# Test a coding agent with versioned instructions
 
-Use the same installed agent, task and repository snapshot for each side of an evaluation. This starter stages verified version content, retains the agent’s edits and lets your grader test the solution against the original repository inputs.
+Use a local evaluator adapter to run an installed coding agent against a task and a frozen repository snapshot. This starter stages verified version content, retains the agent’s edits and lets your grader test the solution against the original repository inputs.
 
 Node 22.22+, npm 10+ and Linux/macOS (POSIX) are required. Obtain the native starter, matching SDK/plugin tarballs, release manifest and checksums from your release operator; no registry publication or download URL is implied. Verify `SHA256SUMS` in that release directory before extraction. Keep the included private `package.json`: it establishes the application boundary even when extracted beneath another npm workspace. Its empty dependency list deliberately performs no implicit registry resolution.
 
@@ -23,7 +23,7 @@ cd "$app"
 node smoke.mjs
 ```
 
-`smoke.mjs` runs two versions through `application.mjs` with `native.replay.json`: the replay harness applies the edits recorded in `fixture/replay.json`, and the real grader runs `fixture/tests/retry.test.mjs`. The parent scores 0 and reports an undeclared `docs/retry-notes.md`; the candidate scores 1. To use the same harness with the evaluator CLI, copy `native.replay.json` to `native.json` and create its private state directory (`mkdir -p -m 700 state/workspaces state/artifacts`).
+`smoke.mjs` runs two versions through `application.mjs` with `native.replay.json`: the replay harness applies the edits recorded in `fixture/replay.json`, and the real grader runs `fixture/tests/retry.test.mjs`. The parent scores 0 and reports an undeclared `docs/retry-notes.md`; the candidate scores 1. To use the same harness with the evaluator CLI, copy `native.replay.json` to `native.json` and create private `state`, `state/workspaces` and `state/artifacts` directories, and set `TMPDIR` to the canonical absolute path of `state/workspaces`.
 
 ## Choose a harness
 
@@ -37,7 +37,7 @@ Set `harness` in `native.json` to `codex` (the default), `claude`, `pi`, `cursor
 | `pi` | `runPiTask` | tools read/edit/write/bash/grep/find/ls, in-memory session and settings | `provider/model-id` |
 | `replay` | `runReplayTask` | applies `replay` file edits, no model | none |
 
-To test multiple harnesses, list them: `"harnesses": ["codex", "claude"]`. Every case then runs once per harness and the harness becomes part of the case key, for example `request-scoped-retry@claude`, with `input.harness` set. Each pair still compares parent and candidate on the same harness. To aggregate per harness, group the comparison's pairs by the `@<harness>` suffix of their case IDs. Use `models` (for example `{"codex": "…", "claude": "…"}`) when the harnesses need different model values.
+To test multiple harnesses, list them: `"harnesses": ["codex", "claude"]`. The adapter creates one case per harness and puts the harness in the case key, for example `request-scoped-retry@claude`, and in `input.harness`. Use `try --case` to select a case by that key. Use `models` (for example `{"codex": "…", "claude": "…"}`) when the harnesses need different model values.
 
 ### Add your own harness
 
@@ -101,7 +101,7 @@ Relative paths for `sourceRoot`, `stateRoot` and `replay` resolve from the start
 
 Check a bundle payload before a live run with `node native.mjs check-bundle payload.json`.
 
-From the extracted starter, set `ACCLIMATE_NATIVE_CONFIG` and configure a private state root as shown above.
+Create `stateRoot` and its `workspaces` and `artifacts` subdirectories with mode 0700. Export `TMPDIR` as the canonical absolute path of `stateRoot/workspaces`. Run the commands from the extracted starter. Set `ACCLIMATE_NATIVE_CONFIG` if your config uses a different path from `native.json`.
 
 ```sh
 ./node_modules/.bin/acclimate-eval describe
@@ -119,15 +119,15 @@ The grader runs `node --test --test-reporter=tap` in its own process group with 
 
 ## Isolation and timeouts
 
-Each job gets its own `HOME` inside the workspace (`.acclimate/home`). For Codex, `CODEX_HOME` points there and contains only a copy of `auth.json`, so your global `config.toml`, MCP servers and `AGENTS.md` do not reach either arm; Claude gets an isolated `CLAUDE_CONFIG_DIR` with only `.credentials.json`, and Pi only `auth.json`. API-key variables for the selected harness pass through. System-level configuration that isolation cannot remove (for example `/etc/codex/config.toml` or Claude's managed settings) is hashed into the runtime identity as `ambientConfig`.
+Each job gets its own `HOME` inside the workspace (`.acclimate/home`). For Codex, `CODEX_HOME` points there and contains only a copy of `auth.json`, so your global `config.toml`, MCP servers and `AGENTS.md` stay outside the job; Claude gets an isolated `CLAUDE_CONFIG_DIR` with only `.credentials.json`, and Pi only `auth.json`. API-key variables for the selected harness pass through. System-level configuration that isolation cannot remove (for example `/etc/codex/config.toml` or Claude's managed settings) is hashed into the runtime identity as `ambientConfig`.
 
-Each agent turn runs in its own process group. When `turnTimeoutMs` expires the starter asks the adapter to stop, waits briefly, then kills the whole group, including tools the agent started. Once the group is gone, the case is a `task_failed` result with `reason: 'timeout'`, and its partial edits are retained and graded. An unexpected exit is `reason: 'crash'`. A provider error (for example Codex `turn.failed`) retains results, writes a private, redacted `failure.json` beside the job's artifacts and fails that arm with `native.harness_failed`, naming the file. Only a process group that survives SIGKILL, or an adapter that cannot confirm a remote job stopped, is quarantined as uncertain, and then only that arm fails; the rest of the comparison continues.
+Each agent turn runs in its own process group. When `turnTimeoutMs` expires the starter asks the adapter to stop, waits briefly, then kills the whole group, including tools the agent started. Once the group is gone, the case is a `task_failed` result with `reason: 'timeout'`, and its partial edits are retained and graded. An unexpected exit is `reason: 'crash'`. A provider error (for example Codex `turn.failed`) retains results, writes a private, redacted `failure.json` beside the job's artifacts and fails the execution with `native.harness_failed`, naming the file. Only a process group that survives SIGKILL, or an adapter that cannot confirm a remote job stopped, is quarantined as uncertain. Use the local jobs commands to inspect it.
 
 Files the agent creates outside `resultFiles` are not graded, but each job reports them in `undeclaredChanges` (count and up to 50 paths; `node_modules` and native control directories are ignored).
 
 ## Frozen source and context policy
 
-The packaged application captures the source once per invocation and uses the same snapshot for both sides. Keep the checkout fixed until the request finishes or is regraded.
+The packaged application captures the source once per invocation. Keep the source checkout fixed while the adapter captures it.
 
 `repository-source-policy-v1` accepts only an explicit or generated list of regular portable paths. It rejects dot-prefixed segments not listed in `allowDotPaths`, `AGENTS.md`/`CLAUDE.md` at every depth and case variant, symlinks, device/socket/FIFO files, traversal, case/prefix collisions and existing native-file collisions. Each error names the path and the rule, for example `native.control_path: ".gitignore" (dot-prefixed segment)`. It copies no `.git`, `.env`, hooks, MCP settings, implicit dependencies or build outputs. Existing repository guidance must be deliberately reviewed into the bundle or handled by a separately versioned app recipe. Ambient user configuration is isolated as described above; record any other host policy in `deploymentRevision`.
 
@@ -151,4 +151,4 @@ node native.mjs jobs cleanup JOB_ID --confirm-stopped
 
 Cleanup saves a durable deletion intent before removing the owned tree. If the worker dies after deletion but before recording completion, explicit recovery can finish that record after termination verification. A missing workspace without that prior intent remains an ownership error.
 
-The owner-only artifact directory stores the complete `result.patch`, `output.json`, retained solution files and their manifest. The evaluator receives hashes, sizes, declared-file changes, a protected-change count, undeclared changes, a failure summary (reason, code and the private `failure.json` path) when there was one, an opaque job reference and up to 64 KiB of agent output. Larger outputs stay private and the inline `result` becomes null. The private output limit is 8 MiB. Review exports can select and redact the bounded evidence using the installed evaluator’s export workflow.
+The owner-only artifact directory stores the complete `result.patch`, `output.json`, retained solution files and their manifest. The evaluator receives hashes, sizes, declared-file changes, a protected-change count, undeclared changes, a failure summary (reason, code and the private `failure.json` path) when there was one, an opaque job reference and up to 64 KiB of agent output. Larger outputs stay private and the inline `result` becomes null. The private output limit is 8 MiB. Review retained evidence in the private state directory.

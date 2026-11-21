@@ -36,7 +36,7 @@ Upgrade in this order:
 
 [`contracts/openapi.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/openapi.json) is the source of truth for routes, fields, status codes and error codes. Both SDKs follow it: TypeScript types ship in `@acclimate/sdk`'s declarations and Python types in `acclimate.types`.
 
-All routes start with `/v1`. Within `/v1`, a release may:
+The versioned API uses `/v1`. Liveness and readiness use `/health` and `/ready`. Within `/v1`, a release may:
 
 - add routes, optional request fields and response fields;
 - add values to an enumeration, such as a new status or error code;

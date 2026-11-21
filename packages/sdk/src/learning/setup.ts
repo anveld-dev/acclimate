@@ -53,13 +53,24 @@ export async function syncEvolveCases(
   workspaceId: string,
   bundleId: string,
   cases: readonly LearningEvolveCase[],
+  /** Runs once, before the first write, only when the sync will add or retire cases. */
+  beforeWrite?: () => Promise<void>,
 ) {
   const desired = new Map(cases.map(item => [item.caseId, item]));
   const retire: string[] = [];
   let after: string | undefined;
   let revision: number | undefined;
-  do {
-    const page = await client.listLearningEvolveCases(workspaceId, bundleId, { after, limit: 100 });
+  // Large cases can push a 100-case page past the client's 4 MiB response cap; halve and retry.
+  let limit = 100;
+  for (;;) {
+    let page;
+    try {
+      page = await client.listLearningEvolveCases(workspaceId, bundleId, { after, limit });
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.code !== 'response_too_large' || limit === 1) throw error;
+      limit = Math.max(1, Math.floor(limit / 2));
+      continue;
+    }
     if (revision !== undefined && page.evolveRevision !== revision)
       throw new Error('The evolve cases changed during listing. Rerun acclimate learn to sync.');
     revision = page.evolveRevision;
@@ -72,14 +83,28 @@ export async function syncEvolveCases(
       desired.delete(caseId);
     }
     after = page.next ?? undefined;
-  } while (after);
+    if (!after) break;
+  }
 
   const add = [...desired.values()];
-  for (let offset = 0; offset < Math.max(add.length, retire.length); offset += 100) {
-    const body: LearningEvolveCasesRequest = {
-      cases: add.slice(offset, offset + 100),
-      retire: retire.slice(offset, offset + 100),
-    };
+  // The service rejects bodies over 2 MiB. Each case is at most 128 KiB of input and expected
+  // JSON, so batch by bytes as well as count, leaving room for the envelope and 100 retirements.
+  const byteBudget = 2 * 1024 * 1024 - 14_000;
+  let added = 0;
+  let removed = 0;
+  if (add.length || retire.length) await beforeWrite?.();
+  while (added < add.length || removed < retire.length) {
+    const cases: typeof add = [];
+    let size = 0;
+    for (const item of add.slice(added, added + 100)) {
+      const itemSize = Buffer.byteLength(JSON.stringify(item)) + 1;
+      if (size + itemSize > byteBudget) break;
+      cases.push(item);
+      size += itemSize;
+    }
+    const body: LearningEvolveCasesRequest = { cases, retire: retire.slice(removed, removed + 100) };
     await client.addLearningEvolveCases(workspaceId, bundleId, body, randomUUID());
+    added += cases.length;
+    removed += body.retire!.length;
   }
 }

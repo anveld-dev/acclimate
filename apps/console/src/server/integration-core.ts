@@ -11,17 +11,6 @@ import type {
 } from '@acclimate/sdk';
 import { requireSession, actorScope, type Environment } from './selection';
 
-type Entry = { integration: Connection; receipts: Page<DeliveryReceipt> };
-export type IntegrationState = {
-  workspaceId: string;
-  bundleId: string;
-  channel: string;
-  currentVersionId: string;
-  currentRevision: string;
-  canManage: boolean;
-  actorScope: string;
-  entries: Entry[];
-};
 export type IntegrationCommand =
   | { action: 'create'; displayName: string; key: string }
   | {
@@ -43,7 +32,6 @@ export type IntegrationResult =
   | { ok: false; message: string; issuedCredential?: IssuedCredentialMetadata }
   | {
       ok: true;
-      state?: IntegrationState;
       credential?: ConnectionCredential;
       receipts?: Page<DeliveryReceipt>;
       integration?: Connection;
@@ -142,38 +130,6 @@ async function readReceiptPage(client: AcclimateClient, integration: Connection,
   return receipts;
 }
 
-export async function readIntegrationState(
-  env: Environment,
-  fetcher: typeof fetch = fetch,
-): Promise<IntegrationResult> {
-  try {
-    const c = await context(env, fetcher);
-    const resolution = (await c.client.resolveChannel(c.workspaceId, c.bundleId, c.channel))
-      .resolution;
-    if (!resolution) throw Error('Channel missing');
-    const entries = await Promise.all(
-      c.integrations.map(async (integration) => ({
-        integration,
-        receipts: await readReceiptPage(c.client, integration),
-      })),
-    );
-    return {
-      ok: true,
-      state: {
-        workspaceId: c.workspaceId,
-        bundleId: c.bundleId,
-        channel: c.channel,
-        currentVersionId: resolution.version.id,
-        currentRevision: resolution.revision,
-        canManage: c.canManage,
-        actorScope: actorScope(env),
-        entries,
-      },
-    };
-  } catch (error) {
-    return failure(error);
-  }
-}
 export async function integrationCommand(
   env: Environment,
   input: IntegrationCommand,

@@ -1,6 +1,6 @@
 # Self-improvement memory experiment
 
-This example runs the Acclimate learning loop on W1, an LLM CLI support workload. It compares Full SIM, Harness Transfer and Cold Start in 10 checkpoint-paired blocks. The primary outcome is the round-10 held-out score after the task model changes from `gpt-6-luna` to `gpt-6.2-sol`. The [experiment plan](../../docs/architecture/self-improvement-memory/experiment.md) defines the protocol and integrity gates.
+This example runs the Acclimate learning loop on W1, an LLM CLI support workload. It compares Full SIM, Harness Transfer and Cold Start in 10 checkpoint-paired blocks. The primary outcome is the round-10 held-out score after the task model changes from `gpt-6-luna` to `gpt-6.2-sol`. The [experiment plan](experiment.md) defines the protocol and integrity gates.
 
 ## Prepare and check the fixtures
 

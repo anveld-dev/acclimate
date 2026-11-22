@@ -1,6 +1,6 @@
 # Self-improvement memory: experiment plan (pre-registration draft)
 
-This file plans the paper-sized test of the main transfer claim of [arXiv 2611.18856](https://arxiv.org/abs/2611.18856) on the product loop itself (D10). It covers the conditions, splits, endpoints, statistics, power, the turn and token estimates, randomization, the integrity rules, the driver and its tests. Every product name comes from the [README](README.md#names). The driver adds no product route, table, setting or mode.
+This file plans the paper-sized test of the main transfer claim of [arXiv 2611.18856](https://arxiv.org/abs/2611.18856) on the product loop itself (D10). It covers the conditions, splits, endpoints, statistics, power, the turn and token estimates, randomization, the integrity rules, the driver and its tests. Every product name comes from the [README](#names). The driver adds no product route, table, setting or mode.
 
 The product loop is the experiment loop. The driver sets up bundles, starts and pauses loops, runs the evaluator with the right policy model, and reads the held-out curves. It never proposes, screens, selects, releases or writes memory. The service does all of that, as it would for any enrolled bundle.
 
@@ -57,7 +57,7 @@ All conditions use the same Codex-authenticated CLIProxyAPI endpoint. The driver
 
 | ID | Workload | Grader | Source |
 | --- | --- | --- | --- |
-| W1 | LLM CLI support: `llm` 0.38 at `46f0461d9b1ea9e898cac8a1d7333ab9bc6c8f7f`, Click 8.5.1 | Exact Click route and parameters (`click-argv-v2`), binary ([grader](../../../examples/self-improvement-memory/fixtures/w1/grade.py)) | `examples/self-improvement-memory/fixtures/w1/`, moved in phase 2 |
+| W1 | LLM CLI support: `llm` 0.38 at `46f0461d9b1ea9e898cac8a1d7333ab9bc6c8f7f`, Click 8.5.1 | Exact Click route and parameters (`click-argv-v2`), binary ([grader](fixtures/w1/grade.py)) | `examples/self-improvement-memory/fixtures/w1/`, moved in phase 2 |
 
 The task model receives two Chat Completions messages. The system message is the delivered harness rendered as instruction files, skills and memory files, in that order, each under a `# path` heading. The user message is the case input. The model returns a JSON object containing an `argv` array. The task model has no tools or repository access. The harness supplies the version-specific W1 knowledge, so the optimizer can learn which CLI details to write into skills. The pinned LLM package is used by the grader.
 
@@ -65,11 +65,11 @@ The task model receives two Chat Completions messages. The system message is the
 
 | Split | Product name | Size and origin | Reaches the optimizer? |
 | --- | --- | --- | --- |
-| E | The **evolve split**, rows of `learning_evolve_cases` with `source = setup` | 40: the 30 development cases from [tasks.py](../../../examples/self-improvement-memory/fixtures/w1/tasks.py) plus the 10 development additions in `fixtures/w1/40-case-additions.json` | Yes, as `feedback` and through `history` and memory |
+| E | The **evolve split**, rows of `learning_evolve_cases` with `source = setup` | 40: the 30 development cases from [tasks.py](fixtures/w1/tasks.py) plus the 10 development additions in `fixtures/w1/40-case-additions.json` | Yes, as `feedback` and through `history` and memory |
 | H | The **held-out split**, in the driver's evaluator store, committed by `heldOut = {digest, cases: 60}` | 60 new cases | Never |
 
 - **H is all new.** The 70 existing audit cases (30 original, 30 in `fixtures/w1/replication-audit.json`, 10 additions) informed earlier engineering, so none is reused. The 10 field cases are not used.
-- Each H case has a reference argv and two negative controls, checked against every earlier case ID, input and parsed target, by [freeze.py](../../../examples/self-improvement-memory/freeze.py#L37). H case IDs are opaque (`h-` plus eight lowercase hex digits) so a leak is detectable without content.
+- Each H case has a reference argv and two negative controls, checked against every earlier case ID, input and parsed target, by [freeze.py](freeze.py#L37). H case IDs are opaque (`h-` plus eight lowercase hex digits) so a leak is detectable without content.
 - **E is fixed for the whole experiment.** The driver seeds each new bundle once with `POST /evolve-cases` and never calls `POST /outcomes` or retires a case. Every round of every run therefore pins the same `evolve_revision` content, which is what the paper's fixed X_evo needs (D4 stays available to apps; the experiment does not use it).
 - **Traces.** For W1 a rollout's `trace` is the argv JSON the agent returned and `error` is the turn or parse error message, if any. Held-out reports carry only `score` and `passed`. The pilot records trace sizes (§11).
 
@@ -88,7 +88,7 @@ At five rollouts, measurement noise of one held-out difference is about 2.0 to 2
 | S2 | For each block, the 3 target runs of 10 rounds, plus round-0 and retention scoring | none |
 | C (optional) | Pre-change Flat control (§16) | none. Runs alongside S1 and S2. |
 
-- **One cluster per source run.** Each block's S1 runs on its own disposable PostgreSQL cluster and service, owned by [run.py](../../../examples/self-improvement-memory/run.py#L86) using [Harness.start_database](../../../scripts/productization/qualify.py#L69).
+- **One cluster per source run.** Each block's S1 runs on its own disposable PostgreSQL cluster and service, owned by [run.py](run.py#L86) using [Harness.start_database](../../scripts/productization/qualify.py#L69).
 - **Checkpoint.** When source round 10 has `completed` and the loop is `paused`, the driver stops the service and copies the stopped data directory. That copy is the block's checkpoint.
 - **One copy per target condition.** Each target run gets its own service on a fresh checkpoint copy. Full SIM continues B_S in its copy. HT and CS create new bundles in theirs; B_S stays `paused` there and never runs. Separate copies keep the conditions from sharing a worker queue, and a restart (K5) needs only a new copy, because memory is never rewound.
 - **Start order.** The three target runs are submitted concurrently in a seeded order (§7). Blocks are visited sequentially by one driver invocation.
@@ -125,7 +125,7 @@ On the Full SIM copy of the checkpoint, B_S is `paused` after round 10.
 
 ### 6.3 Counting rounds and stopping at 10
 
-A run counts `completed` rounds. Failed rounds are logged separately. The driver pauses during the final counted round, including a pause from the evaluator's incumbent context lookup, so that round can finish without a successor. If it fails and the loop is paused without an active round, the driver resumes. On reaching the count it requires a paused loop, no active round and the next expected round number. A mismatch stops the loop and invalidates the run (K1). [Round counting](../../../examples/self-improvement-memory/block.ts#L465)
+A run counts `completed` rounds. Failed rounds are logged separately. The driver pauses during the final counted round, including a pause from the evaluator's incumbent context lookup, so that round can finish without a successor. If it fails and the loop is paused without an active round, the driver resumes. On reaching the count it requires a paused loop, no active round and the next expected round number. A mismatch stops the loop and invalidates the run (K1). [Round counting](block.ts#L465)
 
 The target index `r` counts completed rounds. Keep the separate bundle round number in the ledger. When no rounds fail, Full SIM's bundle rounds 11 to 20 are r = 1 to 10.
 
@@ -137,7 +137,7 @@ The driver does nothing inside a round except serve evaluations. After each roun
 2. Matches the retained evaluation's version to the round's adopted or kept version and its score to the local log (§8.1). At the end, checks that the final retained version equals the learning channel head.
 3. Writes the public round fields plus `block`, `code`, `r`, `parent`, `retained`, `memory`, `optimizer` and `turns` to `artifacts/sim-experiment/<stage>/b<block>/<code>/rounds.jsonl`. `r` is the counted index for a completed round and null otherwise. `optimizer` contains the request ledger entries for that round. `turns` is keyed by `incumbent`, `candidate`, `retained` and `rescore`.
 
-When retained evidence fails or exceeds the per-evaluation infrastructure threshold, the driver measures the retained version offline and records it in `retained.replacement`. For a successful in-loop measurement, the driver reconciles the score against the local rollout log within 1e-9. `summary.json` records the final version, pins, round-zero measurement and counts. `ledger.json` hashes the run files and, for a source run, the stopped database checkpoint. [Evidence writing](../../../examples/self-improvement-memory/block.ts#L540), [artifact verification](../../../examples/self-improvement-memory/run.py#L133)
+When retained evidence fails or exceeds the per-evaluation infrastructure threshold, the driver measures the retained version offline and records it in `retained.replacement`. For a successful in-loop measurement, the driver reconciles the score against the local rollout log within 1e-9. `summary.json` records the final version, pins, round-zero measurement and counts. `ledger.json` hashes the run files and, for a source run, the stopped database checkpoint. [Evidence writing](block.ts#L540), [artifact verification](run.py#L133)
 
 ## 7. Randomization and blinding
 
@@ -254,7 +254,7 @@ These checks live in the driver and in read-only queries on the driver's own clu
 
 | ID | Trigger | Action |
 | --- | --- | --- |
-| K1 Integrity | Any of: an H case ID or the fingerprint of a whole H input appears in an optimizer request; a held-out report carries `trace` or `error`; the fenced data of an optimizer request holds a key outside its kind's set (`setting`, `harness`, `feedback`, `history` and `improvementMemory` for every kind, plus `candidates` for `screen` and `select`, plus `parserError` on a retry, as in [optimizer.md](optimizer.md) "Data keys"); a condition code or bundle slug appears in an optimizer request or a delivered payload; memory JSON or a `P<n>` ID appears in a delivered payload or task prompt; a sample's evaluation appears in `GET /work` before the adapter returned that sample's `propose` reply, or the stored `diagnosis` differs from that reply; an adopted attempt's `predicted` differs from its candidate's `diagnosis.predicted`; Full SIM's round 11 does not pin the source run's final memory revision, or an HT or CS round 1 pins a nonzero one; Full SIM and HT start digests differ; `evolve_revision`, the E content digest or `heldOut.digest` differs within a block; the round’s optimizer model or reasoning effort differs from the frozen protocol, or task and optimizer call ledgers differ from the frozen Chat Completions endpoint, model or effort; an evaluation ran under a policy model other than its round's `setting.policyModel`; the rendered `history` lists fewer rounds than the earlier rounds with the same `setting`, or `improvementMemory` lists fewer attempts than `memory_revision`; any `POST /outcomes`, evolve-case change, manual channel release or `channel-moved` round during a run; the loop advanced beyond its counted round limit | Stop the stage. Fix. Restart every affected run (target runs from a fresh checkpoint copy). |
+| K1 Integrity | Any of: an H case ID or the fingerprint of a whole H input appears in an optimizer request; a held-out report carries `trace` or `error`; the fenced data of an optimizer request holds a key outside its kind's set (`setting`, `harness`, `feedback`, `history` and `improvementMemory` for every kind, plus `candidates` for `screen` and `select`, plus `parserError` on a retry, as in [optimizer.md](https://github.com/anveld-dev/acclimate/blob/e636c0beef2d313b5116c226b156ee6624a81573/docs/architecture/self-improvement-memory/optimizer.md) "Data keys"); a condition code or bundle slug appears in an optimizer request or a delivered payload; memory JSON or a `P<n>` ID appears in a delivered payload or task prompt; a sample's evaluation appears in `GET /work` before the adapter returned that sample's `propose` reply, or the stored `diagnosis` differs from that reply; an adopted attempt's `predicted` differs from its candidate's `diagnosis.predicted`; Full SIM's round 11 does not pin the source run's final memory revision, or an HT or CS round 1 pins a nonzero one; Full SIM and HT start digests differ; `evolve_revision`, the E content digest or `heldOut.digest` differs within a block; the round’s optimizer model or reasoning effort differs from the frozen protocol, or task and optimizer call ledgers differ from the frozen Chat Completions endpoint, model or effort; an evaluation ran under a policy model other than its round's `setting.policyModel`; the rendered `history` lists fewer rounds than the earlier rounds with the same `setting`, or `improvementMemory` lists fewer attempts than `memory_revision`; any `POST /outcomes`, evolve-case change, manual channel release or `channel-moved` round during a run; the loop advanced beyond its counted round limit | Stop the stage. Fix. Restart every affected run (target runs from a fresh checkpoint copy). |
 | K2 Context | Any round `failed` with `optimizer-context-too-large`. Memory and history only grow within a run, so the loop cannot continue on that bundle. Full SIM, which carries up to 20 attempts of memory beside 10 rounds of target history, is hit first. | Stop the stage for a maintainer decision. A larger-context optimizer model is an amendment and restarts every block. |
 | K3 Pilot | Either target round-zero W1 held-out score (H0 or H_S under `gpt-6.2-sol`) is ≥ 85%; `format-rejected` above 20% of samples; no `adopted` round in the 6 pilot source rounds; the pilot's measured input growth projects Full SIM's round-20 input (10 rounds of history, up to 20 attempts) above 50% of the optimizer's context; missing token usage for either task model; any K1 event | Stop before S1 for a maintainer decision if either baseline reaches the ceiling threshold. For other failures, fix and repeat the pilot or pause for a maintainer decision. Pilot data is excluded from efficacy analysis. |
 | K4 Harm | After 5 completed blocks, the upper 95% bound of mean T1 is below −5 pp. `analyze.py` reports only whether it fired. | Stop and report. Harm-only, so it does not inflate T1's type I error. |
@@ -267,7 +267,7 @@ In Appendix E.4.2, the stronger optimizer’s held-out edge shrank to 0.05 point
 
 ### 10.1 SQL integrity checks
 
-The read-only checks validate the setting and evolve pins, optimizer model and effort, memory revision, retained version, held-out report fields, diagnosis presence and adopted predictions. `run.py` supplies the workspace and bundle, round range and frozen optimizer identity. Each row returned names a failed invariant. [Executable SQL](../../../examples/self-improvement-memory/checks.sql)
+The read-only checks validate the setting and evolve pins, optimizer model and effort, memory revision, retained version, held-out report fields, diagnosis presence and adopted predictions. `run.py` supplies the workspace and bundle, round range and frozen optimizer identity. Each row returned names a failed invariant. [Executable SQL](checks.sql)
 
 ## 11. What the driver needs from the product
 
@@ -280,7 +280,7 @@ Everything here is in the README names. N1 and N2 are specified by their owners.
 | Held-out cases that never leave the evaluator | `heldOut`, `retained` evaluations, the `400` for a held-out report with traces | evaluator-and-contracts.md |
 | Per-round candidates, diagnoses, screens, evaluations and selection | `GET /rounds/{roundId}` | evaluator-and-contracts.md |
 | Memory at the revision a round pinned | `GET /memory?revision=` | memory.md |
-| The optimizer endpoint as a local adapter | `ACCLIMATE_MODEL_ENDPOINT`, `ACCLIMATE_MODEL_TOKEN` and the [audit relay](../../../examples/self-improvement-memory/adapter.ts) | optimizer.md |
+| The optimizer endpoint as a local adapter | `ACCLIMATE_MODEL_ENDPOINT`, `ACCLIMATE_MODEL_TOKEN` and the [audit relay](adapter.ts) | optimizer.md |
 | A failure, never a trim, on overflow | `optimizer-context-too-large` | optimizer.md |
 | **N1.** No round starts on an empty evolve split, so a new bundle's round 1 sees the setup cases | `start_round` precondition | loop.md |
 | **N2.** A per-evaluation case concurrency, for wall clock only (§14 uses 8) | `serveLearningLoop` option `caseConcurrency`, default 1 | evaluator-and-contracts.md |
@@ -381,7 +381,7 @@ Per block: source 15,000 + H0 round 0 under luna 300; targets 3 × 15,000 + roun
 | ID | Paper | This plan | Reason |
 | --- | --- | --- | --- |
 | V1 | HT and CS have no memory throughout the target run | They start empty and build their own memory. T1 measures inherited memory over fresh memory, which may be smaller than the paper's gap. | Memory is always on (D2, D6) |
-| V2 | (Withdrawn.) Target runs keep only target-run history; source history enters through SIM | Now the same: `render_history` lists only earlier rounds with the round's `setting`, so Full SIM's target run starts with empty history | [decisions.md](decisions.md#paper-readings-that-still-hold) |
+| V2 | (Withdrawn.) Target runs keep only target-run history; source history enters through SIM | Now the same: `render_history` lists only earlier rounds with the round's `setting`, so Full SIM's target run starts with empty history | [decisions.md](https://github.com/anveld-dev/acclimate/blob/e636c0beef2d313b5116c226b156ee6624a81573/docs/architecture/self-improvement-memory/decisions.md#paper-readings-that-still-hold) |
 | V3 | Four conditions | Full SIM, HT and CS | Problem-Only needs a memory view (D2) |
 | V4 | The start harness's held-out score | Scored by the driver outside the loop | The loop scores held-out only after a decision |
 | V5 | Paired study cross-dataset, transfer tables both | Cross-model only | D10. A second transition needs its own source runs. |
@@ -429,8 +429,147 @@ It is unpaired and differs from the new loop in k, memory, gating, triggers and 
 
 ## 20. Open questions
 
-Shared questions are in the [README](README.md#open-questions). These are owned here.
+Shared questions are in the [README](https://github.com/anveld-dev/acclimate/blob/e636c0beef2d313b5116c226b156ee6624a81573/docs/architecture/self-improvement-memory/README.md#open-questions). These are owned here.
 
 1. **Stage C.** Run the pre-change Flat control? It is descriptive only (§16).
 2. **Codex model access through CLIProxyAPI.** Entitlement for the three exact model IDs, effective output limits, JSON validity, rate limits, latency and token use await live verification.
 3. **Optimizer context.** Full SIM's round 20 carries 10 rounds of target history and up to 20 attempts. The pilot’s projection checks whether the frozen Astra configuration fits. A failing pilot stops progression before S1 (K2, K3).
+
+## Names
+
+The plan uses these names. In the database a workspace is `project_id`.
+
+### Paper symbols
+
+| Paper | Acclimate |
+| --- | --- |
+| Harness H_t | The bundle version at the head of the learning channel when round t starts (`learning_rounds.parent_version_id`) |
+| Policy model M | `setting.policyModel` |
+| Setting σ = (M, X) | The loop's `setting` (`{domain, benchmark, policyModel}`) alongside separately pinned evolve revision and held-out commitment |
+| Evolve split X_evo | The **evolve split**: rows of `learning_evolve_cases` live at `evolve_revision` |
+| Held-out split X_eval | The **held-out split**: cases in the evaluator's own store, committed by `heldOut.digest` |
+| Feedback F_t | `feedback`: the incumbent's evolve evaluation |
+| Run history D_t | `history`: the feedback summary, candidate diffs and decision of every earlier round of the bundle whose pinned `setting` equals the current round's. Rounds in another setting reach the optimizer only through memory. |
+| SIM | **Improvement memory**: `learning_memory_problems` and `learning_memory_attempts`. Prompt key `improvementMemory`. |
+| Proposer P and selector S | The **optimizer model** (`ACCLIMATE_MODEL`), called as `propose`, `screen` and `select` |
+| k, rollouts | Samples 1–5 in the worker and SQL. `ROLLOUTS_PER_CASE = 5` in `evaluations.rs`. |
+
+### Constants and identities
+
+| Name | Meaning |
+| --- | --- |
+| Five samples | Fixed by the worker and SQL (D9). |
+| `ROLLOUTS_PER_CASE = 5` | Rollouts per case in every evolve and held-out evaluation |
+| `evaluations::case_passes` | A case **passes** in an evaluation when at least 3 of its 5 rollouts report `passed: true` |
+| Sample | A candidate's position in its round, 1 to 5. The reviews call it a slot. |
+| App principal | The one machine principal that submits outcomes and evolve cases and runs the evaluator for a loop: a machine-token principal (`machine:…`) or a static grant principal. It must hold the `evaluate` right. Stored as `learning_loops.app_principal`, with no prefix check. |
+| `service:learning-loop` | The `promotions.reviewer` recorded for an adopt release |
+| Problem ID | `P<n>`, numbered per workspace + bundle from `P1` |
+| Round number | `learning_rounds.number`, 1, 2, … per bundle. Memory attempts store it in `round` and problems in `opened_round`. |
+| Memory revision | `learning_loops.memory_revision`, the bundle's append counter. One per adopted round. |
+| Evolve revision | `learning_loops.evolve_revision`, incremented once per effective mutation of the evolve split |
+
+### Tables
+
+Migration `0019_learning_loop.sql` adds the first four tables. Migration `0020_learning_optimizer.sql` adds the last four. Migration `0021_optimizer_effort.sql` adds the nullable round effort pin and an evolve-case paging index. [removal.md](https://github.com/anveld-dev/acclimate/blob/e636c0beef2d313b5116c226b156ee6624a81573/docs/architecture/self-improvement-memory/removal.md) owns `0017` and `0018`.
+
+| Table | Key | Columns | Owner |
+| --- | --- | --- | --- |
+| `learning_loops` | `(project_id, bundle_id)` | `status`, `channel`, `app_principal`, `setting`, `held_out`, `evolve_revision`, `memory_revision`, `next_round`, `failed_rounds`, `pause_reason`, `enrolled_by`, `created_at`, `updated_at`. This row is the **bundle row lock**. | loop.md |
+| `learning_evolve_cases` | `(project_id, bundle_id, case_id)`; unique `(project_id, bundle_id, outcome_id)` | `input`, `expected`, `source` (`setup` or `outcome`), `outcome_id`, `version_id`, `added_revision`, `retired_revision` | evaluator-and-contracts.md |
+| `learning_rounds` | `id`; unique `(project_id, bundle_id, number)` and `(project_id, bundle_id, id)`. At most one active per loop (`learning_rounds_one_active`) | `number`, `state`, `decision`, `reason`, `parent_version_id`, `channel`, `channel_revision`, `evolve_revision`, `memory_revision`, `memory_digest`, `history_digest`, `setting`, `held_out`, `optimizer_model`, `optimizer_reasoning_effort`, `adopted_sample`, `adopted_version_id`, `selection`, `incumbent_score`, `held_out_score`, `held_out_error`, `created_at`, `ended_at` | loop.md |
+| `learning_evaluations` | `id`; unique `(round_id, role, sample)` with NULLs considered equal; at most one open per round (`learning_evaluations_one_open`) | `round_id`, `role` (`incumbent`, `candidate`, `retained`), `sample`, `split` (`evolve`, `held_out`), `version_id`, `digest`, `evolve_revision`, `status`, `attempt_id`, `report`, `score`, `created_at`, `started_at`, `deadline_at`, `error` | evaluator-and-contracts.md |
+| `learning_candidates` | `(round_id, sample)` | `status`, `drop_reason`, `rationale`, `changes`, `diagnosis`, `scan`, `screen`, `version_id`, `evaluation_id`, `evolve_score` | optimizer.md (the one definition), loop.md (the status machine) |
+| `learning_optimizer_calls` | `(round_id, kind, sample)`, `sample = 0` for `screen` and `select`; at most one open per round (`learning_optimizer_calls_one_open`) | `kind` (`propose`, `screen`, `select`), `status`, `attempts`, `input_digest`, `output`, `error_code`, `error`, `claimed_at` | optimizer.md |
+| `learning_memory_problems` | `(project_id, bundle_id, problem_id)`; unique `(project_id, bundle_id, root_cause_key)` and `(project_id, bundle_id, opened_revision)` | `root_cause`, `root_cause_key`, `opened_round`, `opened_revision` | memory.md |
+| `learning_memory_attempts` | `(project_id, bundle_id, revision)`; unique `round_id` | `problem_id`, `round_id`, `round`, `sample`, `backfilled`, `what`, `files`, `predicted`, `fixed`, `missed`, `passed`, `total`, `domain`, `provenance`. No regression list, as in the paper. | memory.md |
+
+Kept, 19 tables: `projects`, `users`, `project_memberships`, `workspace_invitations`, `workspace_adoptions`, `browser_sessions`, `machine_tokens`, `machine_token_events`, `bundles`, `versions` (minus `proposal_id`), `channels`, `promotions` (`comparison_id`, `policy_override` and `policy_approval_promotion_id` dropped; `unevaluated_reason` keeps its name), `integrations`, `integration_credentials`, `integration_receipts`, `idempotency`, `durable_commands` (connected-learning rows deleted; the loop's outcome receipts reuse it), `operation_records`, `mutation_audit`.
+
+### Statuses, states and reasons
+
+| Column | Values |
+| --- | --- |
+| `learning_loops.status` | `running`, `paused`, `stopped` |
+| `learning_loops.pause_reason` | `operator`, `failed-rounds`, `optimizer-context-too-large`. `optimizer-context-too-large` replaces an operator reason. |
+| `learning_rounds.state` | Active: `scoring_incumbent`, `proposing`, `screening`, `evaluating`, `selecting`, `scoring_held_out`. Terminal: `completed`, `failed`, `stopped`. |
+| `learning_rounds.decision` | `adopted`, `kept`. NULL for `failed` rounds and rounds stopped before a decision. A round stopped in `scoring_held_out` keeps its decision. |
+| `learning_rounds.reason` | With `kept`: `selector-kept`, `no-candidates`, `no-survivors`, `no-evaluated-candidates`, `channel-moved`. With `failed`: `incumbent-evaluation-failed`, `optimizer-unavailable`, `optimizer-context-too-large`, `selector-unavailable`. With `stopped` before a decision: `stopped`. After a decision it preserves the existing reason. |
+| `learning_candidates.status` | `generating`, `generated`, `dropped`, `screened_out`, `evaluating`, `evaluated`, `evaluation_failed` |
+| `learning_candidates.drop_reason` | `provider-failed`, `format-rejected`, `scanner-rejected`, `no-change`. Equivalent samples proceed independently. |
+| `learning_evaluations.status` | `queued`, `running`, `scored`, `failed`, `cancelled` |
+| `learning_optimizer_calls.status` | `queued`, `running`, `succeeded`, `failed` |
+| `learning_optimizer_calls.error_code` | Set exactly when `failed`: `provider-failed` (including input drift, a model or reasoning-effort change and the attempt limit), `format-rejected`, `optimizer-context-too-large`, `scanner-rejected` (`propose` only), `cancelled` (closed by `cancel_children`). `error` is free text. |
+| `learning_evolve_cases.source` | `setup`, `outcome` |
+| Wire spelling | Wire values match the database values, except `held_out` is `heldOut` on the wire |
+
+### JSON shapes
+
+| Name | Shape |
+| --- | --- |
+| `setting` (loop, round, provenance) | `{domain, benchmark, policyModel}`, each a nonblank string of at most 256 bytes with no control characters |
+| `held_out` / wire `heldOut` | `{digest, cases}`: the evaluator's commitment to its fixed held-out split and its case count (1–10,000). Case inputs and answers stay with the evaluator. |
+| Proposer output | `{schemaVersion: 2, rationale, edits: [{path, oldText, newText}], files: [{op: "write", path, text} \| {op: "delete", path}], diagnosis}` |
+| `diagnosis` | `{problem: {id: "P3"} \| {new: "<root cause>"}, predicted: [caseId]}`, stored on `learning_candidates.diagnosis` before evaluation |
+| `learning_candidates.changes` | The validated `edits` and `files` from the proposer output |
+| Scanner-rejected `propose` call output | `{scan, diagnosis}`, with `diagnosis` null when a finding is in the root cause. No other model text is stored. |
+| `learning_candidates.scan` | `{clean, findings}` from the scanner. Findings carry `{rule, field, path}`. The path may be null. |
+| Screen output | `{samples: [{sample, verdict: "evaluate" \| "skip", reason}]}`. Each entry is stored on `learning_candidates.screen` as `{verdict, reason}`. |
+| Select output | `{decision: "adopt" \| "keep", sample, reason}`. `sample` is required with `adopt` and absent with `keep`. |
+| `learning_rounds.selection` | `{decision, sample, versionId, digest, reason, model, inputDigest, reasoningEffort?}`. A selector keep uses null for `sample`, `versionId` and `digest`. |
+| Evaluation report | `{cases: [{caseId, rollouts: [{score, passed, trace?, error?}]}]}`. `score` is in [0, 1]. Held-out rollouts carry only `score` and `passed`. |
+| `provenance` | Stored: `{domain, benchmark, policyModel, round, evolveRevision, heldOutDigest, optimizerModel, optimizerReasoningEffort?}`. Rendered into `improvementMemory`: the paper's `{domain, benchmark, policyModel, round}` only. |
+| Optimizer prompt keys | `setting`, `harness`, `feedback`, `history`, `improvementMemory` for every call; `candidates` for `screen` and `select`; `parserError` on the one format retry. The eight rules are trusted instruction, outside the fenced data. |
+| `feedback` | `{versionId, evolveRevision, score, cases: [{caseId, input, passedRollouts, meanScore, rollouts: [{score, passed, trace?, error?}]}]}` |
+
+### Routes
+
+All loop routes use the prefix `/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning`.
+
+| Route | Caller | Purpose |
+| --- | --- | --- |
+| `PUT` | Caller with `promote`, including the app principal | Enroll the bundle or change `channel`, `appPrincipalId`, `setting` or `heldOut`. A change applies from the next round. While a round is active, a change to `channel`, `appPrincipalId` or `heldOut` is `409 learning_conflict`. A `setting` change is accepted at any time. |
+| `GET` | Workspace reader | The loop, its active round and recent rounds |
+| `POST /pause`, `POST /resume`, `POST /stop` | Caller with `promote` | Change `learning_loops.status` |
+| `GET /rounds` | Workspace reader | Paged round summaries |
+| `GET /rounds/{roundId}` | Workspace reader | Round pins, candidates, selection and evaluation summaries. `?evaluation=<evaluationId>` includes one evolve report. |
+| `GET /memory` | Workspace reader other than the app principal (`403`) | The improvement memory at its current revision, or at `?revision=` |
+| `GET /evolve-cases` | Signed-in workspace reader or app principal with `read` | Current live cases, ordered by case ID. `after` and `limit` paginate `{items, next, evolveRevision}`. |
+| `POST /evolve-cases` | Signed-in writer or app principal with `evaluate` | `{cases: [{caseId, input, expected}], retire: [caseId]}`. Returns `{evolveRevision, added, retired, liveCases}`. |
+| `POST /outcomes` | App principal | `{outcomeId, versionId, digest, input, expected}`. Adds evolve case `outcome:<outcomeId>`. |
+| `GET /work` | App principal | Queued and running evaluations for this loop. A held-out item carries the round's pinned `heldOut`. |
+| `POST /evaluations/{evaluationId}/start`, `POST /evaluations/{evaluationId}/report` | App principal | Claim an evaluation, then report its result |
+
+The workspace principal route, `GET /v1/workspaces/{workspaceId}/principal`, returns `{principalId, kind, rights}` for the authenticated reader. Workspace, auth, invitation, membership, machine-token, bundle, version, payload and connection routes remain. Channel resolution uses an ETag of `"<revision>:<versionId>"`. The channel release route stays, and its request is `{versionId, expectedRevision, unevaluatedReason}` with `comparisonId` and `policyOverride` removed. Every route under `/connections/{connectionId}/learning`, and every proposal, comparison, draft, evaluation-request, progress and policy-receipt route, is removed ([removal.md](https://github.com/anveld-dev/acclimate/blob/e636c0beef2d313b5116c226b156ee6624a81573/docs/architecture/self-improvement-memory/removal.md)).
+
+### Settings
+
+| Setting | Status |
+| --- | --- |
+| `ACCLIMATE_MODEL`, `ACCLIMATE_MODEL_ENDPOINT`, `ACCLIMATE_MODEL_TOKEN` | Kept. The one optimizer model. The optimizer uses the configured OpenAI-compatible Chat Completions URL. No model ID is built in. |
+| `ACCLIMATE_MODEL_TIMEOUT_SECONDS` | New, default 600. Replaces the fixed 60 s client timeout. |
+| `ACCLIMATE_MODEL_REASONING_EFFORT` | Optional. Accepts `low`, `medium`, `high`, `xhigh`, `max` or `ultra`. Omitted by default. The experiment pins `high`. |
+| `ACCLIMATE_MODEL_MAX_COMPLETION_TOKENS` | New, default 32768 |
+| `ACCLIMATE_LEARNING_EVALUATION_QUEUE_SECONDS`, `ACCLIMATE_LEARNING_EVALUATION_SECONDS` | Queue and run deadlines in seconds. Defaults are 604800 and 86400, respectively. |
+| `ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS` | New, default 3. Consecutive failed rounds before the loop pauses. A deliberate deviation ([decisions.md](https://github.com/anveld-dev/acclimate/blob/e636c0beef2d313b5116c226b156ee6624a81573/docs/architecture/self-improvement-memory/decisions.md#deliberate-deviations-from-the-paper)). |
+| `ACCLIMATE_CRITIC_MODEL`, `ACCLIMATE_CRITIC_ENDPOINT`, `ACCLIMATE_CRITIC_TOKEN`, `ACCLIMATE_LEARNING_REVIEW_SECONDS`, `ACCLIMATE_LEARNING_PARENT_MAX_REUSES`, `ACCLIMATE_LEARNING_PARENT_MAX_AGE_SECONDS`, `ACCLIMATE_LEARNING_PAIR_BUDGET`, `ACCLIMATE_LEARNING_MAX_REPETITIONS`, `ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS`, `ACCLIMATE_LEARNING_MAX_CHAIN_AGE_SECONDS`, `ACCLIMATE_LEARNING_CALIBRATION_REPETITIONS`, `ACCLIMATE_LEARNING_CALIBRATION_ATTEMPTS`, `ACCLIMATE_LEARNING_FAILURE_WINDOW_SECONDS`, `ACCLIMATE_PROPOSAL_GROWTH_FLOOR_BYTES`, `ACCLIMATE_EVALUATION_ABANDON_SECONDS` | Removed |
+
+### Code
+
+| Name | Contents | Owner |
+| --- | --- | --- |
+| [src/learning.rs](../../src/learning.rs) | `routes`, `enroll`, `inspect`, `pause`, `resume`, `stop`, `list_rounds`, `get_round`, `ACTIVE_ROUND_STATES` | evaluator-and-contracts.md |
+| [src/learning/worker.rs](../../src/learning/worker.rs) | `learning_worker`, `tick`, `sweep`, `spawn_calls`, `advance_round`, `advance_locked`, `start_round`, `queue`, `fail_round`, `stop_round`, `cancel_children` | loop.md |
+| [src/learning/worker/advance.rs](../../src/learning/worker/advance.rs) | `step`, `proposing`, `screening`, `queue_survivor`, `evaluating`, `selecting`, `adopt`, `keep` | loop.md |
+| [src/learning/evaluations.rs](../../src/learning/evaluations.rs) | `work`, `start`, `report`, `authorize_evaluation`, `round_documents`, `case_passes`. Evaluation expiry runs in `worker::sweep`. | evaluator-and-contracts.md |
+| [src/learning/evolve.rs](../../src/learning/evolve.rs) | `list_cases`, `submit_cases`, `submit_outcome`, `cases_at`, `live_count`, `add_case`, `retire_case` | evaluator-and-contracts.md |
+| [src/learning/optimizer.rs](../../src/learning/optimizer.rs) | `OptimizerModel`, `render_feedback`, `validate_diagnosis`, `validate_screen`, `validate_select`, `run_call`, `call_with_retry`, `enqueue` | optimizer.md |
+| [src/learning/optimizer/client.rs](../../src/learning/optimizer/client.rs) and [instructions.rs](../../src/learning/optimizer/instructions.rs) | `OpenAiModel`, `system_text`, `EIGHT_RULES` | optimizer.md |
+| [src/learning/history.rs](../../src/learning/history.rs) | `render_history` | optimizer.md |
+| [src/learning/memory.rs](../../src/learning/memory.rs) | `get`, `render_memory`, `write_back`, `resolve_problem`, `normalize_root_cause`, `root_cause_key`, `ROOT_CAUSE_MAX_BYTES`, `attempt_outcome` | memory.md |
+| [src/proposal_edits.rs](../../src/proposal_edits.rs) | `reconstruct` applies anchored `edits` and whole-file `files` within payload and target limits. `changed_files` identifies touched paths for scanning and memory. | optimizer.md |
+| [src/proposal_scanner.rs](../../src/proposal_scanner.rs) | `findings` reports named rules and fields for suspicious new content. | optimizer.md |
+| [@acclimate/sdk/learning](../../packages/sdk/src/learning/index.ts) | `serveLearningLoop`, `createLearningOutcomeReporter`, `addEvolveCases`, `heldOutDigest`, `defineLoop`, `exact`, `tests`, `openai`, `OpenAIHttpError`. Bins are `acclimate-learning` and `acclimate learn`. | evaluator-and-contracts.md |
+| [src/workspaces.rs](../../src/workspaces.rs) | `principal` resolves the caller's workspace identity and rights. | evaluator-and-contracts.md |
+| Console | `apps/console/src/components/bundle-learning.tsx`, `apps/console/src/server/learning-loop.ts` | evaluator-and-contracts.md |
+| Experiment | `examples/self-improvement-memory/`: `fixtures/w1/` from phase 2, the driver and `tests/` from phase 5 | experiment.md |

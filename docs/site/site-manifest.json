@@ -114,43 +114,43 @@
     "title": "Keycloak setup"
   },
   {
-    "source": "docs/architecture/self-improvement-memory/README.md",
-    "route": "source/architecture/self-improvement-memory/README.md",
+    "source": "docs/architecture/central-learning/README.md",
+    "route": "source/architecture/central-learning/README.md",
     "kind": "source"
   },
   {
-    "source": "docs/architecture/self-improvement-memory/decisions.md",
-    "route": "source/architecture/self-improvement-memory/decisions.md",
+    "source": "docs/architecture/central-learning/api-and-data.md",
+    "route": "source/architecture/central-learning/api-and-data.md",
     "kind": "source"
   },
   {
-    "source": "docs/architecture/self-improvement-memory/evaluator-and-contracts.md",
-    "route": "source/architecture/self-improvement-memory/evaluator-and-contracts.md",
+    "source": "docs/architecture/central-learning/executor.md",
+    "route": "source/architecture/central-learning/executor.md",
     "kind": "source"
   },
   {
-    "source": "docs/architecture/self-improvement-memory/experiment.md",
-    "route": "source/architecture/self-improvement-memory/experiment.md",
+    "source": "docs/architecture/central-learning/experience.md",
+    "route": "source/architecture/central-learning/experience.md",
     "kind": "source"
   },
   {
-    "source": "docs/architecture/self-improvement-memory/loop.md",
-    "route": "source/architecture/self-improvement-memory/loop.md",
+    "source": "docs/architecture/central-learning/loop.md",
+    "route": "source/architecture/central-learning/loop.md",
     "kind": "source"
   },
   {
-    "source": "docs/architecture/self-improvement-memory/memory.md",
-    "route": "source/architecture/self-improvement-memory/memory.md",
+    "source": "docs/architecture/central-learning/plan.md",
+    "route": "source/architecture/central-learning/plan.md",
     "kind": "source"
   },
   {
-    "source": "docs/architecture/self-improvement-memory/optimizer.md",
-    "route": "source/architecture/self-improvement-memory/optimizer.md",
+    "source": "docs/architecture/central-learning/removal.md",
+    "route": "source/architecture/central-learning/removal.md",
     "kind": "source"
   },
   {
-    "source": "docs/architecture/self-improvement-memory/removal.md",
-    "route": "source/architecture/self-improvement-memory/removal.md",
+    "source": "docs/architecture/central-learning/tasks-and-grading.md",
+    "route": "source/architecture/central-learning/tasks-and-grading.md",
     "kind": "source"
   }
 ]

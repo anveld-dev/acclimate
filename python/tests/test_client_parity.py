@@ -52,7 +52,9 @@ class Recorder(http.server.BaseHTTPRequestHandler):
             "path": self.path,
             "key": self.headers.get("Idempotency-Key"),
             "connection": self.headers.get("X-Acclimate-Connection-Id"),
-            "body": json.loads(body) if body else None,
+            "body": json.loads(body) if body and self.headers.get_content_type() == "application/json" else body or None,
+            "media": self.headers.get_content_type(),
+            "session": self.headers.get("X-Acclimate-Session"),
         })
         data = json.dumps(Recorder.response).encode()
         self.send_response(200)
@@ -60,7 +62,7 @@ class Recorder(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    do_GET = do_POST = do_PUT = _record
+    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = _record
 
 
 class ParityTest(unittest.TestCase):
@@ -91,6 +93,23 @@ class ParityTest(unittest.TestCase):
             if not callable(getattr(AcclimateClient, name, None))
         )
         self.assertEqual(missing, [], "Add these methods or document the omission")
+
+    def test_task_changes_and_imports_preserve_wire_shapes(self):
+        client = AcclimateClient(self.url, "token", "scope", session_token="session")
+        prefix = "/v1/workspaces/w/bundles/b/learning"
+        client.list_learning_tasks("w", "b", split="evolve", flagged=False)
+        self.assertEqual(self.last()["path"], prefix + "/tasks?split=evolve&flagged=false")
+        patch = {"confirm": True}
+        client.edit_learning_task("w", "b", "a/b", patch)
+        self.assertEqual((self.last()["method"], self.last()["path"], self.last()["body"]),
+                         ("PATCH", prefix + "/tasks/a%2Fb", patch))
+        material = b"input,expected\nhello,hi\n"
+        client.import_learning_tasks("w", "b", material, "text/csv", "support tickets.csv")
+        self.assertEqual(self.last()["path"], prefix + "/tasks/import?filename=support+tickets.csv")
+        self.assertEqual((self.last()["body"], self.last()["media"]), (material, "text/csv"))
+        client.export_held_out_tasks("w", "b")
+        self.assertEqual(self.last()["path"], prefix + "/held-out-tasks/export")
+        self.assertEqual(self.last()["session"], "session")
 
     def test_listing_methods_use_the_workspace_routes(self):
         c = self.client

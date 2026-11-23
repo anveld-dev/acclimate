@@ -201,6 +201,62 @@ async fn combined_gate_fixture() {
     let Ok(path) = std::env::var("ACCLIMATE_GATE_FIXTURE") else {
         return;
     };
+    if let Ok(config) = std::env::var("ACCLIMATE_GATE_TRIALS") {
+        use executor::trials::*;
+        let config: Value = serde_json::from_str(&config).unwrap();
+        let pool = sqlx::PgPool::connect(&common::database_url())
+            .await
+            .unwrap();
+        let bundle = config["bundle"].as_str().unwrap().parse().unwrap();
+        let project = config["workspace"].as_str().unwrap();
+        let mut results = Vec::new();
+        if let Some(ids) = config["ids"].as_array() {
+            for id in ids {
+                results.push(
+                    read_trial(
+                        &pool,
+                        project,
+                        bundle,
+                        id.as_str().unwrap().parse().unwrap(),
+                    )
+                    .await
+                    .unwrap(),
+                );
+            }
+        } else {
+            let runtime: Value =
+                serde_json::from_str(&std::env::var("ACCLIMATE_GATE_RUNTIME").unwrap()).unwrap();
+            let target = TrialTarget {
+                project,
+                bundle,
+                version: config["version"].as_str().unwrap().parse().unwrap(),
+                runtime: &runtime,
+            };
+            let mut tx = pool.begin().await.unwrap();
+            for criterion in [
+                "admitted",
+                "reference-failed",
+                "empty-passed",
+                "judge-unstable",
+                "no-reference",
+                "no-reference-split",
+            ] {
+                let mut g = json!({"type":"criteria","criteria":[criterion]});
+                if !criterion.starts_with("no-reference") {
+                    g["reference"] = json!("answer")
+                }
+                results.push(json!(
+                    run_admission(&mut tx, &target, &json!("input"), &g)
+                        .await
+                        .unwrap()
+                ));
+            }
+            results.push(json!(queue_conversion(&mut tx,&target,&json!({"format":"rows","rows":[{"row":1,"source":"sheet#1","question":"Question","answer":"Answer"},{"row":2,"source":"sheet#2","question":"Missing answer"}]})).await.unwrap()));
+            tx.commit().await.unwrap();
+        }
+        std::fs::write(path, json!(results).to_string()).unwrap();
+        return;
+    }
     if let Ok(id) = std::env::var("ACCLIMATE_GATE_EVALUATION") {
         let pool = sqlx::PgPool::connect(&common::database_url())
             .await
@@ -242,7 +298,119 @@ async fn combined_gate_fixture() {
         .unwrap();
     std::fs::write(
         path,
-        json!({"schema":schema,"evaluation":id,"workspace":f.project}).to_string(),
+        json!({"schema":schema,"evaluation":id,"workspace":f.project,"bundle":f.bundle,"version":f.version}).to_string(),
     )
     .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
+async fn trial_leases_resolve_admission_and_validate_material() {
+    use executor::trials::*;
+    let f = Fixture::new().await;
+    f.state.runtime.ownership_acquired();
+    let pool = &f.state.db;
+    let identity = json!({"build":"test","sandboxRuntime":"docker","harnesses":{"chat":"1"},"runnerImage":"image"});
+    let endpoint = "https://model.invalid/v1";
+    let runtime =
+        json!({"executor":identity,"taskModel":"task","judgeModel":"judge","baseUrl":endpoint});
+    let key = executor::ProviderKey::from_hex(&"ab".repeat(32)).unwrap();
+    key.store(
+        pool,
+        &f.project,
+        endpoint,
+        &["task".into(), "judge".into()],
+        "hidden",
+    )
+    .await
+    .unwrap();
+    let app = executor::router(pool.clone(), Some(key), f.state.runtime.clone());
+    let (_, token) = executor::create_credential(pool).await.unwrap();
+    let target = TrialTarget {
+        project: &f.project,
+        bundle: f.bundle,
+        version: f.version,
+        runtime: &runtime,
+    };
+    let mut tx = pool.begin().await.unwrap();
+    let grader = json!({"type":"exact","expected":"answer"});
+    let attempt = start_try(&mut tx, &target, "trial-task", &json!("question"), &grader)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let lease = post(&app, "", &token, json!({"executor":identity})).await.1;
+    assert_eq!(lease["kind"], "rollout");
+    assert!(lease.get("grader").is_none());
+    let output = act(
+        &app,
+        &lease,
+        "output",
+        json!({"output":"answer","stop":"completed","gatewayLog":[]}),
+    )
+    .await;
+    assert_eq!(output.1["grader"], grader);
+    let counts = json!({"input":0,"output":0});
+    assert_eq!(act(&app,&lease,"result",json!({"verdict":{"passed":true,"score":1,"reasons":[]},"judgeLog":[],"tokens":{"task":counts,"judge":counts}})).await.0,204);
+    let result = read_trial(pool, &f.project, f.bundle, attempt)
+        .await
+        .unwrap();
+    assert_eq!(result["output"], "answer");
+    assert_eq!(result["verdict"]["passed"], true);
+    for outcome in [
+        "admitted",
+        "empty-passed",
+        "reference-failed",
+        "judge-unstable",
+        "pending",
+    ] {
+        let grader = json!({"type":"criteria","criteria":["Meets requirement"],"reference":"ref"});
+        let mut tx = pool.begin().await.unwrap();
+        let id = run_admission(&mut tx, &target, &json!("input"), &grader)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        for _ in 0..if outcome == "pending" { 4 } else { 2 } {
+            let (status, lease) = post(&app, "", &token, json!({"executor":identity})).await;
+            assert_eq!(status, 200, "{lease}");
+            assert_eq!(lease["kind"], "grade");
+            assert_eq!(lease["judgeRuns"], 3);
+            for field in ["bundle", "input", "harness"] {
+                assert!(lease.get(field).is_none())
+            }
+            let passed = if lease["output"] == "ref" {
+                outcome != "reference-failed"
+            } else {
+                outcome == "empty-passed"
+            };
+            let report = if outcome == "pending" {
+                json!({"error":{"code":"executor","message":"malformed"}})
+            } else {
+                let counts = json!({"input":0,"output":0});
+                json!({"verdict":{"passed":passed,"score":u8::from(passed),"reasons":["Reason"],"votes":[passed,passed,passed && outcome!="judge-unstable"]},"judgeLog":[],"tokens":{"task":counts,"judge":counts}})
+            };
+            assert_eq!(act(&app, &lease, "result", report).await.0, 204);
+        }
+        let result = read_trial(pool, &f.project, f.bundle, id).await.unwrap();
+        if matches!(outcome, "admitted" | "pending") {
+            assert_eq!(result["status"], outcome)
+        } else {
+            assert_eq!(result["reason"], outcome);
+            assert_eq!(result["status"], "set-aside")
+        }
+    }
+    let mut tx = pool.begin().await.unwrap();
+    let material = json!({"format":"rows","rows":[{"row":4,"source":"sheet#4","q":"Hi"}]});
+    let id = queue_conversion(&mut tx, &target, &material).await.unwrap();
+    tx.commit().await.unwrap();
+    let lease = post(&app, "", &token, json!({"executor":identity})).await.1;
+    assert_eq!(lease["kind"], "conversion");
+    assert_eq!(lease["material"], material);
+    let mut report = json!({"cards":[{"row":8,"group":"sheet#4","input":"Hi","grader":{"type":"exact","expected":"x"},"criteriaDrafted":false}],"setAside":[],"judgeLog":[],"tokens":{"judge":{"input":10,"output":5}}});
+    assert_eq!(act(&app, &lease, "result", report.clone()).await.0, 400);
+    report["cards"][0]["row"] = json!(4);
+    assert_eq!(act(&app, &lease, "result", report.clone()).await.0, 204);
+    assert_eq!(
+        read_trial(pool, &f.project, f.bundle, id).await.unwrap()["cards"],
+        report["cards"]
+    );
 }

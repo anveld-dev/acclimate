@@ -1,6 +1,7 @@
 mod provider;
 pub use provider::ProviderKey;
 mod queue;
+pub mod trials;
 pub use queue::{assemble, queue_evaluation};
 
 use crate::{ApiResult, commands, db, digest, err};
@@ -138,7 +139,7 @@ async fn claim(s: &Service, hash: &str, executor: &Value) -> ApiResult<Option<Va
         .execute(&mut *tx)
         .await
         .map_err(db)?;
-    let row = sqlx::query("SELECT l.id,l.input,v.project_id,convert_from(v.payload,'UTF8')::jsonb AS bundle,p.base_url,p.encrypted_key,coalesce(r.runtime,t.runtime) AS runtime
+    let row = sqlx::query("SELECT l.id,l.input,l.grader,t.kind,v.project_id,convert_from(v.payload,'UTF8')::jsonb AS bundle,p.base_url,p.encrypted_key,coalesce(r.runtime,t.runtime) AS runtime
         FROM learning_rollouts l LEFT JOIN learning_evaluations e ON e.id=l.evaluation_id LEFT JOIN learning_rounds r ON r.id=e.round_id
         LEFT JOIN learning_trials t ON t.id=l.trial_id JOIN versions v ON v.id=coalesce(e.version_id,t.version_id)
         JOIN workspace_model_providers p ON p.project_id=v.project_id
@@ -181,13 +182,27 @@ async fn claim(s: &Service, hash: &str, executor: &Value) -> ApiResult<Option<Va
         .map_err(db)?;
     audit(&mut tx, &project, owner, lease, "/internal/executor/leases").await?;
     tx.commit().await.map_err(db)?;
-    Ok(Some(json!({
-        "leaseId": lease, "leaseToken": bearer, "expiresAt": expires, "heartbeatSeconds": 15,
-        "kind": "rollout", "rolloutId": id, "harness": "chat",
-        "bundle": row.get::<Value,_>("bundle"), "input": row.get::<Value,_>("input"),
-        "taskModel": runtime["taskModel"], "limits": {"maxTokens": 200000, "timeoutSeconds": 600},
-        "provider": {"baseUrl": endpoint, "apiKey": key}
-    })))
+    let mut doc = json!({
+        "leaseId":lease,"leaseToken":bearer,"expiresAt":expires,"heartbeatSeconds":15,
+        "rolloutId":id,"provider":{"baseUrl":endpoint,"apiKey":key},"limits":{"maxTokens":200000,"timeoutSeconds":600}
+    });
+    let input = row.get::<Value, _>("input");
+    let fields = match row.get::<Option<String>, _>("kind").as_deref() {
+        Some("admission") => {
+            let grader = row.get::<Value, _>("grader");
+            json!({"kind":"grade","output":input,"judgeRuns":judge_runs(&grader),"grader":grader,"judgeModel":runtime["judgeModel"]})
+        }
+        Some("conversion") => {
+            json!({"kind":"conversion","material":input,"judgeModel":runtime["judgeModel"]})
+        }
+        _ => {
+            json!({"kind":"rollout","harness":"chat","bundle":row.get::<Value,_>("bundle"),"input":input,"taskModel":runtime["taskModel"]})
+        }
+    };
+    doc.as_object_mut()
+        .unwrap()
+        .extend(fields.as_object().unwrap().clone());
+    Ok(Some(doc))
 }
 async fn audit(
     tx: &mut Tx<'_>,
@@ -209,7 +224,7 @@ async fn audit(
     .await
 }
 async fn lock_active_lease(tx: &mut Tx<'_>, id: Uuid, headers: &HeaderMap) -> ApiResult<PgRow> {
-    sqlx::query("SELECT l.status,l.grader,l.stop,l.lease_owner,coalesce(r.project_id,t.project_id) AS project,coalesce(r.runtime,t.runtime) AS runtime FROM learning_rollouts l LEFT JOIN learning_evaluations e ON e.id=l.evaluation_id LEFT JOIN learning_rounds r ON r.id=e.round_id LEFT JOIN learning_trials t ON t.id=l.trial_id WHERE lease_id=$1 AND lease_token_hash=$2 AND lease_expires_at>clock_timestamp() AND l.status IN ('running','grading') FOR UPDATE OF l")
+    sqlx::query("SELECT t.kind,l.input,l.status,l.grader,l.stop,l.lease_owner,coalesce(r.project_id,t.project_id) AS project,coalesce(r.runtime,t.runtime) AS runtime FROM learning_rollouts l LEFT JOIN learning_evaluations e ON e.id=l.evaluation_id LEFT JOIN learning_rounds r ON r.id=e.round_id LEFT JOIN learning_trials t ON t.id=l.trial_id WHERE lease_id=$1 AND lease_token_hash=$2 AND lease_expires_at>clock_timestamp() AND l.status IN ('running','grading') FOR UPDATE OF l")
         .bind(id)
         .bind(token(headers)?)
         .fetch_optional(&mut **tx)
@@ -269,7 +284,12 @@ async fn output(
     }
     let mut tx = s.pool.begin().await.map_err(db)?;
     let row = lock_active_lease(&mut tx, id, &headers).await?;
-    if row.get::<String, _>("status") != "running" {
+    if row.get::<String, _>("status") != "running"
+        || matches!(
+            row.get::<Option<String>, _>("kind").as_deref(),
+            Some("admission" | "conversion")
+        )
+    {
         return Err(conflict());
     }
     sqlx::query("UPDATE learning_rollouts SET status='grading',output=$2,stop=$3,gateway_log=$4 WHERE lease_id=$1")
@@ -282,8 +302,11 @@ async fn output(
         .map_err(db)?;
     tx.commit().await.map_err(db)?;
     Ok(Json(
-        json!({"grader":row.get::<Value,_>("grader"),"judgeModel":row.get::<Value,_>("runtime")["judgeModel"],"judgeRuns":0}),
+        json!({"grader":row.get::<Value,_>("grader"),"judgeModel":row.get::<Value,_>("runtime")["judgeModel"],"judgeRuns":judge_runs(&row.get::<Value,_>("grader"))}),
     ))
+}
+fn judge_runs(grader: &Value) -> usize {
+    if grader["type"] == "criteria" { 3 } else { 0 }
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -291,6 +314,7 @@ struct Verdict {
     passed: bool,
     score: f64,
     reasons: Vec<String>,
+    votes: Option<Vec<bool>>,
 }
 #[derive(Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
@@ -310,12 +334,25 @@ enum ResultBody {
     Error {
         error: InfraError,
     },
+    Converted {
+        cards: Vec<Value>,
+        #[serde(rename = "setAside")]
+        set_aside: Vec<Value>,
+        #[serde(rename = "judgeLog")]
+        judge_log: Vec<GatewayEntry>,
+        tokens: JudgeTokens,
+    },
     Scored {
         verdict: Verdict,
         #[serde(rename = "judgeLog")]
         judge_log: Vec<GatewayEntry>,
         tokens: Tokens,
     },
+}
+#[derive(Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct JudgeTokens {
+    judge: Counts,
 }
 #[derive(Deserialize)]
 struct InfraError {
@@ -346,27 +383,58 @@ async fn result(
         .await
         .map_err(db)?;
         }
+        ResultBody::Converted {
+            cards,
+            set_aside,
+            judge_log,
+            tokens,
+        } => {
+            if row.get::<Option<String>, _>("kind").as_deref() != Some("conversion")
+                || row.get::<String, _>("status") != "running"
+            {
+                return Err(conflict());
+            }
+            if !trials::valid_conversion(&row.get::<Value, _>("input"), &cards, &set_aside) {
+                return Err(invalid());
+            }
+            sqlx::query("UPDATE learning_rollouts SET status='converted',conversion_result=$2,judge_log=$3,tokens=$4,lease_token_hash=NULL WHERE lease_id=$1")
+                .bind(id).bind(json!({"cards":cards,"setAside":set_aside})).bind(json!(judge_log)).bind(json!(tokens)).execute(&mut *tx).await.map_err(db)?;
+        }
         ResultBody::Scored {
             verdict,
             judge_log,
             tokens,
         } => {
-            if row.get::<String, _>("status") != "grading" {
+            let grade = row.get::<Option<String>, _>("kind").as_deref() == Some("admission");
+            if row.get::<String, _>("status") != if grade { "running" } else { "grading" } {
                 return Err(conflict());
             }
-            if !(0.0..=1.0).contains(&verdict.score)
-                || (row.get::<String, _>("stop") != "completed"
-                    && (verdict.passed || verdict.score != 0.0))
-            {
+            let completed =
+                grade || row.get::<Option<String>, _>("stop").as_deref() == Some("completed");
+            let grader = row.get::<Value, _>("grader");
+            if completed && grader["type"] == "criteria" {
+                let votes = verdict.votes.as_ref().ok_or_else(invalid)?;
+                if votes.len() != 3
+                    || (votes.iter().filter(|v| **v).count() >= 2) != verdict.passed
+                    || grader["criteria"].as_array().map(Vec::len) != Some(verdict.reasons.len())
+                    || verdict.reasons.iter().any(|r| r.trim().is_empty())
+                {
+                    return Err(invalid());
+                }
+            } else if verdict.votes.is_some() {
                 return Err(invalid());
             }
-            sqlx::query("UPDATE learning_rollouts SET status='scored',score=$2,passed=$3,reasons=$4,judge_log=$5,tokens=$6,lease_token_hash=NULL WHERE lease_id=$1")
+            if verdict.score != f64::from(verdict.passed) || (!completed && verdict.passed) {
+                return Err(invalid());
+            }
+            sqlx::query("UPDATE learning_rollouts SET status='scored',score=$2,passed=$3,reasons=$4,judge_log=$5,tokens=$6,votes=$7,lease_token_hash=NULL WHERE lease_id=$1")
         .bind(id)
         .bind(verdict.score)
         .bind(verdict.passed)
         .bind(json!(verdict.reasons))
         .bind(json!(judge_log))
         .bind(json!(tokens))
+        .bind(verdict.votes.map(|v|json!(v)))
         .execute(&mut *tx)
         .await
         .map_err(db)?;

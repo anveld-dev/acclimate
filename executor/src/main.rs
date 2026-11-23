@@ -1,4 +1,5 @@
 mod gateway;
+mod grading;
 
 use gateway::{Gateway, Record};
 use serde::Deserialize;
@@ -24,10 +25,17 @@ struct Lease {
     lease_token: String,
     heartbeat_seconds: u64,
     kind: String,
+    #[serde(default)]
     harness: String,
     bundle: Value,
     input: Value,
+    #[serde(default)]
     task_model: String,
+    judge_model: Option<String>,
+    judge_runs: Option<u64>,
+    grader: Value,
+    output: Value,
+    material: Value,
     limits: Limits,
     provider: Provider,
 }
@@ -74,6 +82,23 @@ impl Worker {
         }
     }
     async fn rollout(&self, l: &Lease, name: &str) -> Result<Value, &'static str> {
+        if l.kind == "grade" {
+            return self
+                .grade(
+                    l,
+                    &l.grader,
+                    l.judge_model.as_deref(),
+                    l.judge_runs,
+                    &l.output,
+                    &[],
+                    (0, 0),
+                    "completed",
+                )
+                .await;
+        }
+        if l.kind == "conversion" {
+            return self.convert(l).await;
+        }
         if l.harness != "chat" || l.kind != "rollout" || l.provider.api_key.is_empty() {
             return Err("executor");
         }
@@ -191,14 +216,17 @@ impl Worker {
             .json()
             .await
             .map_err(|_| "executor")?;
-        let grader = &grade["grader"];
-        if grader["type"] != "exact" || grader.get("expected").is_none() {
-            return Err("executor");
-        }
-        let passed = stop == "completed" && exact(&output, &grader["expected"]);
-        Ok(
-            json!({"verdict":{"passed":passed,"score":u8::from(passed),"reasons":[]},"judgeLog":[],"tokens":{"task":{"input":input,"output":completion},"judge":{"input":0,"output":0}}}),
+        self.grade(
+            l,
+            &grade["grader"],
+            grade["judgeModel"].as_str(),
+            grade["judgeRuns"].as_u64(),
+            &output,
+            &log,
+            (input, completion),
+            stop,
         )
+        .await
     }
     async fn once(&self) -> Result<(), ()> {
         let response = self
@@ -217,7 +245,7 @@ impl Worker {
         let lease: Lease = response.json().await.map_err(|_| ())?;
         let name = format!("acclimate-{}", Uuid::new_v4());
         tokio::select! {
-            _=self.expired(&lease)=>{remove(&name).await.map_err(|_|())?;}
+            _=self.expired(&lease)=>{if lease.kind == "rollout" {remove(&name).await.map_err(|_|())?;}}
             result=async {
                 let body=self.rollout(&lease,&name).await.unwrap_or_else(|code|json!({"error":{"code":code,"message":code}}));
                 self.post(&lease,"result").json(&body).send().await?.error_for_status()

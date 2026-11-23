@@ -57,3 +57,15 @@ CREATE TABLE learning_rollouts (
 );
 CREATE INDEX learning_rollouts_queue ON learning_rollouts ((trial_id IS NULL),created_at,id) WHERE status='queued';
 CREATE INDEX learning_rollouts_expiry ON learning_rollouts (lease_expires_at) WHERE status IN ('running','grading');
+
+-- Executor grading and trial work
+ALTER TABLE learning_trials
+    ADD COLUMN kind text NOT NULL DEFAULT 'try' CHECK (kind IN ('try','admission','conversion')),
+    ADD CHECK (runtime->>'judgeModel' IS DISTINCT FROM runtime->>'taskModel' OR runtime->>'judgeModel' IS NULL);
+ALTER TABLE learning_rounds
+    ADD CHECK (runtime->>'judgeModel' IS DISTINCT FROM runtime->>'taskModel' OR runtime->>'judgeModel' IS NULL);
+ALTER TABLE learning_rollouts
+    ADD COLUMN votes jsonb,
+    ADD COLUMN conversion_result jsonb,
+    DROP CONSTRAINT learning_rollouts_status_check,
+    ADD CHECK (status IN ('queued','running','grading','scored','converted','failed','cancelled'));

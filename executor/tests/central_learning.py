@@ -57,6 +57,8 @@ class CentralLearning(unittest.TestCase):
         h = self.h
         answer, key = secrets.token_hex(24), secrets.token_hex(24)
         calls = {}
+        judge_calls = Counter()
+        criterion_marker = secrets.token_hex(20)
         release = threading.Event()
         arrived = threading.Event()
         problems = []
@@ -77,6 +79,34 @@ class CentralLearning(unittest.TestCase):
                     body = json.loads(
                         handler.rfile.read(int(handler.headers["Content-Length"]))
                     )
+                    if body["model"] == "judge":
+                        self.assertFalse(body["store"])
+                        data = json.loads(body["messages"][1]["content"])
+                        if "criteria" in data:
+                            criterion = data["criteria"][0]
+                            if data["gatewayLog"]:
+                                self.assertEqual(data["gatewayLog"][0]["model"], "task")
+                            counter = (criterion, data["output"])
+                            index = judge_calls[counter] % 3
+                            judge_calls[counter] += 1
+                            passed = bool(data["output"])
+                            if criterion == "reference-failed":
+                                passed = False
+                            elif criterion == "empty-passed":
+                                passed = True
+                            elif criterion == criterion_marker:
+                                passed = (data["output"] == answer) != (index == 1)
+                            elif criterion in ("judge-unstable", "no-reference-split") and index == 1:
+                                passed = not passed
+                            mapped = {"criteria": [{"passed": passed, "reason": f"vote {index}"}]}
+                        else:
+                            mapped = {"inputPath": "/question", "referencePath": "/answer"} if data["row"] == 1 else {}
+                        reply = {"choices": [{"message": {"content": json.dumps(mapped)}}],
+                                 "usage": {"prompt_tokens": 5, "completion_tokens": 2}}
+                        handler.send_response(200)
+                        handler.end_headers()
+                        handler.wfile.write(json.dumps(reply).encode())
+                        return
                     self.assertIn(
                         "Review the supplied diff", body["messages"][0]["content"]
                     )
@@ -133,7 +163,7 @@ class CentralLearning(unittest.TestCase):
                 ACCLIMATE_GATE_FIXTURE=str(fixture_file),
                 ACCLIMATE_GATE_ANSWER=answer,
                 ACCLIMATE_GATE_RUNTIME=json.dumps(
-                    dict(executor=identity, taskModel="task", baseUrl=url)
+                    dict(executor=identity, taskModel="task", judgeModel="judge", baseUrl=url)
                 ),
             )
             subprocess.run(
@@ -166,7 +196,7 @@ class CentralLearning(unittest.TestCase):
         subprocess.run(
             [service, "--set-model-provider", data["workspace"]],
             env=h.env,
-            input=json.dumps(dict(baseUrl=url, apiKey=key, allowedModels=["task"])),
+            input=json.dumps(dict(baseUrl=url, apiKey=key, allowedModels=["task", "judge"])),
             text=True,
             check=True,
         )
@@ -218,6 +248,10 @@ class CentralLearning(unittest.TestCase):
                 )
             )
 
+        if not failure:
+            h.sql(f"""UPDATE learning_rollouts SET grader=jsonb_build_object(
+                'type','criteria','criteria',jsonb_build_array('{criterion_marker}'::text),
+                'reference',grader->'expected')""")
         start()
         if not failure:
             self.assertTrue(arrived.wait(60), "Executor never reached upstream")
@@ -235,7 +269,7 @@ class CentralLearning(unittest.TestCase):
                 "fetch('http://192.0.2.1',{signal:AbortSignal.timeout(1500)}).then(()=>process.exit(1),()=>{})",
             )
             probe = Path(__file__).with_name("inspect.mjs").read_text()
-            for marker in (key, answer):
+            for marker in (key, answer, criterion_marker):
                 subprocess.run(
                     [
                         "docker",
@@ -316,6 +350,26 @@ class CentralLearning(unittest.TestCase):
                 ],
             ),
         )
+        if not failure:
+            for row in rows:
+                self.assertEqual(len(row["judge_log"]), 3)
+                self.assertEqual(row["tokens"]["judge"], {"input": 15, "output": 6})
+                self.assertEqual(row["votes"], [row["passed"], not row["passed"], row["passed"]])
+            ids = fixture(ACCLIMATE_GATE_TRIALS=json.dumps(data))
+            deadline = time.monotonic() + 120
+            while h.sql("SELECT count(*) FROM learning_rollouts WHERE trial_id IS NOT NULL AND status NOT IN ('scored','converted')") != "0":
+                if problems:
+                    raise problems[0]
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(.5)
+            *checks, converted = fixture(ACCLIMATE_GATE_TRIALS=json.dumps(dict(data, ids=ids)))
+            self.assertEqual([(c["status"], c["reason"]) for c in checks], [
+                ("admitted", None), ("set-aside", "reference-failed"), ("set-aside", "empty-passed"),
+                ("set-aside", "judge-unstable"), ("admitted", None), ("set-aside", "judge-unstable")])
+            self.assertEqual(converted["cards"], [dict(row=1, group="sheet#1", input="Question",
+                             grader=dict(type="exact", expected="Answer"), criteriaDrafted=False)])
+            self.assertEqual(converted["setAside"], [dict(row=2, reason="no-reference")])
+            self.assertEqual(fixture(ACCLIMATE_GATE_EVALUATION=data["evaluation"]), result)
         self.assertEqual(containers(), [])
         dump = h.pg("pg_dump", "--data-only", h.env["DATABASE_URL"]).stdout
         self.assertFalse(key in dump or key.encode().hex() in dump)

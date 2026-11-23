@@ -649,6 +649,26 @@ class LearningImport(TypedDict):
     setAside: NotRequired[list[_SetAsideRow]]
 
 
+class LearningImportSummary(LearningImport):
+    createdAt: str
+    source: str
+
+
+class _LearningTaskConfirmationResult(TypedDict):
+    taskId: str
+    result: Literal["confirmed", "already-confirmed", "not-held-out", "not-found"]
+
+
+class LearningTaskConfirmation(TypedDict):
+    revision: int | None
+    results: list[_LearningTaskConfirmationResult]
+
+
+class LearningTaskRecheck(TypedDict):
+    taskId: str
+    admission: Literal["pending"]
+
+
 class BlockedLearningVersion(TypedDict):
     digest: str
     removedBy: str
@@ -711,6 +731,9 @@ __all__ = [
     "LearningUsage",
     "LearningUsageDay",
     "LearningImport",
+    "LearningImportSummary",
+    "LearningTaskConfirmation",
+    "LearningTaskRecheck",
     "LearningTrial",
     "LearningTrialReceipt",
     "LearningTaskRevision",

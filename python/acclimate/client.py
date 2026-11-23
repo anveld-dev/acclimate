@@ -407,14 +407,27 @@ class AcclimateClient:
     def start_learning_loop(self, workspace_id: str, bundle_id: str) -> LearningLoop:
         return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/start", _optional_key=True)
 
-    def list_learning_tasks(self, workspace_id: str, bundle_id: str, *, after: str | None = None, limit: int | None = None, split: str | None = None, source: str | None = None, admission: str | None = None, flagged: bool | None = None) -> LearningTaskPage:
-        return self._request("GET", self._loop_path(workspace_id, bundle_id) + "/tasks" + self._learning_query(after=after, limit=limit, split=split, source=source, admission=admission, flagged=None if flagged is None else str(flagged).lower()))
+    def list_learning_tasks(self, workspace_id: str, bundle_id: str, *, after: str | None = None, limit: int | None = None, split: str | None = None, source: str | None = None, admission: str | None = None, flagged: bool | None = None, confirmed: bool | None = None) -> LearningTaskPage:
+        return self._request("GET", self._loop_path(workspace_id, bundle_id) + "/tasks" + self._learning_query(after=after, limit=limit, split=split, source=source, admission=admission, flagged=None if flagged is None else str(flagged).lower(), confirmed=None if confirmed is None else str(confirmed).lower()))
 
     def create_learning_task(self, workspace_id: str, bundle_id: str, body: LearningTaskRequest) -> LearningTaskReceipt:
         return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/tasks", body, _optional_key=True)
 
     def edit_learning_task(self, workspace_id: str, bundle_id: str, id: str, body: LearningTaskEdit) -> LearningTaskRevision:
         return self._request("PATCH", self._loop_path(workspace_id, bundle_id) + f"/tasks/{self._part(id)}", body, _optional_key=True)
+
+    def confirm_learning_tasks(self, workspace_id: str, bundle_id: str, task_ids: list[str]) -> LearningTaskConfirmation:
+        return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/tasks/confirm", {"taskIds": task_ids}, _optional_key=True)
+
+    def recheck_learning_task(self, workspace_id: str, bundle_id: str, id: str) -> LearningTaskRecheck:
+        return self._request("POST", self._loop_path(workspace_id, bundle_id) + f"/tasks/{self._part(id)}/recheck", _optional_key=True)
+
+    def recheck_learning_tasks(self, workspace_id: str, bundle_id: str, task_ids: list[str] | None = None) -> dict[str, list[str]]:
+        body = {"taskIds": task_ids} if task_ids else {}
+        return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/tasks/recheck", body, _optional_key=True)
+
+    def list_learning_imports(self, workspace_id: str, bundle_id: str) -> dict[str, list[LearningImportSummary]]:
+        return self._request("GET", self._loop_path(workspace_id, bundle_id) + "/tasks/imports")
 
     def retire_learning_task(self, workspace_id: str, bundle_id: str, id: str) -> LearningTaskRevision:
         return self._request("DELETE", self._loop_path(workspace_id, bundle_id) + f"/tasks/{self._part(id)}", _optional_key=True)

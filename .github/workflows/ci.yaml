@@ -127,6 +127,19 @@ jobs:
       - run: npm run pack:verify -- --skip-build --console-runtime
       - run: cargo test --locked -p acclimate-executor
       - run: docker info && python executor/tests/sandbox.py -v
+      - name: Run the sandbox gate under gVisor
+        env:
+          ACCLIMATE_SANDBOX_RUNTIME: runsc
+        run: |
+          curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor -o /usr/share/keyrings/gvisor.gpg
+          echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/gvisor.gpg] https://storage.googleapis.com/gvisor/releases release main' | sudo tee /etc/apt/sources.list.d/gvisor.list
+          sudo apt-get update
+          sudo apt-get install -y runsc
+          sudo jq '.runtimes.runsc = {"path":"runsc","runtimeArgs":["--host-uds=open"]}' /etc/docker/daemon.json > "$RUNNER_TEMP/docker.json"
+          sudo install -m 0644 "$RUNNER_TEMP/docker.json" /etc/docker/daemon.json
+          sudo systemctl restart docker
+          docker info
+          python executor/tests/sandbox.py -v
       - run: PG_BIN=/usr/lib/postgresql/16/bin python executor/tests/central_learning.py -v
       - run: python scripts/productization/rust_tests.py --pg-bin /usr/lib/postgresql/16/bin
       - run: npm run test:e2e -- --skip-build --pg-bin /usr/lib/postgresql/16/bin

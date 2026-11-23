@@ -15,7 +15,7 @@ impl Split {
             Self::Evolve
         }
     }
-    fn table(self) -> &'static str {
+    pub(super) fn table(self) -> &'static str {
         match self {
             Self::Evolve => "learning_tasks",
             Self::HeldOut => "learning_held_out_tasks",

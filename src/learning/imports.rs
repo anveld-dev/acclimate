@@ -254,7 +254,7 @@ pub(crate) struct ConversionOutput {
 }
 #[allow(dead_code)]
 pub(crate) async fn rows_awaiting_conversion(tx: &mut Tx<'_>, id: Uuid) -> ApiResult<Value> {
-    sqlx::query_scalar("SELECT jsonb_build_object('format',i.format,'rows',coalesce((SELECT jsonb_agg(jsonb_build_object('row',r.row_number,'source',i.source,'material',r.material) ORDER BY r.row_number) FROM learning_task_import_rows r WHERE r.import_id=i.id AND r.status='pending'),'[]')) FROM learning_task_imports i WHERE id=$1")
+    sqlx::query_scalar("SELECT jsonb_build_object('format',i.format,'rows',coalesce((SELECT jsonb_agg(jsonb_build_object('row',r.row_number,'source','row:' || r.row_number,'material',r.material) ORDER BY r.row_number) FROM learning_task_import_rows r WHERE r.import_id=i.id AND r.status='pending'),'[]')) FROM learning_task_imports i WHERE id=$1")
         .bind(id)
         .fetch_optional(&mut **tx)
         .await
@@ -530,7 +530,7 @@ mod tests {
         .execute(&mut *tx)
         .await.unwrap();
         let material = rows_awaiting_conversion(&mut tx, id).await.unwrap();
-        assert_eq!(material["rows"][1]["source"], "tickets.csv");
+        assert_eq!(material["rows"][1]["source"], "row:2");
         assert_eq!(material["rows"][1]["row"], 2);
         let group = (1..)
             .map(|i| i.to_string())

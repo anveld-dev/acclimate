@@ -19,6 +19,7 @@ All bundle routes sit under `/v1/workspaces/{ws}/bundles/{b}/learning`.
 | `PATCH /tasks/{id}` | Edit a task. Bumps the task revision and re-runs admission. | write |
 | `DELETE /tasks/{id}` | Retire a task. Rows are kept. | write |
 | `POST /tasks/import` | Streamed upload of a spreadsheet, CSV, JSONL or pasted text. Returns an import with counts, and the drafted task cards for a console session. | write |
+| `GET /tasks/imports/{id}` | Import status and counts of converted, pending and set-aside source rows | read |
 | `POST /tasks/{id}/try` | Run one task on the executor against the channel head. Returns a trial ID. | write |
 | `GET /trials/{id}` | A trial's status, gateway log, output and verdict | read |
 | `GET /held-out-tasks/export` | Download the held-out tasks | console session only |
@@ -171,7 +172,7 @@ The latest migration is `0021`. Central learning adds two. `0022` is additive an
 | --- | --- |
 | `id`, `evaluation_id` or `trial_id` | Exactly one parent |
 | `task_id`, `rollout` | `rollout` is 1–5. Unique per parent and task. |
-| `status` | `queued`, `running`, `grading`, `scored`, `failed`, `cancelled` |
+| `status` | `queued`, `running`, `grading`, `scored`, `converted` (conversion batches), `failed`, `cancelled` |
 | `lease_owner`, `lease_expires_at`, `attempts` | Lease state. `attempts` is at most 2. |
 | `score`, `passed`, `gateway_log`, `output` | Set when scored |
 | `error_code` | Set when failed. A failed row never has a score. |

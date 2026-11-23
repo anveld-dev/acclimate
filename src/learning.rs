@@ -21,6 +21,7 @@ pub(crate) mod imports;
 mod memory;
 pub(super) mod optimizer;
 pub(crate) mod tasks;
+pub(crate) mod trial_work;
 pub(crate) mod worker;
 
 type Tx<'a> = Transaction<'a, Postgres>;
@@ -47,6 +48,15 @@ pub(crate) fn routes() -> Router<AppState> {
         .route(
             &format!("{PREFIX}/tasks/{{id}}"),
             axum::routing::patch(tasks::edit).delete(tasks::retire),
+        )
+        .route(
+            &format!("{PREFIX}/tasks/{{id}}/try"),
+            post(trial_work::try_task),
+        )
+        .route(&format!("{PREFIX}/trials/{{id}}"), get(trial_work::read))
+        .route(
+            &format!("{PREFIX}/tasks/imports/{{id}}"),
+            get(trial_work::import_status),
         )
         .route(IMPORT_ROUTE, post(imports::upload))
         .route(

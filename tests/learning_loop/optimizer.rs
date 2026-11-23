@@ -69,7 +69,9 @@ async fn model(
             assert!(!inner.contains(['<', '>']));
             let data: Value = serde_json::from_str(inner).unwrap();
             assert!(!inner.contains(HELD_OUT));
-            assert!(!inner.contains("held-out-sentinel"));
+            for marker in ["held-out-sentinel", "private-trial-log", "private-trial-result"] {
+                assert!(!inner.contains(marker));
+            }
             let n = {
                 let mut requests = capture.lock().unwrap();
                 let n = requests.len();
@@ -175,6 +177,12 @@ async fn adoption_releases_only_selected_sample_and_merges_memory_across_rounds(
         f.enroll().await;
         sqlx::query(r#"INSERT INTO learning_held_out_tasks(project_id,bundle_id,task_id,"group",input,grader,source,added_revision) VALUES($1,$2,'held-out-sentinel','test','"held-out-sentinel"','{}','console',1)"#)
             .bind(&f.project).bind(f.bundle).execute(&f.state.db).await.unwrap();
+        sqlx::query(r#"WITH trial AS (
+            INSERT INTO learning_trials(project_id,bundle_id,version_id,runtime,held_out)
+            VALUES ($1,$2,$3,'{"taskModel":"task","judgeModel":"judge"}',true) RETURNING id)
+            INSERT INTO learning_rollouts(trial_id,task_id,rollout,input,grader,status,score,passed,gateway_log,reasons)
+            SELECT id,'held-out-sentinel',1,'null','{}','scored',1,true,'["private-trial-log"]','["private-trial-result"]' FROM trial"#)
+            .bind(&f.project).bind(f.bundle).bind(f.version).execute(&f.state.db).await.unwrap();
         f.ok("GET", "/memory", "reader", None, Value::Null).await
     };
     assert_eq!(

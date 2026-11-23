@@ -148,7 +148,7 @@ class SandboxGate(unittest.TestCase):
                                 "-e",
                                 probe,
                             ],
-                            input=expected,
+                            input=json.dumps([expected]),
                             text=True,
                             check=True,
                         )

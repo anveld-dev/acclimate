@@ -269,22 +269,21 @@ class CentralLearning(unittest.TestCase):
                 "fetch('http://192.0.2.1',{signal:AbortSignal.timeout(1500)}).then(()=>process.exit(1),()=>{})",
             )
             probe = Path(__file__).with_name("inspect.mjs").read_text()
-            for marker in (key, answer, criterion_marker):
-                subprocess.run(
-                    [
-                        "docker",
-                        "exec",
-                        "-i",
-                        sandbox,
-                        "node",
-                        "--input-type=module",
-                        "-e",
-                        probe,
-                    ],
-                    input=marker,
-                    text=True,
-                    check=True,
-                )
+            subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    "-i",
+                    sandbox,
+                    "node",
+                    "--input-type=module",
+                    "-e",
+                    probe,
+                ],
+                input=json.dumps([key, answer, criterion_marker]),
+                text=True,
+                check=True,
+            )
             docker("kill", "--signal=KILL", workers[0])
             release.set()
             crashed = current()

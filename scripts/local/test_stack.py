@@ -69,10 +69,68 @@ class StackTests(unittest.TestCase):
                  'workspaceId': runtime['workspaceId'], 'rights': ['read', 'write']},
             ])
             self.assertEqual(console['CONSOLE_PUBLIC_API_URL'], runtime['serviceUrl'])
+            self.assertEqual(service['ACCLIMATE_PROVIDER_ENCRYPTION_KEY'], values['provider_key'])
+            self.assertFalse(set(stack.LEARNING_SETTINGS) & set(service))
             self.assertEqual((state / 'postgres-password').read_text().strip(), values['postgres'])
             self.assertEqual((state / 'keycloak-postgres-password').read_text().strip(),
                              keycloak['KC_DB_PASSWORD'])
             self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in state.iterdir()))
+
+    def test_learning_settings_come_from_the_shell_and_survive_a_later_start(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            values = stack.credentials(state)
+            shell = dict(ACCLIMATE_MODEL_ENDPOINT='http://host.docker.internal:8317/v1/chat/completions',
+                         ACCLIMATE_MODEL_TOKEN='proxy-key', ACCLIMATE_MODEL='optimizer',
+                         ACCLIMATE_PROVIDER_HTTP_HOSTS='host.docker.internal', UNRELATED='x')
+            stack.write_application(state, values, SUBJECT, environ=shell)
+            first = env_file(state / 'service.env')
+            self.assertEqual({name: first[name] for name in shell if name != 'UNRELATED'},
+                             {name: value for name, value in shell.items() if name != 'UNRELATED'})
+            self.assertNotIn('UNRELATED', first)
+            # A later start from a shell without the settings keeps them, and a new value wins.
+            stack.write_application(state, values, SUBJECT, environ={})
+            self.assertEqual(env_file(state / 'service.env'), first)
+            stack.write_application(state, values, SUBJECT, environ=dict(ACCLIMATE_MODEL='other'))
+            self.assertEqual(env_file(state / 'service.env'), dict(first, ACCLIMATE_MODEL='other'))
+            with self.assertRaisesRegex(ValueError, 'single line'):
+                stack.write_application(state, values, SUBJECT, environ=dict(ACCLIMATE_MODEL='a\nB=c'))
+
+    def test_older_credentials_gain_a_provider_key_once(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            values = stack.credentials(state)
+            older = {name: value for name, value in values.items() if name != 'provider_key'}
+            stack.write_file(state / 'credentials.json', json.dumps(older).encode())
+            upgraded = stack.credentials(state)
+            self.assertEqual({name: upgraded[name] for name in older}, older)
+            self.assertRegex(upgraded['provider_key'], '^[0-9a-f]{64}$')
+            self.assertEqual(stack.credentials(state), upgraded)
+
+    def test_executor_gets_one_credential_and_the_service_allowlist(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            calls = []
+
+            def compose(root, *args, capture=False, **options):
+                calls.append((args, options.get('environment')))
+                if '--create-executor-token' in args:
+                    return json.dumps(dict(id='e', token='executor-secret')).encode()
+                return b'container\n' if 'ps' in args else None
+
+            shell = dict(ACCLIMATE_PROVIDER_HTTP_HOSTS='host.docker.internal')
+            with patch.object(stack, 'compose', compose):
+                stack.start_executor(ROOT, state, stack.DEFAULT, 'build', environ=shell)
+                stack.start_executor(ROOT, state, stack.DEFAULT, 'build', environ=shell)
+            token = state / 'executor-token'
+            self.assertEqual(token.read_text(), 'executor-secret\n')
+            self.assertEqual(stat.S_IMODE(token.stat().st_mode), 0o600)
+            self.assertEqual(sum('--create-executor-token' in args for args, _ in calls), 1)
+            started = [(args, environment) for args, environment in calls if args[:1] == ('up',)]
+            self.assertEqual(started, [(('up', '--detach', '--build', 'acclimate-executor'), shell)] * 2)
+            with patch.object(stack, 'compose', compose):
+                stack.start_executor(ROOT, state, stack.DEFAULT, 'release', environ=shell)
+            self.assertEqual(calls[-2][0], ('up', '--detach', 'acclimate-executor'))
 
     def test_refuses_symlink_or_exposed_credentials(self):
         with tempfile.TemporaryDirectory() as temporary:

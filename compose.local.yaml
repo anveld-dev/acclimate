@@ -79,6 +79,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - executor-data:/var/lib/acclimate-executor
     networks: [executor, executor-egress]
+    # A model proxy on the laptop is reached by this name on Linux as well as Docker Desktop.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     restart: unless-stopped
   console:
     image: ${ACCLIMATE_LOCAL_CONSOLE_IMAGE:-acclimate-local-console:source}
@@ -199,6 +201,8 @@ services:
         aliases: [executor-listener]
       backend: {}
       edge: {}
+    # The service shares this network, and its optimizer may be a model proxy on the laptop.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     depends_on:
       keycloak:
         condition: service_healthy

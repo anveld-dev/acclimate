@@ -95,7 +95,13 @@ RELEASE_IMAGES = dict(service='ghcr.io/anveld-dev/acclimate-service',
                       console='ghcr.io/anveld-dev/acclimate-console')
 SECRET_NAMES = (
     'postgres', 'keycloak_postgres', 'keycloak_admin', 'operator',
-    'oidc_client', 'login', 'console', 'runtime',
+    'oidc_client', 'login', 'console', 'runtime', 'provider_key',
+)
+# Learning needs a model endpoint for the optimizer, and an allowlist when the workspace
+# provider is a local proxy. Both come from the shell that runs local:up and are then kept.
+LEARNING_SETTINGS = (
+    'ACCLIMATE_MODEL_ENDPOINT', 'ACCLIMATE_MODEL_TOKEN', 'ACCLIMATE_MODEL',
+    'ACCLIMATE_MODEL_REASONING_EFFORT', 'ACCLIMATE_PROVIDER_HTTP_HOSTS',
 )
 
 
@@ -163,6 +169,10 @@ def credentials(state):
     # Preserve the runtime credential in existing local installations.
     if isinstance(values, dict) and 'evaluator' in values and 'runtime' not in values:
         values['runtime'] = values.pop('evaluator')
+        saved = None
+    # Stacks created before learning ran on the service have no provider encryption key.
+    if isinstance(values, dict) and 'provider_key' not in values:
+        values['provider_key'] = secrets.token_hex(32)
         saved = None
     if (not isinstance(values, dict) or set(values) != set(SECRET_NAMES)
             or any(not isinstance(value, str) or not re.fullmatch(r'[0-9a-f]{64}', value)
@@ -299,7 +309,21 @@ def write_infrastructure(state, values, ports=DEFAULT):
     ))
 
 
-def write_application(state, values, subject, ports=DEFAULT):
+def learning_settings(state, environ):
+    """Optional learning settings from the shell, or the ones saved by an earlier start."""
+    saved = existing_file(state / 'service.env', 0o600)
+    kept = dict(line.split('=', 1) for line in saved.decode().splitlines()) if saved else {}
+    chosen = {}
+    for name in LEARNING_SETTINGS:
+        value = environ.get(name) or kept.get(name)
+        if value:
+            if any(character in value for character in '\r\n'):
+                raise ValueError(f'{name} must be a single line')
+            chosen[name] = value
+    return chosen
+
+
+def write_application(state, values, subject, ports=DEFAULT, environ=os.environ):
     write_env(state / 'service.env', dict(
         DATABASE_URL=f"postgresql://acclimate:{values['postgres']}@postgres:5432/acclimate",
         ACCLIMATE_OIDC_ISSUER=ports.issuer,
@@ -313,6 +337,8 @@ def write_application(state, values, subject, ports=DEFAULT):
         ACCLIMATE_SMTP_PORT=1025,
         ACCLIMATE_SMTP_FROM='Acclimate <noreply@acclimate.local>',
         ACCLIMATE_SMTP_TLS='none',
+        ACCLIMATE_PROVIDER_ENCRYPTION_KEY=values['provider_key'],
+        **learning_settings(state, environ),
     ))
     write_env(state / 'console.env', dict(
         CONSOLE_ORIGIN=ports.console,
@@ -349,12 +375,13 @@ def image_environment(root, source):
                 ACCLIMATE_LOCAL_PULL_POLICY='build')
 
 
-def compose(root, *args, capture=False, ports=DEFAULT, source='build'):
+def compose(root, *args, capture=False, ports=DEFAULT, source='build', environment=None):
     return subprocess.run(
         ['docker', 'compose', '--env-file', os.devnull, '--project-name',
          f'acclimate-local-{project_suffix(root)}', '-f', 'compose.local.yaml', *args],
         cwd=root, check=True, stdout=subprocess.PIPE if capture else None,
-        env={**os.environ, **ports.environment(), **image_environment(root, source)},
+        env={**os.environ, **ports.environment(), **image_environment(root, source),
+             **(environment or {})},
     ).stdout
 
 
@@ -573,6 +600,27 @@ def write_client_files(state, ports, certificate, bundle):
     return text, source
 
 
+def start_executor(root, state, ports, source, environ=os.environ):
+    """Give the executor a credential on first start, then run it beside the service."""
+    path = state / 'executor-token'
+    if existing_file(path, 0o600) is None:
+        created = compose(root, 'exec', '-T', 'service', '/usr/local/bin/acclimate-service',
+                          '--create-executor-token', capture=True, ports=ports, source=source)
+        write_file(path, json.loads(created)['token'].encode() + b'\n')
+    # The executor applies the same provider allowlist as the service.
+    hosts = learning_settings(state, environ).get('ACCLIMATE_PROVIDER_HTTP_HOSTS', '')
+    # The executor has no released image. A source start rebuilds it with the checkout.
+    rebuild = ['--build'] if source == 'build' else []
+    compose(root, 'up', '--detach', *rebuild, 'acclimate-executor', ports=ports, source=source,
+            environment=dict(ACCLIMATE_PROVIDER_HTTP_HOSTS=hosts))
+    for _ in range(30):
+        if compose(root, 'ps', '--status', 'running', '--quiet', 'acclimate-executor',
+                   capture=True, ports=ports, source=source).strip():
+            return
+        time.sleep(1)
+    raise ValueError('The executor did not stay running. Run docker compose logs acclimate-executor.')
+
+
 def stack_running(root):
     return bool(compose(root, 'ps', '--status', 'running', '--quiet', capture=True).strip())
 
@@ -617,6 +665,8 @@ def up(root, state, requested_source=None):
     with opener.open(ports.console + '/auth/login', timeout=15) as response:
         if not response.geturl().startswith(ports.issuer + '/protocol/openid-connect/auth?'):
             raise ValueError('The console did not redirect sign-in to the local Keycloak issuer.')
+    print('Starting the executor. Its first build takes a few minutes.', flush=True)
+    start_executor(root, state, ports, source)
     save_endpoints(state, ports)
     write_file(state / 'images.json', (json.dumps(dict(source=source)) + '\n').encode())
 
@@ -635,6 +685,13 @@ def up(root, state, requested_source=None):
     print(f'\nConsole       {ports.console}\nLogin         {OPERATOR}\nAPI           {ports.api}')
     print(f'Mailpit       {ports.mailpit}\nPull config   {state / "pull.json"}\n'
           f'Local CA      {ca}')
+    learning = learning_settings(state, os.environ)
+    if 'ACCLIMATE_MODEL_ENDPOINT' in learning:
+        print(f'Optimizer     {learning.get("ACCLIMATE_MODEL", "model not set")} at '
+              f'{learning["ACCLIMATE_MODEL_ENDPOINT"]}')
+    else:
+        print('Optimizer     Not configured. To run learning rounds, set ACCLIMATE_MODEL_ENDPOINT, '
+              'ACCLIMATE_MODEL_TOKEN and ACCLIMATE_MODEL, then run npm run local:up again.')
     if workspace['adopted']:
         print(f'Workspace     {PROJECT}, adopted for {OPERATOR} ("{ADOPTION_REASON}")')
         if workspace.get('bundle'):

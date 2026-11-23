@@ -193,7 +193,7 @@ export interface LearningLoop extends Omit<LearningLoopRequest, 'taskModel' | 'j
   maxRoundsPerDay: number;
   admittedEvolve: number;
   admittedHeldOut: number;
-  alert: Json;
+  alert: { roundId: string; score: number; previousScore: number; flippedTasks: number } | null;
   setting: LearningSetting;
   waiting: string | null;
   taskRevision: number;
@@ -211,6 +211,9 @@ export interface LearningLoop extends Omit<LearningLoopRequest, 'taskModel' | 'j
   rounds: LearningRoundSummary[];
 }
 export interface LearningRoundSummary {
+  diff: LearningCandidate['changes'];
+  diagnosis: LearningDiagnosis | null;
+  evolveScore: number | null;
   trigger: string;
   incumbentReused: boolean;
   taskModel: string | null;
@@ -241,6 +244,7 @@ export interface LearningRound extends LearningRoundSummary {
   memoryDigest: string | null;
   historyDigest: string | null;
   setting: LearningSetting;
+  optimizerReasoningEffort: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
   optimizerModel: string | null;
   selection: LearningSelection | null;
   candidates: LearningCandidate[];
@@ -359,7 +363,6 @@ export interface LearningMemory {
     provenance: LearningSetting & {
       round: number;
       evolveRevision: number;
-      heldOutDigest?: string;
       optimizerModel: string;
     };
   }[];
@@ -423,7 +426,9 @@ export interface LearningImport {
   converted: number;
   cards?: LearningTask[];
   status?: string;
-  setAside?: number;
+  message?: string | null;
+  setAsideCount?: number;
+  setAside?: { row: number; source: string; reason: string }[];
 }
 
 export interface LearningUsageDay {
@@ -445,6 +450,11 @@ export interface LearningRollback {
 }
 
 export interface ModelProvider {
+  verification?: {
+    status: 'pending' | 'verified' | 'failed';
+    checkedAt: string | null;
+    models: { model: string; ok: boolean; usage: boolean; message: string | null }[];
+  };
   baseUrl: string|null;
   allowedModels: string[];
   hasKey: boolean;

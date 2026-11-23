@@ -263,6 +263,9 @@ class LearningLoopRequest(TypedDict):
 
 
 class LearningRoundSummary(TypedDict):
+    diff: "_LearningChanges | None"
+    diagnosis: "LearningDiagnosis | None"
+    evolveScore: float | None
     taskRevision: int
     trigger: str
     incumbentReused: bool
@@ -286,6 +289,13 @@ class LearningRoundSummary(TypedDict):
     endedAt: str | None
 
 
+class _LearningAlert(TypedDict):
+    roundId: str
+    score: float
+    previousScore: float
+    flippedTasks: int
+
+
 class LearningLoop(TypedDict):
     channel: str
     setting: LearningSetting
@@ -294,7 +304,7 @@ class LearningLoop(TypedDict):
     maxRoundsPerDay: int
     taskRevision: int
     waiting: str | None
-    alert: LearningJson
+    alert: _LearningAlert | None
     admittedEvolve: int
     admittedHeldOut: int
     workspaceId: str
@@ -477,7 +487,6 @@ class _LearningMemoryProvenance(LearningSetting):
 
 class _LearningMemoryStoredProvenance(_LearningMemoryProvenance):
     evolveRevision: int
-    heldOutDigest: NotRequired[str]
     optimizerModel: str
 
 
@@ -588,6 +597,12 @@ class LearningTrial(TypedDict):
     verdict: NotRequired[LearningJson]
 
 
+class _SetAsideRow(TypedDict):
+    row: int
+    source: str
+    reason: str
+
+
 class LearningImport(TypedDict):
     importId: str
     rows: int
@@ -595,7 +610,9 @@ class LearningImport(TypedDict):
     converted: int
     cards: NotRequired[list[LearningTask]]
     status: NotRequired[str]
-    setAside: NotRequired[int]
+    message: NotRequired[str | None]
+    setAsideCount: NotRequired[int]
+    setAside: NotRequired[list[_SetAsideRow]]
 
 
 class LearningUsageDay(TypedDict):
@@ -616,7 +633,21 @@ class LearningRollback(TypedDict):
     note: NotRequired[str]
 
 
+class _VerifiedModel(TypedDict):
+    model: str
+    ok: bool
+    usage: bool
+    message: str | None
+
+
+class _ProviderVerification(TypedDict):
+    status: Literal["pending", "verified", "failed"]
+    checkedAt: str | None
+    models: list[_VerifiedModel]
+
+
 class ModelProvider(TypedDict):
+    verification: NotRequired[_ProviderVerification]
     baseUrl: str | None
     allowedModels: list[str]
     hasKey: bool

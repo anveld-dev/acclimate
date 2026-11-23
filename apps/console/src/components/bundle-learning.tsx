@@ -1,22 +1,17 @@
-import type { LearningLoop, LearningRoundSummary } from '@acclimate/sdk';
+import { useModelProvider } from './use-model-provider';
+import type { LearningRoundSummary } from '@acclimate/sdk';
 import { useEffect, useState, type ReactNode } from 'react';
 import { bundleHref } from '../navigation';
 import { ImprovementMemory, LearningRoundDetail } from './learning-details';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { learningRequest } from '../server/central-actions';
-import { splitDeficit, type Provider, type CentralRequest } from '../lib/central-learning';
+import { splitDeficit, type CentralRequest } from '../lib/central-learning';
 import { LearningTasks } from './learning-tasks';
 import { workspaceHref } from '../navigation';
 import type { LearningState } from '../server/learning-core';
 import { activeRoundStates } from '../lib/learning';
 import type { LearningScope } from '../lib/learning';
-
-type CentralRound = LearningRoundSummary & {
-  taskRevision?: number;
-  trigger?: string;
-  evolveScore?: number | null;
-};
 
 const stateLabels: Record<LearningRoundSummary['state'], string> = {
   scoring_incumbent: 'Scoring incumbent',
@@ -39,11 +34,10 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function ScoreCurves({ rounds }: { rounds: CentralRound[] }) {
+function ScoreCurves({ rounds }: { rounds: LearningRoundSummary[] }) {
   const completed = rounds
     .filter(({ state }) => state === 'completed')
-    .sort((a, b) => a.number - b.number)
-    .map((round) => ({ ...round, evolveScore: round.evolveScore ?? round.incumbentScore }));
+    .sort((a, b) => a.number - b.number);
   if (!completed.some((round) => round.evolveScore !== null || round.heldOutScore !== null))
     return <p className="text-sm text-muted-foreground">Scores appear as rounds complete.</p>;
   const first = completed[0].number;
@@ -163,7 +157,7 @@ function RoundList({
   href,
   rollback,
 }: {
-  rounds: CentralRound[];
+  rounds: LearningRoundSummary[];
   href: (id: string) => string;
   rollback?: (id: string) => void;
 }) {
@@ -267,39 +261,17 @@ export function BundleLearning({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [provider, setProvider] = useState<Provider>();
+  const { provider, error: providerError } = useModelProvider(scope.workspaceId);
   const [task, setTask] = useState('');
   const [judge, setJudge] = useState('');
-  const loop = (state.ok ? state.loop : null) as
-    | (LearningLoop & {
-        taskModel?: string;
-        judgeModel?: string;
-        maxRoundsPerDay?: number;
-        admittedEvolve?: number;
-        admittedHeldOut?: number;
-        waiting?: string;
-        alert?: { roundId: string; score: number; previousScore: number; flippedTasks: number };
-      })
-    | null;
+  const loop = state.ok ? state.loop : null;
   const ws = scope.workspaceId;
+  const defaultTask = loop?.taskModel || provider?.allowedModels[0] || '';
+  const defaultJudge = loop?.judgeModel || provider?.allowedModels[1] || '';
   useEffect(() => {
-    let active = true;
-    void learningRequest<Provider>({ workspaceId: ws, action: 'provider' }).then(
-      (p) => {
-        if (active) {
-          setProvider(p);
-          setTask(loop?.taskModel || p.allowedModels[0] || '');
-          setJudge(loop?.judgeModel || p.allowedModels[1] || '');
-        }
-      },
-      () => {
-        if (active) setError('Could not load model provider.');
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [ws, loop?.taskModel, loop?.judgeModel]);
+    setTask(defaultTask);
+    setJudge(defaultJudge);
+  }, [defaultTask, defaultJudge]);
   const evolve = loop?.admittedEvolve ?? 0,
     held = loop?.admittedHeldOut ?? 0;
   async function submit(command: Pick<CentralRequest, 'action' | 'payload'>) {
@@ -434,7 +406,7 @@ export function BundleLearning({
                 </label>
                 {!state.channels.length && <p>Release a version on a channel first.</p>}
                 {!provider ? (
-                  <p>{error ? 'Model provider unavailable.' : 'Loading provider…'}</p>
+                  <p>{providerError ? 'Model provider unavailable.' : 'Loading provider…'}</p>
                 ) : provider.allowedModels.length < 2 ? (
                   <a className="underline" href={workspaceHref(ws, 'members') + '#model-provider'}>
                     Configure two allowed models in workspace settings
@@ -465,12 +437,34 @@ export function BundleLearning({
                     </Button>
                   ) : (
                     <Button
-                      disabled={busy || !!splitDeficit(evolve) || !!splitDeficit(held)}
+                      disabled={
+                        busy ||
+                        !!providerError ||
+                        provider?.verification?.status !== 'verified' ||
+                        !!splitDeficit(evolve) ||
+                        !!splitDeficit(held)
+                      }
                       onClick={() => void submit({ action: 'start' })}
                     >
                       Start
                     </Button>
                   ))}
+                {loop.status !== 'running' && provider?.verification?.status !== 'verified' && (
+                  <p>
+                    {providerError ||
+                      (provider?.verification?.status === 'failed'
+                        ? 'Provider verification failed.'
+                        : provider?.hasKey
+                          ? 'Provider verification is pending.'
+                          : 'Start requires a verified model provider.')}{' '}
+                    <a
+                      className="underline"
+                      href={workspaceHref(ws, 'members') + '#model-provider'}
+                    >
+                      Check provider settings
+                    </a>
+                  </p>
+                )}
                 {(splitDeficit(evolve) > 0 || splitDeficit(held) > 0) && (
                   <p>
                     Start needs {splitDeficit(evolve)} more evolve and {splitDeficit(held)} more

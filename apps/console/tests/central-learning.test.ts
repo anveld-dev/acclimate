@@ -51,13 +51,13 @@ test('cards expose provenance, admission and held-out criteria confirmation to e
     source: 'outcome',
     split: 'held-out',
     admission: 'set-aside',
-    admissionReason: 'judge-disagreed',
+    admissionReason: 'judge-unstable',
   };
   const html = renderToStaticMarkup(createElement(TaskEditor, { card, edit: true, run: () => {} }));
   for (const label of [
     'Production outcome',
     'Be specific',
-    'judge disagreed',
+    'The judge gave inconsistent results.',
     'Confirm criteria',
     'Edit task',
     'Try task',

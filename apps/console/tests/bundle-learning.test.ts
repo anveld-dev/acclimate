@@ -12,12 +12,8 @@ import type {
   LearningRoundSummary,
 } from '@acclimate/sdk';
 import { BundleLearning } from '../src/components/bundle-learning';
-import { activeRoundStates, enrollmentError } from '../src/lib/learning';
-import {
-  readLearningState,
-  runLearningCommand,
-  type LearningState,
-} from '../src/server/learning-core';
+import { activeRoundStates } from '../src/lib/learning';
+import { readLearningState, type LearningState } from '../src/server/learning-core';
 import { consoleEnvironment } from './console-fixture';
 
 const scope = { workspaceId: 'acme', bundleId: '00000000-0000-4000-8000-000000000001' };
@@ -26,14 +22,22 @@ const path = base + '/learning';
 const env = { ...consoleEnvironment, CONSOLE_ALLOW_EDITS: 'true' };
 const body: LearningLoopRequest = {
   channel: 'canary',
-  appPrincipalId: 'machine:app',
-  setting: { domain: 'support', benchmark: 'refunds', policyModel: 'policy' },
-  heldOut: { digest: 'sha256:' + 'a'.repeat(64), cases: 2 },
+  taskModel: 'task',
+  judgeModel: 'judge',
+  setting: { domain: 'support', benchmark: 'refunds' },
 };
 const timestamp = '2026-11-20T12:00:00Z';
 const round: LearningRoundSummary = {
   id: '00000000-0000-4000-8000-000000000002',
   number: 1,
+  diff: null,
+  diagnosis: null,
+  evolveScore: 0.9,
+  trigger: 'start',
+  incumbentReused: false,
+  taskModel: 'task',
+  judgeModel: 'judge',
+  taskRevision: 2,
   state: 'completed',
   decision: 'adopted',
   reason: null,
@@ -51,8 +55,13 @@ const loop: LearningLoop = {
   ...body,
   status: 'running',
   pauseReason: null,
-  evolveRevision: 2,
-  liveCases: 3,
+  taskRevision: 2,
+  setting: { ...body.setting, policyModel: body.taskModel },
+  admittedEvolve: 0,
+  admittedHeldOut: 0,
+  maxRoundsPerDay: 4,
+  waiting: null,
+  alert: null,
   memoryRevision: 0,
   nextRound: 2,
   failedRounds: 0,
@@ -91,14 +100,6 @@ function bundleFixture(url: URL, role = 'admin'): Response | undefined {
   if (url.pathname === '/v1/workspaces/acme/bundles')
     return response({ items: [{ id: scope.bundleId, name: 'Support' }] });
   if (url.pathname === base + '/channels') return response({ items: [{ name: 'canary' }] });
-  if (url.pathname === '/v1/workspaces/acme/machine-tokens')
-    return response({
-      items: [
-        { name: 'App', principalId: 'machine:app', status: 'active', rights: ['write'] },
-        { name: 'Read only', principalId: 'machine:read', status: 'active', rights: ['read'] },
-        { name: 'Expired', principalId: 'machine:old', status: 'expired', rights: ['evaluate'] },
-      ],
-    });
 }
 
 test('enrollment and recovery render for the appropriate states and roles', () => {
@@ -167,6 +168,7 @@ test('renders round states, evaluation progress and decreasing measured scores',
         decision: 'kept',
         reason: 'no-candidates',
         incumbentScore: 0.6,
+        evolveScore: 0.6,
         heldOutScore: 0,
       },
       round,
@@ -258,102 +260,6 @@ test('round pagination uses before and round reads omit trace requests and held-
   assert.doesNotMatch(JSON.stringify(state), /sentinel/);
 });
 
-test('enrollment, pause, resume, stop and setup cases send their exact service shapes', async () => {
-  const seen: { method?: string; path: string; key: string | null; body?: string | null }[] = [];
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(String(input));
-    const fixture = bundleFixture(url);
-    if (fixture) return fixture;
-    const headers = new Headers(init?.headers);
-    const isCase = url.pathname.endsWith('/evolve-cases');
-    assert.equal(headers.get('x-acclimate-session'), env.CONSOLE_SESSION_TOKEN);
-    assert.equal(headers.get('authorization'), `Bearer ${env.CONSOLE_SERVICE_TOKEN}`);
-    seen.push({
-      path: url.pathname,
-      method: init?.method,
-      key: headers.get('idempotency-key'),
-      body: init?.body as string | undefined,
-    });
-    return response(isCase ? { evolveRevision: 3, added: 1, retired: 0, liveCases: 4 } : loop);
-  };
-  assert.deepEqual(await runLearningCommand(env, scope, { action: 'enroll', body }, fetcher), {
-    ok: true,
-  });
-  for (const action of ['pause', 'resume', 'stop'] as const)
-    assert.deepEqual(await runLearningCommand(env, scope, { action }, fetcher), { ok: true });
-  const added = await runLearningCommand(
-    env,
-    scope,
-    {
-      action: 'addCase',
-      caseId: 'setup-1',
-      input: '{"key":true}',
-      expected: 'null',
-    },
-    fetcher,
-  );
-  assert.deepEqual(added, {
-    ok: true,
-    receipt: { evolveRevision: 3, added: 1, retired: 0, liveCases: 4 },
-  });
-  assert.equal(
-    (
-      await runLearningCommand(
-        env,
-        scope,
-        { action: 'retireCase', caseId: 'outcome:corrected' },
-        fetcher,
-      )
-    ).ok,
-    true,
-  );
-  assert.deepEqual(
-    seen.map((item) => [item.method, item.path, item.body]),
-    [
-      ['PUT', path, JSON.stringify(body)],
-      ['POST', path + '/pause', undefined],
-      ['POST', path + '/resume', undefined],
-      ['POST', path + '/stop', undefined],
-      [
-        'POST',
-        path + '/evolve-cases',
-        '{"cases":[{"caseId":"setup-1","input":{"key":true},"expected":null}]}',
-      ],
-      ['POST', path + '/evolve-cases', '{"retire":["outcome:corrected"]}'],
-    ],
-  );
-  assert.equal(new Set(seen.map(({ key }) => key)).size, 6);
-  for (const { key } of seen) assert.match(key ?? '', /^[a-f0-9-]{36}$/);
-});
-
-test('rejects invalid enrollment before network and preserves conflict guidance', async () => {
-  for (const invalid of [
-    { ...body, appPrincipalId: '' },
-    { ...body, appPrincipalId: 'é'.repeat(513) },
-    { ...body, setting: { ...body.setting, domain: 'é'.repeat(129) } },
-    { ...body, setting: { ...body.setting, domain: 'a\nb' } },
-    { ...body, heldOut: { ...body.heldOut, cases: 0 } },
-  ]) {
-    assert.ok(enrollmentError(invalid));
-    const result = await runLearningCommand(
-      env,
-      scope,
-      { action: 'enroll', body: invalid },
-      async () => {
-        assert.fail('invalid enrollment must not fetch');
-      },
-    );
-    assert.equal(result.ok, false);
-  }
-  const result = await runLearningCommand(env, scope, { action: 'resume' }, async () =>
-    response(
-      { error: { code: 'learning_conflict', message: 'Use enrollment to restart the loop' } },
-      409,
-    ),
-  );
-  assert.deepEqual(result, { ok: false, message: 'Use enrollment to restart the loop' });
-});
-
 const changes = {
   edits: [{ path: 'AGENTS.md', oldText: 'Stop', newText: 'Retry' }],
   files: [],
@@ -379,8 +285,8 @@ const detailRound: LearningRound = {
   memoryRevision: 0,
   memoryDigest: 'memory-digest',
   historyDigest: null,
-  setting: body.setting,
-  heldOut: body.heldOut,
+  setting: loop.setting,
+  optimizerReasoningEffort: null,
   optimizerModel: 'optimizer',
   adoptedVersionId: candidate.versionId,
   selection: {
@@ -417,7 +323,7 @@ const detailRound: LearningRound = {
   ],
   evaluations: [],
 };
-const provenance = { ...body.setting, round: 1 };
+const provenance = { ...loop.setting, round: 1 };
 const memory: LearningMemory = {
   currentRevision: 2,
   memoryRevision: 1,
@@ -461,7 +367,6 @@ const memory: LearningMemory = {
         ...provenance,
         optimizerModel: 'optimizer',
         evolveRevision: 2,
-        heldOutDigest: body.heldOut.digest,
       },
     },
   ],

@@ -1,3 +1,4 @@
+import type { LearningImport, ModelProvider } from '@acclimate/sdk';
 export type CentralAction =
   | 'provider'
   | 'saveProvider'
@@ -26,7 +27,7 @@ export type CentralRequest = {
   filename?: string;
   mediaType?: string;
 };
-export type Provider = { baseUrl: string | null; allowedModels: string[]; hasKey: boolean };
+export type Provider = ModelProvider;
 export type TaskCard = {
   taskId: string;
   addedRevision: number;
@@ -43,13 +44,7 @@ export type TaskCard = {
   confirmedBy?: string;
   flagReason?: string;
 };
-export type ImportStatus = {
-  importId: string;
-  rows: number;
-  converted: number;
-  pending: number;
-  setAside?: number;
-};
+export type ImportStatus = LearningImport;
 export type Trial = {
   trialId: string;
   status: string;

@@ -26,7 +26,6 @@ import type {
 import { MACHINE_TOKEN_RIGHTS, type MachineTokenRight } from '../lib/machine-token-rights';
 
 const RIGHT_LABELS: Record<MachineTokenRight, string> = {
-  evaluate: 'Evaluate',
   read: 'Read content',
   write: 'Write content',
   promote: 'Promote releases',

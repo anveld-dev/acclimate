@@ -4,10 +4,7 @@ import { consoleClient } from './console-client';
 import { allPages } from './listing';
 import type { Environment } from './selection';
 import {
-  enrollmentError,
-  evolveCaseBody,
   type ActiveEvaluation,
-  type LearningCommand,
   type LearningScope,
   type LearningReadOptions,
 } from '../lib/learning';
@@ -34,7 +31,7 @@ async function inspect(api: AcclimateClient, { workspaceId, bundleId }: Learning
   }
 }
 
-function failure(error: unknown, mutation = false) {
+function failure(error: unknown) {
   return {
     ok: false as const,
     message:
@@ -42,9 +39,7 @@ function failure(error: unknown, mutation = false) {
         ? 'Access denied. Check your workspace access.'
         : error instanceof ApiError && [400, 409].includes(error.status)
           ? error.message
-          : mutation
-            ? 'Could not confirm the change. Refresh the learning page before trying again.'
-            : 'Could not load the learning loop. Refresh to try again.',
+          : 'Could not load the learning loop. Refresh to try again.',
   };
 }
 
@@ -219,67 +214,3 @@ export async function readLearningState(
 }
 
 export type LearningState = Awaited<ReturnType<typeof readLearningState>>;
-
-export async function runLearningCommand(
-  env: Environment,
-  scope: LearningScope,
-  command: LearningCommand,
-  fetcher = fetch,
-) {
-  try {
-    validateScope(scope);
-    if (env.CONSOLE_ALLOW_EDITS !== 'true')
-      return { ok: false as const, message: 'Changes are disabled for this console.' };
-    const api = consoleClient(env, fetcher);
-    const { workspaceId, bundleId } = scope;
-    const key = crypto.randomUUID();
-    switch (command?.action) {
-      case 'enroll': {
-        const error = enrollmentError(command.body);
-        if (error) return { ok: false as const, message: error };
-        const { channel, appPrincipalId, setting, heldOut } = command.body;
-        await api.enrollLearningLoop(
-          workspaceId,
-          bundleId,
-          {
-            channel,
-            appPrincipalId,
-            setting: {
-              domain: setting.domain,
-              benchmark: setting.benchmark,
-              policyModel: setting.policyModel,
-            },
-            heldOut: { digest: heldOut.digest, cases: heldOut.cases },
-          },
-          key,
-        );
-        break;
-      }
-      case 'pause':
-        await api.pauseLearningLoop(workspaceId, bundleId, key);
-        break;
-      case 'resume':
-        await api.resumeLearningLoop(workspaceId, bundleId, key);
-        break;
-      case 'stop':
-        await api.stopLearningLoop(workspaceId, bundleId, key);
-        break;
-      case 'addCase':
-      case 'retireCase': {
-        let body;
-        try {
-          body = evolveCaseBody(command);
-        } catch (error) {
-          return { ok: false as const, message: (error as Error).message };
-        }
-        const receipt = await api.addLearningEvolveCases(workspaceId, bundleId, body, key);
-        return { ok: true as const, receipt };
-      }
-      default:
-        return { ok: false as const, message: 'Invalid learning action.' };
-    }
-    return { ok: true as const };
-  } catch (error) {
-    return failure(error, true);
-  }
-}

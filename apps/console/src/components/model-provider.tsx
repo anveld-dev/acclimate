@@ -1,30 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useModelProvider } from './use-model-provider';
+import { useState } from 'react';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { learningRequest } from '../server/central-actions';
 import type { Provider } from '../lib/central-learning';
 
 export function ModelProvider({ workspaceId }: { workspaceId: string }) {
-  const [provider, setProvider] = useState<Provider>();
-  const [message, report] = useState('Loading model provider…');
+  const { provider, error, saved } = useModelProvider(workspaceId);
+  const [message, report] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    let active = true;
-    void learningRequest<Provider>({ workspaceId, action: 'provider' }).then(
-      (value) => {
-        if (active) {
-          setProvider(value);
-          report('');
-        }
-      },
-      () => {
-        if (active) report('Could not load the workspace model provider.');
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [workspaceId]);
   return (
     <section id="model-provider" className="workspace-panel space-y-4 p-5">
       <h2 className="font-semibold">Model provider</h2>
@@ -49,7 +33,7 @@ export function ModelProvider({ workspaceId }: { workspaceId: string }) {
                     .filter(Boolean),
                 }),
               });
-              setProvider(next);
+              saved(next);
               form.querySelector<HTMLInputElement>('[name=apiKey]')!.value = '';
               report('Provider saved.');
             } catch {
@@ -91,7 +75,23 @@ export function ModelProvider({ workspaceId }: { workspaceId: string }) {
           <Button disabled={busy}>Save provider</Button>
         </form>
       )}
-      <p role="status">{message}</p>
+      {provider?.hasKey && (
+        <div aria-live="polite">
+          <p>Provider verification: {provider.verification?.status ?? 'pending'}</p>
+          <ul>
+            {provider.verification?.models.map((result) => (
+              <li key={result.model}>
+                {result.model} · {result.ok && result.usage ? 'Verified' : 'Failed'}.{' '}
+                {result.message}{' '}
+                {!result.usage &&
+                  (result.ok || /usage/i.test(result.message ?? '')) &&
+                  'The provider must return usage numbers for token limits.'}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p role="status">{error || message || (!provider && 'Loading model provider…')}</p>
     </section>
   );
 }

@@ -36,7 +36,9 @@ export function TaskEditor({
         {card.admission}
       </p>
       {card.flagReason && <p>Flagged · {card.flagReason}</p>}
-      {card.admissionReason && <p>{card.admissionReason.replaceAll('-', ' ')}</p>}
+      {card.admissionReason && (
+        <p>{setAsideReasons[card.admissionReason] ?? card.admissionReason.replaceAll('-', ' ')}</p>
+      )}
       <h4>Input</h4>
       <pre className="whitespace-pre-wrap break-words">{pretty(card.input)}</pre>
       <h4>{card.grader.type === 'exact' ? 'Expected answer' : 'Criteria'}</h4>
@@ -121,6 +123,13 @@ export function TaskEditor({
     </article>
   );
 }
+const setAsideReasons: Record<string, string> = {
+  'no-reference': 'No usable reference answer or grading criteria.',
+  'too-large': 'The row exceeds the size limit.',
+  'reference-failed': 'The reference answer failed grading.',
+  'empty-passed': 'An empty answer passed grading.',
+  'judge-unstable': 'The judge gave inconsistent results.',
+};
 async function readCards(scope: LearningScope) {
   const cards: TaskCard[] = [];
   let id: string | undefined;
@@ -191,7 +200,7 @@ export function LearningTasks({
     };
   }, [workspaceId, bundleId, revision]);
   const trialId = trial?.status === 'pending' ? trial.trialId : undefined;
-  const importId = job?.pending ? job.importId : undefined;
+  const importId = job?.pending && job.status !== 'failed' ? job.importId : undefined;
   useEffect(() => {
     const pending = trialId || importId || cards?.some((card) => card.admission === 'pending');
     let active = true;
@@ -307,8 +316,20 @@ export function LearningTasks({
           {job && (
             <p role="status">
               {job.rows} rows · {job.converted} converted · {job.pending} pending ·{' '}
-              {job.setAside ?? 0} set aside
+              {job.setAsideCount ??
+                (Array.isArray(job.setAside) ? job.setAside.length : (job.setAside ?? 0))}{' '}
+              set aside
             </p>
+          )}
+          {job?.status === 'failed' && <p role="alert">{job.message || 'Import failed.'}</p>}
+          {Array.isArray(job?.setAside) && job.setAside.length > 0 && (
+            <ul aria-label="Set-aside rows">
+              {job.setAside.map(({ row, source, reason }) => (
+                <li key={source + ':' + row}>
+                  {source} · Row {row}: {setAsideReasons[reason] ?? reason.replaceAll('-', ' ')}
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       )}

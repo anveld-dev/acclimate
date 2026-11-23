@@ -182,7 +182,7 @@ class ParityTest(unittest.TestCase):
             },
             "records": [{
                 "revision": 1, "problemId": "P1", "roundId": "r", "round": 1, "versionId": "v",
-                "provenance": {**provenance, "evolveRevision": 2, "heldOutDigest": "sha256:held",
+                "provenance": {**provenance, "evolveRevision": 2,
                                "optimizerModel": "optimizer"},
             }],
         }

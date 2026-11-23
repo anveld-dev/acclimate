@@ -12,11 +12,11 @@ Steps 1 to 5 are the whole setup. The person acts in steps 1, 2, 3 and 5.
 
 ### 1. Connect a model provider
 
-**Screen:** Workspace settings, Model provider. Two fields: an OpenAI-compatible base URL and a key.
+**Screen:** Workspace settings, Model provider. Enter the OpenAI-compatible base URL, key and allowed models.
 
-**You do:** paste both, once per workspace.
+**You do:** save the provider for the workspace and check each model’s verification result.
 
-**Automatic:** the service validates the endpoint and stores the key encrypted. Only the [gateway](executor.md) uses it, and it never appears in a task, a log or a sandbox. The provider's allowed models are listed here.
+**Automatic:** the service stores the key encrypted and schedules verification. Each model must answer and report token usage for token limits. Only the [gateway](executor.md) uses it, and it never appears in a task, a log or a sandbox. The provider's allowed models are listed here.
 
 ### 2. Turn on learning for a bundle
 
@@ -36,7 +36,7 @@ Steps 1 to 5 are the whole setup. The person acts in steps 1, 2, 3 and 5.
 
 ### 4. Admission check
 
-**Screen:** a summary of admitted tasks and tasks set aside, each with its reason.
+**Screen:** a summary of admitted tasks and tasks set aside. The import lists skipped rows with their source and reason.
 
 **Automatic:** every task runs the [admission check](tasks-and-grading.md) before it counts. A task is admitted only if its reference answer passes, an empty answer fails, and the judge gives the same verdict three times. A task that fails is set aside with the reason shown, for example "the judge disagreed with itself" or "an empty answer passed".
 
@@ -49,7 +49,7 @@ Steps 1 to 5 are the whole setup. The person acts in steps 1, 2, 3 and 5.
 - **Cards.** Each shows the input, the expected answer or criteria, its source and its split. You can edit or delete any card. A held-out card whose criteria were only drafted by conversion waits for you to confirm them before it is admitted.
 - **Split.** The service assigns each task to evolve or held-out. It keeps tasks from the same source conversation or file on the same side. The screen states the count, for example "22 evolve, 22 held-out" (illustrative).
 - **Try.** Runs one task as a trial on the executor against the current release. The panel shows the gateway log, the verdict and the judge's reasoning. A trial never counts toward learning. An infrastructure error is shown as an error, never as a failed task.
-- **Start.** Enabled once there are 20 admitted evolve tasks and 20 admitted held-out tasks. Below that, the button says how many more each side needs.
+- **Start.** Enabled once the provider is verified and there are 20 admitted evolve tasks and 20 admitted held-out tasks. Below that, the button says how many more each side needs.
 
 **You do:** read the cards, try a few, fix what looks wrong and click Start once.
 

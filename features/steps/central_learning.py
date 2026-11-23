@@ -18,6 +18,8 @@ def trial_gateway(context):
     # Trial and conversion-status routes use the executor contract from the integration branch.
     world = context.world
     trial = str(uuid.uuid4())
+    verified = dict(status="verified", checkedAt="2026-01-01T00:00:00Z",
+                    models=[dict(model=m, ok=True, usage=True, message=None) for m in MODELS])
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -33,7 +35,7 @@ def trial_gateway(context):
                     gatewayLog=["fixture completion"], verdict=dict(passed=True, reasons=["Matches reference"]))).encode()
             elif self.path.startswith(world.learning + "/tasks/imports/") and self.command == "GET":
                 status, result = 200, json.dumps(dict(importId=self.path.rsplit("/", 1)[1],
-                    rows=1, converted=0, pending=0, setAside=1, status="completed")).encode()
+                    rows=1, converted=0, pending=0, setAside=[dict(row=1, source="conversations.txt", reason="no-reference")], status="completed")).encode()
             else:
                 request = Request(world.h.base + self.path, method=self.command,
                     headers={key: value for key, value in self.headers.items() if key.lower() not in ("host", "connection")},
@@ -44,6 +46,14 @@ def trial_gateway(context):
                     upstream = error
                 with upstream:
                     status, result = upstream.status, upstream.read()
+                if self.path == world.root + "/model-provider" and status == 200:
+                    provider = json.loads(result)
+                    if self.command == "PUT" and provider.get("verification"):
+                        sql(world, f"""UPDATE workspace_model_providers SET verification='{json.dumps(verified)}'
+                            WHERE project_id='{world.h.project}'""")
+                    if self.command == "GET" and provider["hasKey"] and "verification" not in provider:
+                        provider["verification"] = verified
+                        result = json.dumps(provider).encode()
             self.send_response(status)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(result)))
@@ -81,6 +91,7 @@ def configure_ui(context):
     page.get_by_label("Allowed models").fill(", ".join(MODELS))
     page.get_by_role("button", name="Save provider").click()
     expect(page.get_by_text("Provider saved.")).to_be_visible()
+    expect(page.get_by_text("Provider verification: verified")).to_be_visible()
     w.learning_page = "/w/" + w.h.project + "/bundles/" + w.setup["bundle"]["id"] + "/learning"
     browser.visit(w.learning_page)
     expect(page.get_by_label("Task model")).to_have_value(MODELS[0])
@@ -101,6 +112,7 @@ def review(context):
     page.get_by_label("Paste conversations").fill("Question without a reference answer")
     page.get_by_role("button", name="Import tasks").click()
     expect(page.get_by_text("0 converted · 0 pending · 1 set aside", exact=False)).to_be_visible()
+    expect(page.get_by_label("Set-aside rows")).to_contain_text("conversations.txt · Row 1: No usable reference answer")
 
 
 def api(context, method, path, body=None, content_type="application/json"):
@@ -173,9 +185,9 @@ def completed_round(context):
         {"passed": i == 0, "score": int(i == 0), "trace": "Recorded judge reasoning"}
         for i in range(5)]}]})
     sql(w, f"""INSERT INTO learning_rounds(id,project_id,bundle_id,number,state,decision,parent_version_id,channel,
-        channel_revision,evolve_revision,memory_revision,setting,held_out,adopted_sample,adopted_version_id,
+        channel_revision,evolve_revision,memory_revision,setting,adopted_sample,adopted_version_id,
         selection,incumbent_score,held_out_score,ended_at,reason) VALUES ('{w.round_id}','{project}','{bundle}',100,'completed',
-        'kept','{parent}','stable',1,1,0,'{{}}','{{}}',NULL,NULL,NULL,0.75,0.8,now(),'no-candidates');
+        'kept','{parent}','stable',1,1,0,'{{}}',NULL,NULL,NULL,0.75,0.8,now(),'no-candidates');
         INSERT INTO learning_candidates(round_id,sample,status,rationale,changes,diagnosis,scan)
         VALUES('{w.round_id}',1,'generated','Answer precisely','{{"edits":[{{"path":"AGENTS.md","oldText":"Ask","newText":"Answer"}}],"files":[]}}',
         '{{"problem":{{"new":"Missing answer"}},"predicted":[]}}','{{"clean":true,"findings":[]}}');
@@ -183,8 +195,11 @@ def completed_round(context):
         selection='{{"reason":"Better answers"}}' WHERE id='{w.round_id}';
         UPDATE learning_rounds SET task_revision=1 WHERE id='{w.round_id}';
         INSERT INTO learning_evaluations(id,round_id,role,sample,split,version_id,digest,evolve_revision,status,
-            attempt_id,report,score,started_at,deadline_at) VALUES ('{evaluation}','{w.round_id}','candidate',1,'evolve',
-            '{adopted}','{w.uploaded_version["digest"]}',1,'scored','fixture','{report}',0.2,now(),now());
+            report,score,started_at) VALUES ('{evaluation}','{w.round_id}','candidate',1,'evolve',
+            '{adopted}','{w.uploaded_version["digest"]}',1,'scored','{report}',0.2,now());
+        INSERT INTO learning_rollouts(evaluation_id,task_id,rollout,input,grader,status,score,passed)
+        SELECT '{evaluation}','learning_tasks-1',i,'"Input 1"','{{"type":"exact","expected":"Answer"}}',
+            'scored',(i=1)::int,i=1 FROM generate_series(1,5) i;
         UPDATE learning_candidates SET evaluation_id='{evaluation}',version_id='{adopted}',status='evaluated',
             screen='{{"verdict":"evaluate","reason":"Fixture"}}',evolve_score=0.2 WHERE round_id='{w.round_id}';
         INSERT INTO learning_usage(project_id,bundle_id,day,rounds,rollouts,task_tokens)

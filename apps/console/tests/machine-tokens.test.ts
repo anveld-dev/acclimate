@@ -13,7 +13,7 @@ const token = {
   id,
   name: 'ci',
   principalId: 'machine:ci',
-  rights: ['evaluate'],
+  rights: ['write'],
   secretPrefix: 'acm_12345678',
   status: 'active',
 };
@@ -25,7 +25,7 @@ test('issuing sends only name, rights, expiry and reason over the admin session'
       kind: 'issue',
       workspaceId: 'p',
       name: ' ci ',
-      rights: ['evaluate'],
+      rights: ['write'],
       expiresInDays: 30,
       reason: ' CI ',
     },
@@ -36,7 +36,7 @@ test('issuing sends only name, rights, expiry and reason over the admin session'
       assert.equal(new Headers(init?.headers).get('x-acclimate-session'), 'session-fixture');
       assert.deepEqual(JSON.parse(String(init?.body)), {
         name: 'ci',
-        rights: ['evaluate'],
+        rights: ['write'],
         expiresInDays: 30,
         reason: 'CI',
       });
@@ -84,14 +84,14 @@ test('invalid input never reaches the service and service messages surface', asy
     { kind: 'list', workspaceId: '..' },
     { kind: 'revoke', workspaceId: 'p', id: '../x', reason: 'r' },
     { kind: 'revoke', workspaceId: 'p', id, reason: ' ' },
-    { kind: 'issue', workspaceId: 'p', name: 'ci', rights: ['propose'], expiresInDays: 1 },
+    { kind: 'issue', workspaceId: 'p', name: 'ci', rights: ['evaluate'], expiresInDays: 1 },
     { kind: 'issue', workspaceId: 'p', name: 'ci', rights: [], expiresInDays: 1 },
   ] as const)
     assert.equal((await machineTokenCommand(env, input as never, never)).ok, false);
   assert.equal(calls, 0);
   const refused = await machineTokenCommand(
     env,
-    { kind: 'issue', workspaceId: 'p', name: 'CI', rights: ['evaluate'], expiresInDays: 1 },
+    { kind: 'issue', workspaceId: 'p', name: 'CI', rights: ['write'], expiresInDays: 1 },
     async () =>
       Response.json(
         { error: { code: 'invalid_content', message: 'Name must be lowercase', requestId: 'r' } },

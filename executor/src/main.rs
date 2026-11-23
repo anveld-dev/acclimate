@@ -27,7 +27,11 @@ struct Lease {
     heartbeat_seconds: u64,
     #[serde(flatten)]
     job: Job,
-    limits: Limits,
+    limits: Option<Limits>,
+    #[serde(skip)]
+    task_record: Arc<Mutex<Record>>,
+    #[serde(skip)]
+    judge_record: Arc<Mutex<Record>>,
     provider: Provider,
 }
 #[derive(Deserialize)]
@@ -37,6 +41,9 @@ struct Lease {
     rename_all_fields = "camelCase"
 )]
 enum Job {
+    Probe {
+        models: Vec<String>,
+    },
     Rollout {
         harness: String,
         bundle: Value,
@@ -104,6 +111,20 @@ impl Worker {
         created: tokio::sync::oneshot::Sender<()>,
     ) -> Result<Value, Failure> {
         let (bundle, input, task_model) = match &l.job {
+            Job::Probe { models } => {
+                let mut results = Vec::new();
+                for model in models {
+                    let gateway = Gateway::new(
+                        &l.provider,
+                        model,
+                        u64::MAX,
+                        Default::default(),
+                        watch::channel(()).1,
+                    );
+                    results.push(gateway.probe().await);
+                }
+                return Ok(json!({"models":results}));
+            }
             Job::Grade {
                 grader,
                 output,
@@ -138,8 +159,9 @@ impl Worker {
             } if harness == "chat" && !l.provider.api_key.is_empty() => (bundle, input, task_model),
             _ => return Err("executor".into()),
         };
+        let limits = l.limits.as_ref().ok_or("executor")?;
         let (dir, _lock) = lease_dir(&self.root).map_err(start_failure)?;
-        let payload = json!({"bundle":bundle,"input":input,"model":task_model,"timeoutSeconds":l.limits.timeout_seconds});
+        let payload = json!({"bundle":bundle,"input":input,"model":task_model,"timeoutSeconds":limits.timeout_seconds});
         fs::write(dir.path().join("input"), payload.to_string()).map_err(start_failure)?;
         let socket = UnixListener::bind(dir.path().join("gateway")).map_err(start_failure)?;
         for (path, mode) in [
@@ -149,21 +171,15 @@ impl Worker {
         ] {
             fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(start_failure)?;
         }
-        let record = Arc::new(Mutex::new(Record::default()));
+        let record = l.task_record.clone();
         let (shutdown, closed) = watch::channel(());
-        let gateway = Gateway {
-            model: task_model.clone(),
-            url: format!(
-                "{}/chat/completions",
-                l.provider.base_url.trim_end_matches('/')
-            ),
-            key: l.provider.api_key.clone(),
-            cap: l.limits.max_tokens,
-            client: self.client.clone(),
-            record: record.clone(),
-            serial: Default::default(),
-            closed: closed.clone(),
-        };
+        let gateway = Gateway::new(
+            &l.provider,
+            task_model,
+            limits.max_tokens,
+            record.clone(),
+            closed.clone(),
+        );
         tokio::spawn(async move {
             let mut closed = closed;
             let _ = axum::serve(socket, gateway::router(gateway))
@@ -186,7 +202,7 @@ impl Worker {
         let _ = created.send(());
         let run = bounded_command(
             Command::new("docker").args(["start", "-a", name]),
-            Duration::from_secs(l.limits.timeout_seconds),
+            Duration::from_secs(limits.timeout_seconds),
         )
         .await;
         drop(shutdown);
@@ -323,7 +339,11 @@ impl Worker {
             }
         }
         eprintln!("{}: {}", err.code, message);
-        json!({"error":{"code":err.code,"message":message}})
+        let counts = |record: &Mutex<Record>| {
+            let r = record.lock().unwrap();
+            json!({"input":r.input,"output":r.output})
+        };
+        json!({"error":{"code":err.code,"message":message},"tokens":{"task":counts(&lease.task_record),"judge":counts(&lease.judge_record)}})
     }
 }
 fn lease_dir(root: &std::path::Path) -> std::io::Result<(tempfile::TempDir, fs::File)> {

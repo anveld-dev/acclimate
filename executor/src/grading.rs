@@ -60,19 +60,14 @@ impl Worker {
                 !m.is_empty() && !matches!(&l.job,Job::Rollout{task_model,..} if task_model==m)
             })
             .ok_or("executor")?;
-        Ok(Gateway {
-            model: model.into(),
-            url: format!(
-                "{}/chat/completions",
-                l.provider.base_url.trim_end_matches('/')
-            ),
-            key: l.provider.api_key.clone(),
-            cap: l.limits.judge_max_tokens.unwrap_or(l.limits.max_tokens),
-            client: self.client.clone(),
-            record: Default::default(),
-            serial: Default::default(),
-            closed: watch::channel(()).1,
-        })
+        let limits = l.limits.as_ref().ok_or("executor")?;
+        Ok(Gateway::new(
+            &l.provider,
+            model,
+            limits.judge_max_tokens.unwrap_or(limits.max_tokens),
+            l.judge_record.clone(),
+            watch::channel(()).1,
+        ))
     }
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn grade(
@@ -255,7 +250,7 @@ mod tests {
             volume: None,
         };
         for (override_cap, expected) in [(None, 8), (Some(40), 40)] {
-            lease.limits.judge_max_tokens = override_cap;
+            lease.limits.as_mut().unwrap().judge_max_tokens = override_cap;
             let gateway = worker.judge_gateway(&lease, Some("judge")).unwrap();
             assert_eq!(gateway.cap, expected);
             assert_eq!(gateway.record.lock().unwrap().input, 0);

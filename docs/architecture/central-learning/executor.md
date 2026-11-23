@@ -119,3 +119,9 @@ Coding agents come after the chat harness ships. They reuse the sandbox, lease a
 - **Grade.** A `check` script runs in a separate grader sandbox against the agent's output files.
 
 What was considered and is not planned is listed in [plan](plan.md).
+
+## Provider verification
+
+Saving provider settings queues a probe lease. The executor sends one minimal, non-streaming chat completion per model through the gateway transport and reports whether the provider answered and supplied prompt and completion token counts. Probes run outside the sandbox and use the same lease heartbeat as rollouts.
+
+For each upstream attempt the executor checks the endpoint and every resolved address, pins the approved addresses for the connection and disables redirects. An address refusal is reported per model for probes and as a gateway failure for rollout, grade and conversion leases. Failed attempts report the task and judge tokens already recorded.

@@ -160,3 +160,21 @@ python3 scripts/operations/qualify.py --pg-bin /path/to/postgresql-16/bin
 ```
 
 It creates three randomly named databases, installs the schema and inserts fixture records, compares all restored table data including exact binary payloads and history, tests refusal of a populated target and transactional failure, and drops only the databases it created. It does not alter the database named by `DATABASE_URL`. A process kill or database outage can interrupt cleanup; remove only the randomly named `acclimate_ops_…` databases after identifying them. This synthetic qualification does not prove any particular production backup is restorable; perform and verify a restore of each operational backup on an appropriate schedule.
+
+### Rollout executor
+
+Build the runner before starting Compose with
+`docker build -t acclimate-chat:1 executor/runner`. The executor resolves
+this tag once at startup and launches each sandbox by immutable image ID.
+Set `ACCLIMATE_EXECUTOR_TOKEN` to a provisioned executor credential and
+configure the service's internal listener on port 3001. Attach the workspace
+model proxy to the private executor network so the gateway can reach it.
+Configure the production Docker daemon's `runsc` runtime with
+`--host-uds=open` in its `runtimeArgs` so the runner can connect to the
+mounted gateway socket. Run `ACCLIMATE_SANDBOX_RUNTIME=runsc python3
+executor/tests/sandbox.py -v` on the Linux host to verify isolation.
+Local Compose uses plain Docker. Use a Docker engine supporting volume subpath mounts (26+).
+
+The executor mounts the host Docker socket. This grants host administrator
+authority to the executor image. Only the executor receives this mount.
+Each runner receives its own read-only lease directory from the Linux volume.

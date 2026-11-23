@@ -31,3 +31,7 @@ tower = { version = "0.5", features = ["util"] }
 dbg_macro = "deny"
 todo = "deny"
 unimplemented = "deny"
+
+[workspace]
+members = ["executor"]
+resolver = "3"

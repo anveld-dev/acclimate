@@ -1191,13 +1191,25 @@ async fn stranded_round_expires_without_pausing() {
         .execute(&f.state.db)
         .await
         .unwrap();
-    sqlx::query("UPDATE learning_rounds SET unmatched_since=now()-interval '6 minutes'")
-        .execute(&f.state.db)
-        .await
-        .unwrap();
-    let failed = f
-        .wait_for(&round_route(&item), "reader", |r| r["state"] == "failed")
-        .await;
+    // A worker tick that read the executor as present just before the updates above can still
+    // clear the wait afterwards. Keep ageing it until the round ends.
+    let failed = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            sqlx::query("UPDATE learning_rounds SET unmatched_since=now()-interval '6 minutes' WHERE state<>'failed'")
+                .execute(&f.state.db)
+                .await
+                .unwrap();
+            let round = f
+                .ok("GET", &round_route(&item), "reader", None, Value::Null)
+                .await;
+            if round["state"] == "failed" {
+                break round;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(failed["reason"], "no-matching-executor");
     let state = f
         .wait_for("", "reader", |r| r["waiting"] == "no-executor")

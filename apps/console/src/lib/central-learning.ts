@@ -144,7 +144,7 @@ const descriptions: Record<string, string> = {
   'judge-unstable':
     'The judge gave inconsistent results on the reference answer. Make the criteria more specific and save.',
   'check-failed':
-    'The check could not run, for example because the model provider or executor was unavailable. Edit and save the task to run it again.',
+    'The check could not run, for example because the model provider or executor was unavailable. Run the check again from the task card.',
 };
 export function describeLearning(code: string) {
   return descriptions[code] ?? code.replaceAll('-', ' ');

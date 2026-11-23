@@ -25,6 +25,13 @@ from qualify import Harness, port
 from executor.tests.worker import start_worker
 
 
+def encryption_key_for(harness):
+    """One key for the life of a database. The service refuses to start with a different one."""
+    if not hasattr(harness, "provider_encryption_key"):
+        harness.provider_encryption_key = secrets.token_hex(32)
+    return harness.provider_encryption_key
+
+
 @requires_docker
 class CentralLearning(unittest.TestCase):
     @classmethod
@@ -216,7 +223,8 @@ class CentralLearning(unittest.TestCase):
         h.env.update(
             ACCLIMATE_INTERNAL_BIND=f"0.0.0.0:{internal}",
             ACCLIMATE_PROVIDER_HTTP_HOSTS="host.docker.internal",
-            ACCLIMATE_PROVIDER_ENCRYPTION_KEY=secrets.token_hex(32),
+            # The Rust fixture stored its provider under this key, and the service refuses another.
+            ACCLIMATE_PROVIDER_ENCRYPTION_KEY="01" * 32,
         )
         h.restart()
         self.addCleanup(h.stop_service)
@@ -575,7 +583,7 @@ class CentralLearning(unittest.TestCase):
         internal = port()
         h.env.update(ACCLIMATE_INTERNAL_BIND=f"0.0.0.0:{internal}",
                      ACCLIMATE_PROVIDER_HTTP_HOSTS="host.docker.internal",
-                     ACCLIMATE_PROVIDER_ENCRYPTION_KEY=secrets.token_hex(32),
+                     ACCLIMATE_PROVIDER_ENCRYPTION_KEY=encryption_key_for(h),
                      ACCLIMATE_MODEL="optimizer", ACCLIMATE_MODEL_TOKEN=provider_key,
                      ACCLIMATE_MODEL_ENDPOINT=f"http://127.0.0.1:{upstream.server_port}/v1/chat/completions")
         h.restart()

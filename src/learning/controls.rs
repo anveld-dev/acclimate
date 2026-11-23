@@ -399,7 +399,7 @@ async fn measurement(
                 .await?,
         )),
         Some((id, status)) if status == "failed" => {
-            sqlx::query("UPDATE learning_rollouts SET status='queued',attempts=0,error_code=NULL,lease_token_hash=NULL WHERE evaluation_id=$1 AND status IN ('failed','cancelled')").bind(id).execute(&mut **tx).await?;
+            sqlx::query("UPDATE learning_rollouts SET status='queued',attempts=0,error_code=NULL,error_message=NULL,lease_token_hash=NULL WHERE evaluation_id=$1 AND status IN ('failed','cancelled')").bind(id).execute(&mut **tx).await?;
             sqlx::query("UPDATE learning_evaluations SET measurement_retries=measurement_retries+1,status='running',error=NULL,started_at=now() WHERE id=$1").bind(id).execute(&mut **tx).await?;
             Ok(None)
         }

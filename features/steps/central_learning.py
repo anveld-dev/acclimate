@@ -21,6 +21,13 @@ ALERT_RECIPIENT = "operator@example.test"
 CONVERSION = b"question,answer\nReview one more request,checked\nMissing reference,\n"
 
 
+def provider_key(harness):
+    """One key for the life of a database. The service refuses to start with a different one."""
+    if not hasattr(harness, "provider_encryption_key"):
+        harness.provider_encryption_key = secrets.token_hex(32)
+    return harness.provider_encryption_key
+
+
 def wait_for(read, accepts, timeout=180):
     deadline = time.monotonic() + timeout
     while True:
@@ -93,7 +100,7 @@ def workspace(context):
     w.enable_email()
     w.h.env.update(ACCLIMATE_INTERNAL_BIND=f"0.0.0.0:{internal}",
                    ACCLIMATE_PROVIDER_HTTP_HOSTS="host.docker.internal",
-                   ACCLIMATE_PROVIDER_ENCRYPTION_KEY=secrets.token_hex(32),
+                   ACCLIMATE_PROVIDER_ENCRYPTION_KEY=provider_key(w.h),
                    ACCLIMATE_MODEL="optimizer", ACCLIMATE_MODEL_TOKEN=w.fixture_key,
                    ACCLIMATE_MODEL_ENDPOINT=f"http://127.0.0.1:{server.server_port}/v1/chat/completions")
     w.h.restart()

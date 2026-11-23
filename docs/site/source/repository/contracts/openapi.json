@@ -4548,7 +4548,7 @@
                     },
                     "error": {
                       "type": "object",
-                      "description": "Present when status is failed. code is the failed rollout's error code (gateway-upstream, sandbox-start, executor, judge-budget, judge-invalid-reply), or cancelled when the provider settings or executor changed under the trial.",
+                      "description": "Present when status is failed. code is the failed rollout's error code (gateway-upstream, provider-rejected, sandbox-start, executor, judge-budget, judge-invalid-reply), or cancelled when the provider settings or executor changed under the trial.",
                       "required": [
                         "code"
                       ],
@@ -6613,7 +6613,7 @@
                 "properties": {
                   "code": {
                     "type": "string",
-                    "description": "The rollout error code: gateway-upstream, sandbox-start, executor, judge-budget or judge-invalid-reply."
+                    "description": "The rollout error code: gateway-upstream, provider-rejected, sandbox-start, executor, judge-budget or judge-invalid-reply."
                   },
                   "message": {
                     "type": [
@@ -6843,7 +6843,7 @@
           "nextRoundAt": {
             "type": ["string", "null"],
             "format": "date-time",
-            "description": "When the next round can start. Set only while waiting is daily-cap or provider-unavailable."
+            "description": "When the next round can start. Set only while waiting is daily-cap or provider-unavailable. The provider wait is ten minutes after one provider-unavailable round and doubles for each consecutive one, up to six hours."
           },
           "evolveTasksNeeded": {
             "type": ["integer", "null"],
@@ -7056,7 +7056,7 @@
                 "properties": {
                   "code": {
                     "type": "string",
-                    "description": "The rollout error code: gateway-upstream, sandbox-start, executor, judge-budget or judge-invalid-reply."
+                    "description": "The rollout error code: gateway-upstream, provider-rejected, sandbox-start, executor, judge-budget or judge-invalid-reply."
                   },
                   "message": {
                     "type": [
@@ -8130,7 +8130,8 @@
             "type": ["string", "null"]
           },
           "admissionReason": {
-            "type": ["string", "null"]
+            "type": ["string", "null"],
+            "description": "Why the task was set aside: reference-failed, empty-passed, judge-unstable, check-failed, or not-converted for an outcome whose conversion failed or set it aside."
           },
           "outcomeId": {
             "type": ["string", "null"]
@@ -8181,7 +8182,7 @@
           "grading": {
             "type": "string",
             "enum": ["exact", "criteria"],
-            "description": "How the expected answer is graded. Without it, a non-string answer or a string of at most 80 characters with no line break is graded exact, and a longer answer is graded by criteria the judge model drafts from it. A criteria outcome becomes a task only when that conversion finishes, and input and expected together must then fit in 64 KiB."
+            "description": "How the expected answer is graded. Without it, a non-string answer or a string of at most 80 characters with no line break is graded exact, and a longer answer is graded by criteria the judge model drafts from it. A criteria outcome becomes a task only when that conversion finishes, and input and expected together must then fit in 64 KiB. If the conversion fails for good or sets the row aside, the outcome becomes an exact task set aside with admissionReason not-converted."
           }
         }
       },

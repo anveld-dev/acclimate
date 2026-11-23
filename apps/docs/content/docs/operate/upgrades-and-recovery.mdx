@@ -47,7 +47,7 @@ docker compose up -d --no-build --wait service console
 
 Keep one Rust process per database. A normal `docker compose down` preserves volumes. The `--volumes` option deletes them.
 
-Upgrade the service before the executor. A newer service accepts the 1-or-0 judged scores of an executor built before partial credit, so rollouts in flight survive the service upgrade. An older service rejects a newer executor's fractional scores.
+Upgrade the service before the executor. A newer service accepts the 1-or-0 judged scores of an executor built before partial credit, so rollouts in flight survive the service upgrade. An older service rejects a newer executor's fractional scores and its `provider-rejected` error code. Until the executor is upgraded, it reports every provider failure as `gateway-upstream`, and the service treats each one as an outage.
 
 </Step>
 <Step>
@@ -127,4 +127,4 @@ Before resuming a loop, set up the executor and `ACCLIMATE_PROVIDER_ENCRYPTION_K
 
 Migrations `0025_import_history.sql`, `0026_round_failure_cause.sql` and `0027_provider_key_check.sql` record when each import was made, why a round failed, the `provider-unavailable` round reason and wait, and the provider key check. They change no existing rows. After `0027`, the first start with `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` set stores the key check, and refuses a key that opens none of the stored provider keys. [Keep the provider encryption key](#keep-the-provider-encryption-key)
 
-`compose.yaml` now requires `ACCLIMATE_EXECUTOR_TOKEN_FILE` and gives the executor a health check. The runner image default changes from `acclimate-chat:1` to `ghcr.io/anveld-dev/acclimate-runner:${ACCLIMATE_VERSION:-latest}`. If you rebuild from the checkout, `docker compose build acclimate-runner acclimate-executor` tags the new names. An `ACCLIMATE_RUNNER_IMAGE` you set yourself still names the image for both the runner and the executor.
+`compose.yaml` now requires `ACCLIMATE_EXECUTOR_TOKEN_FILE` and gives the executor a health check. Every `docker compose` command on it fails without that variable, including `pull`, `up`, `down` and `exec`, even for a deployment that does not run the executor. Export it in the deployment shell before you upgrade. Without an executor, any path works, for example an empty private file. The runner image default changes from `acclimate-chat:1` to `ghcr.io/anveld-dev/acclimate-runner:${ACCLIMATE_VERSION:-latest}`. If you rebuild from the checkout, `docker compose build acclimate-runner acclimate-executor` tags the new names. An `ACCLIMATE_RUNNER_IMAGE` you set yourself still names the image for both the runner and the executor.

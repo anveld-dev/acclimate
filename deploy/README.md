@@ -150,7 +150,9 @@ Stop traffic and both application containers before changing service versions. R
 
 There is no downgrade path for the schema. Rolling back means restoring the backup taken before the upgrade and running the build that matches it.
 
-Upgrade the service first, then the executor. A newer service accepts the 1-or-0 judged scores of an executor built before partial credit, so rollouts in flight survive the service upgrade. An older service rejects a newer executor's fractional scores.
+Upgrade the service first, then the executor. A newer service accepts the 1-or-0 judged scores of an executor built before partial credit, so rollouts in flight survive the service upgrade. An older service rejects a newer executor's fractional scores, and its `provider-rejected` error code. A newer service still accepts `gateway-upstream` for every provider failure from an older executor, and treats each one as an outage until the executor is upgraded.
+
+From this version every `docker compose` command on `compose.yaml` needs `ACCLIMATE_EXECUTOR_TOKEN_FILE` set, including `pull`, `up`, `down` and `exec`, even for a deployment that does not run the executor. Export it in the deployment shell before you upgrade. Without an executor, any path works, for example an empty private file.
 
 Upgrade or restart the executor between rounds. A round pins the executor build and runner image it started with. If no live executor matches them for five minutes, the round fails with `no-matching-executor`. That failure does not count toward the failed-rounds pause, and the next round pins the new executor. Rebuild with `docker compose build acclimate-runner acclimate-executor`, or with a release that publishes them, `docker compose pull acclimate-runner acclimate-executor`, then run `docker compose up -d acclimate-executor`.
 

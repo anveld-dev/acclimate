@@ -36,7 +36,8 @@ A failed round's `failureCause.code` and a failed trial's `error.code` name what
 
 | Code | Cause |
 | --- | --- |
-| `gateway-upstream` | The model provider was unavailable, rate limited or overloaded. When every failed rollout of the current version's evaluation has this code, the round fails with `provider-unavailable` and the loop tries again after ten minutes. |
+| `gateway-upstream` | The model provider was unavailable, rate limited or overloaded. When every failed rollout of the current version's evaluation has this code, the round fails with `provider-unavailable` and the loop tries again after ten minutes, waiting twice as long after each further outage, up to six hours. |
+| `provider-rejected` | The model provider rejected the request, for example because the key was revoked or the model is not available, or sent a reply the executor could not use. Waiting will not fix it, so the round fails like any other and counts toward the pause. Check the provider settings. |
 | `sandbox-start` | The executor could not start a sandbox. |
 | `executor` | The executor stopped or reported an error during the run, or its credential was revoked. |
 | `judge-budget` | The judge request or reply exceeded its token budget or the model's context. |

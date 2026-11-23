@@ -246,7 +246,7 @@ export function LearningTasks({
       active = false;
     };
   }, [workspaceId, bundleId, revision]);
-  const { trialId, importId, enabled } = pendingTaskReads(trial, job);
+  const { trialId, importId, enabled } = pendingTaskReads(trial, job, cards);
   useBackgroundRefresh(
     async () => {
       try {
@@ -256,6 +256,7 @@ export function LearningTasks({
             current && current.trialId === trialId ? { ...next, taskId: current.taskId } : current,
           );
         }
+        let reloadCards = cards?.some((card) => card.admission === 'pending');
         if (importId) {
           const next = await learningRequest<ImportStatus>({
             ...scope,
@@ -264,9 +265,10 @@ export function LearningTasks({
           });
           setJob((current) => (current?.importId === importId ? next : current));
           if (job?.pending !== next.pending || job?.status !== next.status) {
-            setCards(await learningRequest<TaskCard[]>({ ...scope, action: 'tasks' }));
+            reloadCards = true;
           }
         }
+        if (reloadCards) setCards(await learningRequest<TaskCard[]>({ ...scope, action: 'tasks' }));
       } finally {
         setIntervalMs((n) => Math.min(30000, n * 2));
       }

@@ -286,6 +286,7 @@ struct Measurement {
     score: f64,
     report: sqlx::types::Json<evaluations::Report>,
 }
+pub(super) const MAX_MEASUREMENT_RETRIES: i32 = 2;
 const CLEAR_DROP: f64 = 0.10;
 const MIN_FLIPS: usize = 2;
 fn regression(parent: &Measurement, child: &Measurement) -> (bool, usize) {
@@ -323,7 +324,7 @@ async fn measurement(
         )),
         Some((id, status)) if status == "failed" => {
             sqlx::query("UPDATE learning_rollouts SET status='queued',attempts=0,error_code=NULL,lease_token_hash=NULL WHERE evaluation_id=$1 AND status IN ('failed','cancelled')").bind(id).execute(&mut **tx).await?;
-            sqlx::query("UPDATE learning_evaluations SET status='running',error=NULL,started_at=now() WHERE id=$1").bind(id).execute(&mut **tx).await?;
+            sqlx::query("UPDATE learning_evaluations SET measurement_retries=measurement_retries+1,status='running',error=NULL,started_at=now() WHERE id=$1").bind(id).execute(&mut **tx).await?;
             Ok(None)
         }
         Some(_) => Ok(None),
@@ -338,25 +339,6 @@ async fn clear_alert(tx: &mut Tx<'_>, row: &LoopRow) -> Result<(), sqlx::Error> 
     sqlx::query("UPDATE learning_loops SET alert=NULL WHERE (project_id,bundle_id)=($1,$2) AND alert IS NOT NULL").bind(&row.project_id).bind(row.bundle_id).execute(&mut **tx).await?;
     Ok(())
 }
-pub(super) async fn refresh_head(tx: &mut Tx<'_>, row: &LoopRow) -> Result<(), sqlx::Error> {
-    let changed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT FROM learning_held_out_tasks t WHERE (project_id,bundle_id)=($1,$2) AND admission='admitted'
-        AND greatest(added_revision,admission_revision,retired_revision)>(SELECT max(task_revision) FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2)))")
-        .bind(&row.project_id).bind(row.bundle_id).fetch_one(&mut **tx).await?;
-    if !changed {
-        return Ok(());
-    }
-    let Some(runtime) = worker::available_runtime(tx, row).await? else {
-        return Ok(());
-    };
-    let (version, _, _) = worker::channel_head(tx, row, &row.channel).await?;
-    sqlx::query("WITH trial AS (INSERT INTO learning_trials(project_id,bundle_id,version_id,kind,runtime,task_revision)
-        SELECT $1,$2,$3,'head-monitor',$4,$5 WHERE NOT EXISTS(SELECT FROM learning_trials WHERE (project_id,bundle_id,version_id,kind,runtime,task_revision)=($1,$2,$3,'head-monitor',$4,$5)) RETURNING id)
-        INSERT INTO learning_rollouts(trial_id,task_id,rollout,input,grader)
-        SELECT trial.id,t.task_id,n,t.input,t.grader FROM trial CROSS JOIN learning_round_held_out_tasks t CROSS JOIN generate_series(1,learning_rollouts_per_task()) n WHERE (t.project_id,t.bundle_id)=($1,$2)")
-        .bind(&row.project_id).bind(row.bundle_id).bind(version).bind(runtime).bind(row.task_revision).execute(&mut **tx).await?;
-    Ok(())
-}
-
 pub(super) async fn monitor(
     tx: &mut Tx<'_>,
     row: &LoopRow,
@@ -380,21 +362,9 @@ pub(super) async fn monitor(
     let parent = match baseline {
         Some(parent) => parent,
         None => {
-            let refresh:Option<Measurement>=sqlx::query_as("WITH cases AS (
-                SELECT t.id,t.created_at,l.task_id,bool_and(l.status='scored') AS done,avg(l.score) AS mean,
-                    jsonb_agg(jsonb_build_object('score',l.score,'passed',l.passed) ORDER BY l.rollout) AS rollouts
-                FROM learning_trials t JOIN learning_rollouts l ON l.trial_id=t.id JOIN learning_rounds r ON r.id=$1
-                WHERE t.kind='head-monitor' AND (t.project_id,t.bundle_id,t.version_id,t.task_revision,t.runtime)=(r.project_id,r.bundle_id,r.parent_version_id,r.task_revision,r.runtime)
-                GROUP BY t.id,l.task_id)
-                SELECT avg(mean)::float8 AS score,jsonb_build_object('cases',jsonb_agg(jsonb_build_object('caseId',task_id,'rollouts',rollouts))) AS report FROM cases GROUP BY id,created_at HAVING bool_and(done) ORDER BY created_at DESC LIMIT 1")
-                .bind(round.id).fetch_optional(&mut **tx).await?;
-            if let Some(parent) = refresh {
-                parent
-            } else {
-                match measurement(tx, round.id, round.parent_version_id, "baseline-parent").await? {
-                    Some(parent) => parent,
-                    None => return Ok(true),
-                }
+            match measurement(tx, round.id, round.parent_version_id, "baseline-parent").await? {
+                Some(parent) => parent,
+                None => return Ok(true),
             }
         }
     };

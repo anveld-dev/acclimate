@@ -267,8 +267,8 @@ async fn heartbeat(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Value>> {
-    if let Some(expires)=sqlx::query_scalar::<_,DateTime<Utc>>("UPDATE workspace_model_providers SET probe_expires=now()+interval '45 seconds' WHERE probe_id=$1 AND probe_token=$2 AND probe_expires>now() AND EXISTS(SELECT FROM executor_credentials WHERE id=probe_owner AND revoked_at IS NULL) RETURNING probe_expires").bind(id).bind(token(&headers)?).fetch_optional(&s.pool).await.map_err(db)? { return Ok(Json(json!({"expiresAt":expires}))) }
-    let expires: DateTime<Utc> = sqlx::query_scalar("UPDATE learning_rollouts SET lease_expires_at=clock_timestamp()+interval '45 seconds' WHERE lease_id=$1 AND lease_token_hash=$2 AND lease_expires_at>clock_timestamp() AND status IN ('running','grading') RETURNING lease_expires_at")
+    if let Some(expires)=sqlx::query_scalar::<_,DateTime<Utc>>( "WITH renewed AS (UPDATE workspace_model_providers SET probe_expires=now()+interval '45 seconds' WHERE probe_id=$1 AND probe_token=$2 AND probe_expires>now() AND EXISTS(SELECT FROM executor_credentials WHERE id=probe_owner AND revoked_at IS NULL) RETURNING probe_expires,probe_owner), presence AS (UPDATE executor_credentials c SET last_seen_at=clock_timestamp() FROM renewed WHERE c.id=renewed.probe_owner) SELECT probe_expires FROM renewed").bind(id).bind(token(&headers)?).fetch_optional(&s.pool).await.map_err(db)? { return Ok(Json(json!({"expiresAt":expires}))) }
+    let expires: DateTime<Utc> = sqlx::query_scalar( "WITH renewed AS (UPDATE learning_rollouts SET lease_expires_at=clock_timestamp()+interval '45 seconds' WHERE lease_id=$1 AND lease_token_hash=$2 AND lease_expires_at>clock_timestamp() AND status IN ('running','grading') RETURNING lease_expires_at,lease_owner), presence AS (UPDATE executor_credentials c SET last_seen_at=clock_timestamp() FROM renewed WHERE c.id=renewed.lease_owner) SELECT lease_expires_at FROM renewed")
         .bind(id)
         .bind(token(&headers)?)
         .fetch_optional(&s.pool)
@@ -438,7 +438,11 @@ async fn result(
         ResultBody::Error { error, tokens } => {
             if !matches!(
                 error.code.as_str(),
-                "gateway-upstream" | "sandbox-start" | "executor"
+                "gateway-upstream"
+                    | "judge-budget"
+                    | "judge-invalid-reply"
+                    | "sandbox-start"
+                    | "executor"
             ) {
                 return Err(invalid());
             }

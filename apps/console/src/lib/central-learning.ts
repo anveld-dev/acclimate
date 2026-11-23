@@ -35,13 +35,21 @@ export function selectedModels(
     allowed.find((model) => model === judgeChoice) ?? allowed.find((model) => model !== task) ?? '';
   return { task, judge };
 }
-export function pendingTaskReads(trial?: Trial, job?: ImportStatus) {
+export function pendingTaskReads(
+  trial?: Trial,
+  job?: ImportStatus,
+  cards?: Pick<TaskCard, 'admission'>[],
+) {
   const trialId = trial?.status === 'pending' ? trial.trialId : undefined;
   const importId =
     job?.pending && job.status !== 'failed' && job.status !== 'completed'
       ? job.importId
       : undefined;
-  return { trialId, importId, enabled: Boolean(trialId || importId) };
+  return {
+    trialId,
+    importId,
+    enabled: Boolean(trialId || importId || cards?.some((card) => card.admission === 'pending')),
+  };
 }
 export type Usage = LearningUsageDay;
 export const splitDeficit = (count: number) => Math.max(0, 20 - count);

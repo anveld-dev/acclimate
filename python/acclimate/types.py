@@ -289,6 +289,12 @@ class LearningRoundSummary(TypedDict):
     endedAt: str | None
 
 
+class _IncompleteCheck(TypedDict):
+    kind: Literal["regression-check-incomplete"]
+    roundId: str
+    versionId: str
+
+
 class _LearningAlert(TypedDict):
     reverted: NotRequired[bool]
     roundId: str
@@ -305,7 +311,7 @@ class LearningLoop(TypedDict):
     maxRoundsPerDay: int
     taskRevision: int
     waiting: str | None
-    alert: _LearningAlert | None
+    alert: _LearningAlert | _IncompleteCheck | None
     admittedEvolve: int
     admittedHeldOut: int
     workspaceId: str

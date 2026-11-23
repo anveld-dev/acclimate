@@ -25,12 +25,12 @@ pub(crate) async fn dispatch(tx: &mut Tx<'_>, executor: &Value) -> ApiResult<()>
     // Rebind untouched trials. A partially executed trial cannot mix runtimes.
     sqlx::query("UPDATE learning_rollouts r SET status='cancelled' FROM learning_trials t JOIN workspace_model_providers p USING(project_id)
         WHERE r.trial_id=t.id AND r.status='queued' AND (t.runtime->>'baseUrl'<>p.base_url OR NOT (t.runtime->>'taskModel'=ANY(p.allowed_models) AND t.runtime->>'judgeModel'=ANY(p.allowed_models)) OR
-        (t.runtime->'executor'<>$1 AND NOT EXISTS(SELECT FROM executor_credentials c WHERE c.runtime=t.runtime->'executor' AND c.revoked_at IS NULL AND c.last_seen_at>now()-interval '1 minute')
+        (t.runtime->'executor'<>$1 AND NOT EXISTS(SELECT FROM present_executors c WHERE c.runtime=t.runtime->'executor')
         AND EXISTS(SELECT FROM learning_rollouts sibling WHERE sibling.trial_id=t.id AND sibling.attempts>0)))").bind(executor).execute(&mut **tx).await.map_err(db)?;
     sqlx::query("UPDATE learning_trials t SET runtime=runtime||jsonb_build_object('executor',$1::jsonb)
         WHERE runtime->'executor' IS DISTINCT FROM $1 AND EXISTS(SELECT FROM learning_rollouts r WHERE r.trial_id=t.id AND r.status='queued')
         AND NOT EXISTS(SELECT FROM learning_rollouts r WHERE r.trial_id=t.id AND r.attempts>0)
-        AND NOT EXISTS(SELECT FROM executor_credentials c WHERE c.runtime=t.runtime->'executor' AND c.revoked_at IS NULL AND c.last_seen_at>now()-interval '1 minute')").bind(executor).execute(&mut **tx).await.map_err(db)?;
+        AND NOT EXISTS(SELECT FROM present_executors c WHERE c.runtime=t.runtime->'executor')").bind(executor).execute(&mut **tx).await.map_err(db)?;
     for split in [Split::Evolve, Split::HeldOut] {
         let table = split.table();
         let confirmed = if split == Split::HeldOut {

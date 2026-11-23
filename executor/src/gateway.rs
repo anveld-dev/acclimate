@@ -14,6 +14,7 @@ pub struct Record {
     pub log: Vec<Value>,
     pub input: u64,
     pub output: u64,
+    pub budget_start: u64,
     pub capped: bool,
     pub failure: Option<String>,
     pub pending: bool,
@@ -94,7 +95,12 @@ async fn forward(g: &Gateway, body: &mut Value) -> Result<Response, StatusCode> 
     let _serial = g.serial.lock().await;
     {
         let mut r = g.record.lock().unwrap();
-        if r.input.saturating_add(r.output) >= g.cap || r.capped {
+        if r.input
+            .saturating_add(r.output)
+            .saturating_sub(r.budget_start)
+            >= g.cap
+            || r.capped
+        {
             r.capped = true;
             return Err(StatusCode::TOO_MANY_REQUESTS);
         }
@@ -142,11 +148,7 @@ async fn forward(g: &Gateway, body: &mut Value) -> Result<Response, StatusCode> 
         return Err(StatusCode::BAD_GATEWAY);
     }
     if !status.is_success() {
-        if status == StatusCode::BAD_REQUEST
-            && ["code", "type"]
-                .iter()
-                .any(|key| data["error"][key] == "context_length_exceeded")
-        {
+        if context_overflow(status, &data) {
             r.invalid =
                 Some("Provider rejected the request because it exceeded the context length");
         } else {
@@ -163,13 +165,64 @@ async fn forward(g: &Gateway, body: &mut Value) -> Result<Response, StatusCode> 
         return Err(StatusCode::BAD_GATEWAY);
     }
     r.truncated = data.pointer("/choices/0/finish_reason") == Some(&json!("length"));
-    r.capped = r.truncated || r.input.saturating_add(r.output) >= g.cap;
-    if data.pointer("/choices/0/message/content") == Some(&Value::Null) {
-        r.invalid = Some("Provider returned null message content");
+    r.capped = r.truncated
+        || r.input
+            .saturating_add(r.output)
+            .saturating_sub(r.budget_start)
+            >= g.cap;
+    if data
+        .pointer("/choices/0/message/content")
+        .is_none_or(Value::is_null)
+    {
+        r.invalid = Some("Provider returned empty message content");
     }
     Ok((status, [("content-type", "application/json")], raw).into_response())
 }
 
+// OpenAI code: https://developers.openai.com/api/docs/guides/agents-api/errors
+// Provider examples: https://github.com/vllm-project/vllm/issues/20409
+// and https://github.com/BerriAI/litellm-docs/blob/main/docs/proxy/reliability.md
+fn context_overflow(status: StatusCode, data: &Value) -> bool {
+    matches!(
+        status,
+        StatusCode::BAD_REQUEST | StatusCode::PAYLOAD_TOO_LARGE
+    ) && ["code", "type", "message"]
+        .iter()
+        .filter_map(|key| data["error"][key].as_str())
+        .any(|value| {
+            let value = value.to_ascii_lowercase().replace('_', " ");
+            [
+                "context length",
+                "maximum context",
+                "context window",
+                "too many tokens",
+                "prompt is too long",
+            ]
+            .iter()
+            .any(|phrase| value.contains(phrase))
+        })
+}
+
+const UPSTREAM_ATTEMPTS: u32 = 4;
+const MAX_RETRY_AFTER_SECONDS: u64 = 30;
+async fn retry_delay(attempt: u32, retry_after: Option<&str>) {
+    use std::time::Duration;
+    let seconds = retry_after
+        .and_then(|s| {
+            s.parse::<u64>().ok().or_else(|| {
+                chrono::DateTime::parse_from_rfc2822(s)
+                    .ok()
+                    .map(|date| (date.to_utc() - chrono::Utc::now()).num_seconds().max(0) as u64)
+            })
+        })
+        .unwrap_or(0);
+    let jitter = uuid::Uuid::new_v4().as_u128() as u64 % 500;
+    tokio::time::sleep(
+        Duration::from_millis((1000 << attempt) + jitter)
+            .max(Duration::from_secs(seconds.min(MAX_RETRY_AFTER_SECONDS))),
+    )
+    .await;
+}
 async fn upstream(g: &Gateway, body: &Value) -> Result<(StatusCode, Vec<u8>, Value), String> {
     use acclimate_provider_address::{host_allowed, validate_endpoint};
     validate_endpoint(&g.url, &g.allowlist).map_err(|_| "Provider address or scheme refused")?;
@@ -179,7 +232,7 @@ async fn upstream(g: &Gateway, body: &Value) -> Result<(StatusCode, Vec<u8>, Val
         .ok_or("Missing provider host")?
         .trim_matches(['[', ']']);
     let port = url.port_or_known_default().ok_or("Missing provider port")?;
-    for attempt in 0..3 {
+    'attempts: for attempt in 0..UPSTREAM_ATTEMPTS {
         let addresses: Vec<_> = tokio::time::timeout(
             std::time::Duration::from_secs(30),
             tokio::net::lookup_host((host, port)),
@@ -196,21 +249,45 @@ async fn upstream(g: &Gateway, body: &Value) -> Result<(StatusCode, Vec<u8>, Val
             .resolve_to_addrs(host, &addresses)
             .build()
             .map_err(|_| "Could not create provider client")?;
-        let mut response = client
+        let result = client
             .post(&g.url)
             .bearer_auth(&g.key)
             .json(body)
             .send()
-            .await
-            .map_err(transport_error)?;
+            .await;
+        let mut response = match result {
+            Ok(response) => response,
+            Err(_) if attempt + 1 < UPSTREAM_ATTEMPTS => {
+                retry_delay(attempt, None).await;
+                continue;
+            }
+            Err(e) => return Err(transport_error(e)),
+        };
         let status = response.status();
-        if attempt < 2 && (status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error()) {
-            drop(response);
-            tokio::time::sleep(std::time::Duration::from_millis(200 << attempt)).await;
+        if attempt + 1 < UPSTREAM_ATTEMPTS
+            && (status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error())
+        {
+            retry_delay(
+                attempt,
+                response
+                    .headers()
+                    .get("retry-after")
+                    .and_then(|v| v.to_str().ok()),
+            )
+            .await;
             continue;
         }
         let mut raw = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(transport_error)? {
+        loop {
+            let chunk = match response.chunk().await {
+                Ok(Some(chunk)) => chunk,
+                Ok(None) => break,
+                Err(_) if attempt + 1 < UPSTREAM_ATTEMPTS => {
+                    retry_delay(attempt, None).await;
+                    continue 'attempts;
+                }
+                Err(e) => return Err(transport_error(e)),
+            };
             if raw.len() + chunk.len() > 2 * 1024 * 1024 {
                 return Err("Upstream response exceeds 2 MiB".into());
             }
@@ -358,7 +435,11 @@ impl Gateway {
         if !status.is_success() {
             let r = self.record.lock().unwrap();
             return Err(super::Failure {
-                code: "gateway-upstream",
+                code: if r.invalid.is_some() || r.capped {
+                    "judge-budget"
+                } else {
+                    "gateway-upstream"
+                },
                 message: r
                     .failure
                     .clone()
@@ -366,6 +447,18 @@ impl Gateway {
             });
         }
         let record = self.record.lock().unwrap();
+        if record.truncated
+            || record
+                .input
+                .saturating_add(record.output)
+                .saturating_sub(record.budget_start)
+                > self.cap
+        {
+            return Err(super::Failure {
+                code: "judge-budget",
+                message: "Judge reply exceeded its token budget".into(),
+            });
+        }
         record
             .log
             .last()
@@ -373,7 +466,7 @@ impl Gateway {
             .and_then(Value::as_str)
             .map(str::to_owned)
             .ok_or_else(|| super::Failure {
-                code: "gateway-upstream",
+                code: "judge-invalid-reply",
                 message: "Judge reply has no text content".into(),
             })
     }
@@ -594,6 +687,110 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 3);
         assert!(record.invalid.is_some() && record.failure.is_none() && !record.pending);
         server.abort();
+    }
+    #[tokio::test]
+    async fn retries_disconnect_then_honors_retry_after() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let count = calls.clone();
+        let app = Router::new().route(
+            "/",
+            post(move || {
+                let n = count.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    if n == 0 {
+                        (StatusCode::TOO_MANY_REQUESTS, [("retry-after", "3")]).into_response()
+                    } else {
+                        Json(json!({"ok":true})).into_response()
+                    }
+                }
+            }),
+        );
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            stream.readable().await.unwrap();
+            drop(stream);
+            axum::serve(listener, app).await.unwrap()
+        });
+        let g = Gateway {
+            model: "model".into(),
+            url: format!("http://{addr}"),
+            key: "key".into(),
+            cap: 10,
+            allowlist: "127.0.0.1".into(),
+            record: Default::default(),
+            serial: Default::default(),
+            closed: watch::channel(()).1,
+        };
+        let started = tokio::time::Instant::now();
+        assert_eq!(upstream(&g, &json!({})).await.unwrap().0, StatusCode::OK);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert!(started.elapsed() >= std::time::Duration::from_secs(4));
+        server.abort();
+    }
+    #[tokio::test]
+    async fn missing_text_and_context_overflow_have_specific_judge_errors() {
+        for (status, reply, code) in [
+            (
+                StatusCode::OK,
+                json!({"choices":[{"message":{}}],"usage":{"prompt_tokens":1,"completion_tokens":0}}),
+                "judge-invalid-reply",
+            ),
+            (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                json!({"error":{"message":"Prompt is too long"}}),
+                "judge-budget",
+            ),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let app = Router::new().route(
+                "/",
+                post(move || {
+                    let value = reply.clone();
+                    async move { (status, Json(value)) }
+                }),
+            );
+            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            let gateway = Gateway {
+                model: "judge".into(),
+                url: format!("http://{addr}"),
+                key: "secret".into(),
+                cap: 100,
+                allowlist: "127.0.0.1".into(),
+                record: Default::default(),
+                serial: Default::default(),
+                closed: watch::channel(()).1,
+            };
+            assert_eq!(
+                gateway
+                    .completion("grade", &Value::Null)
+                    .await
+                    .unwrap_err()
+                    .code,
+                code
+            );
+            assert!(gateway.record.lock().unwrap().invalid.is_some());
+            server.abort();
+        }
+    }
+    #[test]
+    fn context_errors() {
+        for status in [StatusCode::BAD_REQUEST, StatusCode::PAYLOAD_TOO_LARGE] {
+            for (key, value) in [
+                ("code", "context_length_exceeded"),
+                ("type", "maximum_context"),
+                ("message", "Exceeded context window"),
+                ("message", "Too many tokens"),
+                ("message", "Prompt is too long"),
+            ] {
+                let data = json!({"error":{(key):value}});
+                assert!(context_overflow(status, &data));
+                assert!(!context_overflow(StatusCode::UNAUTHORIZED, &data));
+            }
+        }
     }
     #[test]
     fn policy() {

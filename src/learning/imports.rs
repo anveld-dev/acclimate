@@ -207,7 +207,7 @@ pub(super) async fn upload(
     let id = Uuid::new_v4();
     let total = rows.len();
     let digest = hex::encode(digest.finalize());
-    let inserted=sqlx::query("INSERT INTO learning_task_imports(id,project_id,bundle_id,author,source,format,row_count,digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(project_id,bundle_id,digest) DO NOTHING")
+    let receipt:Value=sqlx::query_scalar("INSERT INTO learning_task_imports(id,project_id,bundle_id,author,source,format,row_count,digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(project_id,bundle_id,digest) WHERE failure IS NULL DO UPDATE SET digest=excluded.digest RETURNING jsonb_build_object('importId',id,'rows',row_count,'converted',converted_rows,'setAsideCount',set_aside_rows,'pending',row_count-converted_rows-set_aside_rows)")
         .bind(id)
         .bind(&p)
         .bind(b)
@@ -216,11 +216,10 @@ pub(super) async fn upload(
         .bind(material_format)
         .bind(total as i64)
         .bind(&digest)
-        .execute(&mut *tx)
+        .fetch_one(&mut *tx)
         .await
         .map_err(db)?;
-    if inserted.rows_affected() == 0 {
-        let receipt=sqlx::query_scalar("SELECT jsonb_build_object('importId',id,'rows',row_count,'converted',converted_rows,'setAsideCount',set_aside_rows,'pending',row_count-converted_rows-set_aside_rows) FROM learning_task_imports WHERE (project_id,bundle_id,digest)=($1,$2,$3)").bind(&p).bind(b).bind(digest).fetch_one(&mut *tx).await.map_err(db)?;
+    if receipt["importId"] != json!(id) {
         return Ok(Json(receipt));
     }
     let mut cards = Vec::new();

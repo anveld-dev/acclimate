@@ -19,7 +19,7 @@ pub fn address_allowed(ip: IpAddr, allowed: bool) -> bool {
             !v.is_link_local()
                 && !v.is_broadcast()
                 && !matches!(v.octets(), [100, 100, 100, 200] | [168, 63, 129, 16])
-                && (allowed || !v.is_private())
+                && (allowed || !v.is_private() && !matches!(v.octets(), [100, 64..=127, _, _]))
         }
         IpAddr::V6(v) => {
             !v.is_unicast_link_local()
@@ -66,6 +66,7 @@ mod tests {
         assert!(validate_endpoint("http://127.0.0.1", "127.0.0.1").is_ok());
         for url in [
             "https://10.0.0.1",
+            "https://100.64.0.1",
             "https://[fe80::1]",
             "http://example.org",
             "https://localhost",

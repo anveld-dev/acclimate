@@ -170,7 +170,8 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
         [
             "learning_admission_results",
             "learning_round_held_out_tasks",
-            "learning_round_tasks"
+            "learning_round_tasks",
+            "present_executors"
         ]
     );
     let functions: Vec<String> = sqlx::query_scalar(

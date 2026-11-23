@@ -520,11 +520,17 @@ export function BundleLearning({
         <>
           {loop?.alert && (
             <p role="alert" className="workspace-panel p-5">
-              Held-out score dropped from {loop.alert.previousScore} to {loop.alert.score} ·{' '}
-              {loop.alert.flippedTasks} tasks changed verdict.{' '}
-              {loop.alert.reverted
-                ? 'The service restored the previous version.'
-                : 'The service has not reported an automatic restore.'}{' '}
+              {loop.alert.kind === 'regression-check-incomplete' ? (
+                `The regression check could not be completed for version ${loop.alert.versionId}.`
+              ) : (
+                <>
+                  Held-out score dropped from {loop.alert.previousScore} to {loop.alert.score} ·{' '}
+                  {loop.alert.flippedTasks} tasks changed verdict.{' '}
+                  {loop.alert.reverted
+                    ? 'The service restored the previous version.'
+                    : 'The service has not reported an automatic restore.'}
+                </>
+              )}{' '}
               <a className="underline" href={roundHref(loop.alert.roundId)}>
                 Inspect round
               </a>

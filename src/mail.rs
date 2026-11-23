@@ -124,7 +124,7 @@ impl MailConfig {
         db: &sqlx::PgPool,
     ) -> Result<Option<LearningAlert>, sqlx::Error> {
         sqlx::query_as("WITH pending AS (
-            SELECT d.round_id,d.user_id,u.email,p.name AS workspace,b.name AS bundle,r.reverted
+            SELECT d.round_id,d.user_id,u.email,p.name AS workspace,b.name AS bundle,r.reverted,r.adopted_version_id
             FROM learning_alert_deliveries d JOIN learning_rounds r ON r.id=d.round_id
             JOIN bundles b ON b.id=r.bundle_id JOIN projects p ON p.id=r.project_id
             JOIN project_memberships m ON m.user_id=d.user_id AND m.project_id=p.id AND m.role='admin'
@@ -133,7 +133,7 @@ impl MailConfig {
             ORDER BY d.next_attempt_at LIMIT 1 FOR UPDATE OF d SKIP LOCKED)
             UPDATE learning_alert_deliveries d SET attempts=attempts+1,next_attempt_at=now()+interval '1 minute'
             FROM pending p WHERE (d.round_id,d.user_id)=(p.round_id,p.user_id)
-            RETURNING d.round_id,d.user_id,p.email,p.workspace,p.bundle,d.score,d.previous_score,d.flipped_tasks,p.reverted")
+            RETURNING d.round_id,d.user_id,p.email,p.workspace,p.bundle,d.score,d.previous_score,d.flipped_tasks,p.reverted,p.adopted_version_id")
             .fetch_optional(db).await
     }
 
@@ -146,7 +146,11 @@ impl MailConfig {
         if self
             .send(
                 &alert.email,
-                "Acclimate held-out score decreased",
+                if alert.score.is_none() {
+                    "Acclimate regression check incomplete"
+                } else {
+                    "Acclimate held-out score decreased"
+                },
                 text,
                 html,
             )
@@ -191,26 +195,36 @@ pub(crate) struct LearningAlert {
     email: String,
     workspace: String,
     bundle: String,
-    previous_score: f64,
-    score: f64,
-    flipped_tasks: i32,
+    adopted_version_id: uuid::Uuid,
+    previous_score: Option<f64>,
+    score: Option<f64>,
+    flipped_tasks: Option<i32>,
     reverted: bool,
 }
 impl LearningAlert {
     fn body(&self) -> (String, String) {
-        let text = format!(
-            "The held-out score for {} in {} fell from {:.1}% to {:.1}%. {} tasks changed from pass to fail. {}",
-            self.bundle,
-            self.workspace,
-            100.0 * self.previous_score,
-            100.0 * self.score,
-            self.flipped_tasks,
-            if self.reverted {
-                "The service restored the previous version."
-            } else {
-                "The service did not restore the previous version."
-            }
-        );
+        let text = if let (Some(previous), Some(score), Some(flips)) =
+            (self.previous_score, self.score, self.flipped_tasks)
+        {
+            format!(
+                "The held-out score for {} in {} fell from {:.1}% to {:.1}%. {} tasks changed from pass to fail. {}",
+                self.bundle,
+                self.workspace,
+                100.0 * previous,
+                100.0 * score,
+                flips,
+                if self.reverted {
+                    "The service restored the previous version."
+                } else {
+                    "The service did not restore the previous version."
+                }
+            )
+        } else {
+            format!(
+                "The regression check could not be completed for version {} of {} in {}.",
+                self.adopted_version_id, self.bundle, self.workspace
+            )
+        };
         let html = format!(
             include_str!("email/learning-alert.html"),
             body = escape_html(&text)
@@ -275,9 +289,10 @@ mod tests {
             email: "admin@example.test".into(),
             workspace: "workspace".into(),
             bundle: "<bundle>".into(),
-            previous_score: 0.8,
-            score: 0.6,
-            flipped_tasks: 3,
+            adopted_version_id: uuid::Uuid::nil(),
+            previous_score: Some(0.8),
+            score: Some(0.6),
+            flipped_tasks: Some(3),
             reverted: true,
         };
         let (text, html) = alert.body();

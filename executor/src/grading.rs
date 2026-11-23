@@ -47,10 +47,45 @@ fn exact_output(expected: &Value, output: &Value) -> bool {
 }
 pub(super) fn judge_data(grader: &Value, output: &Value, log: &[Value]) -> Value {
     let evidence = match log.last() {
-        Some(entry) => json!({"request":entry["request"],"response":entry["response"]}),
+        Some(entry) => {
+            let messages: Vec<_> = entry["request"]["messages"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|m| m["role"] != "system" && m["role"] != "developer")
+                .collect();
+            json!({"messages":messages,"output":entry.pointer("/response/choices/0/message/content")})
+        }
         None => json!({"output":output}),
     };
     json!({"criteria":grader["criteria"],"reference":grader["reference"],"evidence":evidence})
+}
+
+async fn judge_runs(
+    gateway: &Gateway,
+    data: &Value,
+    count: usize,
+    run_count: u64,
+) -> Result<Value, Failure> {
+    let mut runs = vec![];
+    for _ in 0..run_count {
+        {
+            let mut r = gateway.record.lock().unwrap();
+            r.budget_start = r.input.saturating_add(r.output);
+            r.capped = false;
+        }
+        let mut judgment = None;
+        for _ in 0..3 {
+            judgment = parse(&gateway.completion(JUDGE, data).await?, count);
+            if judgment.is_some() {
+                break;
+            }
+        }
+        runs.push(
+            judgment.ok_or_else(|| executor_failure("Judge returned three invalid judgments"))?,
+        );
+    }
+    Ok(majority(&runs))
 }
 
 impl Worker {
@@ -100,25 +135,16 @@ impl Worker {
             let gateway = self.judge_gateway(l, model)?;
             let data = judge_data(grader, output, log);
             let count = grader["criteria"].as_array().ok_or("executor")?.len();
-            let mut runs = vec![];
-            for _ in 0..run_count {
-                let mut judgment = None;
-                for _ in 0..3 {
-                    judgment = parse(&gateway.completion(JUDGE, &data).await?, count);
-                    if judgment.is_some() {
-                        break;
-                    }
-                }
-                runs.push(
-                    judgment.ok_or_else(|| {
-                        executor_failure("Judge returned three invalid judgments")
-                    })?,
-                );
-            }
+            let verdict = tokio::time::timeout(
+                Duration::from_secs(l.limits.as_ref().ok_or("executor")?.timeout_seconds),
+                judge_runs(&gateway, &data, count, run_count),
+            )
+            .await
+            .map_err(|_| upstream_deadline())??;
             let record = gateway.record.lock().unwrap();
             judge_log = record.log.clone();
             judge = json!({"input":record.input,"output":record.output});
-            majority(&runs)
+            verdict
         };
         Ok(
             json!({"verdict":verdict,"judgeLog":judge_log,"tokens":{"task":{"input":input,"output":completion},"judge":judge}}),
@@ -263,14 +289,43 @@ mod tests {
             &json!("duplicate"),
             &[
                 json!({"request":"old"}),
-                json!({"request":"last","response":"answer","usage":1}),
+                json!({"request":{"messages":[{"role":"system","content":" bundle".repeat(40000)},{"role":"user","content":"question"}]},"response":{"choices":[{"message":{"content":"answer"}}]},"usage":1}),
             ],
         );
         assert_eq!(
             data["evidence"],
-            json!({"request":"last","response":"answer"})
+            json!({"messages":[{"role":"user","content":"question"}],"output":"answer"})
         );
         assert!(data.get("output").is_none());
+    }
+    #[tokio::test]
+    async fn judges_large_bundle_three_times_with_independent_budgets() {
+        use axum::{Json, Router, routing::post};
+        let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap();
+        let app=Router::new().route("/",post(|Json(body):Json<Value>|async move {
+            assert!(!body.to_string().contains("private-bundle"));
+            Json(json!({"choices":[{"message":{"content":json!({"criteria":[{"passed":true,"reason":"matches"}]}).to_string()}}],"usage":{"prompt_tokens":32000,"completion_tokens":1}}))
+        }));
+        let server = tokio::spawn(async move { axum::serve(socket, app).await.unwrap() });
+        let g = Gateway {
+            model: "judge".into(),
+            url: format!("http://{addr}"),
+            key: "private-key".into(),
+            cap: 64000,
+            allowlist: "127.0.0.1".into(),
+            record: Default::default(),
+            serial: Default::default(),
+            closed: watch::channel(()).1,
+        };
+        let exchange = json!({"request":{"messages":[{"role":"system","content":" private-bundle".repeat(40000)},{"role":"user","content":"question"}]},"response":{"choices":[{"message":{"content":"answer"}}]}});
+        let data = judge_data(&json!({"criteria":["matches"]}), &Value::Null, &[exchange]);
+        assert_eq!(
+            judge_runs(&g, &data, 1, 3).await.unwrap()["votes"],
+            json!([true, true, true])
+        );
+        assert_eq!(g.record.lock().unwrap().input, 96000);
+        server.abort();
     }
     #[test]
     fn exact_strings_and_json() {

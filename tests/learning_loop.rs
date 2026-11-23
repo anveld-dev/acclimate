@@ -476,6 +476,31 @@ async fn streamed_import_preserves_rows_and_returns_cards_only_to_people() {
             );
         }
     }
+    let material = json!({"question":"retry conversion"});
+    let first = f
+        .ok(
+            "POST",
+            "/tasks/import?filename=retry.jsonl",
+            "writer",
+            None,
+            material.clone(),
+        )
+        .await;
+    sqlx::query("UPDATE learning_task_imports SET failure='Conversion failed' WHERE id=$1")
+        .bind(Uuid::parse_str(first["importId"].as_str().unwrap()).unwrap())
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    let retry = f
+        .ok(
+            "POST",
+            "/tasks/import?filename=retry.jsonl",
+            "writer",
+            None,
+            material,
+        )
+        .await;
+    assert_ne!(first["importId"], retry["importId"]);
     let long = "x".repeat(2 * 1024 * 1024 + 1);
     let reply = f
         .ok("POST", "/tasks/import", "writer", None, json!(long))
@@ -612,13 +637,20 @@ async fn retry_idles_then_task_change_wakes_after_rolling_cap() {
         .execute(&f.state.db)
         .await
         .unwrap();
-    tokio::time::timeout(Duration::from_secs(10),async {
-        loop {
-            let queued:i64=sqlx::query_scalar("SELECT count(*) FROM learning_trials t JOIN learning_rollouts l ON l.trial_id=t.id WHERE t.kind='head-monitor' AND t.task_revision=2").fetch_one(&f.state.db).await.unwrap();
-            if queued==100 {break;}
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    }).await.unwrap();
+    for revision in 3..8 {
+        sqlx::query("UPDATE learning_loops SET task_revision=$1")
+            .bind(i64::from(revision))
+            .execute(&f.state.db)
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let queued: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM learning_trials WHERE kind='head-monitor'")
+            .fetch_one(&f.state.db)
+            .await
+            .unwrap();
+    assert_eq!(queued, 0);
     assert_eq!(
         f.ok("GET", "", "reader", None, Value::Null).await["rounds"]
             .as_array()
@@ -973,6 +1005,54 @@ async fn stranded_round_expires_without_pausing() {
     f.seed().await;
     f.spawn_worker();
     let item = f.item("evolve", 1).await;
+    let app = f.internal();
+    let lease = executor_tests::post(&app, "", &f.token, json!({"executor":Fixture::identity()}))
+        .await
+        .1;
+    assert_eq!(lease["kind"], "rollout");
+    sqlx::query("UPDATE executor_credentials SET last_seen_at=now()-interval '10 minutes'")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        executor_tests::act(&app, &lease, "heartbeat", json!({}))
+            .await
+            .0,
+        200
+    );
+    assert!(
+        sqlx::query_scalar::<_, bool>(
+            "SELECT last_seen_at>now()-interval '1 minute' FROM executor_credentials"
+        )
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap()
+    );
+    sqlx::query("UPDATE executor_credentials SET last_seen_at=now()-interval '10 minutes'")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE learning_rounds SET unmatched_since=now()-interval '6 minutes'")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !sqlx::query_scalar::<_, bool>(
+            "SELECT unmatched_since IS NULL AND state='scoring_incumbent' FROM learning_rounds",
+        )
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap()
+        {
+            tokio::time::sleep(Duration::from_millis(40)).await;
+        }
+    })
+    .await
+    .unwrap();
+    sqlx::query("UPDATE learning_rollouts SET lease_expires_at=now() WHERE status='running'")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
     sqlx::query("UPDATE executor_credentials SET last_seen_at=now()-interval '10 minutes'")
         .execute(&f.state.db)
         .await

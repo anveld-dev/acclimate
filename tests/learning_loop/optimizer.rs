@@ -741,6 +741,7 @@ async fn failed_survivor_is_skipped_and_failed_held_out_completes() {
         })
         .await;
     assert_eq!(round["heldOutError"], "held-out-evaluation-failed");
+    assert!(f.ok("GET", "", "reader", None, Value::Null).await["alert"].is_null());
     assert_eq!(round["reason"], "no-evaluated-candidates");
     assert_eq!(round["candidates"][0]["status"], "evaluation_failed");
     assert_eq!(server.requests.lock().unwrap().len(), 6);
@@ -1189,6 +1190,13 @@ async fn monitor_scenario(scenario: &str) {
     let cases = |passed| json!({"cases":[result("held-out-sentinel-1",passed),result("held-out-sentinel-2",passed)]});
     sqlx::query("INSERT INTO learning_evaluations(id,round_id,role,split,version_id,digest,status,started_at,score,report) SELECT gen_random_uuid(),$1,'retained','held_out',id,digest,'scored',now(),0,$3 FROM versions WHERE id=$2")
         .bind(round).bind(if kept{f.version}else{child}).bind(cases(0.0)).execute(&f.state.db).await.unwrap();
+    if matches!(scenario, "initial-failed" | "persistent-failure") {
+        session(&f, "admin").await;
+        sqlx::query("UPDATE users SET email='admin@example.test',email_verified=true WHERE issuer='https://fixture.example'").execute(&f.state.db).await.unwrap();
+    }
+    if scenario == "initial-failed" {
+        sqlx::query("UPDATE learning_evaluations SET status='failed',error='rollout-failed',score=NULL WHERE round_id=$1").bind(round).execute(&f.state.db).await.unwrap();
+    }
     if scenario == "confirm" {
         sqlx::query("UPDATE learning_evaluations SET report=$1 WHERE round_id<>$2")
             .bind(cases(1.0))
@@ -1206,6 +1214,31 @@ async fn monitor_scenario(scenario: &str) {
         .unwrap();
     f.spawn_worker();
     let route = format!("/rounds/{round}");
+    if matches!(scenario, "initial-failed" | "persistent-failure") {
+        tokio::time::timeout(Duration::from_secs(12),async {
+            loop {
+                sqlx::query("UPDATE learning_rollouts l SET status='failed',error_code='executor' FROM learning_evaluations e WHERE l.evaluation_id=e.id AND e.round_id=$1 AND e.measurement='baseline-parent' AND l.status='queued'").bind(round).execute(&f.state.db).await.unwrap();
+                let state=f.ok("GET",&route,"reader",None,Value::Null).await;
+                if state["state"]=="completed" {assert!(state["heldOutError"].is_string());assert_eq!(state["reverted"],false);break;}
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }).await.unwrap();
+        let state = f.ok("GET", "", "reader", None, Value::Null).await;
+        assert_eq!(state["status"], "paused");
+        assert_eq!(
+            state["alert"],
+            json!({"kind":"regression-check-incomplete","roundId":round,"versionId":child})
+        );
+        let emails: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM learning_alert_deliveries WHERE round_id=$1 AND score IS NULL",
+        )
+        .bind(round)
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap();
+        assert_eq!(emails, 1);
+        return;
+    }
     let state=tokio::time::timeout(Duration::from_secs(10),async {
         loop {
             let state=f.ok("GET",&route,"reader",None,Value::Null).await;
@@ -1304,4 +1337,11 @@ async fn prompt_size_at_task_floor() {
         .load(std::sync::atomic::Ordering::Relaxed);
     eprintln!("Optimizer message content bytes: {measured}");
     assert!(measured < 100 * 1024);
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn incomplete_regression_checks_end_and_alert() {
+    monitor_scenario("initial-failed").await;
+    monitor_scenario("persistent-failure").await;
 }

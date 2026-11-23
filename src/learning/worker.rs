@@ -156,20 +156,20 @@ async fn advance_locked(
         sqlx::query("UPDATE learning_loops SET status='paused',pause_reason='tasks-required',waiting=NULL,updated_at=now() WHERE (project_id,bundle_id)=($1,$2)").bind(&row.project_id).bind(row.bundle_id).execute(&mut **tx).await?;
     }
     let Some(round) = active_round(tx, &row.project_id, row.bundle_id).await? else {
-        if row.status == "running" && !below_floor && row.started_at.is_some() {
-            if let Some(trigger) = super::controls::schedule(tx, row).await? {
-                start_round(tx, row, optimizer, trigger).await?;
-            } else {
-                super::controls::refresh_head(tx, row).await?;
-            }
+        if row.status == "running"
+            && !below_floor
+            && row.started_at.is_some()
+            && let Some(trigger) = super::controls::schedule(tx, row).await?
+        {
+            start_round(tx, row, optimizer, trigger).await?;
         }
         return Ok(());
     };
     const UNMATCHED_TIMEOUT_SECONDS: i32 = 300;
     let expired:Option<bool>=sqlx::query_scalar("WITH availability AS (
         SELECT EXISTS(SELECT FROM learning_evaluations e JOIN learning_rollouts l ON l.evaluation_id=e.id WHERE e.round_id=r.id AND l.status='queued') AND NOT EXISTS(
-          SELECT FROM executor_credentials c JOIN workspace_model_providers p ON p.project_id=r.project_id
-          WHERE c.revoked_at IS NULL AND c.runtime=r.runtime->'executor' AND c.last_seen_at>now()-interval '1 minute'
+          SELECT FROM present_executors c JOIN workspace_model_providers p ON p.project_id=r.project_id
+          WHERE c.runtime=r.runtime->'executor'
           AND p.verification->>'status'='verified' AND p.base_url=r.runtime->>'baseUrl' AND r.task_model=ANY(p.allowed_models) AND r.judge_model=ANY(p.allowed_models)) AS missing
         FROM learning_rounds r WHERE r.id=$1)
         UPDATE learning_rounds SET unmatched_since=CASE WHEN missing THEN coalesce(unmatched_since,now()) END FROM availability
@@ -210,12 +210,37 @@ async fn advance_locked(
             .await?;
         }
         ("retained", "scored" | "failed") => {
-            if score.is_some() && super::controls::monitor(tx, row, &round).await? {
+            let exhausted: bool = sqlx::query_scalar("SELECT EXISTS(SELECT FROM learning_evaluations WHERE round_id=$1 AND measurement<>'initial' AND status='failed' AND measurement_retries >= $2)")
+                .bind(round.id).bind(super::controls::MAX_MEASUREMENT_RETRIES).fetch_one(&mut **tx).await?;
+            if exhausted {
+                sqlx::query("WITH cancelled AS (UPDATE learning_evaluations SET status='cancelled' WHERE round_id=$1 AND measurement<>'initial' AND status IN ('queued','running') RETURNING id)
+                    UPDATE learning_rollouts SET status='cancelled',lease_token_hash=NULL WHERE evaluation_id IN (SELECT id FROM cancelled) AND status IN ('queued','running','grading')").bind(round.id).execute(&mut **tx).await?;
+            }
+            let error = if exhausted {
+                Some("regression-check-incomplete".to_owned())
+            } else {
+                error
+            };
+            if (exhausted || status == "failed")
+                && let Some(version) = round.adopted_version_id
+            {
+                let alert = serde_json::json!({"kind":"regression-check-incomplete","roundId":round.id,"versionId":version});
+                sqlx::query(
+                    "UPDATE learning_loops SET alert=$3 WHERE (project_id,bundle_id)=($1,$2)",
+                )
+                .bind(&row.project_id)
+                .bind(row.bundle_id)
+                .bind(alert)
+                .execute(&mut **tx)
+                .await?;
+                sqlx::query("INSERT INTO learning_alert_deliveries(round_id,user_id) SELECT $1,u.id FROM project_memberships m JOIN users u ON u.id=m.user_id WHERE m.project_id=$2 AND m.role='admin' AND u.email_verified ON CONFLICT DO NOTHING").bind(round.id).bind(&row.project_id).execute(&mut **tx).await?;
+            }
+            if !exhausted && score.is_some() && super::controls::monitor(tx, row, &round).await? {
                 return Ok(());
             }
             sqlx::query("UPDATE learning_rounds SET state='completed',ended_at=now(),held_out_score=$2,held_out_error=$3
                          WHERE id=$1 AND state='scoring_held_out'")
-                .bind(round.id).bind(score).bind(error).execute(&mut **tx).await?;
+                .bind(round.id).bind(score.filter(|_| error.is_none())).bind(error).execute(&mut **tx).await?;
             sqlx::query("UPDATE learning_loops SET failed_rounds=0,updated_at=now() WHERE (project_id,bundle_id)=($1,$2)")
                 .bind(&row.project_id).bind(row.bundle_id).execute(&mut **tx).await?;
         }
@@ -247,9 +272,9 @@ pub(super) async fn available_runtime(
 ) -> Result<Option<serde_json::Value>, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT jsonb_build_object('executor',c.runtime,'taskModel',$2::text,'judgeModel',$3::text,'baseUrl',p.base_url)
-         FROM executor_credentials c CROSS JOIN workspace_model_providers p
-         WHERE p.project_id=$1 AND p.verification->>'status'='verified' AND c.revoked_at IS NULL AND c.runtime IS NOT NULL
-           AND c.last_seen_at > now()-interval '1 minute' AND $2=ANY(p.allowed_models) AND $3=ANY(p.allowed_models)
+         FROM present_executors c CROSS JOIN workspace_model_providers p
+         WHERE p.project_id=$1 AND p.verification->>'status'='verified' AND c.runtime IS NOT NULL
+           AND $2=ANY(p.allowed_models) AND $3=ANY(p.allowed_models)
          ORDER BY c.last_seen_at DESC,c.id LIMIT 1")
         .bind(&row.project_id).bind(&row.task_model).bind(&row.judge_model).fetch_optional(&mut **tx).await
 }

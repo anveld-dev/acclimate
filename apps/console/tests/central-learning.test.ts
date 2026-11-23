@@ -134,6 +134,7 @@ test('task listing follows service cursors once per page', async () => {
 
 test('task polling starts only for pending work and stops on the terminal response', () => {
   const job = { importId: 'batch', rows: 2, pending: 2, converted: 0 };
+  assert.equal(pendingTaskReads(undefined, undefined, [{ admission: 'pending' }]).enabled, true);
   assert.equal(pendingTaskReads().enabled, false);
   assert.deepEqual(pendingTaskReads({ trialId: 'one', status: 'pending' }, job), {
     enabled: true,

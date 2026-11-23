@@ -85,14 +85,13 @@ export function LearningEvidence({
 }
 
 export function RolloutEvidence({ r, i }: { r: LearningRollout; i: number }) {
+  const reasoning = r.error ?? r.reasons?.join('\n') ?? r.trace;
   return (
     <div className="rounded border p-2">
       <p>
         Rollout {i + 1} · {r.error ? 'Error' : r.passed ? 'Passed' : 'Failed'} · score {r.score}
       </p>
-      <pre className="whitespace-pre-wrap break-words">
-        {r.error ?? r.reasons?.join('\n') ?? r.trace ?? 'No judge reasoning recorded.'}
-      </pre>
+      {reasoning && <pre className="whitespace-pre-wrap break-words">{reasoning}</pre>}
       <details>
         <summary>Gateway log</summary>
         <pre className="whitespace-pre-wrap break-words">

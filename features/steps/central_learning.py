@@ -16,7 +16,7 @@ from executor.tests.worker import start_worker
 from scripts.productization.qualify import ROOT, port
 
 MODELS = ["task", "judge"]
-MATERIAL = ("input,expected\n" + "".join(f"Review request {i},checked\n" for i in range(60))).encode()
+MATERIAL = ("input,expected\n" + "".join(f"Review request {i},checked\n" for i in range(43))).encode()
 CONVERSION = b"question,answer\nReview one more request,checked\nMissing reference,\n"
 
 
@@ -151,7 +151,7 @@ def configure_ui(context):
     page.get_by_label("Judge model").select_option("judge")
     page.get_by_label("Maximum rounds per day").fill("2")
     page.get_by_role("button", name="Save learning settings").click()
-    for name, content, summary in [("answers.csv", MATERIAL, "60 converted"), ("conversations.csv", CONVERSION, "1 set aside")]:
+    for name, content, summary in [("answers.csv", MATERIAL, "43 converted"), ("conversations.csv", CONVERSION, "1 set aside")]:
         page.get_by_label("Spreadsheet, CSV or JSONL").set_input_files(dict(name=name, mimeType="text/csv", buffer=content))
         page.get_by_role("button", name="Import tasks").click()
         expect(page.get_by_text(summary, exact=False).first).to_be_visible(timeout=60000)
@@ -165,9 +165,15 @@ def admission(context):
     for card in cards:
         if card["split"] == "held-out":
             w.monitor_inputs.add(card["input"])
-            session(w, "PATCH", w.learning + "/tasks/" + card["taskId"], {"confirm": True})
-    wait_for(lambda: w.call("GET", w.learning), lambda loop: min(loop["admittedEvolve"], loop["admittedHeldOut"]) >= 20)
+            if not card["confirmedBy"]:
+                session(w, "PATCH", w.learning + "/tasks/" + card["taskId"], {"confirm": True})
     w.card = next(c for c in cards if c["split"] == "evolve")
+    session(w, "PATCH", w.learning + "/tasks/" + w.card["taskId"], {
+        "grader": {"type": "criteria", "criteria": ["Matches the requested finding."], "reference": "checked"}
+    })
+    counts = wait_for(lambda: w.call("GET", w.learning),
+                      lambda loop: loop["admittedEvolve"] + loop["admittedHeldOut"] == len(cards))
+    assert min(counts["admittedEvolve"], counts["admittedHeldOut"]) >= 20
 
 
 @when("I try an admitted card and start through the API")
@@ -205,11 +211,39 @@ def finished(context):
     assert second["parentVersionId"] == first["adoptedVersionId"]
     assert second["reverted"] and w.call("GET", w.learning)["alert"]["reverted"]
     assert w.call("GET", w.channel)["version"]["id"] == first["adoptedVersionId"]
-    assert w.call("GET", w.learning + "/blocked-versions")
-    assert w.call("GET", w.learning + "/usage")["items"][0]["taskTokens"] > 0
-    refusal = session(w, "POST", w.learning + "/rollback", {"roundId": second["id"]}, expected=409)
-    assert refusal["error"]["code"] == "round-not-at-head"
+    version = w.call("GET", w.bundle + "/versions/" + second["adoptedVersionId"])
+    blocked = w.call("GET", w.learning + "/blocked-versions")
+    assert version["digest"] in [entry["digest"] for entry in blocked]
     w.adoption = first["id"]
+    w.stale_round = second["id"]
+
+
+@when("I inspect the round evidence and token usage")
+def evidence(context):
+    w = context.world
+    path = w.learning + "/rounds/" + w.adoption
+    detail = w.call("GET", path)
+    candidate = next(e for e in detail["evaluations"] if e["role"] == "candidate")
+    detail = w.call("GET", path + "?evaluation=" + candidate["id"])
+    report = next(e["report"] for e in detail["evaluations"] if e["id"] == candidate["id"])
+    case = next(c for c in report["cases"] if c["caseId"] == w.card["taskId"])
+    assert len(case["rollouts"]) == 5
+    assert all(r["gatewayLog"] and "Compared the response to the reference." in r["reasons"]
+               for r in case["rollouts"])
+    if "browser" in context.scenario.effective_tags:
+        browser = w.browser()
+        browser.visit(w.learning_page + "?round=" + w.adoption)
+        browser.page.get_by_role("button", name="Show per-task results").click()
+        summary = browser.page.locator("summary").filter(has_text=w.card["taskId"])
+        summary.click()
+        card = summary.locator("..")
+        expect(card.get_by_text("Compared the response to the reference.", exact=True).first).to_be_visible()
+        gateway = card.locator("details").first
+        gateway.locator("summary").click()
+        expect(gateway.locator("pre")).to_contain_text("checked")
+    assert w.call("GET", w.learning + "/usage")["items"][0]["taskTokens"] > 0
+    refusal = session(w, "POST", w.learning + "/rollback", {"roundId": w.stale_round}, expected=409)
+    assert refusal["error"]["code"] == "round-not-at-head"
 
 
 @when("a production job reports an outcome")
@@ -218,15 +252,17 @@ def outcome(context):
     from acclimate import Acclimate
     w = context.world
     client = Acclimate(w.h.base, w.h.project, w.h.tokens["other"], cache_dir=w.h.dir / "sdk-cache")
-    client.job("BDD bundle", input="Answer a production request").expect("checked", output="unchecked")
-    assert session(w, "GET", w.learning + "/tasks?source=outcome")["items"]
+    job = client.job("BDD bundle", input="Answer a production request")
+    job.expect("checked", output="unchecked")
+    cards = session(w, "GET", w.learning + "/tasks?source=outcome")["items"]
+    assert any(c["outcomeId"] == job.outcome_id and c["input"] == "Answer a production request" for c in cards)
 
 
 @then("I roll back the live round and stop through the API")
 def stop_api(context):
     w = context.world
     session(w, "POST", w.learning + "/rollback", {"roundId": w.adoption})
-    session(w, "POST", w.learning + "/stop")
+    assert session(w, "POST", w.learning + "/stop")["status"] == "stopped"
     assert w.call("GET", w.channel)["version"]["id"] == w.original["version"]["id"]
 
 
@@ -240,3 +276,4 @@ def stop_ui(context):
         page.get_by_role("button", name=label, exact=True).click()
         page.get_by_role("alertdialog").get_by_role("button", name=label, exact=True).click()
     assert w.call("GET", w.channel)["version"]["id"] == w.original["version"]["id"]
+    wait_for(lambda: w.call("GET", w.learning), lambda loop: loop["status"] == "stopped")

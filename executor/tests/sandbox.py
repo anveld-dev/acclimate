@@ -146,6 +146,8 @@ class SandboxGate(unittest.TestCase):
                             ),
                             "none",
                         )
+                        if runtime == "runsc":
+                            test.assertEqual(docker("inspect", "-f", "{{.HostConfig.Runtime}}", container), runtime)
                         test.assertNotEqual(docker("exec", container, "id", "-u"), "0")
                         test.assertEqual(
                             docker(
@@ -277,6 +279,7 @@ class SandboxGate(unittest.TestCase):
                 self.assertEqual(
                     result["error"]["code"],
                     "sandbox-start" if case == "runtime" else "gateway-upstream",
+                    result["error"]["message"],
                 )
                 self.assertNotEqual(result["error"]["message"], result["error"]["code"])
                 self.assertNotIn("provider-key", json.dumps(result))

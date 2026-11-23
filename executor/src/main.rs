@@ -472,18 +472,32 @@ async fn bounded_command(command: &mut Command, limit: Duration) -> CommandResul
     timeout(limit, command.kill_on_drop(true).output()).await
 }
 async fn remove(name: &str) -> Result<(), Failure> {
-    let res = bounded_command(
-        Command::new("docker").args(["rm", "-f", name]),
-        Duration::from_secs(15),
-    )
+    timeout(Duration::from_secs(15), async {
+        loop {
+            let res = Command::new("docker")
+                .args(["rm", "-f", name])
+                .kill_on_drop(true)
+                .output()
+                .await
+                .map_err(start_failure)?;
+            let error = String::from_utf8_lossy(&res.stderr);
+            if res.status.success() || error.contains("No such container") {
+                return Ok(());
+            }
+            if !removal_in_progress(&error, name) {
+                return Err(start_failure(error));
+            }
+            // Docker's automatic removal may have won the race with explicit cleanup.
+            sleep(Duration::from_millis(100)).await;
+        }
+    })
     .await
     .map_err(start_failure)?
-    .map_err(start_failure)?;
-    if res.status.success() || String::from_utf8_lossy(&res.stderr).contains("No such container") {
-        Ok(())
-    } else {
-        Err(start_failure(String::from_utf8_lossy(&res.stderr)))
-    }
+}
+fn removal_in_progress(error: &str, name: &str) -> bool {
+    error.contains(&format!(
+        "removal of container {name} is already in progress"
+    ))
 }
 fn exact(a: &Value, b: &Value) -> bool {
     match (a, b) {
@@ -579,6 +593,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recognizes_only_the_pending_removal_of_this_container() {
+        let message =
+            "Error response from daemon: removal of container acclimate-1 is already in progress";
+        assert!(removal_in_progress(message, "acclimate-1"));
+        assert!(!removal_in_progress(message, "acclimate-2"));
+        assert!(!removal_in_progress("permission denied", "acclimate-1"));
+    }
     #[test]
     fn runner_deadline_depends_on_pending_upstream() {
         use std::os::unix::process::ExitStatusExt;

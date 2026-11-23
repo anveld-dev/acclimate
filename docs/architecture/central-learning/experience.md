@@ -70,15 +70,9 @@ No one needs to be present after Start.
 **Screen:** the same Learning page. The held-out chart sits above the round list, with daily usage below the task cards.
 
 - **Each release explains itself.** It names the round that produced it and shows the diff with the diagnosis in plain language. This replaces an approval step.
-<<<<<<< HEAD
 - **Flagged tasks.** The service flags tasks that drag scores: ones that fail for every candidate round after round, ones whose judge votes disagree, and ones that error. A flagged task opens to its last gateway log and reasoning, and you can edit it inline, try it and save.
-- **Held-out drop.** Any drop after a release raises a banner and emails workspace admins, linking the round. On a [clear drop](loop.md) the service also reverts the release on its own, and the loop continues from the restored version.
-- **Roll back.** Every release has a Roll back button that re-releases the previous version. A version that was rolled back or reverted is blocked and cannot be adopted again.
-=======
-- **Flagged tasks.** The service flags tasks that drag scores: ones that fail for every candidate round after round, ones whose repeated rollouts disagree, and ones that error. A flagged task opens to its last gateway log and reasoning, and you can edit it inline, try it and save.
-- **Held-out drop.** A drop after a release raises a banner, linking the round. On a [clear drop](loop.md) the service also reverts the release on its own, and the loop continues from the restored version.
+- **Held-out drop.** A drop after a release raises a banner that links the round. On a [clear drop](loop.md) the service also reverts the release on its own, emails workspace admins, and the loop continues from the restored version.
 - **Roll back.** The round whose adopted version is still live has a Roll back button that re-releases the previous version. A version that was rolled back or reverted is blocked and cannot be adopted again.
->>>>>>> t3/fix-console-learning-review
 
 **You do:** nothing in a normal week. You act when a task is flagged or an alert arrives.
 

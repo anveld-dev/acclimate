@@ -395,7 +395,8 @@ async fn enroll(
     }
     if moves_work || row.setting != request["setting"] || row.status == "stopped" {
         sqlx::query("UPDATE learning_loops SET channel=$3, app_principal=$4, setting=$5, held_out=$6,
-                      enrolled_by=$7, status=CASE WHEN status='stopped' AND $8=false AND started_at IS NULL THEN 'running' ELSE status END, updated_at=now()
+                      enrolled_by=$7, resumed_at=CASE WHEN status='stopped' AND $8=false AND started_at IS NULL THEN now() ELSE resumed_at END,
+                      status=CASE WHEN status='stopped' AND $8=false AND started_at IS NULL THEN 'running' ELSE status END, updated_at=now()
                      WHERE (project_id,bundle_id)=($1,$2)")
             .bind(&project).bind(bundle).bind(&input.channel).bind(&input.app_principal_id)
             .bind(&request["setting"]).bind(&request["heldOut"]).bind(&actor.principal).bind(central)

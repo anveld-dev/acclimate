@@ -253,10 +253,27 @@ pub(super) async fn monitor(
     row: &LoopRow,
     round: &RoundSummary,
 ) -> Result<bool, sqlx::Error> {
-    let baseline:Option<Measurement>=sqlx::query_as("SELECT e.score,e.report FROM learning_evaluations e JOIN learning_rounds r ON r.id=e.round_id JOIN learning_rounds current ON current.id=$1 WHERE (r.project_id,r.bundle_id)=(current.project_id,current.bundle_id) AND r.number<current.number AND r.held_out=current.held_out AND e.role='retained' AND e.measurement='initial' AND e.status='scored' AND e.version_id=current.parent_version_id ORDER BY r.number DESC LIMIT 1").bind(round.id).fetch_optional(&mut **tx).await?;
-    let Some(parent) = baseline else {
+    #[derive(FromRow)]
+    struct Baseline {
+        version_id: Uuid,
+        #[sqlx(flatten)]
+        measurement: Measurement,
+    }
+    let baseline: Option<Baseline> = sqlx::query_as(
+        "SELECT e.version_id,e.score,e.report FROM learning_evaluations e
+         JOIN learning_rounds r ON r.id=e.round_id JOIN learning_rounds current ON current.id=$1
+         WHERE (r.project_id,r.bundle_id)=(current.project_id,current.bundle_id)
+           AND r.number<current.number AND r.held_out=current.held_out
+           AND e.role='retained' AND e.measurement='initial' AND e.status='scored'
+         ORDER BY r.number DESC LIMIT 1",
+    )
+    .bind(round.id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(baseline) = baseline else {
         return Ok(false);
     };
+    let parent = baseline.measurement;
     let child:Measurement=sqlx::query_as("SELECT score,report FROM learning_evaluations WHERE round_id=$1 AND role='retained' AND measurement='initial'").bind(round.id).fetch_one(&mut **tx).await?;
     if child.score >= parent.score {
         return Ok(false);
@@ -270,7 +287,10 @@ pub(super) async fn monitor(
             .execute(&mut **tx)
             .await?;
     }
-    let Some(adopted) = round.adopted_version_id.filter(|_| clear) else {
+    let Some(adopted) = round
+        .adopted_version_id
+        .filter(|_| clear && round.parent_version_id == baseline.version_id)
+    else {
         return Ok(false);
     };
     let mut measurements = Vec::new();

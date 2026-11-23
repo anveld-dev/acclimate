@@ -1017,6 +1017,10 @@ async fn held_out_drops_alert_and_only_confirmed_clear_drops_revert() {
             result("held-out-sentinel-2", 1.0),
         ];
         evaluate(&f, &held, &before).await;
+        let replay = f.start(&held, "attempt").await;
+        assert_eq!(replay["reportedCaseIds"], json!([]));
+        assert_eq!(replay["evaluation"]["passedCases"], 2);
+        assert!(!replay.to_string().contains("held-out-sentinel"));
         let candidate = f.item("evolve", 2).await;
         assert_eq!(candidate["role"], "candidate");
         evaluate(&f, &candidate, &[result("a", 1.0), result("b", 1.0)]).await;

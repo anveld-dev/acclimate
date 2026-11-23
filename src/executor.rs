@@ -360,7 +360,12 @@ fn judged_score_fits(score: f64, votes: &[bool], criteria: usize) -> bool {
     let failing = votes.len() as f64 - passing;
     let runs = votes.len() as f64;
     let most = (passing + failing * (criteria as f64 - 1.0) / criteria as f64) / runs;
-    criteria > 0 && score >= passing / runs - 1e-9 && score <= most + 1e-9
+    // The score counts whole criteria across the judgments.
+    let met = score * runs * criteria as f64;
+    criteria > 0
+        && (met - met.round()).abs() < 1e-6
+        && score >= passing / runs - 1e-9
+        && score <= most + 1e-9
 }
 fn judge_runs(grader: &Value) -> usize {
     if grader["type"] == "criteria" { 3 } else { 0 }
@@ -535,7 +540,10 @@ async fn result(
                     || (votes.iter().filter(|v| **v).count() >= 2) != verdict.passed
                     || criteria != Some(verdict.reasons.len())
                     || verdict.reasons.iter().any(|r| r.trim().is_empty())
-                    || !judged_score_fits(verdict.score, votes, verdict.reasons.len())
+                    // An executor from before partial credit reports 1 or 0. Accept that while
+                    // it is replaced, so an upgrade does not fail the rollouts in flight.
+                    || !(judged_score_fits(verdict.score, votes, verdict.reasons.len())
+                        || verdict.score == f64::from(verdict.passed))
                 {
                     return Err(invalid());
                 }
@@ -600,6 +608,7 @@ mod tests {
         assert!(!judged_score_fits(0.5, &[true, true, false], 4));
         // Three failing judgments can still meet most criteria, never all.
         assert!(judged_score_fits(0.75, &[false, false, false], 4));
+        assert!(!judged_score_fits(0.7, &[false, false, false], 4));
         assert!(judged_score_fits(0.0, &[false, false, false], 4));
         assert!(!judged_score_fits(1.0, &[false, false, false], 4));
         assert!(!judged_score_fits(f64::NAN, &[false, false, false], 4));

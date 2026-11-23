@@ -207,7 +207,7 @@ impl LearningAlert {
             (self.previous_score, self.score, self.flipped_tasks)
         {
             format!(
-                "The held-out score for {} in {} fell from {:.1}% to {:.1}%. {} tasks changed from pass to fail. {}",
+                "The share of held-out runs that pass for {} in {} fell from {:.1}% to {:.1}%. {} tasks changed from pass to fail. {}",
                 self.bundle,
                 self.workspace,
                 100.0 * previous,

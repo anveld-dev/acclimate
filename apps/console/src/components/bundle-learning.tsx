@@ -18,7 +18,9 @@ import type { LearningState } from '../server/learning-core';
 import { activeRoundStates } from '../lib/learning';
 import type { LearningScope } from '../lib/learning';
 
-const score = (value: number | null) => (value === null ? '—' : String(value));
+// A judged score is a share of criteria, so it is rarely a short decimal.
+const score = (value: number | null) => (value === null ? '—' : String(Number(value.toFixed(3))));
+const percent = (value: number) => `${Math.round(value * 100)}%`;
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="workspace-panel space-y-4 p-5">
@@ -220,7 +222,13 @@ function RoundList({
                     </>
                   )}
                 </td>
-                <td>{round.heldOutError ?? score(round.heldOutScore)}</td>
+                <td>
+                  {round.heldOutError
+                    ? round.adoptedVersionId
+                      ? 'This version was released, but the regression check could not run.'
+                      : describeLearning(round.heldOutError)
+                    : score(round.heldOutScore)}
+                </td>
                 <td>
                   {round.endedAt ? <time dateTime={round.endedAt}>{round.endedAt}</time> : '—'}
                 </td>
@@ -320,6 +328,8 @@ export function BundleLearning({
     selectedTask || loop?.taskModel,
     selectedJudge || loop?.judgeModel,
   );
+  // An absent field comes from a service that predates the flag; treat it as configured.
+  const noOptimizer = loop?.optimizerConfigured === false;
   const evolve = loop?.admittedEvolve ?? 0,
     held = loop?.admittedHeldOut ?? 0;
   async function submit(command: CentralCommand) {
@@ -524,11 +534,16 @@ export function BundleLearning({
                 `The regression check could not be completed for version ${loop.alert.versionId}.`
               ) : (
                 <>
-                  Held-out score dropped from {loop.alert.previousScore} to {loop.alert.score} ·{' '}
-                  {loop.alert.flippedTasks} tasks changed verdict.{' '}
+                  {loop.alert.score < loop.alert.previousScore
+                    ? `Held-out score dropped from ${score(loop.alert.previousScore)} to ${score(loop.alert.score)}.`
+                    : 'Fewer held-out runs pass than before the release.'}{' '}
+                  {loop.alert.passRate !== undefined && loop.alert.previousPassRate !== undefined
+                    ? `Runs that meet every criterion went from ${percent(loop.alert.previousPassRate)} to ${percent(loop.alert.passRate)}, and `
+                    : ''}
+                  {loop.alert.flippedTasks} tasks changed from pass to fail.{' '}
                   {loop.alert.reverted
                     ? 'The service restored the previous version.'
-                    : 'The service has not reported an automatic restore.'}
+                    : 'The drop was below the limit for an automatic restore. Inspect the round and roll back if needed.'}
                 </>
               )}{' '}
               <a className="underline" href={roundHref(loop.alert.roundId)}>
@@ -685,6 +700,7 @@ export function BundleLearning({
                     <Button
                       disabled={
                         busy ||
+                        noOptimizer ||
                         !!providerError ||
                         provider?.verification?.status !== 'verified' ||
                         !!splitDeficit(evolve) ||
@@ -695,6 +711,13 @@ export function BundleLearning({
                       Start
                     </Button>
                   ))}
+                {loop.status !== 'running' && noOptimizer && (
+                  <p role="alert">
+                    The service has no optimizer model. An operator must set
+                    ACCLIMATE_MODEL_ENDPOINT, ACCLIMATE_MODEL_TOKEN and ACCLIMATE_MODEL on the
+                    service. On the local stack, export them and run npm run local:up again.
+                  </p>
+                )}
                 {loop.status !== 'running' && provider?.verification?.status !== 'verified' && (
                   <p>
                     {providerError ||

@@ -219,7 +219,7 @@ pub(super) async fn rollback(
         .await
         .map_err(db)?;
     let row = require_loop(&mut tx, &p, b, false).await?;
-    let result = loop_document(&mut tx, row).await?;
+    let result = loop_document(&mut tx, row, s.optimizer.is_some()).await?;
     audit(
         &mut tx,
         &a,
@@ -304,9 +304,20 @@ fn regression(parent: &Measurement, child: &Measurement) -> (bool, usize) {
         .filter(|c| passed.contains(&c.case_id) && !evaluations::case_passes(c))
         .count();
     (
-        child.score <= parent.score - CLEAR_DROP + f64::EPSILON && flips >= MIN_FLIPS,
+        pass_rate(child) <= pass_rate(parent) - CLEAR_DROP + f64::EPSILON && flips >= MIN_FLIPS,
         flips,
     )
+}
+/// The share of rollouts that passed. A judged rollout's score gives partial credit, so a task
+/// that starts missing one criterion moves the score a little and the pass rate a lot. The
+/// regression control judges on the pass rate, as it did when a score was only pass or fail.
+fn pass_rate(measurement: &Measurement) -> f64 {
+    let cases = &measurement.report.cases;
+    let rate = |case: &evaluations::CaseReport| {
+        let passed = case.rollouts.iter().filter(|r| r["passed"] == true).count();
+        passed as f64 / case.rollouts.len().max(1) as f64
+    };
+    cases.iter().map(rate).sum::<f64>() / cases.len().max(1) as f64
 }
 async fn measurement(
     tx: &mut Tx<'_>,
@@ -369,12 +380,13 @@ pub(super) async fn monitor(
         }
     };
     let child:Measurement=sqlx::query_as("SELECT score,report FROM learning_evaluations WHERE round_id=$1 AND role='retained' AND measurement='initial'").bind(round.id).fetch_one(&mut **tx).await?;
-    if child.score >= parent.score {
+    let (previous_rate, rate) = (pass_rate(&parent), pass_rate(&child));
+    if child.score >= parent.score && rate >= previous_rate {
         clear_alert(tx, row).await?;
         return Ok(false);
     }
     let (clear, flips) = regression(&parent, &child);
-    let mut alert = json!({"roundId":round.id,"previousScore":parent.score,"score":child.score,"flippedTasks":flips,"reverted":false});
+    let mut alert = json!({"roundId":round.id,"previousScore":parent.score,"score":child.score,"previousPassRate":previous_rate,"passRate":rate,"flippedTasks":flips,"reverted":false});
     let mut pending = false;
     if clear {
         let parent_check =
@@ -396,7 +408,7 @@ pub(super) async fn monitor(
             }
             sqlx::query("INSERT INTO learning_alert_deliveries(round_id,user_id,previous_score,score,flipped_tasks)
                 SELECT $1,u.id,$2,$3,$4 FROM project_memberships m JOIN users u ON u.id=m.user_id WHERE m.project_id=$5 AND m.role='admin' AND u.email_verified ON CONFLICT DO NOTHING")
-                .bind(round.id).bind(parent.score).bind(child.score).bind(flips as i32).bind(&row.project_id).execute(&mut **tx).await?;
+                .bind(round.id).bind(previous_rate).bind(rate).bind(flips as i32).bind(&row.project_id).execute(&mut **tx).await?;
         }
     }
     sqlx::query("UPDATE learning_loops SET alert=$3 WHERE (project_id,bundle_id)=($1,$2) AND alert IS DISTINCT FROM $3").bind(&row.project_id).bind(row.bundle_id).bind(alert).execute(&mut **tx).await?;
@@ -455,5 +467,39 @@ mod tests {
         assert!(!enough_changes(4, 20));
         assert!(!enough_changes(5, 51));
         assert!(enough_changes(5, 50));
+    }
+
+    /// Twenty judged tasks with four criteria. `partial` of them miss one criterion on every
+    /// rollout, so they fail and still score 0.75.
+    fn held_out(partial: usize) -> Measurement {
+        let cases: Vec<_> = (0..20)
+            .map(|i| {
+                let (passed, score) = if i < partial {
+                    (false, 0.75)
+                } else {
+                    (true, 1.0)
+                };
+                evaluations::CaseReport {
+                    case_id: format!("task-{i}"),
+                    rollouts: vec![json!({"score":score,"passed":passed}); 5],
+                }
+            })
+            .collect();
+        Measurement {
+            score: 1.0 - 0.25 * partial as f64 / 20.0,
+            report: sqlx::types::Json(evaluations::Report { cases }),
+        }
+    }
+
+    #[test]
+    fn revert_judges_on_passing_tasks_not_on_partial_credit() {
+        let (parent, child) = (held_out(0), held_out(6));
+        // Six tasks stopped passing. Partial credit moves the score by less than the threshold.
+        assert!(parent.score - child.score < CLEAR_DROP);
+        assert!((pass_rate(&parent) - pass_rate(&child) - 0.3).abs() < 1e-9);
+        assert_eq!(regression(&parent, &child), (true, 6));
+        // One task is below both limits, and no change is no regression.
+        assert_eq!(regression(&parent, &held_out(1)), (false, 1));
+        assert_eq!(regression(&parent, &held_out(0)), (false, 0));
     }
 }

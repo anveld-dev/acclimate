@@ -55,6 +55,7 @@ export function ModelProvider({ workspaceId }: { workspaceId: string }) {
               type="url"
               required
               name="baseUrl"
+              placeholder="https://api.example.com/v1"
               defaultValue={provider.baseUrl || ''}
             />
           </Label>

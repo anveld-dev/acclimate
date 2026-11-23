@@ -89,7 +89,7 @@ export function RolloutEvidence({ r, i }: { r: LearningRollout; i: number }) {
   return (
     <div className="rounded border p-2">
       <p>
-        Rollout {i + 1} · {r.error ? 'Error' : r.passed ? 'Passed' : 'Failed'} · score {r.score}
+        Rollout {i + 1} · {r.error ? 'Error' : r.passed ? 'Passed' : 'Failed'} · score {typeof r.score === 'number' ? Number(r.score.toFixed(3)) : r.score}
       </p>
       {reasoning && <pre className="whitespace-pre-wrap break-words">{reasoning}</pre>}
       <details>

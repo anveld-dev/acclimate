@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shlex
 import shutil
 import socket
 import ssl
@@ -315,7 +316,8 @@ def learning_settings(state, environ):
     kept = dict(line.split('=', 1) for line in saved.decode().splitlines()) if saved else {}
     chosen = {}
     for name in LEARNING_SETTINGS:
-        value = environ.get(name) or kept.get(name)
+        # An exported empty value clears the saved one; an unset name keeps it.
+        value = environ[name] if name in environ else kept.get(name)
         if value:
             if any(character in value for character in '\r\n'):
                 raise ValueError(f'{name} must be a single line')
@@ -375,10 +377,14 @@ def image_environment(root, source):
                 ACCLIMATE_LOCAL_PULL_POLICY='build')
 
 
+def compose_command(root):
+    return ['docker', 'compose', '--env-file', os.devnull, '--project-name',
+            f'acclimate-local-{project_suffix(root)}', '-f', 'compose.local.yaml']
+
+
 def compose(root, *args, capture=False, ports=DEFAULT, source='build', environment=None):
     return subprocess.run(
-        ['docker', 'compose', '--env-file', os.devnull, '--project-name',
-         f'acclimate-local-{project_suffix(root)}', '-f', 'compose.local.yaml', *args],
+        [*compose_command(root), *args],
         cwd=root, check=True, stdout=subprocess.PIPE if capture else None,
         env={**os.environ, **ports.environment(), **image_environment(root, source),
              **(environment or {})},
@@ -618,7 +624,16 @@ def start_executor(root, state, ports, source, environ=os.environ):
                    capture=True, ports=ports, source=source).strip():
             return
         time.sleep(1)
-    raise ValueError('The executor did not stay running. Run docker compose logs acclimate-executor.')
+    logs = shlex.join([*compose_command(root), 'logs', 'acclimate-executor'])
+    raise ValueError(f'The executor did not stay running. To see why, run {logs} in {root}')
+
+
+def docker_running():
+    try:
+        return subprocess.run(['docker', 'info'], stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, check=False).returncode == 0
+    except OSError:
+        return False
 
 
 def stack_running(root):
@@ -742,6 +757,9 @@ def main(argv=None):
     if arguments.source and command != 'up':
         parser.error('--build and --release apply only to up')
     try:
+        if not docker_running():
+            raise SystemExit(f'Local stack {command} failed: Docker is not running. '
+                             'Start Docker Desktop or the Docker daemon and run the command again.')
         with locked_state(ROOT) as state:
             if command == 'up':
                 up(ROOT, state, arguments.source)

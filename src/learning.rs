@@ -344,7 +344,7 @@ async fn enroll(
     sqlx::query("UPDATE learning_loops SET task_model=$3,judge_model=$4,max_rounds_per_day=coalesce($5,max_rounds_per_day) WHERE (project_id,bundle_id)=($1,$2)")
         .bind(&project).bind(bundle).bind(input.task_model).bind(input.judge_model).bind(input.max_rounds_per_day).execute(&mut *tx).await.map_err(db)?;
     let row = require_loop(&mut tx, &project, bundle, false).await?;
-    let result = loop_document(&mut tx, row).await?;
+    let result = loop_document(&mut tx, row, s.optimizer.is_some()).await?;
     audit(
         &mut tx,
         &actor,
@@ -417,6 +417,13 @@ async fn change_status(
                 "Configure the task and judge models before starting",
             ));
         }
+        if s.optimizer.is_none() {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "optimizer-required",
+                "The service has no optimizer model. Set ACCLIMATE_MODEL_ENDPOINT, ACCLIMATE_MODEL_TOKEN and ACCLIMATE_MODEL and restart it",
+            ));
+        }
         sqlx::query("UPDATE learning_loops SET started_at=coalesce(started_at,now()) WHERE (project_id,bundle_id)=($1,$2)").bind(project).bind(bundle).execute(&mut *tx).await.map_err(db)?;
     }
     let (status, reason) = match (operation, row.status.as_str()) {
@@ -439,7 +446,7 @@ async fn change_status(
             .bind(project).bind(bundle).bind(status).bind(reason).execute(&mut *tx).await.map_err(db)?;
     }
     let row = require_loop(&mut tx, project, bundle, false).await?;
-    let result = loop_document(&mut tx, row).await?;
+    let result = loop_document(&mut tx, row, s.optimizer.is_some()).await?;
     audit(
         &mut tx,
         &actor,
@@ -528,7 +535,11 @@ async fn summaries(
     .map_err(db)
 }
 
-async fn loop_document(tx: &mut Tx<'_>, row: LoopRow) -> ApiResult<Value> {
+async fn loop_document(
+    tx: &mut Tx<'_>,
+    row: LoopRow,
+    optimizer_configured: bool,
+) -> ApiResult<Value> {
     let project = &row.project_id;
     let bundle = row.bundle_id;
     let active = active_round(tx, project, bundle).await.map_err(db)?;
@@ -537,7 +548,7 @@ async fn loop_document(tx: &mut Tx<'_>, row: LoopRow) -> ApiResult<Value> {
     Ok(json!({
         "taskModel":row.task_model,"judgeModel":row.judge_model,"taskRevision":row.task_revision,
         "maxRoundsPerDay":row.max_rounds_per_day,"waiting":row.waiting,"alert":row.alert,
-        "admittedEvolve":e,"admittedHeldOut":h,
+        "admittedEvolve":e,"admittedHeldOut":h,"optimizerConfigured":optimizer_configured,
         "workspaceId": project, "bundleId": bundle, "status": row.status, "pauseReason": row.pause_reason,
         "channel": row.channel, "setting": row.setting,
         "memoryRevision": row.memory_revision,
@@ -554,7 +565,9 @@ async fn inspect(
     let bundle = path(&bundle)?;
     let mut tx = auth::read_transaction(&s, &h, &project).await?;
     let row = require_loop(&mut tx, &project, bundle, false).await?;
-    Ok(Json(loop_document(&mut tx, row).await?))
+    Ok(Json(
+        loop_document(&mut tx, row, s.optimizer.is_some()).await?,
+    ))
 }
 
 #[derive(Deserialize)]

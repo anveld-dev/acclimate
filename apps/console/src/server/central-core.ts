@@ -1,7 +1,7 @@
 import { ApiError } from '@acclimate/sdk';
 import { consoleClient } from './console-client';
 import type { Environment } from './selection';
-import type { CentralRequest } from '../lib/central-learning';
+import { describeLearning, type CentralRequest } from '../lib/central-learning';
 import { allPages } from './listing';
 
 export async function centralRequest(env: Environment, data: CentralRequest, fetcher = fetch) {
@@ -39,7 +39,13 @@ export async function centralRequest(env: Environment, data: CentralRequest, fet
     case 'configure':
       return api.enrollLearningLoop(ws, bundle, data.body);
     case 'start':
-      return api.startLearningLoop(ws, bundle);
+      try {
+        return await api.startLearningLoop(ws, bundle);
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'optimizer-required')
+          throw Error(describeLearning(error.code));
+        throw error;
+      }
     case 'stop':
       return api.stopLearningLoop(ws, bundle);
     case 'pause':

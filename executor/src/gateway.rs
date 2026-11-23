@@ -230,7 +230,7 @@ async fn retry_delay(attempt: u32, retry_after: Option<&str>) {
 }
 async fn upstream(g: &Gateway, body: &Value) -> Result<(StatusCode, Vec<u8>, Value), String> {
     use acclimate_provider_address::{host_allowed, validate_endpoint};
-    validate_endpoint(&g.url, &g.allowlist).map_err(|_| "Provider address or scheme refused")?;
+    validate_endpoint(&g.url, &g.allowlist).map_err(|e| e.to_string())?;
     let url = reqwest::Url::parse(&g.url).map_err(|_| "Invalid provider URL")?;
     let host = url
         .host_str()
@@ -329,13 +329,19 @@ fn transport_error(error: reqwest::Error) -> String {
     }
 }
 
+const RESOLVED_PRIVATE: &str = "The provider host resolved to a private or local address. To allow it, an operator must list the host in ACCLIMATE_PROVIDER_HTTP_HOSTS on the service and the executor.";
+const RESOLVED_RESERVED: &str = "The provider host resolved to a reserved or cloud metadata address, which is never allowed. Use the provider's own address.";
+
 fn check_addresses(addresses: &[std::net::SocketAddr], allowed: bool) -> Result<(), String> {
-    if addresses.is_empty()
-        || addresses
-            .iter()
-            .any(|a| !acclimate_provider_address::address_allowed(a.ip(), allowed))
-    {
-        return Err("Provider resolved to a refused address".into());
+    use acclimate_provider_address::address_allowed;
+    if addresses.is_empty() {
+        return Err("The provider host did not resolve to any address. Check the base URL.".into());
+    }
+    if addresses.iter().any(|a| !address_allowed(a.ip(), true)) {
+        return Err(RESOLVED_RESERVED.into());
+    }
+    if addresses.iter().any(|a| !address_allowed(a.ip(), allowed)) {
+        return Err(RESOLVED_PRIVATE.into());
     }
     Ok(())
 }
@@ -525,25 +531,27 @@ mod tests {
                     && msg.contains(&detail.replace("private-key", "[redacted]"))
             );
         }
-        for message in [
-            "Provider request timed out",
-            "Provider resolved to a refused address",
-        ] {
+        for message in ["Provider request timed out", RESOLVED_PRIVATE] {
             assert_eq!(
                 probe_result("model", "private-key", Err(message.into())),
                 json!({"model":"model","ok":false,"usage":false,"message":message})
             );
         }
-        assert!(
+        assert_eq!(
             check_addresses(
                 &[
                     "1.1.1.1:443".parse().unwrap(),
                     "10.0.0.1:443".parse().unwrap()
                 ],
                 false
-            )
-            .is_err()
+            ),
+            Err(RESOLVED_PRIVATE.into())
         );
+        assert_eq!(
+            check_addresses(&["169.254.169.254:80".parse().unwrap()], true),
+            Err(RESOLVED_RESERVED.into())
+        );
+        assert!(check_addresses(&["10.0.0.1:443".parse().unwrap()], true).is_ok());
     }
 
     #[tokio::test]
@@ -574,7 +582,7 @@ mod tests {
             refused.probe().await["message"]
                 .as_str()
                 .unwrap()
-                .contains("refused")
+                .contains("ACCLIMATE_PROVIDER_HTTP_HOSTS")
         );
         server.abort();
     }

@@ -95,6 +95,13 @@ class StackTests(unittest.TestCase):
             self.assertEqual(env_file(state / 'service.env'), dict(first, ACCLIMATE_MODEL='other'))
             with self.assertRaisesRegex(ValueError, 'single line'):
                 stack.write_application(state, values, SUBJECT, environ=dict(ACCLIMATE_MODEL='a\nB=c'))
+            # An exported empty value removes the saved setting; the others stay.
+            stack.write_application(state, values, SUBJECT, environ=dict(ACCLIMATE_PROVIDER_HTTP_HOSTS=''))
+            cleared = env_file(state / 'service.env')
+            self.assertNotIn('ACCLIMATE_PROVIDER_HTTP_HOSTS', cleared)
+            self.assertEqual(cleared['ACCLIMATE_MODEL'], 'other')
+            stack.write_application(state, values, SUBJECT, environ={})
+            self.assertNotIn('ACCLIMATE_PROVIDER_HTTP_HOSTS', env_file(state / 'service.env'))
 
     def test_older_credentials_gain_a_provider_key_once(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -131,6 +138,29 @@ class StackTests(unittest.TestCase):
             with patch.object(stack, 'compose', compose):
                 stack.start_executor(ROOT, state, stack.DEFAULT, 'release', environ=shell)
             self.assertEqual(calls[-2][0], ('up', '--detach', 'acclimate-executor'))
+
+    def test_executor_that_exits_names_the_exact_logs_command(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            stack.write_file(state / 'executor-token', b'executor-secret\n')
+            with patch.object(stack, 'compose', return_value=b''), \
+                    patch.object(stack.time, 'sleep'), \
+                    self.assertRaises(ValueError) as raised:
+                stack.start_executor(ROOT, state, stack.DEFAULT, 'build', environ={})
+            message = str(raised.exception)
+            self.assertIn(f'--project-name acclimate-local-{stack.project_suffix(ROOT)}', message)
+            self.assertIn('-f compose.local.yaml logs acclimate-executor', message)
+
+    def test_docker_not_running_is_reported_before_any_port_hint(self):
+        with patch.object(stack, 'docker_running', return_value=False), \
+                patch.object(stack, 'locked_state') as locked, \
+                self.assertRaises(SystemExit) as raised:
+            stack.main(['up'])
+        self.assertIn('Docker is not running', str(raised.exception))
+        self.assertNotIn('port', str(raised.exception))
+        locked.assert_not_called()
+        with patch.object(stack.subprocess, 'run', side_effect=FileNotFoundError('docker')):
+            self.assertFalse(stack.docker_running())
 
     def test_refuses_symlink_or_exposed_credentials(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -193,9 +193,11 @@ export interface LearningLoop extends Omit<LearningLoopRequest, 'taskModel' | 'j
   maxRoundsPerDay: number;
   admittedEvolve: number;
   admittedHeldOut: number;
-  alert: { kind: 'regression-check-incomplete'; roundId: string; versionId: string } | { kind?: undefined; reverted?: boolean; roundId: string; score: number; previousScore: number; flippedTasks: number } | null;
+  alert: { kind: 'regression-check-incomplete'; roundId: string; versionId: string } | { kind?: undefined; reverted?: boolean; roundId: string; score: number; previousScore: number; passRate?: number; previousPassRate?: number; flippedTasks: number } | null;
   setting: LearningSetting;
   waiting: string | null;
+  /** False when the service has no optimizer model; Start is refused until an operator configures one. */
+  optimizerConfigured?: boolean;
   taskRevision: number;
   workspaceId: string;
   bundleId: string;

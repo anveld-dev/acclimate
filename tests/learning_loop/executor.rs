@@ -373,6 +373,12 @@ async fn trial_leases_resolve_admission_and_validate_material() {
                 let counts = json!({"input":0,"output":0});
                 json!({"verdict":{"passed":passed,"score":if !passed {0.0} else if outcome=="judge-unstable" {2.0/3.0} else {1.0},"reasons":["Reason"],"votes":[passed,passed,passed && outcome!="judge-unstable"]},"judgeLog":[],"tokens":{"task":counts,"judge":counts}})
             };
+            if outcome != "pending" {
+                // One criterion and these votes cannot give a half.
+                let mut impossible = report.clone();
+                impossible["verdict"]["score"] = json!(0.5);
+                assert_eq!(act(&app, &lease, "result", impossible).await.0, 400);
+            }
             assert_eq!(act(&app, &lease, "result", report).await.0, 204);
         }
         let page = f.ok("GET", "/tasks", &browser, None, Value::Null).await;

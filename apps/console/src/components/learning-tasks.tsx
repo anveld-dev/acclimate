@@ -35,6 +35,9 @@ export function TaskEditor({
   run: (data: CentralCommand) => void;
 }) {
   const [error, setError] = useState('');
+  // No admission check is queued for a held-out task until a person confirms it.
+  const needsConfirmation =
+    card.split === 'held-out' && !card.confirmedBy && card.admission === 'pending';
   return (
     <article className="space-y-2 rounded-md border p-4">
       <p className="text-sm">
@@ -44,7 +47,7 @@ export function TaskEditor({
             ? 'Imported'
             : 'Console'}{' '}
         {card.sourceFile} {card.sourceRow && '· row ' + card.sourceRow} · {card.split} ·{' '}
-        {describeLearning(card.admission)}
+        {needsConfirmation ? 'Needs your confirmation' : describeLearning(card.admission)}
       </p>
       {card.flagReason && <p>{describeLearning(card.flagReason)}</p>}
       {card.admissionReason && <p>{describeLearning(card.admissionReason)}</p>}
@@ -64,7 +67,11 @@ export function TaskEditor({
         <p>Reference answer: {fieldText(card.grader.reference)}</p>
       )}
       {card.split === 'held-out' && !card.confirmedBy && (
-        <p>Review and confirm this held-out task before it can count toward learning.</p>
+        <p>
+          Held-out tasks catch regressions and are never shown to the optimizer, so a person
+          confirms the {card.grader.type === 'criteria' ? 'criteria' : 'expected answer'} before the
+          task counts. Review this task and confirm it.
+        </p>
       )}
       {edit && (
         <>
@@ -328,7 +335,7 @@ export function LearningTasks({
                 return;
               }
               if (Boolean(file?.size) === Boolean(paste)) {
-                report('Choose one file or paste conversations.');
+                report('Choose a file or paste one conversation, not both.');
                 return;
               }
               const format = file?.size
@@ -371,9 +378,12 @@ export function LearningTasks({
               <Input id="learning-file" name="file" type="file" accept=".xlsx,.csv,.jsonl,.txt" />
             </Label>
             <Label>
-              Paste conversations
-              <Textarea name="paste" className={field} />
+              Paste one conversation
+              <Textarea name="paste" className={field} aria-describedby="learning-paste-help" />
             </Label>
+            <p id="learning-paste-help" className="text-sm text-muted-foreground">
+              A paste becomes one task. To import several conversations, use a file.
+            </p>
             <Button>Import tasks</Button>
           </form>
           {job && (

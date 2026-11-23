@@ -237,6 +237,12 @@ impl Fixture {
         );
     }
     async fn seed(&self) {
+        self.admit_tasks().await;
+        self.ok("POST", "/start", "admin", None, Value::Null).await;
+    }
+
+    /// Admits twenty tasks in each split and announces the executor, so the loop can start.
+    async fn admit_tasks(&self) {
         for (table, identifier) in [
             (
                 "learning_tasks",
@@ -253,7 +259,12 @@ impl Fixture {
             .await
             .unwrap();
         self.announce().await;
-        self.ok("POST", "/start", "admin", None, Value::Null).await;
+    }
+
+    /// Serves requests from a state with this optimizer, as a restarted service would.
+    fn set_optimizer(&mut self, optimizer: Option<Arc<dyn acclimate_service::OptimizerModel>>) {
+        self.state.optimizer = optimizer;
+        self.app = router(self.state.clone());
     }
 
     async fn wait_for(&self, suffix: &str, caller: &str, ready: impl Fn(&Value) -> bool) -> Value {
@@ -539,6 +550,58 @@ async fn streamed_import_preserves_rows_and_returns_cards_only_to_people() {
     assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
     let body = to_bytes(res.into_body(), 4096).await.unwrap();
     assert!(std::str::from_utf8(&body).unwrap().contains("64 MiB"));
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn start_and_resume_require_a_configured_optimizer() {
+    let mut f = Fixture::new().await;
+    f.enroll().await;
+    f.admit_tasks().await;
+    f.set_optimizer(None);
+    let refused = |reply: (u16, Value)| {
+        assert_eq!(reply.0, 409, "{}", reply.1);
+        assert_eq!(reply.1["error"]["code"], "optimizer-required");
+        let message = reply.1["error"]["message"].as_str().unwrap();
+        for setting in [
+            "ACCLIMATE_MODEL_ENDPOINT",
+            "ACCLIMATE_MODEL_TOKEN",
+            "ACCLIMATE_MODEL",
+        ] {
+            assert!(message.contains(setting), "{message}");
+        }
+    };
+    let untouched = async |f: &Fixture, started: bool| {
+        let document = f.ok("GET", "", "reader", None, Value::Null).await;
+        assert_eq!(document["optimizerConfigured"], false);
+        assert_eq!(document["status"], "paused");
+        assert_eq!(document["pauseReason"], "operator");
+        assert!(document["activeRound"].is_null());
+        let (began, rounds): (bool, i64) = sqlx::query_as(
+            "SELECT started_at IS NOT NULL,(SELECT count(*) FROM learning_rounds) FROM learning_loops",
+        )
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap();
+        assert_eq!((began, rounds), (started, 0));
+    };
+    untouched(&f, false).await;
+    refused(f.req("POST", "/start", "admin", None, Value::Null).await);
+    untouched(&f, false).await;
+
+    f.set_optimizer(Some(Arc::new(optimizer::NoChangeModel("fixture"))));
+    let document = f.ok("GET", "", "reader", None, Value::Null).await;
+    assert_eq!(document["optimizerConfigured"], true);
+    let started = f.ok("POST", "/start", "admin", None, Value::Null).await;
+    assert_eq!(
+        (&started["status"], &started["optimizerConfigured"]),
+        (&json!("running"), &json!(true))
+    );
+    f.ok("POST", "/pause", "admin", None, Value::Null).await;
+
+    f.set_optimizer(None);
+    refused(f.req("POST", "/resume", "admin", None, Value::Null).await);
+    untouched(&f, true).await;
 }
 
 #[tokio::test]

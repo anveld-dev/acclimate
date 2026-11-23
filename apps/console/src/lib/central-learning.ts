@@ -98,6 +98,9 @@ const descriptions: Record<string, string> = {
   'no-evaluated-candidates': 'No candidate finished evaluation.',
   'channel-moved': 'The channel changed while this round was running.',
   'incumbent-evaluation-failed': 'Evaluation of the current version failed.',
+  'optimizer-required':
+    'The service has no optimizer model. An operator must set ACCLIMATE_MODEL_ENDPOINT, ACCLIMATE_MODEL_TOKEN and ACCLIMATE_MODEL on the service. On the local stack, export them and run npm run local:up again.',
+  'held-out-evaluation-failed': 'The regression check on held-out tasks could not run.',
   'optimizer-unavailable':
     'The optimizer was unavailable. Ask the operator to check its connection.',
   'selector-unavailable': 'The service could not select a candidate.',
@@ -126,13 +129,17 @@ const descriptions: Record<string, string> = {
   'judge-disagreement': 'The judge disagreed across repeated judgments.',
   'split-rollouts': 'Repeated runs gave different verdicts.',
   'persistent-failure': 'Candidates repeatedly failed this task.',
-  'no-reference': 'No usable reference answer or grading criteria.',
+  'no-reference':
+    'No usable reference answer or grading criteria. Add an expected answer or grading criteria to the row and import it again.',
   'not-converted': 'The conversion could not turn this row into a task. Edit the row and import it again.',
-  'too-large': 'The row exceeds the size limit.',
-  'reference-failed': 'The reference answer failed grading.',
-  'empty-passed': 'An empty answer passed grading.',
-  'judge-unstable': 'The judge gave inconsistent results.',
-  'check-failed': 'The service could not complete the check. Review the task and try again.',
+  'too-large': 'The row is over 64 KiB. Shorten it and import it again.',
+  'reference-failed':
+    'The reference answer does not meet the grading criteria. Fix the answer or the criteria and save.',
+  'empty-passed': 'An empty answer met the grading criteria. Make the criteria stricter and save.',
+  'judge-unstable':
+    'The judge gave inconsistent results on the reference answer. Make the criteria more specific and save.',
+  'check-failed':
+    'The check could not run, for example because the model provider or executor was unavailable. Edit and save the task to run it again.',
 };
 export function describeLearning(code: string) {
   return descriptions[code] ?? code.replaceAll('-', ' ');

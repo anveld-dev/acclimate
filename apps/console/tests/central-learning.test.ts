@@ -75,7 +75,7 @@ test('cards expose provenance, admission and held-out criteria confirmation to e
   for (const label of [
     'Production outcome',
     'Be specific',
-    'The judge gave inconsistent results.',
+    'The judge gave inconsistent results on the reference answer.',
     'Confirm criteria',
     'Edit task',
     'Try task',
@@ -224,6 +224,8 @@ test('each unconfirmed held-out card has a confirm action, and another card’s 
     }),
   );
   assert.match(html, /Confirm expected answer/);
-  assert.match(html, /before it can count/);
+  assert.match(html, /Needs your confirmation/);
+  assert.match(html, /never shown to the optimizer/);
+  assert.doesNotMatch(html, /Waiting for admission checks/);
   assert.doesNotMatch(html, /Trial result/);
 });

@@ -161,7 +161,18 @@ test('renders round states, evaluation progress and decreasing measured scores',
         ...round,
         id: 'third',
         number: 3,
-        heldOutError: 'Monitoring timed out',
+        heldOutError: 'held-out-evaluation-failed',
+        heldOutScore: null,
+        state: 'completed',
+      },
+      {
+        ...round,
+        id: 'kept-unchecked',
+        number: 5,
+        decision: 'kept',
+        adoptedSample: null,
+        adoptedVersionId: null,
+        heldOutError: 'held-out-evaluation-failed',
         heldOutScore: null,
         state: 'completed',
       },
@@ -181,7 +192,9 @@ test('renders round states, evaluation progress and decreasing measured scores',
   assert.match(html, /Round 1 · Evolve score · 0\.9/);
   assert.match(html, /Round 2 · Evolve score · 0\.6/);
   assert.match(html, /Round 2 · Held-out score \(monitoring only\) · 0/);
-  assert.match(html, /Monitoring timed out/);
+  assert.match(html, /This version was released, but the regression check could not run\./);
+  assert.match(html, /The regression check on held-out tasks could not run\./);
+  assert.doesNotMatch(html, /held-out-evaluation-failed/);
   assert.match(html, />Failed<\/td>/);
   assert.match(html, />Stopped<\/td>/);
   assert.match(html, /adopted.*kept|kept.*adopted/);

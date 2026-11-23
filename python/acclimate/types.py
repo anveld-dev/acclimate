@@ -300,6 +300,8 @@ class _LearningAlert(TypedDict):
     roundId: str
     score: float
     previousScore: float
+    passRate: NotRequired[float]
+    previousPassRate: NotRequired[float]
     flippedTasks: int
 
 
@@ -312,6 +314,7 @@ class LearningLoop(TypedDict):
     taskRevision: int
     waiting: str | None
     alert: _LearningAlert | _IncompleteCheck | None
+    optimizerConfigured: NotRequired[bool]
     admittedEvolve: int
     admittedHeldOut: int
     workspaceId: str

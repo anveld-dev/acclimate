@@ -163,10 +163,8 @@ It creates three randomly named databases, installs the schema and inserts fixtu
 
 ### Rollout executor
 
-Build the runner before starting Compose with
-`docker build -t acclimate-chat:1 executor/runner`. The executor resolves
-this tag once at startup and launches each sandbox by immutable image ID.
-Set `ACCLIMATE_EXECUTOR_TOKEN` to a provisioned executor credential and
+Compose builds the chat runner and the executor resolves its immutable image ID at startup.
+Point `ACCLIMATE_EXECUTOR_TOKEN_FILE` to a file containing a provisioned executor credential and
 set the service's `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` to 64 hex characters.
 Compose binds port 3001 to the service address on the private executor network.
 The executor reaches the workspace model endpoint over `executor-egress`.

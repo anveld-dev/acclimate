@@ -16,19 +16,36 @@ def docker(*args):
     return subprocess.check_output(["docker", *args], text=True).strip()
 
 
-requires_docker = unittest.skipUnless(
-    shutil.which("docker")
-    and subprocess.run(["docker", "info"], capture_output=True).returncode == 0,
-    "Docker daemon unavailable",
-)
+def build_test_image(suite, *args):
+    tag = "acclimate-executor-test:" + uuid.uuid4().hex
+    image = docker("build", "-q", "-t", tag, *args)
+    suite.addClassCleanup(docker, "image", "rm", tag)
+    return image
+
+
+def docker_available():
+    if not shutil.which("docker"):
+        return False
+    try:
+        return (
+            subprocess.run(
+                ["docker", "info"], capture_output=True, timeout=20
+            ).returncode
+            == 0
+        )
+    except subprocess.TimeoutExpired:
+        return False
+
+
+requires_docker = unittest.skipUnless(docker_available(), "Docker daemon unavailable")
 
 
 @requires_docker
 class SandboxGate(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.runner = docker("build", "-q", "executor/runner")
-        cls.executor = docker("build", "-q", "-f", "executor/Dockerfile", ".")
+        cls.runner = build_test_image(cls, "executor/runner")
+        cls.executor = build_test_image(cls, "-f", "executor/Dockerfile", ".")
 
     def exercise(self, runtime, case):
         expected = uuid.uuid4().hex
@@ -70,6 +87,7 @@ class SandboxGate(unittest.TestCase):
                 token = self.headers["Authorization"]
                 if action == "leases":
                     test.assertEqual(token, "Bearer executor-token")
+                    test.assertEqual(body["waitSeconds"], 25)
                     test.assertEqual(body["executor"]["runnerImage"], test.runner)
                     if offered.is_set():
                         if case == "expired" and expired_container:
@@ -128,6 +146,14 @@ class SandboxGate(unittest.TestCase):
                             ),
                             "none",
                         )
+                        test.assertNotEqual(docker("exec", container, "id", "-u"), "0")
+                        test.assertEqual(
+                            docker(
+                                "inspect", "-f", "{{.HostConfig.MemorySwap}}", container
+                            ),
+                            str(256 * 1024 * 1024),
+                        )
+                        docker("kill", "--signal=TERM", name)
                         docker(
                             "exec",
                             container,
@@ -141,6 +167,8 @@ class SandboxGate(unittest.TestCase):
                             [
                                 "docker",
                                 "exec",
+                                "-u",
+                                "0",
                                 "-i",
                                 container,
                                 "node",
@@ -168,8 +196,19 @@ class SandboxGate(unittest.TestCase):
                         time.sleep(10)
                     if case == "upstream":
                         return 502, {"message": "provider-key"}
+                    if case == "context":
+                        return 400, {"error": {"code": "context_length_exceeded"}}
                     return 200, {
-                        "choices": [{"message": {"content": expected}}],
+                        "choices": [
+                            {
+                                "finish_reason": "length"
+                                if case == "length"
+                                else "stop",
+                                "message": {
+                                    "content": None if case == "null" else expected
+                                },
+                            }
+                        ],
                         "usage": {"prompt_tokens": 1, "completion_tokens": 1},
                     }
                 test.assertEqual(token, "Bearer lease-token")
@@ -181,9 +220,12 @@ class SandboxGate(unittest.TestCase):
                 if action == "output":
                     test.assertEqual(
                         body["stop"],
-                        {"cap": "token-limit", "timeout": "time-limit"}.get(
-                            case, "completed"
-                        ),
+                        {
+                            "cap": "token-limit",
+                            "length": "token-limit",
+                            "null": "invalid-output",
+                            "context": "invalid-output",
+                        }.get(case, "completed"),
                     )
                     test.assertEqual(len(body["gatewayLog"]), 1)
                     test.assertNotIn("provider-key", json.dumps(body))
@@ -228,20 +270,30 @@ class SandboxGate(unittest.TestCase):
                 self.assertFalse(results)
                 return
             (result,) = results
-            if case in ("runtime", "upstream"):
+            if case in ("runtime", "upstream", "timeout"):
                 self.assertEqual(
                     result["error"]["code"],
                     "sandbox-start" if case == "runtime" else "gateway-upstream",
                 )
+                self.assertNotEqual(result["error"]["message"], result["error"]["code"])
+                self.assertNotIn("provider-key", json.dumps(result))
                 self.assertNotIn("verdict", result)
             else:
                 self.assertEqual(result["verdict"]["passed"], case == "scored")
-                count = 0 if case == "timeout" else 1
+                count = 0 if case == "context" else 1
                 self.assertEqual(
                     result["tokens"]["task"], {"input": count, "output": count}
                 )
+                if case in ("context", "null", "length"):
+                    self.assertTrue(result["verdict"]["reasons"])
                 if case == "scored":
                     self.assertTrue(beats)
+                    for _ in range(50):
+                        if not docker("ps", "-q", "--filter", "name=" + name):
+                            break
+                        time.sleep(0.1)
+                    else:
+                        self.fail("Worker did not exit after draining")
         finally:
             subprocess.run(["docker", "rm", "-f", name], capture_output=True)
             server.shutdown()
@@ -250,7 +302,16 @@ class SandboxGate(unittest.TestCase):
 
     def test_rollouts(self):
         runtime = os.environ.get("ACCLIMATE_SANDBOX_RUNTIME", "docker")
-        for case in ("scored", "cap", "timeout", "upstream", "expired"):
+        for case in (
+            "scored",
+            "cap",
+            "length",
+            "null",
+            "context",
+            "timeout",
+            "upstream",
+            "expired",
+        ):
             with self.subTest(case=case):
                 self.exercise(runtime, case)
         if "runsc" not in json.loads(docker("info", "--format", "{{json .Runtimes}}")):

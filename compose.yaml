@@ -42,13 +42,24 @@ services:
       timeout: 4s
       retries: 12
       start_period: 30s
+  acclimate-runner:
+    image: ${ACCLIMATE_RUNNER_IMAGE:-acclimate-chat:1}
+    build: executor/runner
+    entrypoint: ["node", "-e", ""]
+    network_mode: none
   acclimate-executor:
+    init: true
+    stop_grace_period: 1h
+    depends_on:
+      acclimate-runner:
+        condition: service_completed_successfully
+    secrets: [executor_token]
     build:
       context: .
       dockerfile: executor/Dockerfile
     environment:
       ACCLIMATE_EXECUTOR_SERVICE: http://service:3001
-      ACCLIMATE_EXECUTOR_TOKEN: ${ACCLIMATE_EXECUTOR_TOKEN:-}
+      ACCLIMATE_EXECUTOR_TOKEN_FILE: /run/secrets/executor_token
       ACCLIMATE_EXECUTOR_CONCURRENCY: ${ACCLIMATE_EXECUTOR_CONCURRENCY:-1}
       ACCLIMATE_SANDBOX_RUNTIME: ${ACCLIMATE_SANDBOX_RUNTIME:-runsc}
       ACCLIMATE_RUNNER_IMAGE: ${ACCLIMATE_RUNNER_IMAGE:-acclimate-chat:1}
@@ -122,5 +133,7 @@ volumes:
   caddy-data:
   caddy-config:
 secrets:
+  executor_token:
+    file: ${ACCLIMATE_EXECUTOR_TOKEN_FILE:-./.local/stack/executor-token}
   postgres_password:
     file: ${ACCLIMATE_POSTGRES_PASSWORD_FILE:?Set ACCLIMATE_POSTGRES_PASSWORD_FILE to a private password file}

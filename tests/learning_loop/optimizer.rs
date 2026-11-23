@@ -69,7 +69,7 @@ async fn model(
             assert!(!inner.contains(['<', '>']));
             let data: Value = serde_json::from_str(inner).unwrap();
             assert!(!inner.contains(HELD_OUT));
-            for marker in ["held-out-sentinel", "private-trial-log", "private-trial-result"] {
+            for marker in ["held-out-sentinel", "private-trial-log", "private-trial-result","private-gateway-log"] {
                 assert!(!inner.contains(marker));
             }
             let n = {
@@ -110,25 +110,61 @@ fn screen(data: &Value, skip: bool) -> Value {
     })).collect::<Vec<_>>()})
 }
 
-async fn evaluate(f: &Fixture, item: &Value, cases: &[Value]) {
-    f.start(item, "attempt").await;
-    f.ok(
-        "POST",
-        &eval_route(item, "report"),
-        "app",
-        Some("report"),
-        report(cases),
-    )
-    .await;
+pub(super) async fn evaluate(f: &Fixture, item: &Value, cases: &[Value]) {
+    let app = f.internal();
+    let id = item["evaluationId"]
+        .as_str()
+        .unwrap()
+        .parse::<Uuid>()
+        .unwrap();
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM learning_rollouts WHERE evaluation_id=$1")
+            .bind(id)
+            .fetch_one(&f.state.db)
+            .await
+            .unwrap();
+    for _ in 0..count {
+        let (status, lease) =
+            executor_tests::post(&app, "", &f.token, json!({"executor":Fixture::identity()})).await;
+        assert_eq!(status, 200, "{lease}");
+        let task = lease["input"].as_str().unwrap();
+        let passed = cases
+            .iter()
+            .find(|c| c["caseId"] == task)
+            .is_some_and(|c| c["rollouts"][0]["passed"] == true);
+        let log = json!({"at":0,"route":"chat/completions","model":"task","status":200,"request":task,"response":if task.starts_with("held-out") {"private-gateway-log"} else {"evolve trace"},"usage":{}});
+        let (status, grader) = executor_tests::act(
+            &app,
+            &lease,
+            "output",
+            json!({"output":"reply","stop":"completed","gatewayLog":[log]}),
+        )
+        .await;
+        assert_eq!(status, 200, "{grader}");
+        let counts = json!({"input":1,"output":2});
+        let mut verdict = json!({"score":i32::from(passed),"passed":passed,"reasons":[]});
+        if grader["grader"]["type"] == "criteria" {
+            verdict["votes"] = json!([passed, !passed, passed]);
+            verdict["reasons"] = json!(["Evidence is incomplete."]);
+        }
+        assert_eq!(
+            executor_tests::act(
+                &app,
+                &lease,
+                "result",
+                json!({"verdict":verdict,"judgeLog":[],"tokens":{"task":counts,"judge":counts}})
+            )
+            .await
+            .0,
+            204
+        );
+    }
 }
 
 async fn incumbent(f: &Fixture, number: i32) -> Value {
     let item = f.item("evolve", number).await;
     assert_eq!(item["role"], "incumbent");
-    let mut a = result("a", 0.0);
-    a["rollouts"][0]["trace"] = json!("evolve <trace>");
-    a["rollouts"][0]["error"] = json!("evolve error");
-    evaluate(f, &item, &[a, result("b", 0.0)]).await;
+    evaluate(f, &item, &[result("a", 0.0), result("b", 0.0)]).await;
     item
 }
 
@@ -175,13 +211,11 @@ async fn adoption_releases_only_selected_sample_and_merges_memory_across_rounds(
     .await;
     let empty = {
         f.enroll().await;
-        sqlx::query(r#"INSERT INTO learning_held_out_tasks(project_id,bundle_id,task_id,"group",input,grader,source,added_revision) VALUES($1,$2,'held-out-sentinel','test','"held-out-sentinel"','{}','console',1)"#)
-            .bind(&f.project).bind(f.bundle).execute(&f.state.db).await.unwrap();
         sqlx::query(r#"WITH trial AS (
             INSERT INTO learning_trials(project_id,bundle_id,version_id,runtime,held_out)
             VALUES ($1,$2,$3,'{"taskModel":"task","judgeModel":"judge"}',true) RETURNING id)
             INSERT INTO learning_rollouts(trial_id,task_id,rollout,input,grader,status,score,passed,gateway_log,reasons)
-            SELECT id,'held-out-sentinel',1,'null','{}','scored',1,true,'["private-trial-log"]','["private-trial-result"]' FROM trial"#)
+            SELECT id,'held-out-sentinel',1,'null','{}','scored',1,true,'["private-trial-log"]','["private-trial-result","private-gateway-log"]' FROM trial"#)
             .bind(&f.project).bind(f.bundle).bind(f.version).execute(&f.state.db).await.unwrap();
         f.ok("GET", "/memory", "reader", None, Value::Null).await
     };
@@ -189,7 +223,9 @@ async fn adoption_releases_only_selected_sample_and_merges_memory_across_rounds(
         empty["improvementMemory"],
         json!({"memoryRevision":0,"schemaVersion":1,"problems":[]})
     );
-    prepare(&mut f).await;
+    f.seed().await;
+    sqlx::query(r#"UPDATE learning_tasks SET grader='{"type":"criteria","criteria":["Require evidence"]}' WHERE task_id='a'"#).execute(&f.state.db).await.unwrap();
+    f.spawn_worker();
     let mut prior_digest = Value::Null;
     for n in 1..=2 {
         if n == 1 {
@@ -248,10 +284,11 @@ async fn adoption_releases_only_selected_sample_and_merges_memory_across_rounds(
             }
         );
         assert_eq!(attempt["passed"], 5);
-        assert_eq!(attempt["total"], 10);
-        assert_eq!(
-            memory["records"][0]["provenance"]["heldOutDigest"],
-            HELD_OUT
+        assert_eq!(attempt["total"], 100);
+        assert!(
+            memory["records"][0]["provenance"]
+                .get("heldOutDigest")
+                .is_none()
         );
         assert!(attempt["provenance"].get("heldOutDigest").is_none());
         if n == 1 {
@@ -282,6 +319,16 @@ async fn adoption_releases_only_selected_sample_and_merges_memory_across_rounds(
             );
         }
     }
+    let usage = f.ok("GET", "/usage", "reader", None, Value::Null).await;
+    let flag: String =
+        sqlx::query_scalar("SELECT reason FROM learning_flagged_tasks WHERE task_id='a'")
+            .fetch_one(&f.state.db)
+            .await
+            .unwrap();
+    assert_eq!(flag, "judge-disagreement");
+    assert_eq!(usage["items"][0]["rollouts"], 1300);
+    assert_eq!(usage["items"][0]["taskTokens"], 3900);
+    assert_eq!(usage["items"][0]["judgeTokens"], 3900);
     let calls = server.requests.lock().unwrap();
     assert_eq!(calls.len(), 14);
     for offset in [0, 7] {
@@ -294,8 +341,12 @@ async fn adoption_releases_only_selected_sample_and_merges_memory_across_rounds(
     for (i, request) in calls.iter().enumerate() {
         if i < 7 {
             assert_eq!(
-                request["feedback"]["cases"][0]["rollouts"][0]["trace"],
-                "evolve <trace>"
+                request["feedback"]["cases"][0]["rollouts"][0]["reasons"],
+                json!(["Evidence is incomplete."])
+            );
+            assert_eq!(
+                request["feedback"]["cases"][0]["rollouts"][0]["gatewayLog"][0]["response"],
+                "evolve trace"
             );
         }
         assert!(request["feedback"]["cases"][0].get("expected").is_none());
@@ -491,74 +542,6 @@ async fn context_overflow_pauses_immediately() {
     assert_eq!(server.requests.lock().unwrap().len(), 1);
 }
 
-#[tokio::test]
-#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn memory_and_evolve_cases_require_the_right_principal() {
-    let f = Fixture::new().await;
-    assert_eq!(
-        f.req("GET", "/evolve-cases", "app", None, Value::Null)
-            .await
-            .0,
-        404
-    );
-    assert_eq!(
-        f.req("GET", "/memory", "reader", None, Value::Null).await.0,
-        404
-    );
-    f.enroll().await;
-    assert_eq!(
-        f.req("GET", "/memory", "app", None, Value::Null).await.0,
-        403
-    );
-    assert_eq!(
-        f.req("GET", "/memory?revision=-1", "reader", None, Value::Null)
-            .await
-            .0,
-        400
-    );
-    assert_eq!(
-        f.req("GET", "/memory?revision=1", "reader", None, Value::Null)
-            .await
-            .0,
-        404
-    );
-    let editor = format!("console/{}", session(&f, "editor").await);
-    let viewer = format!("console/{}", session(&f, "viewer").await);
-    let request = json!({"cases":[case("human-case")]});
-    assert_eq!(
-        f.req("POST", "/evolve-cases", &viewer, None, request.clone())
-            .await
-            .0,
-        403
-    );
-    assert_eq!(
-        f.ok("POST", "/evolve-cases", &editor, None, request).await["added"],
-        1
-    );
-    for caller in [&viewer, "app"] {
-        let listed = f
-            .ok("GET", "/evolve-cases", caller, None, Value::Null)
-            .await;
-        assert_eq!(listed["items"][0]["caseId"], "human-case");
-    }
-    for caller in ["reader", "other"] {
-        assert_eq!(
-            f.req("GET", "/evolve-cases", caller, None, Value::Null)
-                .await
-                .0,
-            403
-        );
-    }
-    assert_eq!(
-        f.req("GET", "/work", &editor, None, Value::Null).await.0,
-        403
-    );
-    assert_eq!(
-        f.req("POST", "/outcomes", &editor, None, json!({})).await.0,
-        403
-    );
-}
-
 async fn await_sql(f: &Fixture, query: &str, round: Uuid) {
     tokio::time::timeout(Duration::from_secs(60), async {
         loop {
@@ -624,7 +607,7 @@ async fn restart_replays_all_new_states_and_keeps_if_channel_moves_after_selecti
     }
     let candidate = f.item("evolve", 1).await;
     assert_eq!(candidate["sample"], 2);
-    f.start(&candidate, "attempt").await;
+
     f.crash_worker().await;
     f.spawn_worker();
     assert_eq!(
@@ -650,14 +633,7 @@ async fn restart_replays_all_new_states_and_keeps_if_channel_moves_after_selecti
     .execute(&f.state.db)
     .await
     .unwrap();
-    f.ok(
-        "POST",
-        &eval_route(&candidate, "report"),
-        "app",
-        Some("report"),
-        report(&[result("a", 1.0), result("b", 0.0)]),
-    )
-    .await;
+    evaluate(&f, &candidate, &[result("a", 1.0), result("b", 0.0)]).await;
     await_sql(&f,"SELECT EXISTS(SELECT 1 FROM learning_optimizer_calls WHERE round_id=$1 AND kind='select' AND status='succeeded')",id).await;
     f.crash_worker().await;
     let promotions: i64 = sqlx::query_scalar("SELECT count(*) FROM promotions WHERE bundle_id=$1")
@@ -720,7 +696,7 @@ async fn restart_replays_all_new_states_and_keeps_if_channel_moves_after_selecti
 
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn failed_survivor_deadline_advances_to_held_out() {
+async fn failed_survivor_rollout_fails_the_round() {
     let mut f = Fixture::new().await;
     let server = model(&mut f, |n, data| (StatusCode::OK, if n < 5 {
         proposal("Revised guide.", "The review lacks structure")
@@ -732,17 +708,21 @@ async fn failed_survivor_deadline_advances_to_held_out() {
     prepare(&mut f).await;
     incumbent(&f, 1).await;
     let candidate = f.item("evolve", 1).await;
-    f.start(&candidate, "attempt").await;
+
     f.ok("POST", "/pause", "admin", None, Value::Null).await;
     sqlx::query(
-        "UPDATE learning_evaluations SET deadline_at=now()-interval '1 second' WHERE id=$1",
+        "UPDATE learning_rollouts SET status='failed',error_code='executor',attempts=2 WHERE evaluation_id=$1",
     )
     .bind(Uuid::parse_str(candidate["evaluationId"].as_str().unwrap()).unwrap())
     .execute(&f.state.db)
     .await
     .unwrap();
-    let round = retained(&f, 1).await;
-    assert_eq!(round["reason"], "no-evaluated-candidates");
+    let round = f
+        .wait_for(&round_route(&candidate), "reader", |r| {
+            r["state"] == "failed"
+        })
+        .await;
+    assert_eq!(round["reason"], "candidate-evaluation-failed");
     assert_eq!(round["candidates"][0]["status"], "evaluation_failed");
     assert_eq!(server.requests.lock().unwrap().len(), 6);
 }
@@ -907,10 +887,10 @@ async fn history_keeps_all_same_setting_rounds_and_omits_held_out_data() {
         ),
     ] {
         sqlx::query("INSERT INTO learning_rounds(id,project_id,bundle_id,number,state,decision,reason,parent_version_id,
-            channel,channel_revision,evolve_revision,memory_revision,setting,held_out,incumbent_score,held_out_error,ended_at)
-            SELECT gen_random_uuid(),$1,$2,n,'completed','kept','no-candidates',$3,'stable',7,1,0,$4,$5,0,'held-out-sentinel',now()
-            FROM generate_series($6::int,$7::int) n")
-            .bind(&f.project).bind(f.bundle).bind(f.version).bind(pin).bind(enrollment()["heldOut"].clone())
+            channel,channel_revision,evolve_revision,memory_revision,setting,incumbent_score,held_out_error,ended_at)
+            SELECT gen_random_uuid(),$1,$2,n,'completed','kept','no-candidates',$3,'stable',7,1,0,$4,0,'held-out-sentinel',now()
+            FROM generate_series($5::int,$6::int) n")
+            .bind(&f.project).bind(f.bundle).bind(f.version).bind(pin)
             .bind(first).bind(last).execute(&f.state.db).await.unwrap();
     }
     sqlx::query("INSERT INTO learning_candidates(round_id,sample,status,rationale,diagnosis,changes,scan)
@@ -1021,30 +1001,28 @@ async fn held_out_drops_alert_and_only_confirmed_clear_drops_revert() {
             _=>proposal("Regression fixture candidate","Review lacks structure"),
         })).await;
         let mut settings = enrollment();
-        settings["heldOut"]["cases"] = json!(2);
+        f.provider().await;
         settings["maxRoundsPerDay"] = json!(2);
         f.ok("PUT", "", "admin", None, settings.clone()).await;
         f.seed().await;
         f.spawn_worker();
         incumbent(&f, 1).await;
         let held = f.item("heldOut", 1).await;
+        let _admin = session(&f, "admin").await;
+        sqlx::query("UPDATE users SET email='admin@example.test',email_verified=true WHERE id IN (SELECT user_id FROM project_memberships WHERE role='admin')").execute(&f.state.db).await.unwrap();
         let before = [
             result("held-out-sentinel-1", 1.0),
             result("held-out-sentinel-2", 1.0),
         ];
         evaluate(&f, &held, &before).await;
-        let replay = f.start(&held, "attempt").await;
-        assert_eq!(replay["reportedCaseIds"], json!([]));
-        assert_eq!(replay["evaluation"]["passedCases"], 2);
-        assert!(!replay.to_string().contains("held-out-sentinel"));
         let candidate = f.item("evolve", 2).await;
         assert_eq!(candidate["role"], "candidate");
         evaluate(&f, &candidate, &[result("a", 1.0), result("b", 1.0)]).await;
         let held = f.item("heldOut", 2).await;
-        let score = if clear { 0.0 } else { 0.95 };
+        let score = if clear { 0.0 } else { 0.05 };
         let after = [
             result("held-out-sentinel-1", score),
-            result("held-out-sentinel-2", score),
+            result("held-out-sentinel-2", if clear { 0.0 } else { 1.0 }),
         ];
         evaluate(&f, &held, &after).await;
         if clear {
@@ -1062,6 +1040,12 @@ async fn held_out_drops_alert_and_only_confirmed_clear_drops_revert() {
             .await;
         assert_eq!(state["status"], "running");
         assert_eq!(state["alert"]["score"], score);
+        let delivery: (f64, f64) =
+            sqlx::query_as("SELECT previous_score,score FROM learning_alert_deliveries")
+                .fetch_one(&f.state.db)
+                .await
+                .unwrap();
+        assert_eq!(delivery, (0.1, score));
         assert_eq!(state["rounds"][0]["decision"], "adopted");
         assert!(!state.to_string().contains("held-out-sentinel"));
         let head: Uuid = sqlx::query_scalar(

@@ -237,20 +237,11 @@ async fn evaluating(tx: &mut Tx<'_>, row: &LoopRow, round: &Pins) -> Result<(), 
         "SELECT c.sample,e.status,e.score FROM learning_candidates c JOIN learning_evaluations e ON e.id=c.evaluation_id
          WHERE c.round_id=$1 AND c.status='evaluating' AND e.role='candidate' AND e.split='evolve'")
         .bind(round.id).fetch_one(&mut **tx).await?;
-    let status = match status.as_str() {
-        "scored" => "evaluated",
-        "failed" | "cancelled" => "evaluation_failed",
-        _ => return Ok(()),
-    };
-    sqlx::query(
-        "UPDATE learning_candidates SET status=$3,evolve_score=$4 WHERE (round_id,sample)=($1,$2)",
-    )
-    .bind(round.id)
-    .bind(sample)
-    .bind(status)
-    .bind(score)
-    .execute(&mut **tx)
-    .await?;
+    if status != "scored" {
+        return Ok(());
+    }
+    sqlx::query("UPDATE learning_candidates SET status='evaluated',evolve_score=$3 WHERE (round_id,sample)=($1,$2)")
+        .bind(round.id).bind(sample).bind(score).execute(&mut **tx).await?;
     if queue_survivor(tx, round).await? {
         return Ok(());
     }
@@ -350,7 +341,8 @@ async fn adopt(
         selection=$4,state='scoring_held_out' WHERE id=$1 AND state='selecting' AND selection IS NULL")
         .bind(round.id).bind(sample).bind(version_id).bind(&selection).execute(&mut **tx).await?;
     super::super::memory::write_back(tx, round).await?;
-    queue(tx, round.id, version_id, digest, None).await?;
+    let evaluation = queue(tx, round.id, version_id, digest, None).await?;
+    crate::executor::queue_evaluation(tx, evaluation).await?;
     Ok(())
 }
 
@@ -365,14 +357,8 @@ async fn keep(
     sqlx::query("UPDATE learning_rounds SET state='scoring_held_out',decision='kept',reason=$2,selection=$3 WHERE id=$1")
         .bind(round.id).bind(reason).bind(selection).execute(&mut **tx).await?;
     let retained = queue(tx, round.id, version, &digest, None).await?;
-    sqlx::query("UPDATE learning_evaluations dst SET status='scored',report=src.report,score=src.score,started_at=now(),attempt_id='service:reuse'
-        FROM (SELECT e.report,e.score FROM learning_evaluations e JOIN learning_rounds r ON r.id=e.round_id
-              JOIN learning_rounds current ON current.id=$2
-              WHERE (r.project_id,r.bundle_id)=(current.project_id,current.bundle_id) AND r.number<current.number
-              AND r.held_out=current.held_out AND r.task_revision=current.task_revision
-              AND r.task_model IS NOT DISTINCT FROM current.task_model AND r.judge_model IS NOT DISTINCT FROM current.judge_model
-              AND r.runtime IS NOT DISTINCT FROM current.runtime AND e.digest=$3 AND e.role='retained' AND e.measurement='initial'
-              AND e.status='scored' ORDER BY r.number DESC LIMIT 1) src WHERE dst.id=$1")
-        .bind(retained).bind(round.id).bind(digest).execute(&mut **tx).await?;
+    if !super::reuse_score(tx, retained).await? {
+        crate::executor::queue_evaluation(tx, retained).await?;
+    }
     Ok(())
 }

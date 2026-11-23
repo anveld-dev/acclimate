@@ -126,10 +126,10 @@ async fn fixture() -> Fixture {
     let editor = session(&db, &project, "editor").await;
     let grants = vec![
         Grant {
-            token: "static-evaluate".into(),
-            principal_id: "static-evaluator".into(),
+            token: "static-reader".into(),
+            principal_id: "static-reader".into(),
             project_id: project.clone(),
-            rights: vec!["evaluate".into()],
+            rights: vec!["read".into()],
         },
         Grant {
             token: "static-writer".into(),
@@ -166,7 +166,7 @@ impl Fixture {
 
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn admins_issue_rotate_and_revoke_narrow_evaluator_tokens_without_restart() {
+async fn admins_issue_rotate_and_revoke_read_tokens_without_restart() {
     let f = fixture().await;
     let tokens = format!("/v1/workspaces/{}/machine-tokens", f.project);
     // Only workspace admins administer tokens; machine credentials never do.
@@ -213,7 +213,7 @@ async fn admins_issue_rotate_and_revoke_narrow_evaluator_tokens_without_restart(
     assert_eq!(s, StatusCode::CREATED, "{issued}");
     let secret = issued["secret"].as_str().unwrap().to_owned();
     assert!(secret.starts_with("acm_"));
-    assert_eq!(issued["token"]["rights"], json!(["evaluate"]));
+    assert_eq!(issued["token"]["rights"], json!(["read"]));
     assert_eq!(issued["token"]["principalId"], "machine:ci");
     assert_eq!(issued["token"]["status"], "active");
     let token_id = issued["token"]["id"].as_str().unwrap().to_owned();
@@ -231,7 +231,7 @@ async fn admins_issue_rotate_and_revoke_narrow_evaluator_tokens_without_restart(
     assert_ne!(stored, secret);
 
     let version = format!("{}/versions/{}", f.root(), f.candidate);
-    for token in [&secret, "static-evaluate", "static-writer"] {
+    for token in [&secret, "static-reader", "static-writer"] {
         let (s, metadata) = call(&f.app, "GET", &version, As::Machine(token), Value::Null).await;
         assert_eq!(s, StatusCode::OK, "{metadata}");
         assert_eq!(metadata["id"], f.candidate.to_string());
@@ -277,11 +277,11 @@ async fn admins_issue_rotate_and_revoke_narrow_evaluator_tokens_without_restart(
         .0,
         StatusCode::OK
     );
-    // Evaluate never publishes, promotes, authors versions or changes channels.
+    // Read never publishes, promotes, authors versions or changes channels.
     let promote = format!("{}/channels/stable/releases", f.root());
     let release =
         json!({"versionId":f.candidate,"expectedRevision":"1","unevaluatedReason":"fixture"});
-    for who in [As::Machine(&successor), As::Machine("static-evaluate")] {
+    for who in [As::Machine(&successor), As::Machine("static-reader")] {
         assert_eq!(
             call(&f.app, "POST", &promote, who, release.clone()).await.0,
             StatusCode::FORBIDDEN

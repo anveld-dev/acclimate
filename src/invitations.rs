@@ -308,7 +308,11 @@ pub async fn invitation_worker(s: AppState) -> Result<(), sqlx::Error> {
             continue;
         };
         let row=sqlx::query("UPDATE workspace_invitations SET delivery_status='sending',attempts=attempts+1 WHERE id=(SELECT id FROM workspace_invitations WHERE status='pending' AND expires_at>now() AND delivery_status='queued' AND next_attempt_at<=now() ORDER BY next_attempt_at LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *").fetch_optional(&s.db).await?;
+        let alert = mail.claim_learning_alert(&s.db).await?;
         drop(permit);
+        if let Some(alert) = alert {
+            mail.deliver_learning_alert(&s.db, alert).await?;
+        }
         if let Some(row) = row {
             let id = row.get::<Uuid, _>("id");
             let workspace: String = sqlx::query_scalar("SELECT name FROM projects WHERE id=$1")

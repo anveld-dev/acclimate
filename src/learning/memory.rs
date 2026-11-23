@@ -156,8 +156,8 @@ pub(super) async fn write_back(tx: &mut Tx<'_>, round: &Pins) -> Result<i32, sql
             "Memory revision moved for round {round_id}"
         )));
     }
-    let (sample, adopted_version, held_out_digest): (i16, Uuid, String) = sqlx::query_as(
-        "SELECT adopted_sample,adopted_version_id,held_out->>'digest' FROM learning_rounds WHERE id=$1 AND decision='adopted'")
+    let (sample, adopted_version): (i16, Uuid) = sqlx::query_as(
+        "SELECT adopted_sample,adopted_version_id FROM learning_rounds WHERE id=$1 AND decision='adopted'")
         .bind(round_id).fetch_one(&mut **tx).await?;
     let candidate = candidates(tx, round_id)
         .await?
@@ -204,7 +204,7 @@ pub(super) async fn write_back(tx: &mut Tx<'_>, round: &Pins) -> Result<i32, sql
         .ok_or_else(|| invariant("Missing domain pin"))?;
     let mut provenance = json!({
         "domain": domain, "benchmark": round.setting["benchmark"], "policyModel": round.setting["policyModel"],
-        "round": round.number, "evolveRevision": round.evolve_revision, "heldOutDigest": held_out_digest,
+        "round": round.number, "evolveRevision": round.evolve_revision,
         "optimizerModel": round.optimizer_model
     });
     if let Some(effort) = &round.optimizer_reasoning_effort {
@@ -243,12 +243,8 @@ pub(super) async fn get(
         return Err(invalid("Invalid memory revision"));
     }
     let bundle = path(&bundle)?;
-    let (mut tx, actor) = actor_tx(&s, &headers, &project, "read").await?;
+    let (mut tx, _) = actor_tx(&s, &headers, &project, "read").await?;
     let row = require_loop(&mut tx, &project, bundle, false).await?;
-    // Improvement memory is optimizer-only: operators read it, the app principal does not.
-    if actor.principal == row.app_principal {
-        return Err(denied());
-    }
     let revision = query.revision.unwrap_or(row.memory_revision);
     if revision > row.memory_revision {
         return Err(missing("Memory revision not found"));

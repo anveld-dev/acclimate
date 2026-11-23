@@ -43,7 +43,7 @@
     "deploy/keycloak/acclimate-realm.json": "cfbde0e6cf14f0c903bcb45b0e2746ead36ca254a7b25536f6b5b5fea46a92fc",
     "deploy/mailpit.md": "ecc3402d40cdbe99da3b21d8d523bd95308bcd2b03ab39e6342ce3f3019ee8a4",
     "docs/architecture/central-learning/README.md": "62a911bf01b0277f720c6ed3f7ce8a4603c9f37cef00710c13c64f40e555f69f",
-    "docs/architecture/central-learning/api-and-data.md": "607cb4685fcbd2f47fd561feedd521face9e5fdf99a4a1e05dc7852bf9a2d169",
+    "docs/architecture/central-learning/api-and-data.md": "bf9524f4524b2bb397b3399aa52ac2d24fd6f245f5c5940a8198a03dafb613e1",
     "docs/architecture/central-learning/executor.md": "475017de582bda78f061bae8e2558f9e0d8c9801d09bf9e512b687eacd3b0ddd",
     "docs/architecture/central-learning/experience.md": "ebef21c7ef971fba13554bad4af9baebc0ec61a72b494d04175bb1e65a368cc3",
     "docs/architecture/central-learning/loop.md": "996a0692f2d0becca03ac8fb2fdc986ec0fe42588d87c680b998038b6a48ec60",

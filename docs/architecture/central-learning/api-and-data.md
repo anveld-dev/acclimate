@@ -103,6 +103,22 @@ Bodies are JSON with camelCase fields. The lease route takes the executor token 
 
 Error codes are `gateway-upstream`, `sandbox-start` and `executor`. An error result is accepted from `running` or `grading`. A rollout that stopped on a limit still posts its output and then a failing verdict.
 
+**Judge votes.** A `criteria` verdict also carries `votes`, the pass or fail of each judge run in order, and `reasons` holds the judge's written reason per criterion from the majority run. `passed` is the majority of `votes`.
+
+**Grade leases.** The admission check grades a given output with no agent run. The lease has `kind: "grade"`, no `bundle`, `input` or `harness`, and adds `output` (the reference answer or an empty string), `grader`, `judgeModel` and `judgeRuns`. The executor starts no sandbox, skips the output call and posts a result.
+
+**Conversion leases.** The lease has `kind: "conversion"`, with `judgeModel`, `provider`, `limits` and `material: {format, rows}`, where `format` is `rows` or `conversations` and each row keeps its `row` number and `source`. The executor starts no sandbox, calls the judge model through the gateway and posts:
+
+```json
+{"cards": [{"row": 1, "group": "refunds-oct.xlsx#1", "input": "…",
+            "grader": {"type": "exact", "expected": "…"}, "criteriaDrafted": false}],
+ "setAside": [{"row": 7, "reason": "no-reference"}],
+ "judgeLog": [],
+ "tokens": {"judge": {"input": 0, "output": 0}}}
+```
+
+Every card names a source row, and the service rejects a card whose `row` was not in the material.
+
 **Gateway log.** `gatewayLog` and `judgeLog` are lists of `{at, route, model, status, request, response, usage}`, one entry per upstream call, with bodies as sent and received. The provider key is never in an entry.
 
 ## Rights

@@ -464,7 +464,7 @@ class CentralLearning(unittest.TestCase):
         imported = upload("convert.csv", "question,answer\nconverted,answer\nmissing,\n")
         receipt = poll(lambda: api("GET", "/tasks/imports/" + imported, machine=True),
                        lambda v: v["status"] == "completed")
-        self.assertEqual((receipt["converted"], receipt["setAside"], receipt["pending"]), (1, 1, 0))
+        self.assertEqual((receipt["converted"], receipt["setAsideCount"], receipt["pending"]), (1, 1, 0))
         self.assertEqual(sorted(conversions), [2, 2, 3])
         poll(cards, lambda rows: {r["input"] for r in rows if r["source"] == "import"
                               and r["admission"] == "admitted" and isinstance(r["input"], str)}
@@ -644,7 +644,10 @@ class CentralLearning(unittest.TestCase):
         self.assertEqual(adopted["adoptedVersionId"], kept["parentVersionId"])
         self.assertTrue(kept["incumbentReused"])
         self.assertEqual(h.call("GET", base + "/memory")["currentRevision"], 1)
-        self.assertEqual(h.call("GET", base + "/usage")["items"][0]["rollouts"], 300)
+        self.assertEqual(h.sql("SELECT count(*) FROM learning_rollouts WHERE evaluation_id IS NOT NULL"), "300")
+        attempts = int(h.sql("SELECT sum(attempts) FROM learning_rollouts"))
+        days = h.call("GET", base + "/usage")["items"]
+        self.assertEqual(sum(day["rollouts"] for day in days), attempts)
         print(f"Completed rounds {adopted['id']} and {kept['id']}; released {adopted['adoptedVersionId']}")
 
     def test_crash_and_retry(self):

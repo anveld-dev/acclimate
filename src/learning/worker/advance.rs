@@ -93,7 +93,11 @@ async fn proposing(tx: &mut Tx<'_>, row: &LoopRow, round: &Pins) -> Result<(), s
         None => {
             let patch = json!({"edits":output["edits"],"files":output["files"]});
             let (_, bytes, parent_digest) = rebuild(tx, round, &patch).await?;
-            if crate::digest(&bytes) == parent_digest {
+            let digest = crate::digest(&bytes);
+            let blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM learning_blocked_versions WHERE (project_id,bundle_id,digest)=($1,$2,$3))").bind(&row.project_id).bind(row.bundle_id).bind(&digest).fetch_one(&mut **tx).await?;
+            if blocked {
+                reason = Some("blocked-version")
+            } else if digest == parent_digest {
                 reason = Some("no-change");
             }
             changes = Some(patch);
@@ -180,21 +184,28 @@ async fn screening(tx: &mut Tx<'_>, row: &LoopRow, round: &Pins) -> Result<(), s
 }
 
 async fn queue_survivor(tx: &mut Tx<'_>, round: &Pins) -> Result<bool, sqlx::Error> {
-    let survivor: Option<Candidate> = sqlx::query_as("SELECT * FROM learning_candidates
+    let (survivor, payload_bytes, digest) = loop {
+        let survivor: Option<Candidate> = sqlx::query_as("SELECT * FROM learning_candidates
         WHERE round_id=$1 AND status='generated' AND screen->>'verdict'='evaluate' ORDER BY sample LIMIT 1")
         .bind(round.id).fetch_optional(&mut **tx).await?;
-    let Some(survivor) = survivor else {
-        return Ok(false);
+        let Some(survivor) = survivor else {
+            return Ok(false);
+        };
+        let changes = survivor
+            .changes
+            .as_ref()
+            .ok_or_else(|| invariant("Missing survivor changes"))?;
+        let (payload, bytes, _) = rebuild(tx, round, changes).await?;
+        compatibility::validate_in_tx(tx, &round.project_id, round.bundle_id, &payload)
+            .await
+            .map_err(|error| invariant(error.2))?;
+        let digest = crate::digest(&bytes);
+        let blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM learning_blocked_versions WHERE (project_id,bundle_id,digest)=($1,$2,$3))").bind(&round.project_id).bind(round.bundle_id).bind(&digest).fetch_one(&mut **tx).await?;
+        if !blocked {
+            break (survivor, bytes, digest);
+        }
+        sqlx::query("UPDATE learning_candidates SET status='dropped',drop_reason='blocked-version' WHERE (round_id,sample)=($1,$2)").bind(round.id).bind(survivor.sample).execute(&mut **tx).await?;
     };
-    let changes = survivor
-        .changes
-        .as_ref()
-        .ok_or_else(|| invariant("Missing survivor changes"))?;
-    let (payload, bytes, _) = rebuild(tx, round, changes).await?;
-    compatibility::validate_in_tx(tx, &round.project_id, round.bundle_id, &payload)
-        .await
-        .map_err(|error| invariant(error.2))?;
-    let digest = crate::digest(&bytes);
     let version = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO versions(id,project_id,bundle_id,parent_version_id,digest,payload,created_by)
@@ -205,7 +216,7 @@ async fn queue_survivor(tx: &mut Tx<'_>, round: &Pins) -> Result<bool, sqlx::Err
     .bind(round.bundle_id)
     .bind(round.parent_version_id)
     .bind(&digest)
-    .bind(bytes)
+    .bind(payload_bytes)
     .execute(&mut **tx)
     .await?;
     let evaluation = queue(
@@ -353,6 +364,15 @@ async fn keep(
     let (version, _, digest) = channel_head(tx, row, &round.channel).await?;
     sqlx::query("UPDATE learning_rounds SET state='scoring_held_out',decision='kept',reason=$2,selection=$3 WHERE id=$1")
         .bind(round.id).bind(reason).bind(selection).execute(&mut **tx).await?;
-    queue(tx, round.id, version, &digest, None).await?;
+    let retained = queue(tx, round.id, version, &digest, None).await?;
+    sqlx::query("UPDATE learning_evaluations dst SET status='scored',report=src.report,score=src.score,started_at=now(),attempt_id='service:reuse'
+        FROM (SELECT e.report,e.score FROM learning_evaluations e JOIN learning_rounds r ON r.id=e.round_id
+              JOIN learning_rounds current ON current.id=$2
+              WHERE (r.project_id,r.bundle_id)=(current.project_id,current.bundle_id) AND r.number<current.number
+              AND r.held_out=current.held_out AND r.task_revision=current.task_revision
+              AND r.task_model IS NOT DISTINCT FROM current.task_model AND r.judge_model IS NOT DISTINCT FROM current.judge_model
+              AND r.runtime IS NOT DISTINCT FROM current.runtime AND e.digest=$3 AND e.role='retained' AND e.measurement='initial'
+              AND e.status='scored' ORDER BY r.number DESC LIMIT 1) src WHERE dst.id=$1")
+        .bind(retained).bind(round.id).bind(digest).execute(&mut **tx).await?;
     Ok(())
 }

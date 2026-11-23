@@ -66,12 +66,12 @@ List live evolve cases in ascending ASCII case ID order. Use `next` as the exclu
 
 The evaluator keeps the held-out examples in its own store. To compute its commitment, hash the canonical JSON of each case's input and expected values to lowercase SHA-256 hex. Sort the resulting `{caseId, input, expected}` records by case ID, encode the array with the same canonical JSON encoder, hash it with SHA-256 and add the `sha256:` prefix. The [shared digest fixture](fixtures/learning-held-out-v1.json) contains examples.
 
-The evaluator verifies the digest and count against the round's commitment before scoring. If they differ, report the error `learning.held_out_mismatch`. Held-out rollouts accept only `score` and `passed`. Reader routes return aggregate evaluation scores and progress but omit held-out case IDs and per-case results. Only the authenticated evaluator receives its previously reported IDs when resuming an assignment.
+The evaluator verifies the digest and count against the round's commitment before scoring. If they differ, report the error `learning.held_out_mismatch`. Held-out rollouts accept only `score` and `passed`. Reader routes return aggregate evaluation scores and progress but omit held-out case IDs and per-case results. Evolve assignments include previously reported IDs. For held-out assignments the evaluator can replay its locally journaled rollout results.
 
 ## Evaluator protocol
 
 1. Poll work for queued or running evaluations, including while the loop is paused. A stopped loop's work feed is empty.
-2. Persist an attempt ID of 1 to 128 bytes and call start with `{attemptId}`. A restart uses the same attempt and skips `reportedCaseIds`. A different attempt cannot take over a running or scored evaluation. Evolve assignments carry pinned cases and held-out assignments carry the pinned commitment.
+2. Persist an attempt ID of 1 to 128 bytes and call start with `{attemptId}`. A restart uses the same attempt and skips the evolve IDs in `reportedCaseIds`. A different attempt cannot take over a running or scored evaluation. Evolve assignments carry pinned cases and held-out assignments carry the pinned commitment.
 3. Report one or more complete cases as `{attemptId, cases: [{caseId, rollouts}]}`. Every case has five rollouts with numeric `score` from 0 to 1 and boolean `passed`. Evolve rollouts may carry string or null `trace` and `error` fields, bounded by the 2 MiB request limit. Three passing rollouts make a case pass. The evaluation score is the equal-case mean of rollout scores.
 4. The final case marks the evaluation `scored`. Submit `{attemptId, error}` to mark it `failed`, with an error of up to 1 KiB. A running evaluation accepts an identical stored case again and rejects changes to a stored case.
 5. Stop serving work when the item leaves the feed. Stop cancels open evaluations. Queue and run deadlines mark them failed after `ACCLIMATE_LEARNING_EVALUATION_QUEUE_SECONDS` (default 604,800) and `ACCLIMATE_LEARNING_EVALUATION_SECONDS` (default 86,400), respectively.
@@ -101,3 +101,15 @@ See the [memory fixture](fixtures/learning-memory-v1.json) for a sample response
 Enrollment, status changes and evolve mutations take an optional `Idempotency-Key`. Outcomes use the body UUID as a durable receipt key and replay the same result for the same request. Reusing an outcome ID with a different body conflicts. Start and report require `Idempotency-Key`. Start always returns current assignment progress on a valid replay. Report keys replay the original acknowledged evaluation within the command retention window.
 
 Errors include `400 invalid_content`, `401 unauthenticated`, `403 denied`, `404 not_found` and `409 learning_conflict`. Unknown evaluations, including an evaluation from another bundle, fail closed with 404. Request bodies above 2 MiB return 413.
+
+## Service-side controls
+
+A signed-in workspace administrator configures the workspace model provider with `PUT /v1/workspaces/{workspaceId}/model-provider` and a JSON body containing `baseUrl`, `allowedModels` and `apiKey`. Readers can GET the same route to see the endpoint, allowed models and `hasKey`. The key is write-only.
+
+Loop enrollment accepts distinct `taskModel` and `judgeModel` from the allowed list, and a positive `maxRoundsPerDay` (default 4). The service fills `setting.policyModel` from the task model. Central enrollments begin paused. Start with `POST /start` after both splits have at least 20 admitted tasks. A running loop started this way pauses with `tasks-required` if either count falls below 20. An active round can finish. Legacy evaluator enrollments that have never used Start still run with their evaluator cases.
+
+The worker pins both models and the task revision. A round records its trigger as `start`, `resume`, `adoption`, `task-change` or `retry`. After two keeps the loop waits for new evidence. A change must affect at least five evolve tasks and at least ten percent of live evolve tasks. The rolling 24-hour cap leaves a triggered round waiting until capacity opens. Loop GET returns `waiting`, `admittedEvolve`, `admittedHeldOut` and the aggregate regression `alert`. The starting thresholds are shared by all bundles.
+
+Round detail includes candidate changes, diagnosis and evolve evaluations. Matching incumbent measurements are copied into the next round and marked by `incumbentReused`. The daily `GET /usage` entries use UTC dates and report rounds, rollouts and provider-reported optimizer, task and judge token totals. The flagged task filter selects evolve tasks with inconsistent rollout verdicts, rollout errors, or no passing candidate in two or more measured rounds since their last edit.
+
+A held-out drop raises a score-and-count alert. If an adoption drops at least 0.10 with two or more pass-to-fail flips, the service measures the parent and adoption again and restores the parent if both thresholds hold again and the channel still points at that release. Operators can request a rollback with `POST /rollback` and `{roundId, note?}`. The removed digest is blocked for future candidates. Historical decisions and memory remain append-only.

@@ -78,7 +78,7 @@ async fn model(
             };
             let (status, output) = script(n, &data);
             if status.is_success() {
-                Json(json!({"choices":[{"finish_reason":"stop","message":{"content":output.to_string()}}]})).into_response()
+                Json(json!({"usage":{"total_tokens":17},"choices":[{"finish_reason":"stop","message":{"content":output.to_string()}}]})).into_response()
             } else {
                 (status, Json(output)).into_response()
             }
@@ -184,7 +184,9 @@ async fn adoption_releases_only_selected_sample_and_merges_memory_across_rounds(
     prepare(&mut f).await;
     let mut prior_digest = Value::Null;
     for n in 1..=2 {
-        let start = incumbent(&f, n).await;
+        if n == 1 {
+            incumbent(&f, n).await;
+        }
         for sample in 1..=5 {
             let item = f.item("evolve", n).await;
             assert_eq!(item["sample"], sample);
@@ -209,7 +211,8 @@ async fn adoption_releases_only_selected_sample_and_merges_memory_across_rounds(
             round["adoptedVersionId"],
             round["candidates"][1]["versionId"]
         );
-        assert_ne!(round["adoptedVersionId"], start["versionId"]);
+        assert_ne!(round["adoptedVersionId"], round["parentVersionId"]);
+        assert_eq!(round["incumbentReused"], n == 2);
         let memory = f.ok("GET", "/memory", "reader", None, Value::Null).await;
         assert_eq!(memory["currentRevision"], n);
         assert_eq!(
@@ -224,8 +227,18 @@ async fn adoption_releases_only_selected_sample_and_merges_memory_across_rounds(
         assert_eq!(problem["attempts"].as_array().unwrap().len(), n as usize);
         let attempt = &problem["attempts"][n as usize - 1];
         assert_eq!(attempt["sample"], 2);
-        assert_eq!(attempt["fixed"], json!(["a"]));
-        assert_eq!(attempt["missed"], json!(["b"]));
+        assert_eq!(
+            attempt["fixed"],
+            if n == 1 { json!(["a"]) } else { json!([]) }
+        );
+        assert_eq!(
+            attempt["missed"],
+            if n == 1 {
+                json!(["b"])
+            } else {
+                json!(["a", "b"])
+            }
+        );
         assert_eq!(attempt["passed"], 5);
         assert_eq!(attempt["total"], 10);
         assert_eq!(
@@ -270,11 +283,13 @@ async fn adoption_releases_only_selected_sample_and_merges_memory_across_rounds(
                 .all(|data| *data == calls[offset])
         );
     }
-    for request in calls.iter() {
-        assert_eq!(
-            request["feedback"]["cases"][0]["rollouts"][0]["trace"],
-            "evolve <trace>"
-        );
+    for (i, request) in calls.iter().enumerate() {
+        if i < 7 {
+            assert_eq!(
+                request["feedback"]["cases"][0]["rollouts"][0]["trace"],
+                "evolve <trace>"
+            );
+        }
         assert!(request["feedback"]["cases"][0].get("expected").is_none());
         assert!(request.get("heldOut").is_none());
     }
@@ -414,9 +429,28 @@ async fn provider_failures_pause_after_three_rounds_without_format_retries() {
     .await;
     prepare(&mut f).await;
     for number in 1..=3 {
-        let item = incumbent(&f, number).await;
+        if number == 1 {
+            incumbent(&f, number).await;
+        }
+        let page = f
+            .wait_for("/rounds", "reader", |p| {
+                p["items"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|r| r["number"] == number && r["state"] == "failed")
+            })
+            .await;
+        let id = page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["number"] == number)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap();
         let round = f
-            .wait_for(&round_route(&item), "reader", |r| r["state"] == "failed")
+            .ok("GET", &format!("/rounds/{id}"), "reader", None, Value::Null)
             .await;
         assert_eq!(round["reason"], "optimizer-unavailable");
         assert_eq!(round["evaluations"].as_array().unwrap().len(), 1);
@@ -869,7 +903,7 @@ async fn history_keeps_all_same_setting_rounds_and_omits_held_out_data() {
         '{\"edits\":[],\"files\":[]}', '{\"clean\":true,\"findings\":[]}'
         FROM learning_rounds WHERE bundle_id=$1")
         .bind(f.bundle).execute(&f.state.db).await.unwrap();
-    sqlx::query("UPDATE learning_loops SET next_round=62 WHERE bundle_id=$1")
+    sqlx::query("UPDATE learning_loops SET next_round=62,resumed_at=now(),max_rounds_per_day=65 WHERE bundle_id=$1")
         .bind(f.bundle)
         .execute(&f.state.db)
         .await
@@ -957,4 +991,103 @@ async fn restart_with_another_model_leaves_the_pinned_round_unmixed() {
     .await
     .unwrap();
     assert_eq!(errors, vec!["model changed"; 5]);
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn held_out_drops_alert_and_only_confirmed_clear_drops_revert() {
+    for clear in [false, true] {
+        let mut f = Fixture::new().await;
+        let _server=model(&mut f,|n,data|(StatusCode::OK,match n {
+            5=>screen(data,true),
+            11=>json!({"samples":data["candidates"].as_array().unwrap().iter().map(|c| json!({"sample":c["sample"],"reason":"Screened","verdict":if c["sample"]==1 {"evaluate"}else{"skip"}})).collect::<Vec<_>>()}),
+            12=>json!({"decision":"adopt","sample":1,"reason":"Better evolve results"}),
+            _=>proposal("Regression fixture candidate","Review lacks structure"),
+        })).await;
+        let mut settings = enrollment();
+        settings["heldOut"]["cases"] = json!(2);
+        settings["maxRoundsPerDay"] = json!(2);
+        f.ok("PUT", "", "admin", None, settings.clone()).await;
+        f.seed().await;
+        f.spawn_worker();
+        incumbent(&f, 1).await;
+        let held = f.item("heldOut", 1).await;
+        let before = [
+            result("held-out-sentinel-1", 1.0),
+            result("held-out-sentinel-2", 1.0),
+        ];
+        evaluate(&f, &held, &before).await;
+        let candidate = f.item("evolve", 2).await;
+        assert_eq!(candidate["role"], "candidate");
+        evaluate(&f, &candidate, &[result("a", 1.0), result("b", 1.0)]).await;
+        let held = f.item("heldOut", 2).await;
+        let score = if clear { 0.0 } else { 0.95 };
+        let after = [
+            result("held-out-sentinel-1", score),
+            result("held-out-sentinel-2", score),
+        ];
+        evaluate(&f, &held, &after).await;
+        if clear {
+            for (version, cases) in [
+                (json!(f.version), &before),
+                (held["versionId"].clone(), &after),
+            ] {
+                let confirm = f.item("heldOut", 2).await;
+                assert_eq!(confirm["versionId"], version);
+                evaluate(&f, &confirm, cases).await;
+            }
+        }
+        let state = f
+            .wait_for("", "reader", |v| v["waiting"] == "daily-cap")
+            .await;
+        assert_eq!(state["status"], "running");
+        assert_eq!(state["alert"]["score"], score);
+        assert_eq!(state["rounds"][0]["decision"], "adopted");
+        assert!(!state.to_string().contains("held-out-sentinel"));
+        let head: Uuid = sqlx::query_scalar(
+            "SELECT version_id FROM channels WHERE bundle_id=$1 AND name='stable'",
+        )
+        .bind(f.bundle)
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap();
+        assert_eq!(head == f.version, clear);
+        if !clear {
+            f.ok(
+                "POST",
+                "/rollback",
+                "admin",
+                None,
+                json!({"roundId":held["roundId"],"note":"restore baseline"}),
+            )
+            .await;
+        }
+        settings["maxRoundsPerDay"] = json!(3);
+        f.ok("PUT", "", "admin", None, settings).await;
+        let third = f
+            .wait_for("/rounds", "reader", |p| {
+                p["items"][0]["number"] == 3 && p["items"][0]["decision"] == "kept"
+            })
+            .await;
+        let detail = f
+            .ok(
+                "GET",
+                &format!("/rounds/{}", third["items"][0]["id"].as_str().unwrap()),
+                "reader",
+                None,
+                Value::Null,
+            )
+            .await;
+        assert_eq!(detail["trigger"], "adoption");
+        assert!(
+            detail["candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|c| c["dropReason"] == "blocked-version")
+        );
+        assert!(!detail.to_string().contains("held-out-sentinel"));
+        let usage = f.ok("GET", "/usage", "reader", None, Value::Null).await;
+        assert_eq!(usage["items"][0]["optimizerTokens"], 18 * 17);
+    }
 }

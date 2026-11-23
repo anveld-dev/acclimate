@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 use sqlx::{FromRow, Postgres, Transaction};
 use uuid::Uuid;
 
+mod controls;
 mod evaluations;
 mod evolve;
 mod history;
@@ -53,6 +54,13 @@ pub(crate) fn routes() -> Router<AppState> {
             &format!("{PREFIX}/held-out-tasks/export"),
             get(tasks::export),
         )
+        .route(
+            "/v1/workspaces/{project}/model-provider",
+            get(controls::provider).put(controls::set_provider),
+        )
+        .route(&format!("{PREFIX}/usage"), get(controls::usage))
+        .route(&format!("{PREFIX}/rollback"), post(controls::rollback))
+        .route(&format!("{PREFIX}/start"), post(start))
         .route(PREFIX, get(inspect).put(enroll))
         .route(&format!("{PREFIX}/pause"), post(pause))
         .route(&format!("{PREFIX}/resume"), post(resume))
@@ -140,6 +148,14 @@ struct LoopRow {
     held_out: Value,
     evolve_revision: i64,
     memory_revision: i64,
+    task_revision: i64,
+    task_model: Option<String>,
+    judge_model: Option<String>,
+    max_rounds_per_day: i32,
+    started_at: Option<chrono::DateTime<chrono::Utc>>,
+    resumed_at: Option<chrono::DateTime<chrono::Utc>>,
+    waiting: Option<String>,
+    alert: Option<Value>,
     next_round: i32,
     failed_rounds: i32,
     enrolled_by: String,
@@ -216,15 +232,20 @@ async fn audit(
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Enrollment {
     channel: String,
+    #[serde(default)]
     app_principal_id: String,
+    task_model: Option<String>,
+    judge_model: Option<String>,
+    max_rounds_per_day: Option<i32>,
     setting: Setting,
-    held_out: HeldOut,
+    held_out: Option<HeldOut>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Setting {
     domain: String,
     benchmark: String,
+    #[serde(default)]
     policy_model: String,
 }
 #[derive(Deserialize)]
@@ -242,12 +263,35 @@ async fn enroll(
 ) -> Reply {
     let bundle = path(&bundle)?;
     let (mut tx, actor) = actor_tx(&s, &h, &project, "promote").await?;
-    let request = body(raw)?;
-    let input: Enrollment = parse(&request)?;
+    let mut request = body(raw)?;
+    let mut input: Enrollment = parse(&request)?;
+    let central = input.task_model.is_some();
+    if input.task_model.is_some() != input.judge_model.is_some()
+        || input.max_rounds_per_day.is_some_and(|v| v < 1)
+    {
+        return Err(invalid("Supply both models and a positive daily cap"));
+    }
+    if let (Some(task), Some(judge)) = (&input.task_model, &input.judge_model) {
+        let allowed: Option<Vec<String>> = sqlx::query_scalar(
+            "SELECT allowed_models FROM workspace_model_providers WHERE project_id=$1 FOR SHARE",
+        )
+        .bind(&project)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(db)?;
+        if task == judge || !allowed.is_some_and(|m| m.contains(task) && m.contains(judge)) {
+            return Err(invalid("Choose two different allowed provider models"));
+        }
+        input.setting.policy_model = task.clone();
+        request["setting"]["policyModel"] = json!(task);
+    }
+    if input.held_out.is_none() && central {
+        request["heldOut"] = json!({});
+    }
     if !request["setting"].is_object()
         || !request["heldOut"].is_object()
         || !crate::channels::valid_channel(&input.channel)
-        || input.app_principal_id.is_empty()
+        || (!central && input.app_principal_id.is_empty())
         || input.app_principal_id.len() > 1024
         || [
             &input.setting.domain,
@@ -256,8 +300,9 @@ async fn enroll(
         ]
         .iter()
         .any(|s| s.trim().is_empty() || s.len() > 256 || s.chars().any(char::is_control))
-        || !valid_digest(&input.held_out.digest)
-        || !(1..=10_000).contains(&input.held_out.cases)
+        || input.held_out.as_ref().map_or(!central, |held| {
+            !valid_digest(&held.digest) || !(1..=10_000).contains(&held.cases)
+        })
     {
         return Err(invalid("Invalid learning enrollment"));
     }
@@ -286,7 +331,7 @@ async fn enroll(
             && g.principal_id == input.app_principal_id
             && auth::rights_allow(&g.rights, "evaluate")
     });
-    if !grant {
+    if !grant && !input.app_principal_id.is_empty() {
         let machine: Option<Vec<String>> = sqlx::query_scalar("SELECT rights FROM machine_tokens WHERE (project_id,principal_id)=($1,$2) AND revoked_at IS NULL AND expires_at>now() FOR SHARE")
             .bind(&project).bind(&input.app_principal_id).fetch_optional(&mut *tx).await.map_err(db)?;
         if !machine.is_some_and(|rights| auth::rights_allow(&rights, "evaluate")) {
@@ -311,10 +356,10 @@ async fn enroll(
         return Err(invalid("Release a version on the learning channel first"));
     }
     if existing.is_none() {
-        sqlx::query("INSERT INTO learning_loops(project_id,bundle_id,channel,app_principal,setting,held_out,enrolled_by)
-                     VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(project_id,bundle_id) DO NOTHING")
+        sqlx::query("INSERT INTO learning_loops(project_id,bundle_id,channel,app_principal,setting,held_out,enrolled_by,status,pause_reason)
+                     VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $8 THEN 'paused' ELSE 'running' END,CASE WHEN $8 THEN 'operator' END) ON CONFLICT(project_id,bundle_id) DO NOTHING")
             .bind(&project).bind(bundle).bind(&input.channel).bind(&input.app_principal_id)
-            .bind(&request["setting"]).bind(&request["heldOut"]).bind(&actor.principal)
+            .bind(&request["setting"]).bind(&request["heldOut"]).bind(&actor.principal).bind(central)
             .execute(&mut *tx).await.map_err(db)?;
     }
     let row = match existing {
@@ -327,6 +372,15 @@ async fn enroll(
             .await?
     {
         return Ok(Json(receipt));
+    }
+    if let Some(task) = row.task_model.as_ref().filter(|_| !central) {
+        request["setting"]["policyModel"] = json!(task)
+    }
+    if central && request.get("appPrincipalId").is_none() {
+        input.app_principal_id.clone_from(&row.app_principal);
+    }
+    if central && input.held_out.is_none() {
+        request["heldOut"] = row.held_out.clone();
     }
     let moves_work = row.channel != input.channel
         || row.app_principal != input.app_principal_id
@@ -341,12 +395,14 @@ async fn enroll(
     }
     if moves_work || row.setting != request["setting"] || row.status == "stopped" {
         sqlx::query("UPDATE learning_loops SET channel=$3, app_principal=$4, setting=$5, held_out=$6,
-                      enrolled_by=$7, status=CASE WHEN status='stopped' THEN 'running' ELSE status END, updated_at=now()
+                      enrolled_by=$7, status=CASE WHEN status='stopped' AND $8=false AND started_at IS NULL THEN 'running' ELSE status END, updated_at=now()
                      WHERE (project_id,bundle_id)=($1,$2)")
             .bind(&project).bind(bundle).bind(&input.channel).bind(&input.app_principal_id)
-            .bind(&request["setting"]).bind(&request["heldOut"]).bind(&actor.principal)
+            .bind(&request["setting"]).bind(&request["heldOut"]).bind(&actor.principal).bind(central)
             .execute(&mut *tx).await.map_err(db)?;
     }
+    sqlx::query("UPDATE learning_loops SET task_model=coalesce($3,task_model),judge_model=coalesce($4,judge_model),max_rounds_per_day=coalesce($5,max_rounds_per_day) WHERE (project_id,bundle_id)=($1,$2)")
+        .bind(&project).bind(bundle).bind(input.task_model).bind(input.judge_model).bind(input.max_rounds_per_day).execute(&mut *tx).await.map_err(db)?;
     let row = require_loop(&mut tx, &project, bundle, false).await?;
     let result = loop_document(&mut tx, row).await?;
     audit(
@@ -372,6 +428,7 @@ macro_rules! status_route {
         }
     };
 }
+status_route!(start);
 status_route!(pause);
 status_route!(resume);
 status_route!(stop);
@@ -394,12 +451,24 @@ async fn change_status(
     {
         return Ok(Json(receipt));
     }
+    if operation == "start"
+        || (operation == "resume" && (row.started_at.is_some() || row.task_model.is_some()))
+    {
+        if !controls::ready(&mut tx, &row).await.map_err(db)? {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "tasks-required",
+                "At least 20 admitted tasks in each split are required",
+            ));
+        }
+        sqlx::query("UPDATE learning_loops SET started_at=coalesce(started_at,now()) WHERE (project_id,bundle_id)=($1,$2)").bind(project).bind(bundle).execute(&mut *tx).await.map_err(db)?;
+    }
     let (status, reason) = match (operation, row.status.as_str()) {
         ("pause" | "resume", "stopped") => {
             return Err(conflict("Use PUT to restart a stopped loop"));
         }
         ("pause", "running") => ("paused", Some("operator")),
-        ("resume", "paused") => ("running", None),
+        ("start", _) | ("resume", "paused") => ("running", None),
         ("stop", "running" | "paused") => {
             if let Some(round) = active_round(&mut tx, project, bundle).await.map_err(db)? {
                 worker::stop_round(&mut tx, round.id).await.map_err(db)?;
@@ -409,7 +478,7 @@ async fn change_status(
         _ => (row.status.as_str(), row.pause_reason.as_deref()),
     };
     if status != row.status {
-        sqlx::query("UPDATE learning_loops SET status=$3,pause_reason=$4,updated_at=now(),
+        sqlx::query("UPDATE learning_loops SET status=$3,pause_reason=$4,updated_at=now(),waiting=NULL,resumed_at=CASE WHEN $3='running' THEN now() ELSE resumed_at END,
                       failed_rounds=CASE WHEN $3='running' THEN 0 ELSE failed_rounds END WHERE (project_id,bundle_id)=($1,$2)")
             .bind(project).bind(bundle).bind(status).bind(reason).execute(&mut *tx).await.map_err(db)?;
     }
@@ -436,23 +505,44 @@ struct RoundSummary {
     decision: Option<String>,
     reason: Option<String>,
     parent_version_id: Uuid,
+    diff: Option<Value>,
+    diagnosis: Option<Value>,
+    evolve_score: Option<f64>,
     adopted_sample: Option<i16>,
     adopted_version_id: Option<Uuid>,
     incumbent_score: Option<f64>,
     held_out_score: Option<f64>,
+    #[serde(serialize_with = "serialize_held_out_error")]
     held_out_error: Option<String>,
+    trigger: String,
+    incumbent_reused: bool,
+    task_model: Option<String>,
+    judge_model: Option<String>,
+    task_revision: i64,
     created_at: chrono::DateTime<chrono::Utc>,
     ended_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+fn serialize_held_out_error<S: serde::Serializer>(
+    value: &Option<String>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serde::Serialize::serialize(
+        &value.as_deref().map(evaluations::safe_held_out_error),
+        serializer,
+    )
+}
+
+const ROUND_SELECT:&str="SELECT r.*,c.changes AS diff,c.diagnosis,coalesce(c.evolve_score,r.incumbent_score) AS evolve_score
+    FROM learning_rounds r LEFT JOIN learning_candidates c ON (c.round_id,c.sample)=(r.id,r.adopted_sample)";
 async fn active_round(
     tx: &mut Tx<'_>,
     project: &str,
     bundle: Uuid,
 ) -> Result<Option<RoundSummary>, sqlx::Error> {
-    sqlx::query_as(
-        "SELECT * FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) AND state=ANY($3)",
-    )
+    sqlx::query_as(&format!(
+        "{ROUND_SELECT} WHERE (r.project_id,r.bundle_id)=($1,$2) AND r.state=ANY($3)"
+    ))
     .bind(project)
     .bind(bundle)
     .bind(ACTIVE_ROUND_STATES)
@@ -467,10 +557,7 @@ async fn summaries(
     before: Option<i32>,
     limit: i64,
 ) -> ApiResult<Vec<RoundSummary>> {
-    sqlx::query_as(
-        "SELECT * FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2)
-                    AND ($3::int IS NULL OR number<$3) ORDER BY number DESC LIMIT $4",
-    )
+    sqlx::query_as(&format!("{ROUND_SELECT} WHERE (r.project_id,r.bundle_id)=($1,$2) AND ($3::int IS NULL OR number<$3) ORDER BY number DESC LIMIT $4"))
     .bind(project)
     .bind(bundle)
     .bind(before)
@@ -488,7 +575,11 @@ async fn loop_document(tx: &mut Tx<'_>, row: LoopRow) -> ApiResult<Value> {
         .map_err(db)?;
     let active = active_round(tx, project, bundle).await.map_err(db)?;
     let recent = summaries(tx, project, bundle, None, 10).await?;
+    let (e, h) = controls::counts(tx, project, bundle).await.map_err(db)?;
     Ok(json!({
+        "taskModel":row.task_model,"judgeModel":row.judge_model,"taskRevision":row.task_revision,
+        "maxRoundsPerDay":row.max_rounds_per_day,"waiting":row.waiting,"alert":row.alert,
+        "admittedEvolve":e,"admittedHeldOut":h,
         "workspaceId": project, "bundleId": bundle, "status": row.status, "pauseReason": row.pause_reason,
         "channel": row.channel, "appPrincipalId": row.app_principal, "setting": row.setting, "heldOut": row.held_out,
         "evolveRevision": row.evolve_revision, "liveCases": live, "memoryRevision": row.memory_revision,
@@ -549,15 +640,16 @@ async fn get_round(
     let (bundle, round) = (path(&bundle)?, path(&round)?);
     let requested = query.evaluation.as_deref().map(path).transpose()?;
     let mut tx = auth::read_transaction(&s, &h, &project).await?;
-    let row =
-        sqlx::query("SELECT * FROM learning_rounds WHERE (project_id,bundle_id,id)=($1,$2,$3)")
-            .bind(&project)
-            .bind(bundle)
-            .bind(round)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(db)?
-            .ok_or_else(|| missing("Learning round not found"))?;
+    let row = sqlx::query(&format!(
+        "{ROUND_SELECT} WHERE (r.project_id,r.bundle_id,r.id)=($1,$2,$3)"
+    ))
+    .bind(&project)
+    .bind(bundle)
+    .bind(round)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(db)?
+    .ok_or_else(|| missing("Learning round not found"))?;
     let evals = evaluations::round_documents(&mut tx, &project, bundle, round, requested).await?;
     let mut result = serde_json::to_value(RoundSummary::from_row(&row).map_err(db)?).map_err(db)?;
     let pins = json!({

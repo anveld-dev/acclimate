@@ -113,3 +113,90 @@ CREATE TABLE learning_task_groups (
     PRIMARY KEY(project_id,bundle_id,alias),
     FOREIGN KEY(project_id,bundle_id) REFERENCES learning_loops(project_id,bundle_id)
 );
+
+-- Service-side round controls and accounting.
+ALTER TABLE learning_loops
+    ADD COLUMN task_model text,
+    ADD COLUMN judge_model text,
+    ADD COLUMN max_rounds_per_day integer NOT NULL DEFAULT 4 CHECK (max_rounds_per_day > 0),
+    ADD COLUMN started_at timestamptz,
+    ADD COLUMN resumed_at timestamptz,
+    ADD COLUMN waiting text CHECK (waiting IN ('no-new-evidence','daily-cap')),
+    ADD COLUMN alert jsonb,
+    DROP CONSTRAINT learning_loops_pause_reason_check,
+    ADD CHECK (pause_reason IN ('operator','failed-rounds','optimizer-context-too-large','tasks-required'));
+ALTER TABLE learning_rounds
+    ADD COLUMN task_revision bigint NOT NULL DEFAULT 0,
+    ADD COLUMN task_model text,
+    ADD COLUMN judge_model text,
+    ADD COLUMN trigger text NOT NULL DEFAULT 'start',
+    ADD COLUMN incumbent_reused boolean NOT NULL DEFAULT false;
+ALTER TABLE learning_candidates DROP CONSTRAINT learning_candidates_drop_reason_check,
+    ADD CHECK (drop_reason IN ('provider-failed','format-rejected','scanner-rejected','no-change','blocked-version'));
+CREATE TABLE learning_blocked_versions (
+    project_id text NOT NULL, bundle_id uuid NOT NULL, digest text NOT NULL,
+    removed_by text NOT NULL, note text, created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (project_id,bundle_id,digest),
+    FOREIGN KEY(project_id,bundle_id) REFERENCES learning_loops(project_id,bundle_id)
+);
+CREATE TABLE learning_usage (
+    project_id text NOT NULL, bundle_id uuid NOT NULL, day date NOT NULL,
+    rounds bigint NOT NULL DEFAULT 0, rollouts bigint NOT NULL DEFAULT 0,
+    optimizer_tokens bigint NOT NULL DEFAULT 0, task_tokens bigint NOT NULL DEFAULT 0, judge_tokens bigint NOT NULL DEFAULT 0,
+    PRIMARY KEY(project_id,bundle_id,day),
+    FOREIGN KEY(project_id,bundle_id) REFERENCES learning_loops(project_id,bundle_id)
+);
+CREATE FUNCTION learning_record_rollout_usage() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO learning_usage(project_id,bundle_id,day,rollouts,task_tokens,judge_tokens)
+    SELECT r.project_id,r.bundle_id,(now() AT TIME ZONE 'UTC')::date,1,
+        coalesce((NEW.tokens #>> '{task,input}')::bigint,0)+coalesce((NEW.tokens #>> '{task,output}')::bigint,0),
+        coalesce((NEW.tokens #>> '{judge,input}')::bigint,0)+coalesce((NEW.tokens #>> '{judge,output}')::bigint,0)
+    FROM learning_evaluations e JOIN learning_rounds r ON r.id=e.round_id WHERE e.id=NEW.evaluation_id
+    ON CONFLICT(project_id,bundle_id,day) DO UPDATE SET rollouts=learning_usage.rollouts+1,
+        task_tokens=learning_usage.task_tokens+excluded.task_tokens,judge_tokens=learning_usage.judge_tokens+excluded.judge_tokens;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER learning_rollout_usage AFTER UPDATE OF status ON learning_rollouts FOR EACH ROW
+    WHEN (NEW.evaluation_id IS NOT NULL AND NEW.status='scored' AND OLD.status<>'scored') EXECUTE FUNCTION learning_record_rollout_usage();
+ALTER TABLE learning_evaluations ADD COLUMN measurement text NOT NULL DEFAULT 'initial'
+    CHECK (measurement IN ('initial','confirm-parent','confirm-adoption')),
+    DROP CONSTRAINT learning_evaluations_round_id_role_sample_key,
+    ADD UNIQUE NULLS NOT DISTINCT (round_id,role,sample,measurement),
+    ADD CHECK (measurement='initial' OR role='retained');
+
+-- Evidence from real candidate evaluations only. A task edit resets its evidence.
+CREATE VIEW learning_flagged_tasks AS
+SELECT t.project_id,t.bundle_id,t.task_id,
+    CASE WHEN bool_or(errored) THEN 'rollout-error'
+         WHEN bool_or(passes BETWEEN 1 AND 4) THEN 'split-rollouts'
+         ELSE 'persistent-failure' END AS reason
+FROM learning_tasks t JOIN learning_rounds r ON (r.project_id,r.bundle_id)=(t.project_id,t.bundle_id)
+    AND r.task_revision>=t.added_revision
+JOIN learning_evaluations e ON e.round_id=r.id AND e.role='candidate' AND e.status='scored'
+CROSS JOIN LATERAL jsonb_array_elements(e.report->'cases') c
+CROSS JOIN LATERAL (
+    SELECT count(*) FILTER (WHERE v->>'passed'='true') passes,bool_or(v->>'error' IS NOT NULL) errored
+    FROM jsonb_array_elements(c->'rollouts') v
+) verdict
+WHERE t.retired_revision IS NULL AND c->>'caseId'=t.task_id
+GROUP BY t.project_id,t.bundle_id,t.task_id
+HAVING bool_or(errored OR passes BETWEEN 1 AND 4)
+    OR (count(DISTINCT r.number)>=2 AND max(passes)<3);
+
+-- Admission can finish after the round that pinned the pending task's revision.
+ALTER TABLE learning_tasks ADD COLUMN admission_revision bigint;
+ALTER TABLE learning_held_out_tasks ADD COLUMN admission_revision bigint;
+CREATE FUNCTION learning_stamp_admission() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE learning_loops SET task_revision=task_revision+1
+    WHERE (project_id,bundle_id)=(NEW.project_id,NEW.bundle_id)
+    RETURNING task_revision INTO NEW.admission_revision;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER learning_evolve_admission_revision BEFORE UPDATE OF admission ON learning_tasks
+    FOR EACH ROW WHEN (OLD.admission IS DISTINCT FROM NEW.admission AND
+        (OLD.admission='admitted' OR NEW.admission='admitted')) EXECUTE FUNCTION learning_stamp_admission();
+CREATE TRIGGER learning_held_out_admission_revision BEFORE UPDATE OF admission ON learning_held_out_tasks
+    FOR EACH ROW WHEN (OLD.admission IS DISTINCT FROM NEW.admission AND
+        (OLD.admission='admitted' OR NEW.admission='admitted')) EXECUTE FUNCTION learning_stamp_admission();

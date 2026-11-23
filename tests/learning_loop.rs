@@ -128,12 +128,17 @@ impl Fixture {
         key: Option<&str>,
         body: Value,
     ) -> (u16, Value) {
-        let mut req = Request::builder()
-            .method(method)
-            .uri(format!(
+        let uri = if suffix.starts_with("/v1/") {
+            suffix.to_owned()
+        } else {
+            format!(
                 "/v1/workspaces/{}/bundles/{}/learning{suffix}",
                 self.project, self.bundle
-            ))
+            )
+        };
+        let mut req = Request::builder()
+            .method(method)
+            .uri(uri)
             .header("content-type", "application/json");
         if let Some(session) = caller.strip_prefix("console/") {
             req = req
@@ -984,6 +989,15 @@ async fn pause_resume_stop_and_held_out_failure() {
         json!([])
     );
 
+    // A fresh case set leaves the next incumbent evaluation available to stop.
+    f.ok(
+        "POST",
+        "/evolve-cases",
+        "app",
+        None,
+        json!({"retire":["b"]}),
+    )
+    .await;
     for (number, running) in [(2, false), (3, true)] {
         let resumed = f.ok("POST", "/resume", "admin", None, Value::Null).await;
         assert_eq!(resumed["pauseReason"], Value::Null);
@@ -1035,7 +1049,7 @@ async fn pause_resume_stop_and_held_out_failure() {
         &eval_route(&item, "report"),
         "app",
         Some("both"),
-        report(&[result("a", 1.0), result("b", 1.0)]),
+        report(&[result("a", 1.0)]),
     )
     .await;
     let held = f.item("heldOut", 4).await;
@@ -1284,4 +1298,162 @@ async fn streamed_import_preserves_rows_and_returns_cards_only_to_people() {
     assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
     let body = to_bytes(res.into_body(), 4096).await.unwrap();
     assert!(std::str::from_utf8(&body).unwrap().contains("64 MiB"));
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn start_floor_pauses_on_loss_and_allows_active_round_to_finish() {
+    let mut f = Fixture::new().await;
+    f.enroll().await;
+    f.seed().await;
+    for (table, count) in [("learning_tasks", 20), ("learning_held_out_tasks", 19)] {
+        sqlx::query(&format!(r#"INSERT INTO {table}(project_id,bundle_id,task_id,"group",input,grader,source,confirmed_by,admission,added_revision)
+            SELECT $1,$2,'floor-'||i,i::text,'null','{{}}','console','operator','admitted',1 FROM generate_series(1,$3::int) i"#))
+            .bind(&f.project).bind(f.bundle).bind(count).execute(&f.state.db).await.unwrap();
+    }
+    let (status, error) = f.req("POST", "/start", "admin", None, Value::Null).await;
+    assert_eq!(status, 409);
+    assert!(error.to_string().contains("tasks-required"));
+    sqlx::query(r#"INSERT INTO learning_held_out_tasks(project_id,bundle_id,task_id,"group",input,grader,source,confirmed_by,admission,added_revision)
+        VALUES($1,$2,'secret-held-task','secret','"private"','{}','console','operator','admitted',1)"#)
+        .bind(&f.project).bind(f.bundle).execute(&f.state.db).await.unwrap();
+    let started = f.ok("POST", "/start", "admin", None, Value::Null).await;
+    assert_eq!(started["admittedHeldOut"], 20);
+    assert!(!started.to_string().contains("secret-held-task"));
+    f.spawn_worker();
+    let first = f.item("evolve", 1).await;
+    sqlx::query(
+        "UPDATE learning_tasks SET retired_revision=2 WHERE bundle_id=$1 AND task_id='floor-1'",
+    )
+    .bind(f.bundle)
+    .execute(&f.state.db)
+    .await
+    .unwrap();
+    let paused = f
+        .wait_for("", "reader", |r| r["pauseReason"] == "tasks-required")
+        .await;
+    assert_eq!(paused["activeRound"]["id"], first["roundId"]);
+    assert_eq!(paused["activeRound"]["trigger"], "start");
+    assert_eq!(
+        f.req("POST", "/resume", "admin", None, Value::Null).await.0,
+        409
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn retry_idles_then_task_change_wakes_after_rolling_cap() {
+    let mut f = Fixture::new().await;
+    let mut input = enrollment();
+    input["maxRoundsPerDay"] = json!(2);
+    f.ok("PUT", "", "admin", None, input).await;
+    f.seed().await;
+    f.spawn_worker();
+    let first = f.item("evolve", 1).await;
+    f.start(&first, "attempt").await;
+    f.ok(
+        "POST",
+        &eval_route(&first, "report"),
+        "app",
+        Some("report"),
+        report(&[result("a", 0.0), result("b", 0.0)]),
+    )
+    .await;
+    {
+        let held = f.item("heldOut", 1).await;
+        f.start(&held, "attempt").await;
+        f.ok(
+            "POST",
+            &eval_route(&held, "report"),
+            "app",
+            Some("report"),
+            report(&[result("private-id", 1.0)]),
+        )
+        .await;
+    }
+    let idle = f
+        .wait_for("", "reader", |r| r["waiting"] == "no-new-evidence")
+        .await;
+    assert_eq!(idle["rounds"][0]["trigger"], "retry");
+    assert_eq!(idle["rounds"][0]["incumbentReused"], true);
+    assert!(!idle.to_string().contains("private-id"));
+    f.ok(
+        "POST",
+        "/evolve-cases",
+        "app",
+        None,
+        json!({"cases":[case("c"),case("d"),case("e"),case("f"),case("g")]}),
+    )
+    .await;
+    f.wait_for("", "reader", |r| r["waiting"] == "daily-cap")
+        .await;
+    sqlx::query("UPDATE learning_rounds SET created_at=now()-interval '25 hours' WHERE bundle_id=$1 AND number=1").bind(f.bundle).execute(&f.state.db).await.unwrap();
+    let wake = f
+        .wait_for("", "reader", |r| {
+            r["activeRound"]["trigger"] == "task-change"
+        })
+        .await;
+    assert_eq!(wake["activeRound"]["incumbentReused"], false);
+    let usage = f.ok("GET", "/usage", "reader", None, Value::Null).await;
+    assert_eq!(usage["items"][0]["rounds"], 3);
+    assert_eq!(usage["items"][0]["rollouts"], 15);
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn model_settings_and_provider_key_custody() {
+    let f = Fixture::new().await;
+    let route = format!("/v1/workspaces/{}/model-provider", f.project);
+    let provider = json!({"baseUrl":"https://example.test/v1","allowedModels":["task","judge"],"apiKey":"private-provider-fixture"});
+    assert_eq!(
+        f.ok("GET", &route, "reader", None, Value::Null).await["hasKey"],
+        false
+    );
+    assert_eq!(
+        f.req("PUT", &route, "admin", None, provider.clone())
+            .await
+            .0,
+        403
+    );
+    let admin = format!("console/{}", session(&f, "admin").await);
+    if std::env::var_os("ACCLIMATE_PROVIDER_ENCRYPTION_KEY").is_some() {
+        let result = f.ok("PUT", &route, &admin, None, provider).await;
+        assert!(!result.to_string().contains("private-provider-fixture"));
+    } else {
+        assert_eq!(f.req("PUT", &route, &admin, None, provider).await.0, 503);
+        acclimate_service::executor::ProviderKey::from_hex(&"42".repeat(32))
+            .unwrap()
+            .store(
+                &f.state.db,
+                &f.project,
+                "https://example.test/v1",
+                &["task".into(), "judge".into()],
+                "private-provider-fixture",
+            )
+            .await
+            .unwrap();
+    }
+    let read = f.ok("GET", &route, "reader", None, Value::Null).await;
+    assert_eq!(read["allowedModels"], json!(["task", "judge"]));
+    assert_eq!(read["hasKey"], true);
+    assert!(!read.to_string().contains("private-provider-fixture"));
+    let mut settings = json!({"channel":"stable","taskModel":"task","judgeModel":"task","setting":{"domain":"support","benchmark":"v3"}});
+    assert_eq!(
+        f.req("PUT", "", "admin", None, settings.clone()).await.0,
+        400
+    );
+    settings["judgeModel"] = json!("unknown");
+    assert_eq!(
+        f.req("PUT", "", "admin", None, settings.clone()).await.0,
+        400
+    );
+    settings["judgeModel"] = json!("judge");
+    let doc = f.ok("PUT", "", "admin", None, settings).await;
+    assert_eq!(doc["status"], "paused");
+    assert_eq!(doc["setting"]["policyModel"], "task");
+    assert_eq!(doc["maxRoundsPerDay"], 4);
+    assert_eq!(
+        f.req("POST", "/start", "admin", None, Value::Null).await.0,
+        409
+    );
 }

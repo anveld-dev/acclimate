@@ -243,6 +243,9 @@ async fn decode(mut response: Response) -> Result<String, ReadError> {
     }
     let outer =
         outer.map_err(|_| ReadError::Model(ModelError::Format("Invalid provider JSON".into())))?;
+    if let Some(tokens) = outer["usage"]["total_tokens"].as_i64().filter(|v| *v >= 0) {
+        let _ = super::RESPONSE_TOKENS.try_with(|t| t.set(t.get().saturating_add(tokens)));
+    }
     match outer["choices"][0]["finish_reason"].as_str() {
         Some("stop") => outer["choices"][0]["message"]["content"]
             .as_str()

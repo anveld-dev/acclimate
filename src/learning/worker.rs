@@ -151,12 +151,22 @@ async fn advance_locked(
     row: &LoopRow,
     optimizer: Option<&dyn OptimizerModel>,
 ) -> Result<(), sqlx::Error> {
+    let below_floor = row.status == "running"
+        && row.started_at.is_some()
+        && !super::controls::ready(tx, row).await?;
+    if below_floor {
+        sqlx::query("UPDATE learning_loops SET status='paused',pause_reason='tasks-required',waiting=NULL,updated_at=now() WHERE (project_id,bundle_id)=($1,$2)").bind(&row.project_id).bind(row.bundle_id).execute(&mut **tx).await?;
+    }
     let Some(round) = active_round(tx, &row.project_id, row.bundle_id).await? else {
         if row.status == "running"
-            && evolve::live_count(tx, &row.project_id, row.bundle_id, row.evolve_revision).await?
-                > 0
+            && !below_floor
+            && (row.started_at.is_some()
+                || evolve::live_count(tx, &row.project_id, row.bundle_id, row.evolve_revision)
+                    .await?
+                    > 0)
+            && let Some(trigger) = super::controls::schedule(tx, row).await?
         {
-            start_round(tx, row, optimizer).await?;
+            start_round(tx, row, optimizer, trigger).await?;
         }
         return Ok(());
     };
@@ -169,7 +179,7 @@ async fn advance_locked(
         }
     };
     let (status, score, error): (String, Option<f64>, Option<String>) = sqlx::query_as(
-        "SELECT status,score,error FROM learning_evaluations WHERE round_id=$1 AND role=$2",
+        "SELECT status,score,error FROM learning_evaluations WHERE round_id=$1 AND role=$2 AND measurement='initial'",
     )
     .bind(round.id)
     .bind(role)
@@ -191,6 +201,9 @@ async fn advance_locked(
             .await?;
         }
         ("retained", "scored" | "failed") => {
+            if score.is_some() && super::controls::monitor(tx, row, &round).await? {
+                return Ok(());
+            }
             sqlx::query("UPDATE learning_rounds SET state='completed',ended_at=now(),held_out_score=$2,held_out_error=$3
                          WHERE id=$1 AND state='scoring_held_out'")
                 .bind(round.id).bind(score).bind(error).execute(&mut **tx).await?;
@@ -223,17 +236,18 @@ async fn start_round(
     tx: &mut Tx<'_>,
     row: &LoopRow,
     optimizer: Option<&dyn OptimizerModel>,
+    trigger: &str,
 ) -> Result<(), sqlx::Error> {
     let (version, revision, digest) = channel_head(tx, row, &row.channel).await?;
     let round = Uuid::new_v4();
     sqlx::query("INSERT INTO learning_rounds(id,project_id,bundle_id,number,state,parent_version_id,channel,
-                   channel_revision,evolve_revision,memory_revision,setting,held_out,optimizer_model,optimizer_reasoning_effort)
-                 VALUES($1,$2,$3,$4,'scoring_incumbent',$5,$6,$7,$8,$9,$10,$11,$12,$13)")
+                   channel_revision,evolve_revision,memory_revision,setting,held_out,optimizer_model,optimizer_reasoning_effort,trigger,task_revision,task_model,judge_model)
+                 VALUES($1,$2,$3,$4,'scoring_incumbent',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)")
         .bind(round).bind(&row.project_id).bind(row.bundle_id).bind(row.next_round).bind(version).bind(&row.channel)
         .bind(revision).bind(row.evolve_revision).bind(row.memory_revision).bind(&row.setting).bind(&row.held_out).bind(optimizer.map(OptimizerModel::model))
-        .bind(optimizer.and_then(OptimizerModel::reasoning_effort))
+        .bind(optimizer.and_then(OptimizerModel::reasoning_effort)).bind(trigger).bind(row.task_revision).bind(&row.task_model).bind(&row.judge_model)
         .execute(&mut **tx).await?;
-    queue(
+    let incumbent = queue(
         tx,
         round,
         version,
@@ -241,6 +255,15 @@ async fn start_round(
         Some((row.evolve_revision, None)),
     )
     .await?;
+    let reused=sqlx::query("UPDATE learning_evaluations dest SET status='scored',report=src.report,score=src.score,started_at=now(),attempt_id='service:reuse' FROM (SELECT e.report,e.score FROM learning_evaluations e JOIN learning_rounds r ON r.id=e.round_id WHERE (r.project_id,r.bundle_id)=($2,$3) AND e.digest=$4 AND e.status='scored' AND e.split='evolve' AND e.evolve_revision=$5 AND r.task_revision=$6 AND r.task_model IS NOT DISTINCT FROM $7 AND r.judge_model IS NOT DISTINCT FROM $8 AND r.runtime IS NULL ORDER BY r.number DESC LIMIT 1) src WHERE dest.id=$1")
+        .bind(incumbent).bind(&row.project_id).bind(row.bundle_id).bind(&digest).bind(row.evolve_revision).bind(row.task_revision).bind(&row.task_model).bind(&row.judge_model).execute(&mut **tx).await?;
+    if reused.rows_affected() > 0 {
+        sqlx::query("UPDATE learning_rounds SET incumbent_reused=true WHERE id=$1")
+            .bind(round)
+            .execute(&mut **tx)
+            .await?;
+    }
+    sqlx::query("INSERT INTO learning_usage(project_id,bundle_id,day,rounds) VALUES($1,$2,(now() AT TIME ZONE 'UTC')::date,1) ON CONFLICT(project_id,bundle_id,day) DO UPDATE SET rounds=learning_usage.rounds+1").bind(&row.project_id).bind(row.bundle_id).execute(&mut **tx).await?;
     sqlx::query("UPDATE learning_loops SET next_round=next_round+1,updated_at=now() WHERE (project_id,bundle_id)=($1,$2)")
         .bind(&row.project_id).bind(row.bundle_id).execute(&mut **tx).await?;
     Ok(())

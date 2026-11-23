@@ -10,7 +10,7 @@
 
 ## First release
 
-1. In workspace settings, configure an OpenAI-compatible model provider, its key and allowed models.
+1. In workspace settings, configure an OpenAI-compatible model provider, its key and allowed models. Wait for the executor to verify that each model answers and reports token usage.
 2. Open the released bundle’s **Learning** tab. Choose its channel, task model and a different judge model.
 3. Import CSV, JSONL, a spreadsheet or pasted examples. Each task pairs an input with an expected answer or grading criteria. Review the task cards and confirm held-out material. Use **Try** to inspect an executor run before starting a round.
 4. Start learning once at least 20 evolve tasks and 20 held-out tasks pass admission. The same floor applies on resume.

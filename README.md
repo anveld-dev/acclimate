@@ -21,7 +21,7 @@ The first start pulls the released images, or builds from source in 10 to 20 min
 
 ## Run a learning loop
 
-1. In workspace settings, configure an OpenAI-compatible model provider, its key and allowed models.
+1. In workspace settings, configure an OpenAI-compatible model provider, its key and allowed models. Wait for the executor to verify that each model answers and reports token usage.
 2. Open the released bundle’s **Learning** tab. Choose its channel, task model and a different judge model.
 3. Import CSV, JSONL, a spreadsheet or pasted examples. Each task pairs an input with an expected answer or grading criteria. Review the task cards and confirm held-out material. Use **Try** to inspect an executor run before starting a round.
 4. Start learning once at least 20 evolve tasks and 20 held-out tasks pass admission. The same floor applies on resume.
@@ -30,7 +30,7 @@ The executor runs each rollout in a fresh sandbox. The service scores candidates
 
 An application with workspace write access can call `job.expect(expected, { input, output })` after a production job. The SDK sends the pinned version and digest. The service assigns the task’s split and runs admission.
 
-Run the `acclimate-executor` container with a provisioned `ACCLIMATE_EXECUTOR_TOKEN` and access to the Docker socket. Build the chat runner image and configure gVisor (`runsc`) in production. Set `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` on the service to a 64-character hex key so workspace provider credentials can be encrypted at rest. [Deployment guide](deploy/README.md#rollout-executor)
+Run the `acclimate-executor` container with a provisioned token mounted through `ACCLIMATE_EXECUTOR_TOKEN_FILE` and access to the Docker socket. Build the chat runner image and configure gVisor (`runsc`) in production. Set `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` on the service to a 64-character hex key so workspace provider credentials can be encrypted at rest. [Deployment guide](deploy/README.md#rollout-executor)
 
 ## Deliver content to jobs
 

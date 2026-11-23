@@ -21,7 +21,7 @@ The `acclimate` executable provides one command. Use `acclimate pull --config /a
 
 ## Deliver a pinned version
 
-`createAcclimate(options?)` reads `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` by default. Its `job(bundleName, { channel, input?, outcomeId? })` resolves and verifies the release. Use `versionId` in place of `channel` to recreate a pinned job. The job exposes the verified `version`, an `outcomeId`, `prepare(nativePrepare)` or `prepare(destination, options?)`, and `expect(expected, { input, output }?)`. The first valid `expect` binds the input and expected value. Subsequent calls reuse the same ID and body. [Production outcomes](/docs/guides/learning-loop#report-a-production-outcome)
+`createAcclimate(options?)` reads `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` by default. Its `job(bundleName, { channel, input?, outcomeId? })` resolves and verifies the release. Use `versionId` in place of `channel` to recreate a pinned job. The job exposes the verified `version`, an `outcomeId`, `prepare(nativePrepare)` or `prepare(destination, options?)`, and `expect(expected, { input, output, grading }?)`. The first valid `expect` binds the input and expected value. Subsequent calls reuse the same ID and body. [Production outcomes](/docs/guides/learning-loop#report-a-production-outcome)
 
 Construct `AcclimateClient` with `baseUrl`, `token`, and a stable `scope` that identifies the authenticated application. Use the connection UUID as `connectionId` when resolving for a connection. Call `client.prepare` with `workspaceId`, `bundleId`, and exactly one of `channel` or `versionId`. It returns the verified `version` (its metadata is `version.version`), `directory`, `instructions`, `skillFiles`, `reportStarted()`, and `cleanup()`.
 
@@ -44,4 +44,6 @@ Use `resolveAndCache` when you want a verified version for a native plugin or yo
 
 ## Production outcomes
 
-An application with workspace write access can call `job.expect(expected, { input, output })` after a production job. The SDK sends the pinned version and digest. The service assigns the task’s split and runs admission.
+An application with workspace write access can call `job.expect(expected, { input, output, grading })` after a production job. The SDK sends the pinned version and digest. The service assigns the task’s split and runs admission. `grading` is `'exact'` or `'criteria'`, and any other value throws `AcclimateUsageError`. Without it, a non-string answer or a string of at most 80 characters on one line is compared exactly, and a longer answer is judged against criteria the judge model drafts from it. [Import shapes](/docs/guides/learning-loop#import-shapes)
+
+`AcclimateClient` also has `confirmLearningTasks(workspaceId, bundleId, taskIds)`, `recheckLearningTask(workspaceId, bundleId, id)`, `recheckLearningTasks(workspaceId, bundleId, taskIds?)` and `listLearningImports(workspaceId, bundleId)`, and `listLearningTasks` takes a `confirmed` filter. The wire types `LearningGrading`, `LearningFailureCause`, `LearningTaskConfirmation`, `LearningTaskRecheck` and `LearningImportSummary` describe them.

@@ -26,6 +26,23 @@ Catch `AcclimateError` to handle errors in the SDK’s coded hierarchy, then bra
 | `optimizer-required` | The service has no optimizer model. Set `ACCLIMATE_MODEL_ENDPOINT`, `ACCLIMATE_MODEL_TOKEN` and `ACCLIMATE_MODEL`, then restart the service. The loop's `optimizerConfigured` field shows the setting. |
 | `learning_conflict` | Another state conflict, such as an unverified provider or a missing task or judge model. The message names it. |
 
+## Learning task conflicts
+
+`POST /tasks/{id}/recheck` returns HTTP 409 with `learning_conflict` when the task was not set aside with `check-failed`. Edit and save the task to check a new revision. `POST /tasks/confirm` returns HTTP 403 with `denied` for a machine token, because only a signed-in person can confirm held-out tasks.
+
+## Learning failure codes
+
+A failed round's `failureCause.code` and a failed trial's `error.code` name what stopped the rollout.
+
+| Code | Cause |
+| --- | --- |
+| `gateway-upstream` | The model provider was unavailable, rate limited or overloaded. When every failed rollout of the current version's evaluation has this code, the round fails with `provider-unavailable` and the loop tries again after ten minutes. |
+| `sandbox-start` | The executor could not start a sandbox. |
+| `executor` | The executor stopped or reported an error during the run, or its credential was revoked. |
+| `judge-budget` | The judge request or reply exceeded its token budget or the model's context. |
+| `judge-invalid-reply` | The judge model's reply had no text. |
+| `cancelled` | Trials only. The provider settings or the executor changed under the trial. |
+
 The [TypeScript SDK reference](/docs/reference/typescript-sdk) lists public exports.
 
 Inspect `code` on an SDK error and include the service request ID when reporting an HTTP failure.

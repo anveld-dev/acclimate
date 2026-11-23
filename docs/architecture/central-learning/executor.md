@@ -11,7 +11,9 @@ The executor runs each rollout and grades its output. Its internal API is docume
 - It has no database access and no optimizer credentials.
 - It hosts the gateway. The workspace's provider endpoint and key are stored encrypted by the service and sent with each lease over the internal listener. The executor keeps them in memory only. It never writes them to disk, a log or a sandbox.
 - It reaches the service over an internal listener that is not published outside the Compose network and is not routed through the public proxy.
-- It authenticates with its own executor token. The token is separate from workspace machine tokens, can be revoked, and identifies the executor in each lease.
+- It authenticates with its own executor token. The token is separate from workspace machine tokens, can be revoked, and identifies the executor in each lease. `acclimate-service --list-executor-tokens` lists the tokens without their secrets.
+- It checks its configuration at startup and exits with status 78 and a plain message when it cannot work: a missing or empty credential, a credential the service refuses with 401, an unsupported runtime, a missing runner image, or a failed sandbox preflight. The preflight runs one throwaway sandbox with the rollout's flags and checks that it can read its lease directory and reach the gateway socket.
+- It touches a health file after each successful lease request and heartbeat. `acclimate-executor --health` reports stale after 120 seconds, and Compose uses it as the container health check.
 
 Remote executors on other hosts, and the mutual TLS they need, are not planned for the first release.
 
@@ -53,7 +55,7 @@ Prior art behind these rules: Harbor deleted unfinished runs on resume, so a sle
 - **Runner image.** The executor ships one pinned runner image holding the built-in `chat` runner. The bundle payload and the task input are mounted read-only. Nothing is installed at run time.
 - **Grading is outside.** The reference answer and criteria never enter the agent's sandbox. `exact` and the judge run in the executor process, which runs no user code. A grader sandbox arrives with `check` scripts, the first grader that runs user code. It receives only the files the agent produced.
 - **Runtime.** Production uses gVisor (`runsc`). The local Compose stack uses plain Docker and prints a warning that isolation is weaker. This is an operator setting on the executor, not a product mode.
-- **Fail closed.** If the configured runtime can't provide the isolation asked for, the rollout fails as an infrastructure failure. It does not fall back.
+- **Fail closed.** If the configured runtime can't provide the isolation asked for, the startup preflight stops the executor, and a rollout that still cannot start fails as an infrastructure failure. It does not fall back.
 
 The `chat` runner runs no user code, but the bundle it renders is written by the optimizer, and the `codex` harness will run code. Shipping the sandbox first means the later harness reuses isolation that already carries every round.
 

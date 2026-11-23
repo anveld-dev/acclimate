@@ -77,7 +77,7 @@ With a single Codex sign-in, set `routing.cooldown.disable-cooling: true` in the
 
 ## First start
 
-Export the path/hostname variables above into the deployment shell, without putting secret values in command arguments. Also export `ACCLIMATE_EXECUTOR_TOKEN_FILE` as an absolute path to a private file, and `ACCLIMATE_PROVIDER_HTTP_HOSTS` if you need it (see [provider addresses](#provider-addresses)). The runner and executor have no published images, so they are always built from the checkout. Follow these steps in order. This repository does not run them for you.
+Export the path/hostname variables above into the deployment shell, without putting secret values in command arguments. Also export `ACCLIMATE_EXECUTOR_TOKEN_FILE` as an absolute path to a private file outside the checkout, and `ACCLIMATE_PROVIDER_HTTP_HOSTS` if you need it (see [provider addresses](#provider-addresses)). `compose.yaml` requires `ACCLIMATE_EXECUTOR_TOKEN_FILE`: every `docker compose` command fails without it. The release workflow publishes `acclimate-executor` and `acclimate-runner` images with the same tags and platforms as the service and console, and `compose.yaml` names them through `ACCLIMATE_EXECUTOR_IMAGE` and `ACCLIMATE_RUNNER_IMAGE`. No release has included them yet, so until one does, build them from the checkout as below. Follow these steps in order. This repository does not run them for you.
 
 1. Generate the provider encryption key and add it to `service.env`. The key is 64 hex characters. Store a copy outside the host, separately from database backups. See [Upgrades and recovery](#upgrades-and-recovery) for why.
 
@@ -104,7 +104,7 @@ Export the path/hostname variables above into the deployment shell, without putt
      | python3 -c 'import json, sys; c = json.load(sys.stdin); print(c["token"], file=open(sys.argv[1], "w")); print("executor credential id:", c["id"])' "$ACCLIMATE_EXECUTOR_TOKEN_FILE"
    ```
 
-4. Build the runner and executor images.
+4. Build the runner and executor images. From a release that publishes them, run `docker compose pull acclimate-runner acclimate-executor` instead.
 
    ```sh
    docker compose build acclimate-runner acclimate-executor
@@ -117,9 +117,9 @@ Export the path/hostname variables above into the deployment shell, without putt
    docker compose ps acclimate-executor
    ```
 
-   If it is not running, read `docker compose logs acclimate-executor`.
+   Within about two minutes `docker compose ps` shows the executor as `healthy`: the service has answered its lease requests with its credential. The executor checks its configuration at startup and exits with status 78 and a plain message when it cannot work: the service refuses its credential (HTTP 401), the token file is missing or empty, `ACCLIMATE_SANDBOX_RUNTIME` is not `runsc` or `docker`, the runner image is missing, or the sandbox preflight fails. If it is restarting or unhealthy, read `docker compose logs acclimate-executor`.
 
-Later starts can use `docker compose up -d --wait postgres service console proxy` followed by `docker compose up -d acclimate-executor`. Do not run `docker compose up --no-build` without service names: the runner and executor images cannot be pulled.
+Later starts can use `docker compose up -d --wait postgres service console proxy` followed by `docker compose up -d acclimate-executor`. Until a release publishes the runner and executor images, do not run `docker compose up --no-build` without service names: those images cannot be pulled.
 
 Caddy obtains and stores certificates in its persistent volume. It pins the upstream console `Host` to the configured public hostname, strips incoming forwarding headers and replaces them from the trusted connection. The console reconstructs public URLs from its pinned HTTPS origin, rejects a different Host, and ignores caller-supplied `Forwarded`/`X-Forwarded-*` headers. HTTP from Caddy to the two application listeners is allowed only on the private network. Direct access bypassing this proxy is unsupported. Caddy's administration listener stays container-local; its health check is process/configuration liveness, while its dependency checks require both applications ready.
 
@@ -140,6 +140,8 @@ Migrations `0017_remove_manual_changes.sql` and `0018_remove_connected_learning.
 
 Migrations `0022_central_learning.sql` through `0024_learning_reliability.sql` move learning into the service. Back up first. There is no downgrade: to roll back, restore that backup and run the matching earlier build. The cutover stops active rounds and pauses running loops with `tasks-required`. It copies live and retired evolve cases into the task tables as `exact` tasks and keeps round history and improvement memory. It turns each stored `evaluate` machine right into `read`. Give tokens that report outcomes `write`. Startup refuses a static grant in `ACCLIMATE_AUTH` that still lists `evaluate`, so update those first. Then set `ACCLIMATE_PROVIDER_ENCRYPTION_KEY`, start the [rollout executor](#rollout-executor), configure the workspace model provider and start each loop again once its tasks pass admission.
 
+Migrations `0025_import_history.sql` to `0027_provider_key_check.sql` add the import creation time, the round failure cause and the `provider-unavailable` round reason and wait, and the provider key check table. They change no existing rows and need no steps. On its first start after `0027`, a service with `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` set stores a check value for that key, and refuses to start if the key opens none of the stored provider keys. See [the provider encryption key](#provider-encryption-key).
+
 ## Upgrades and recovery
 
 See [Upgrade and recover](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/operate/upgrades-and-recovery.mdx) for release pinning and the upgrade sequence.
@@ -150,13 +152,20 @@ There is no downgrade path for the schema. Rolling back means restoring the back
 
 Upgrade the service first, then the executor. A newer service accepts the 1-or-0 judged scores of an executor built before partial credit, so rollouts in flight survive the service upgrade. An older service rejects a newer executor's fractional scores.
 
-Upgrade or restart the executor between rounds. A round pins the executor build and runner image it started with. If no live executor matches them for five minutes, the round fails with `no-matching-executor`. That failure does not count toward the failed-rounds pause, and the next round pins the new executor. Rebuild with `docker compose build acclimate-runner acclimate-executor`, then run `docker compose up -d acclimate-executor`.
+Upgrade or restart the executor between rounds. A round pins the executor build and runner image it started with. If no live executor matches them for five minutes, the round fails with `no-matching-executor`. That failure does not count toward the failed-rounds pause, and the next round pins the new executor. Rebuild with `docker compose build acclimate-runner acclimate-executor`, or with a release that publishes them, `docker compose pull acclimate-runner acclimate-executor`, then run `docker compose up -d acclimate-executor`.
 
-Keep the provider encryption key with your database backups, but store it separately from them. A backup restored under a different key cannot decrypt any saved provider key: each workspace provider shows "Provider key unavailable" and fails verification, and a workspace administrator must enter its API key again.
+To rotate the executor credential, create a new one with `--create-executor-token` as in [First start](#first-start), replace the token file with the new token, restart the executor with `docker compose up -d --force-recreate acclimate-executor`, then revoke the old one with `docker compose exec -T service /usr/local/bin/acclimate-service --revoke-executor-token <old id>`. `--list-executor-tokens` shows which credentials exist and when each was last seen. The executor reads the file only at startup. Stopping it waits up to an hour for its leased rollouts to finish.
 
-To rotate the executor credential, create a new one with `--create-executor-token` as in [First start](#first-start), replace the token file with the new token, restart the executor with `docker compose up -d --force-recreate acclimate-executor`, then revoke the old one with `docker compose exec -T service /usr/local/bin/acclimate-service --revoke-executor-token <old id>`. The executor reads the file only at startup. Stopping it waits up to an hour for its leased rollouts to finish.
+Supervisors restart failed processes with policy; investigate repeated failures. Exit code 75 identifies lost database ownership. The executor exits with 78 when its configuration cannot work; restarting does not help until that is fixed. The standalone service wrapper does not invent credentials or silently recover against another database. On SIGTERM readiness is withdrawn before HTTP/work draining and lock release. Backups include sensitive content and must be protected and restored on a schedule.
 
-Supervisors restart failed processes with policy; investigate repeated failures. Exit code 75 identifies lost database ownership. The standalone service wrapper does not invent credentials or silently recover against another database. On SIGTERM readiness is withdrawn before HTTP/work draining and lock release. Backups include sensitive content and must be protected and restored on a schedule.
+### Provider encryption key
+
+Keep the provider encryption key with your database backups, but store it separately from them. The service stores a check value sealed with the key the first time it starts with one. A later start with a different key, for example after a backup is restored without its key, stops with an error that names both ways out:
+
+- Restore the original key in `service.env` and start again.
+- Or discard every stored workspace provider and start over with the new key: `docker compose exec -T service /usr/local/bin/acclimate-service --reset-provider-keys --confirm`. It prints `{"removedProviders": n}`. Each workspace administrator must then enter their provider again.
+
+When the key is unset, the service starts and logs a warning: saving a provider fails with 503 and stored providers show "Provider key unavailable". A stored provider key that cannot be decrypted is logged with its workspace ID, and that provider shows "Provider key unavailable" until a workspace administrator enters its API key again.
 
 ## Native and partial alternatives
 
@@ -211,7 +220,7 @@ It creates three randomly named databases, installs the schema and inserts fixtu
 
 The executor runs each rollout in a sandbox container started from the chat runner image. [First start](#first-start) creates its credential and starts it. The executor resolves the runner's immutable image ID at startup.
 
-`ACCLIMATE_EXECUTOR_TOKEN_FILE` names the file that holds the executor credential. Revoke a credential with `acclimate-service --revoke-executor-token <id>`, run with the service's `DATABASE_URL`, for example through `docker compose exec -T service`. See [Upgrades and recovery](#upgrades-and-recovery) to rotate it. Revoking requeues the rollouts it held, or fails those already on their second attempt.
+`ACCLIMATE_EXECUTOR_TOKEN_FILE` names the file that holds the executor credential. `acclimate-service --list-executor-tokens` prints each credential's ID, creation time, last-seen time, declared runtime and revoked state as JSON, never a token. Revoke a credential with `acclimate-service --revoke-executor-token <id>`, run with the service's `DATABASE_URL`, for example through `docker compose exec -T service`. See [Upgrades and recovery](#upgrades-and-recovery) to rotate it. Revoking requeues the rollouts it held, or fails those already on their second attempt.
 
 `ACCLIMATE_EXECUTOR_CONCURRENCY` sets how many rollouts the executor runs at once. The default is 1. A higher value finishes rounds sooner, but sends more concurrent requests to the provider and runs more sandboxes on the host.
 
@@ -242,7 +251,11 @@ docker info --format '{{json .Runtimes}}'
 
 Run `ACCLIMATE_SANDBOX_RUNTIME=runsc python3 executor/tests/sandbox.py -v` on the Linux host to verify isolation. Local Compose uses plain Docker.
 
-Without the runtime the executor still starts, and provider verification still passes, because a verification request does not use a sandbox. Every rollout then fails with `sandbox-start`. Rounds fail, and a loop pauses with `failed-rounds` after three failed rounds in a row (`ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS`).
+Before it requests work, the executor runs one throwaway sandbox with the rollout's flags and checks that it can read its lease directory and reach the gateway socket. Without the runtime, or with gVisor registered without `--host-uds=open`, that preflight fails and the executor exits with status 78 and a message that says what to check. Provider verification runs outside a sandbox, so it can pass while the executor cannot run.
+
+### Executor health
+
+The executor touches a health file after each successful lease request and heartbeat (`ACCLIMATE_EXECUTOR_HEALTH_FILE`, default `/tmp/acclimate-executor-health`). `acclimate-executor --health` fails when the file is older than 120 seconds. Both Compose files run it as the container health check, so `docker compose ps acclimate-executor` shows `healthy` while the executor reaches the service.
 
 ### Provider addresses
 

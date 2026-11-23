@@ -11,21 +11,24 @@ All bundle routes sit under `/v1/workspaces/{ws}/bundles/{b}/learning`.
 | Route | Purpose | Right |
 | --- | --- | --- |
 | `PUT` (root) | Turn learning on or change its settings: channel, `domain` and `benchmark`, task model, judge model, `maxRoundsPerDay` | promote |
-| `GET` (root) | Loop status, `waiting` reason, pause reason, split counts, active round, alert state | read |
+| `GET` (root) | Loop status, `waiting` reason with `nextRoundAt` and `evolveTasksNeeded`, pause reason, split counts, active round, alert state | read |
 | `POST /start` | Start learning. Start and resume both require 20 admitted tasks per split. | promote |
 | `POST /pause`, `/resume`, `/stop` | Unchanged | promote |
-| `GET /tasks` | List tasks, paged. Filters: `split`, `source`, `admission`, `flagged` | read |
+| `GET /tasks` | List tasks, paged. Filters: `split`, `source`, `admission`, `flagged`, `confirmed` | read |
 | `POST /tasks` | Create one task | write |
 | `PATCH /tasks/{id}` | Edit a task. Bumps the task revision and re-runs admission. | write |
 | `DELETE /tasks/{id}` | Retire a task. Rows are kept. | write |
+| `POST /tasks/confirm` | Confirm up to 100 held-out tasks in one revision. Signed-in person only. | write |
+| `POST /tasks/{id}/recheck`, `POST /tasks/recheck` | Requeue the admission check of `check-failed` tasks on the same revision | write |
 | `POST /tasks/import` | Streamed upload of a spreadsheet, CSV, JSONL or pasted text. Returns an import with counts, and the drafted task cards for a console session. | write |
+| `GET /tasks/imports` | The 50 most recent imports with `createdAt` and `source` | read |
 | `GET /tasks/imports/{id}` | Import status and counts (`rows`, `converted`, `pending`, `setAsideCount`), a nullable failure `message`, and `setAside: [{row, source, reason}]`. Machine tokens receive an empty list. | read |
 | `POST /tasks/{id}/try` | Run one task on the executor against the channel head. Returns a trial ID. | write |
-| `GET /trials/{id}` | A trial's status, gateway log, output and verdict | read |
+| `GET /trials/{id}` | A trial's status, gateway log, output and verdict, and `error: {code}` on failure | read |
 | `GET /held-out-tasks/export` | Download the held-out tasks | console session only |
 | `GET /rounds`, `GET /rounds/{id}` | Round timeline, and one round with its candidates, diffs, diagnoses and evolve results | read |
 | `POST /rollback` | Restore the parent of the adoption at the channel head | promote |
-| `GET /blocked-versions` | List blocked digests, actors, notes and timestamps | read |
+| `GET /blocked-versions` | List blocked digests, actors, notes, timestamps and the round that adopted each | read |
 | `DELETE /blocked-versions/{digest}` | Remove a block and record the action | promote |
 | `GET /usage` | Rounds, rollouts and tokens per day | read |
 | `POST /outcomes` | A production outcome from `job.expect()` | write |
@@ -190,6 +193,10 @@ Rollout rows are inserted in the same transaction that queues their evaluation. 
 | `learning_loops` | Add `task_model`, `judge_model`, `max_rounds_per_day` (default 4), `waiting`, `started_at`, `resumed_at`, `alert`. Add `tasks-required` to the `pause_reason` check. |
 | `learning_rounds` | Add `task_model`, `judge_model`, `runtime` (the [runtime identity](executor.md)), `trigger`, `incumbent_reused`. |
 | `learning_candidates` | Add `blocked-version` to the `drop_reason` check, which allows four values today. |
+
+### Migrations `0025` to `0027`
+
+`0025_import_history.sql` adds `created_at` and `outcome` to `learning_task_imports`, so imports list newest first and an outcome graded by criteria converts through a one-row import. `0026_round_failure_cause.sql` adds `error_message` to `learning_rollouts`, `failure_code`, `failure_message` and `failure_split` to `learning_rounds`, the `provider-unavailable` round reason and the `provider-unavailable` waiting value. `0027_provider_key_check.sql` adds `provider_key_check`, one value sealed under the provider encryption key so the service refuses a different key at startup.
 
 ### Cutover
 

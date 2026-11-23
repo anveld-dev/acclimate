@@ -101,7 +101,9 @@ unset login_token transport_token oidc_client_secret bootstrap_password database
 <Callout type="warn" title="Keep runtime files private">
 Keep the files outside the checkout with mode 0600. Avoid printing the Compose configuration or dumping container environments. Changing the password file later leaves an initialized PostgreSQL role's password as it was.
 
-`ACCLIMATE_PROVIDER_ENCRYPTION_KEY` encrypts workspace provider keys in the database. Store a copy of `service.env`, or of that key, separately from database backups. A backup restored under a different key cannot decrypt the saved provider keys.
+`ACCLIMATE_PROVIDER_ENCRYPTION_KEY` encrypts workspace provider keys in the database. Store a copy of `service.env`, or of that key, separately from database backups. A backup restored under a different key cannot decrypt the saved provider keys, and the service refuses to start with a key that does not match the one it first stored. [Keep the provider encryption key](/docs/operate/upgrades-and-recovery#keep-the-provider-encryption-key)
+
+`compose.yaml` requires `ACCLIMATE_EXECUTOR_TOKEN_FILE`, so export it before any `docker compose` command, even before learning is set up.
 </Callout>
 
 </Step>
@@ -176,7 +178,7 @@ docker compose up -d --build --wait postgres service console proxy
 </Tab>
 </Tabs>
 
-The service applies the database migrations when it starts. The runner and executor start later, in [Enable learning](#enable-learning). They have no published images, so do not run `up --no-build` without service names.
+The service applies the database migrations when it starts. The runner and executor start later, in [Enable learning](#enable-learning). The release workflow publishes `acclimate-executor` and `acclimate-runner` images, but no release has included them yet. Until one does, do not run `up --no-build` without service names.
 
 Caddy obtains certificates for all three public names. Open your console URL, sign in as the realm user and change the temporary password. Choose **New workspace**, set a name and workspace ID, then choose **Create workspace**. Set up a permanent Keycloak administrator and retire the bootstrap account after confirming you can administer the realm.
 
@@ -195,7 +197,7 @@ Learning needs the optimizer settings on the service and a running executor. Run
      | python3 -c 'import json, sys; c = json.load(sys.stdin); print(c["token"], file=open(sys.argv[1], "w")); print("executor credential id:", c["id"])' "$ACCLIMATE_EXECUTOR_TOKEN_FILE"
    ```
 
-3. Build the runner and executor images. They have no published images.
+3. Build the runner and executor images. From a release that publishes them, run `docker compose pull acclimate-runner acclimate-executor` instead.
 
    ```sh
    docker compose build acclimate-runner acclimate-executor
@@ -216,17 +218,19 @@ Learning needs the optimizer settings on the service and a running executor. Run
 
    Restart Docker. The running containers start again under their restart policy. Check that `docker info --format '{{json .Runtimes}}'` lists `runsc`.
 
-5. Start the executor and check that it stays running. It inspects the runner image when it starts.
+5. Start the executor. Within about two minutes `docker compose ps` shows it as `healthy`, which means the service has answered it with its credential.
 
    ```sh
    docker compose up -d acclimate-executor
    docker compose ps acclimate-executor
    ```
 
+   At startup the executor reads its credential, checks the runner image and runs one throwaway sandbox with the rollout's flags. If any of these fails, it exits with status 78 and says what to fix, so the container restarts instead of turning healthy. Read `docker compose logs acclimate-executor`. `acclimate-service --list-executor-tokens` lists the credentials and when each was last seen.
+
 Workspace administrators then configure the model provider in the console. [Learning setup](/docs/guides/learning-loop)
 
 <Callout type="warn" title="Without gVisor">
-Provider verification still passes, because it runs outside a sandbox. Every rollout fails with `sandbox-start`, rounds fail, and a loop pauses after three failed rounds in a row.
+Provider verification still passes, because it runs outside a sandbox. The executor does not: its startup sandbox preflight fails when `runsc` is not registered, or is registered without `--host-uds=open`, and it exits with a message that names the check.
 </Callout>
 
 The executor mounts the Docker socket, which gives it administrator authority on the host. It runs as root, has outbound network access, and holds each leased workspace's provider key in memory. A provider on a private, carrier-grade NAT, unique-local or loopback address needs its host in `ACCLIMATE_PROVIDER_HTTP_HOSTS`, even over HTTPS. Set the same value in `service.env` and in the deployment shell for the executor. [Provider addresses](/docs/reference/configuration#learning)

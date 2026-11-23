@@ -28,7 +28,7 @@ Steps 1 to 5 are the whole setup. The person acts in steps 1, 2, 3 and 5.
 
 ### 3. Give it material
 
-**Screen:** one box that accepts a spreadsheet, CSV, JSONL or pasted conversations.
+**Screen:** one box that accepts a spreadsheet, CSV, JSONL or pasted conversations, separated by lines of `---`. An Imports list below shows past imports.
 
 **You do:** drop in what you already have, such as an export of real conversations with the replies a person gave.
 
@@ -40,13 +40,13 @@ Steps 1 to 5 are the whole setup. The person acts in steps 1, 2, 3 and 5.
 
 **Automatic:** every task runs the [admission check](tasks-and-grading.md) before it counts. A task is admitted only if its reference answer passes, an empty answer fails, and the judge gives the same verdict three times. A task that fails is set aside with the reason shown, for example "the judge disagreed with itself" or "an empty answer passed".
 
-**You do:** nothing, unless you want to repair a task that was set aside. Editing it runs the check again.
+**You do:** nothing, unless you want to repair a task that was set aside. Editing it runs the check again. A check that could not run has **Run check again**.
 
 ### 5. Review, try, start
 
 **Screen:** the task cards, the split count and two buttons.
 
-- **Cards.** Each shows the input, the expected answer or criteria, its source and its split. You can edit or delete any card. An unconfirmed held-out card waits for you to confirm them before it is admitted.
+- **Cards.** Each shows the input, the expected answer or criteria, its source and its split. You can edit or delete any card. An unconfirmed held-out card waits for you to confirm it before it is admitted. **Needs confirmation** lists them and **Confirm all shown** confirms them together.
 - **Split.** The service assigns each task to evolve or held-out. It keeps tasks from the same source conversation or file on the same side. The screen states the count, for example "22 evolve, 22 held-out" (illustrative).
 - **Try.** Runs one task as a trial on the executor against the current release. The panel shows the gateway log, the verdict and the judge's reasoning. A trial never counts toward learning. An infrastructure error is shown as an error, never as a failed task.
 - **Start.** Enabled once the provider is verified and there are 20 admitted evolve tasks and 20 admitted held-out tasks. Below that, the button says how many more each side needs.
@@ -73,6 +73,8 @@ No one needs to be present after Start.
 - **Flagged tasks.** The service flags tasks that drag scores: ones that fail for every candidate round after round, ones whose judge votes disagree, and ones that error. A flagged task opens to its last gateway log and reasoning, and you can edit it inline, try it and save.
 - **Held-out drop.** A drop in the held-out score or pass rate after a release raises a banner that links the round. On a [clear drop](loop.md) the service also reverts the release on its own, emails workspace admins, and the loop continues from the restored version.
 - **Roll back.** The round whose adopted version is still live has a Roll back button that re-releases the previous version. A version that was rolled back or reverted is blocked and cannot be adopted again.
+
+- **Failures explain themselves.** A failed round shows the first rollout error. A provider outage makes the loop wait ten minutes and try again, and a waiting loop says when its next round can run or how many more tasks it needs.
 
 **You do:** nothing in a normal week. You act when a task is flagged or an alert arrives.
 

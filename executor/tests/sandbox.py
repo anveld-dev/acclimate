@@ -194,6 +194,8 @@ class SandboxGate(unittest.TestCase):
                         done.wait(30)
                     if case == "timeout":
                         time.sleep(10)
+                    if case == "invalid-reply":
+                        return 200, {"usage": {"prompt_tokens": 3, "completion_tokens": 2}}
                     if case == "upstream":
                         return 502, {"message": "provider-key"}
                     if case == "context":
@@ -254,6 +256,7 @@ class SandboxGate(unittest.TestCase):
                 "-e",
                 "ACCLIMATE_SANDBOX_VOLUME=" + volume,
                 "-e",
+                "ACCLIMATE_PROVIDER_HTTP_HOSTS=host.docker.internal", "-e",
                 "ACCLIMATE_EXECUTOR_SERVICE=" + url,
                 "-e",
                 "ACCLIMATE_SANDBOX_RUNTIME=" + runtime,
@@ -270,7 +273,7 @@ class SandboxGate(unittest.TestCase):
                 self.assertFalse(results)
                 return
             (result,) = results
-            if case in ("runtime", "upstream", "timeout"):
+            if case in ("runtime", "upstream", "timeout", "invalid-reply"):
                 self.assertEqual(
                     result["error"]["code"],
                     "sandbox-start" if case == "runtime" else "gateway-upstream",
@@ -278,6 +281,9 @@ class SandboxGate(unittest.TestCase):
                 self.assertNotEqual(result["error"]["message"], result["error"]["code"])
                 self.assertNotIn("provider-key", json.dumps(result))
                 self.assertNotIn("verdict", result)
+                if case == "invalid-reply":
+                    self.assertEqual(result["tokens"], {"task": {"input": 3, "output": 2},
+                                                        "judge": {"input": 0, "output": 0}})
             else:
                 self.assertEqual(result["verdict"]["passed"], case == "scored")
                 count = 0 if case == "context" else 1
@@ -310,6 +316,7 @@ class SandboxGate(unittest.TestCase):
             "context",
             "timeout",
             "upstream",
+            "invalid-reply",
             "expired",
         ):
             with self.subTest(case=case):

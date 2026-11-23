@@ -6,6 +6,7 @@ edition = "2024"
 rust-version = "1.89"
 
 [dependencies]
+acclimate-provider-address = { path = "executor/provider-address" }
 libm = "0.2"
 regex = "1"
 ring = "0.17"

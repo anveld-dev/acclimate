@@ -25,7 +25,7 @@ pub struct Gateway {
     pub url: String,
     pub key: String,
     pub cap: u64,
-    pub client: reqwest::Client,
+    pub allowlist: String,
     pub record: Arc<Mutex<Record>>,
     pub serial: AsyncMutex<()>,
     pub closed: watch::Receiver<()>,
@@ -88,7 +88,7 @@ async fn call(State(g): State<Arc<Gateway>>, Json(mut body): Json<Value>) -> Res
     }
 }
 async fn forward(g: &Gateway, body: &mut Value) -> Result<Response, StatusCode> {
-    if !prepare(body, &[&g.model]) || contains_key(body, &g.key) {
+    if !g.prepare_request(body) {
         return Err(StatusCode::BAD_REQUEST);
     }
     let _serial = g.serial.lock().await;
@@ -130,6 +130,13 @@ async fn forward(g: &Gateway, body: &mut Value) -> Result<Response, StatusCode> 
         data.clone()
     };
     entry["usage"] = if secret { Value::Null } else { usage.clone() };
+    let counts = usage["prompt_tokens"]
+        .as_u64()
+        .zip(usage["completion_tokens"].as_u64());
+    if let Some((input, output)) = counts {
+        r.input = r.input.saturating_add(input);
+        r.output = r.output.saturating_add(output);
+    }
     if secret {
         r.failure = Some("Upstream response contained a credential".into());
         return Err(StatusCode::BAD_GATEWAY);
@@ -151,15 +158,10 @@ async fn forward(g: &Gateway, body: &mut Value) -> Result<Response, StatusCode> 
         r.failure = Some("Upstream response is missing choices".into());
         return Err(StatusCode::BAD_GATEWAY);
     }
-    let (Some(input), Some(output)) = (
-        usage["prompt_tokens"].as_u64(),
-        usage["completion_tokens"].as_u64(),
-    ) else {
+    if counts.is_none() {
         r.failure = Some("Upstream response is missing token usage".into());
         return Err(StatusCode::BAD_GATEWAY);
-    };
-    r.input = r.input.saturating_add(input);
-    r.output = r.output.saturating_add(output);
+    }
     r.truncated = data.pointer("/choices/0/finish_reason") == Some(&json!("length"));
     r.capped = r.truncated || r.input.saturating_add(r.output) >= g.cap;
     if data.pointer("/choices/0/message/content") == Some(&Value::Null) {
@@ -169,15 +171,38 @@ async fn forward(g: &Gateway, body: &mut Value) -> Result<Response, StatusCode> 
 }
 
 async fn upstream(g: &Gateway, body: &Value) -> Result<(StatusCode, Vec<u8>, Value), String> {
+    use acclimate_provider_address::{host_allowed, validate_endpoint};
+    validate_endpoint(&g.url, &g.allowlist).map_err(|_| "Provider address or scheme refused")?;
+    let url = reqwest::Url::parse(&g.url).map_err(|_| "Invalid provider URL")?;
+    let host = url
+        .host_str()
+        .ok_or("Missing provider host")?
+        .trim_matches(['[', ']']);
+    let port = url.port_or_known_default().ok_or("Missing provider port")?;
     for attempt in 0..3 {
-        let mut response = g
-            .client
+        let addresses: Vec<_> = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            tokio::net::lookup_host((host, port)),
+        )
+        .await
+        .map_err(|_| "Provider address lookup timed out")?
+        .map_err(|_| "Provider address lookup failed")?
+        .collect();
+        check_addresses(&addresses, host_allowed(host, &g.allowlist))?;
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(std::time::Duration::from_secs(600))
+            .resolve_to_addrs(host, &addresses)
+            .build()
+            .map_err(|_| "Could not create provider client")?;
+        let mut response = client
             .post(&g.url)
             .bearer_auth(&g.key)
             .json(body)
             .send()
             .await
-            .map_err(|e| e.without_url().to_string())?;
+            .map_err(transport_error)?;
         let status = response.status();
         if attempt < 2 && (status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error()) {
             drop(response);
@@ -185,11 +210,7 @@ async fn upstream(g: &Gateway, body: &Value) -> Result<(StatusCode, Vec<u8>, Val
             continue;
         }
         let mut raw = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|e| e.without_url().to_string())?
-        {
+        while let Some(chunk) = response.chunk().await.map_err(transport_error)? {
             if raw.len() + chunk.len() > 2 * 1024 * 1024 {
                 return Err("Upstream response exceeds 2 MiB".into());
             }
@@ -200,6 +221,119 @@ async fn upstream(g: &Gateway, body: &Value) -> Result<(StatusCode, Vec<u8>, Val
         return Ok((status, raw, data));
     }
     unreachable!("the final attempt returns its response")
+}
+
+fn transport_error(error: reqwest::Error) -> String {
+    if error.is_timeout() {
+        "Provider request timed out".into()
+    } else {
+        error.without_url().to_string()
+    }
+}
+
+fn check_addresses(addresses: &[std::net::SocketAddr], allowed: bool) -> Result<(), String> {
+    if addresses.is_empty()
+        || addresses
+            .iter()
+            .any(|a| !acclimate_provider_address::address_allowed(a.ip(), allowed))
+    {
+        return Err("Provider resolved to a refused address".into());
+    }
+    Ok(())
+}
+
+impl Gateway {
+    pub fn new(
+        provider: &super::Provider,
+        model: &str,
+        cap: u64,
+        record: Arc<Mutex<Record>>,
+        closed: watch::Receiver<()>,
+    ) -> Self {
+        Self {
+            model: model.into(),
+            url: format!(
+                "{}/chat/completions",
+                provider.base_url.trim_end_matches('/')
+            ),
+            key: provider.api_key.clone(),
+            allowlist: std::env::var("ACCLIMATE_PROVIDER_HTTP_HOSTS").unwrap_or_default(),
+            cap,
+            record,
+            serial: Default::default(),
+            closed,
+        }
+    }
+
+    fn prepare_request(&self, body: &mut Value) -> bool {
+        prepare(body, &[&self.model]) && !contains_key(body, &self.key)
+    }
+
+    pub async fn probe(&self) -> Value {
+        let mut body = json!({"model":self.model,"messages":[{"role":"user","content":"Hi"}],"max_completion_tokens":1});
+        let reply = if self.prepare_request(&mut body) {
+            upstream(self, &body).await
+        } else {
+            Err("Invalid provider probe request".into())
+        };
+        probe_result(&self.model, &self.key, reply)
+    }
+}
+
+fn probe_result(
+    model: &str,
+    key: &str,
+    reply: Result<(StatusCode, Vec<u8>, Value), String>,
+) -> Value {
+    let (ok, usage, message) = match reply {
+        Err(e) => (false, false, Some(e)),
+        Ok((status, _, data)) if !status.is_success() => {
+            let detail = data
+                .pointer("/error/message")
+                .or_else(|| data.get("error"))
+                .unwrap_or(&data)
+                .as_str()
+                .unwrap_or("");
+            (false, false, Some(format!("HTTP {status} {detail}")))
+        }
+        Ok((_, raw, data))
+            if contains_key(&data, key) || String::from_utf8_lossy(&raw).contains(key) =>
+        {
+            (
+                false,
+                false,
+                Some("Upstream response contained a credential".into()),
+            )
+        }
+        Ok((_, _, data))
+            if !data
+                .pointer("/choices/0/message")
+                .is_some_and(Value::is_object) =>
+        {
+            (
+                false,
+                false,
+                Some("Upstream response is missing a chat message".into()),
+            )
+        }
+        Ok((_, _, data)) => {
+            let usage = ["prompt_tokens", "completion_tokens"]
+                .iter()
+                .all(|k| data["usage"][k].as_u64().is_some());
+            (
+                true,
+                usage,
+                (!usage).then(|| "Upstream response is missing token usage".into()),
+            )
+        }
+    };
+    let message = message.map(|m| {
+        m.replace(key, "[redacted]")
+            .chars()
+            .take(256)
+            .collect::<String>()
+    });
+    json!({"model":model,"ok":ok,"usage":usage,"message":message})
 }
 
 fn completion_request(model: &str, instruction: &str, data: &Value) -> Value {
@@ -248,6 +382,85 @@ impl Gateway {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn probe_reports_per_model_answers() {
+        let result = |s, d| probe_result("model", "private-key", Ok((s, vec![], d)));
+        let mut data = json!({"choices":[{"message":{"content":"a"}}]});
+        let missing = result(StatusCode::OK, data.clone());
+        assert_eq!(
+            (missing["ok"].as_bool(), missing["usage"].as_bool()),
+            (Some(true), Some(false))
+        );
+        data["usage"] = json!({"prompt_tokens":2,"completion_tokens":1});
+        assert_eq!(
+            result(StatusCode::OK, data),
+            json!({"model":"model","ok":true,"usage":true,"message":null})
+        );
+        for (status, detail) in [
+            (StatusCode::UNAUTHORIZED, "invalid private-key"),
+            (StatusCode::NOT_FOUND, "unknown model"),
+        ] {
+            let r = result(status, json!({"error":{"message":detail}}));
+            assert_eq!(r["ok"], false);
+            let msg = r["message"].as_str().unwrap();
+            assert!(
+                msg.contains(&status.as_u16().to_string())
+                    && msg.contains(&detail.replace("private-key", "[redacted]"))
+            );
+        }
+        for message in [
+            "Provider request timed out",
+            "Provider resolved to a refused address",
+        ] {
+            assert_eq!(
+                probe_result("model", "private-key", Err(message.into())),
+                json!({"model":"model","ok":false,"usage":false,"message":message})
+            );
+        }
+        assert!(
+            check_addresses(
+                &[
+                    "1.1.1.1:443".parse().unwrap(),
+                    "10.0.0.1:443".parse().unwrap()
+                ],
+                false
+            )
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_does_not_follow_redirects() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new().route(
+            "/",
+            post(|| async { axum::response::Redirect::temporary("/followed") }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let g = Gateway {
+            model: "model".into(),
+            url,
+            key: "private-key".into(),
+            cap: 1,
+            allowlist: "127.0.0.1".into(),
+            record: Default::default(),
+            serial: Default::default(),
+            closed: watch::channel(()).1,
+        };
+        assert!(g.probe().await["message"].as_str().unwrap().contains("307"));
+        let refused = Gateway {
+            allowlist: String::new(),
+            ..g
+        };
+        assert!(
+            refused.probe().await["message"]
+                .as_str()
+                .unwrap()
+                .contains("refused")
+        );
+        server.abort();
+    }
     #[tokio::test]
     async fn refuses_exhausted_budget_before_contacting_upstream() {
         let gateway = Gateway {
@@ -255,7 +468,7 @@ mod tests {
             url: String::new(),
             key: "secret".into(),
             cap: 5,
-            client: reqwest::Client::new(),
+            allowlist: "127.0.0.1".into(),
             record: Arc::new(Mutex::new(Record {
                 input: 3,
                 output: 2,
@@ -293,7 +506,7 @@ mod tests {
             url,
             key: "provider-secret".into(),
             cap: 5,
-            client: reqwest::Client::new(),
+            allowlist: "127.0.0.1".into(),
             record: Default::default(),
             serial: Default::default(),
             closed: watch::channel(()).1,
@@ -368,7 +581,7 @@ mod tests {
             url,
             key: "secret".into(),
             cap: 10,
-            client: Default::default(),
+            allowlist: "127.0.0.1".into(),
             record: Default::default(),
             serial: Default::default(),
             closed: watch::channel(()).1,

@@ -82,6 +82,14 @@ class CentralLearning(unittest.TestCase):
                     body = json.loads(
                         handler.rfile.read(int(handler.headers["Content-Length"]))
                     )
+                    if body.get("max_completion_tokens") == 1:
+                        reply = {"choices": [{"message": {"content": "Hi"}}]}
+                        if body["model"] != "missing-usage":
+                            reply["usage"] = {"prompt_tokens": 3, "completion_tokens": 1}
+                        handler.send_response(200)
+                        handler.end_headers()
+                        handler.wfile.write(json.dumps(reply).encode())
+                        return
                     if body["model"] == "judge":
                         self.assertFalse(body["store"])
                         data = json.loads(body["messages"][1]["content"])
@@ -206,18 +214,31 @@ class CentralLearning(unittest.TestCase):
         internal = port()
         h.env.update(
             ACCLIMATE_INTERNAL_BIND=f"0.0.0.0:{internal}",
+            ACCLIMATE_PROVIDER_HTTP_HOSTS="host.docker.internal",
             ACCLIMATE_PROVIDER_ENCRYPTION_KEY=secrets.token_hex(32),
         )
         h.restart()
         self.addCleanup(h.stop_service)
         service = ROOT / "target/debug/acclimate-service"
-        subprocess.run(
-            [service, "--set-model-provider", data["workspace"]],
-            env=h.env,
-            input=json.dumps(dict(baseUrl=url, apiKey=key, allowedModels=["task", "judge"])),
-            text=True,
-            check=True,
-        )
+        route = f"/v1/workspaces/{h.project}/model-provider"
+        headers = {"Authorization": "Bearer " + h.console_token, "X-Acclimate-Session": data["session"]}
+
+        def save(models):
+            provider = h.call("PUT", route, dict(baseUrl=url, apiKey=key, allowedModels=models),
+                              extra_headers=headers)
+            self.assertEqual(provider["verification"]["status"], "pending")
+
+        def verified(status):
+            deadline = time.monotonic() + 60
+            while True:
+                state = h.call("GET", route)["verification"]
+                if state["status"] != "pending":
+                    self.assertEqual(state["status"], status)
+                    return state["models"]
+                self.assertLess(time.monotonic(), deadline, state)
+                time.sleep(.2)
+
+        save(["task", "judge"])
         token = json.loads(
             subprocess.check_output([service, "--create-executor-token"], env=h.env)
         )["token"]
@@ -253,7 +274,7 @@ class CentralLearning(unittest.TestCase):
                     "-v",
                     volume + ":/var/lib/acclimate-executor",
                     "-e",
-                    "ACCLIMATE_SANDBOX_VOLUME=" + volume,
+                    "ACCLIMATE_PROVIDER_HTTP_HOSTS=host.docker.internal", "-e", "ACCLIMATE_SANDBOX_VOLUME=" + volume,
                     "-e",
                     f"ACCLIMATE_EXECUTOR_SERVICE=http://host.docker.internal:{internal}",
                     "-e",
@@ -272,6 +293,7 @@ class CentralLearning(unittest.TestCase):
                 'type','criteria','criteria',jsonb_build_array('{criterion_marker}'::text),
                 'reference',grader->'expected')""")
         start()
+        self.assertTrue(all(r["ok"] and r["usage"] for r in verified("verified")))
         if not failure:
             self.assertTrue(arrived.wait(60), "Executor never reached upstream")
             if problems:
@@ -379,6 +401,10 @@ class CentralLearning(unittest.TestCase):
             self.assertEqual(h.sql(f"SELECT status FROM learning_evaluations WHERE id='{data['evaluation']}'"), result)
             self.public_tasks(data, conversions)
 
+        save(["missing-usage"])
+        detail, = verified("failed")
+        self.assertEqual((detail["model"], detail["ok"], detail["usage"]), ("missing-usage", True, False))
+        self.assertIn("usage", detail["message"])
         self.assertEqual(containers(), [])
         dump = h.pg("pg_dump", "--data-only", h.env["DATABASE_URL"]).stdout
         self.assertFalse(key in dump or key.encode().hex() in dump)
@@ -493,6 +519,9 @@ class CentralLearning(unittest.TestCase):
         self.addCleanup(h.close)
         h.start_database()
         provider_key = secrets.token_hex(24)
+        probe_gate = threading.Event()
+        probe_gate.set()
+        self.addCleanup(probe_gate.set)
         optimizer_calls = []
         failures = []
         improved = "Check each finding against the supplied evidence."
@@ -505,7 +534,10 @@ class CentralLearning(unittest.TestCase):
                 try:
                     self.assertEqual(handler.headers["Authorization"], "Bearer " + provider_key)
                     body = json.loads(handler.rfile.read(int(handler.headers["Content-Length"])))
-                    if body["model"] == "optimizer":
+                    if body.get("max_completion_tokens") == 1:
+                        probe_gate.wait(30)
+                        answer = "Hi"
+                    elif body["model"] == "optimizer":
                         raw = body["messages"][1]["content"]
                         self.assertNotIn("held-out-sentinel", raw)
                         data = json.loads(raw.split("\n", 1)[1].rsplit("\n", 1)[0])
@@ -540,6 +572,7 @@ class CentralLearning(unittest.TestCase):
         threading.Thread(target=upstream.serve_forever, daemon=True).start()
         internal = port()
         h.env.update(ACCLIMATE_INTERNAL_BIND=f"0.0.0.0:{internal}",
+                     ACCLIMATE_PROVIDER_HTTP_HOSTS="host.docker.internal",
                      ACCLIMATE_PROVIDER_ENCRYPTION_KEY=secrets.token_hex(32),
                      ACCLIMATE_MODEL="optimizer", ACCLIMATE_MODEL_TOKEN=provider_key,
                      ACCLIMATE_MODEL_ENDPOINT=f"http://127.0.0.1:{upstream.server_port}/v1/chat/completions")
@@ -573,7 +606,7 @@ class CentralLearning(unittest.TestCase):
         self.addCleanup(docker, "volume", "rm", volume)
         worker = docker("run", "-d", "--add-host", "host.docker.internal:host-gateway",
             "-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", volume + ":/var/lib/acclimate-executor",
-            "-e", "ACCLIMATE_SANDBOX_VOLUME=" + volume, "-e", "ACCLIMATE_EXECUTOR_TOKEN=" + token,
+            "-e", "ACCLIMATE_PROVIDER_HTTP_HOSTS=host.docker.internal", "-e", "ACCLIMATE_SANDBOX_VOLUME=" + volume, "-e", "ACCLIMATE_EXECUTOR_TOKEN=" + token,
             "-e", f"ACCLIMATE_EXECUTOR_SERVICE=http://host.docker.internal:{internal}",
             "-e", "ACCLIMATE_SANDBOX_RUNTIME=" + os.environ.get("ACCLIMATE_SANDBOX_RUNTIME", "docker"),
             "-e", "ACCLIMATE_EXECUTOR_CONCURRENCY=4",
@@ -586,6 +619,16 @@ class CentralLearning(unittest.TestCase):
                 break
             self.assertLess(time.monotonic(), deadline, state)
             time.sleep(.5)
+        probe_gate.clear()
+        subprocess.run([service, "--set-model-provider", h.project], env=h.env, text=True, check=True,
+                       input=json.dumps(dict(baseUrl=f"http://host.docker.internal:{upstream.server_port}/v1",
+                                             apiKey=provider_key, allowedModels=["task", "judge"])))
+        refusal = h.call("POST", base + "/start", status=409)
+        self.assertIn("Verify", refusal["error"]["message"])
+        probe_gate.set()
+        while h.call("GET", f"/v1/workspaces/{h.project}/model-provider")["verification"]["status"] != "verified":
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(.2)
         h.call("POST", base + "/start")
         while True:
             if failures:

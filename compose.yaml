@@ -58,6 +58,7 @@ services:
       context: .
       dockerfile: executor/Dockerfile
     environment:
+      ACCLIMATE_PROVIDER_HTTP_HOSTS: ${ACCLIMATE_PROVIDER_HTTP_HOSTS:-}
       ACCLIMATE_EXECUTOR_SERVICE: http://service:3001
       ACCLIMATE_EXECUTOR_TOKEN_FILE: /run/secrets/executor_token
       ACCLIMATE_EXECUTOR_CONCURRENCY: ${ACCLIMATE_EXECUTOR_CONCURRENCY:-1}

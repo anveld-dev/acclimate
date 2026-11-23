@@ -1,3 +1,4 @@
+use acclimate_provider_address::validate_endpoint;
 use ring::{
     aead,
     rand::{SecureRandom, SystemRandom},
@@ -5,7 +6,6 @@ use ring::{
 use sqlx::{PgPool, Postgres, Transaction};
 use std::io::ErrorKind;
 use std::io::{Error, Result};
-use std::net::IpAddr;
 
 pub struct ProviderKey(aead::LessSafeKey);
 impl ProviderKey {
@@ -91,55 +91,5 @@ impl ProviderKey {
             )
             .ok()?;
         Some(std::str::from_utf8(clear).ok()?.to_owned())
-    }
-}
-
-fn validate_endpoint(endpoint: &str, allowlist: &str) -> Result<()> {
-    let invalid = || Error::new(ErrorKind::InvalidInput, "invalid provider endpoint");
-    let url = reqwest::Url::parse(endpoint).map_err(|_| invalid())?;
-    let host = url
-        .host_str()
-        .ok_or_else(invalid)?
-        .trim_matches(['[', ']'])
-        .trim_end_matches('.');
-    let allowed = allowlist
-        .split(',')
-        .any(|name| name.trim().eq_ignore_ascii_case(host));
-    if !(url.scheme() == "https" || url.scheme() == "http" && allowed)
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(invalid());
-    }
-    let ip = host.parse::<IpAddr>().ok().map(|ip| ip.to_canonical());
-    if matches!(ip,Some(IpAddr::V4(v)) if v.is_link_local() || matches!(v.octets(),[100,100,100,200]|[168,63,129,16]))
-        || matches!(ip,Some(IpAddr::V6(v)) if v.is_unicast_link_local() || v.to_string()=="fd00:ec2::254")
-        || matches!(host, "metadata.google.internal" | "metadata.goog")
-        || ip.is_some_and(|v| v.is_unspecified() || !allowed && v.is_loopback())
-        || !allowed && (host == "localhost" || host.ends_with(".localhost"))
-    {
-        return Err(invalid());
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn provider_addresses() {
-        for url in [
-            "http://example.org",
-            "https://localhost",
-            "https://[::ffff:127.0.0.1]",
-            "https://169.254.169.254",
-            "https://[fd00:ec2::254]",
-            "https://100.100.100.200",
-        ] {
-            assert!(validate_endpoint(url, "169.254.169.254").is_err(), "{url}");
-        }
-        assert!(validate_endpoint("http://cliproxy:8317/v1", "cliproxy").is_ok());
     }
 }

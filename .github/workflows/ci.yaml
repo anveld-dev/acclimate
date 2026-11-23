@@ -135,7 +135,7 @@ jobs:
           echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/gvisor.gpg] https://storage.googleapis.com/gvisor/releases release main' | sudo tee /etc/apt/sources.list.d/gvisor.list
           sudo apt-get update
           sudo apt-get install -y runsc
-          sudo jq '.runtimes.runsc = {"path":"runsc","runtimeArgs":["--host-uds=open"]}' /etc/docker/daemon.json > "$RUNNER_TEMP/docker.json"
+          jq '.runtimes.runsc = {"path":"runsc","runtimeArgs":["--host-uds=open"]}' /etc/docker/daemon.json > "$RUNNER_TEMP/docker.json"
           sudo install -m 0644 "$RUNNER_TEMP/docker.json" /etc/docker/daemon.json
           sudo systemctl restart docker
           docker info

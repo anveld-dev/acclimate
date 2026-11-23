@@ -14,10 +14,9 @@ Acclimate combines versioned delivery with a self-improvement loop for enrolled 
 | Round | One pass of the loop: score the incumbent, propose five candidates, screen, evaluate the survivors, adopt or keep, and score the held-out split. |
 | Candidate | One of the five proposed changes in a round, with its diagnosis and predicted fixes. |
 | Evolve split | The cases the loop learns from. Their scores, traces and errors reach the optimizer. |
-| Held-out split | Fixed cases kept in the evaluator's own store. Their scores are shown for monitoring and never reach the optimizer. |
+| Held-out split | Tasks held in a separate service table. Their scores are shown for monitoring and never reach the optimizer. |
 | Outcome | A job's pinned version, input and known expected answer. The input and expected answer become an evolve case. |
-| Improvement memory | The optimizer-only record of problems and adopted attempts, including predicted fixes and measured results. Workspace readers other than the app principal can inspect it. It stays outside delivered bundles. |
-| App principal | The machine identity that submits outcomes and evolve cases and runs the evaluator for a loop. |
+| Improvement memory | The optimizer-only record of problems and adopted attempts, including predicted fixes and measured results. Workspace readers can inspect it. It stays outside delivered bundles. |
 
 ## Internal terms
 

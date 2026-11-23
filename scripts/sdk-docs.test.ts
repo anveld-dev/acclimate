@@ -25,18 +25,7 @@ test('the SDK references document every public entry point, runtime export and c
     for (const name of Object.keys(await import(source.href)))
       if (!documented.has(name)) missing.push(`${entry}: ${name}`);
   }
-  const cliReference = await readFile(new URL('apps/docs/content/docs/reference/evaluator-cli.mdx', root), 'utf8');
-  const documentedCommands = new Set([...cliReference.matchAll(/^\| `([\w-]+)(?: [^`]+)?` \|/gm)].map((match) => match[1]));
   for (const command of Object.keys(manifest.bin))
-    if (!documented.has(command) && !documentedCommands.has(command)) missing.push(`bin: ${command}`);
+    if (!documented.has(command)) missing.push(`bin: ${command}`);
   assert.deepEqual(missing, [], 'Document these in reference/typescript-sdk.mdx');
-});
-
-test('the evaluator CLI reference lists the local commands and learning bin', async () => {
-  const { EVALUATOR_COMMANDS } = await import('../packages/sdk/src/evaluation/cli.js');
-  const reference = await readFile(new URL('apps/docs/content/docs/reference/evaluator-cli.mdx', root), 'utf8');
-  const documented = [...reference.matchAll(/^\| `([\w-]+)(?: [^`]+)?` \|/gm)].map((match) => match[1]);
-  assert.deepEqual(documented.filter(command => command !== 'acclimate-learning').sort(), [...EVALUATOR_COMMANDS].sort());
-  assert.match(reference, /\bacclimate-learning held-out --app\b/);
-  assert.match(reference, /\bacclimate-learning --config\b/);
 });

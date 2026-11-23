@@ -7,4 +7,4 @@
 
 Use the SDK to upload another immutable version. A release moves the channel with an expected revision and a reason. **Releases** shows version history and can point the channel back at a previous version. [Release and rollback guide](../apps/docs/content/docs/guides/release-and-roll-back.mdx)
 
-After releasing your first version, you can enroll the bundle in the [learning loop](evaluator-operations.md#serve-the-learning-loop).
+After releasing your first version, you can enroll the bundle in the [learning loop](design/improvement.md).

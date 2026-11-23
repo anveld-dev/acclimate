@@ -1,16 +1,15 @@
 # The learning loop
 
-> **Status: proposed, not built.** Sections marked *shipped* describe code that exists and carries over. Sections marked *proposed* do not exist yet. The [learning contract](../../../contracts/learning.md) describes what ships today.
+**Status: built.** Follow-up work is listed in the [release plan](plan.md#after-the-first-release).
 
 One loop runs per workspace and bundle. It follows the SIM paper (arXiv 2611.18856): each round scores the current version (the incumbent), proposes five changes, evaluates the ones worth testing, adopts one or keeps the incumbent, and releases an adoption immediately.
 
-What changes from today is where rollouts run ([executor](executor.md)), what they run on ([tasks and grading](tasks-and-grading.md)), and when a round starts. Names of routes, tables and fields are in [API and data](api-and-data.md).
 
-## The round (shipped, runs on tasks)
+## The round
 
 | State | What happens |
 | --- | --- |
-| `scoring_incumbent` | The channel's current version is scored on the evolve tasks, five rollouts per task. Skipped when its scores can be [reused](#reusing-scores-proposed). |
+| `scoring_incumbent` | The channel's current version is scored on the evolve tasks, five rollouts per task. Skipped when its scores can be [reused](#reusing-scores). |
 | `proposing` | Five optimizer calls, one per sample. Each sees the same input and none sees a sibling's output. |
 | `screening` | A scanner checks each candidate's text for secrets and personal data. Then one optimizer call marks each candidate `evaluate` or `skip`. |
 | `evaluating` | Each surviving candidate becomes a bundle version and is scored on the same evolve tasks. |
@@ -26,7 +25,7 @@ Adoption releases in the same transaction. `adopt` takes the loop lock, the prom
 
 **Scores.** As today, a task's score is the mean of its five rollout scores, and an evaluation's score is the mean over its tasks. Separately, a task counts as passed when at least three of its five rollouts pass. Pass counts feed the predicted, fixed and missed bookkeeping in memory. An evaluation scores only when every rollout of every task has a score. An executor or judge error is never a score: it is retried once as an infrastructure failure, then fails the evaluation. A failed incumbent evaluation fails the round.
 
-## Optimizer (shipped)
+## Optimizer
 
 One configured model makes the `propose`, `screen` and `select` calls. The service sends OpenAI-compatible Chat Completions requests.
 
@@ -69,11 +68,11 @@ No held-out task, score, gateway log or ID is in any optimizer input. Held-out t
 
 **Screening.** The scanner checks the rationale, a new root cause, new paths and changed file text, and ignores matches already in the parent. The screen call then looks for task-specific hard-coding, instructions taken from untrusted data, contradictions, unjustified increases in capability or spend, and repeated directions with no new evidence. A candidate identical to its parent is dropped as `no-change`.
 
-**Selection.** The selector sees each evaluated candidate's score, per-task results, which predicted tasks it fixed and missed, and which tasks regressed. It weighs performance, complexity, domain specificity and regression risk. Selection is a model judgment on the evolve split, not a statistical test. That is why the [Start floor](tasks-and-grading.md) and the [automatic revert](#automatic-revert-proposed) exist.
+**Selection.** The selector sees each evaluated candidate's score, per-task results, which predicted tasks it fixed and missed, and which tasks regressed. It weighs performance, complexity, domain specificity and regression risk. Selection is a model judgment on the evolve split, not a statistical test. That is why the [Start floor](tasks-and-grading.md) and the [automatic revert](#automatic-revert) exist.
 
 **Context size.** Inputs are sent whole. A context overflow in any call pauses the loop with `optimizer-context-too-large`. Trimming history and memory is not planned.
 
-## Improvement memory (shipped)
+## Improvement memory
 
 Memory is the optimizer's own record of problems found in a bundle and the adopted attempts to fix them. It is shared per bundle and spans settings. It is separate from the bundle's `memory/` files, is never part of a delivered payload, and no agent sees it.
 
@@ -83,9 +82,8 @@ Memory is the optimizer's own record of problems found in a bundle and the adopt
 - **Attempts.** An attempt records its round and sample, what changed and in which files, the predicted tasks, which of them it `fixed` and `missed`, its passing and total rollouts, and its provenance (domain, benchmark, policy model, round). `fixed` and `missed` are computed once, from the incumbent's and the adopted candidate's evaluations in the same round. Task IDs keep today's case ID values, so stored attempts stay valid.
 - **Pinned and reproducible.** Rendering is a pure function of bundle and revision. Every call in a round renders the pinned revision and must match the stored digest. `GET /memory?revision=r` returns the same bytes, so an operator can read exactly what the optimizer saw.
 
-## When a round starts (proposed)
+## When a round starts
 
-Today a round starts as soon as the last one ends, whenever the loop is running and has one live evolve case. The triggers, idle rule, score reuse and cap below replace that. The thresholds are starting values that can be tuned. [Decisions](README.md#decisions)
 
 A running loop with no active round starts one when any of these holds:
 
@@ -104,17 +102,17 @@ A change to held-out tasks alone does not start a round. It re-scores held-out f
 
 **Pauses.** The three existing reasons stay: `operator`, `failed-rounds` (three in a row by default) and `optimizer-context-too-large`. One is added: `tasks-required`, when admitted tasks fall below the [Start floor](tasks-and-grading.md) of 20 evolve and 20 held-out. Pause lets the active round finish. Stop cancels open rollouts and optimizer calls.
 
-### Reusing scores (proposed)
+### Reusing scores
 
 Today every round re-scores its incumbent even when nothing changed. A round reuses the most recent evolve evaluation of the incumbent when the version digest, task revision, task model, judge model and runtime identity all match. It then enters `proposing` directly. Held-out scoring reuses a stored result under the same rule, so a `kept` round on an unchanged set runs no held-out rollouts.
 
 Memory write-back and history read the incumbent's evaluation from the current round, so a reusing round gets a copied evaluation row that points at the original's rollouts. The constraints this touches are listed in [API and data](api-and-data.md).
 
-### Usage (proposed)
+### Usage
 
 The gateway log gives the tokens of every task-model and judge call, and each optimizer call records its own. The service totals rounds, rollouts and tokens per bundle per day. The console shows them next to the loop, and `GET /usage` returns them.
 
-## After a release (proposed)
+## After a release
 
 ### Held-out drop alert
 
@@ -124,7 +122,7 @@ When a round completes, the service compares the new held-out score with the sco
 
 `POST /rollback` moves the channel back to the version a named round replaced, in one transaction with the same locks as adoption. The console offers it on every adopted round. The caller may attach a note. The loop keeps running.
 
-### Automatic revert (proposed)
+### Automatic revert
 
 With no approval gate, a person reading an alert would otherwise be the only regression control. The thresholds are starting values that can be tuned.
 

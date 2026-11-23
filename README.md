@@ -4,9 +4,9 @@
 
 Your application still runs the agent and grades its work. Acclimate versions the instructions, skills and memory files it uses, delivers the released version to the next job, and lets you point a channel back at an earlier version.
 
-Each round proposes five candidates, screens them, evaluates the survivors and selects one to adopt or keeps the current release. An adoption releases the version and adds an attempt to improvement memory. The evaluator scores the retained version on private held-out cases for monitoring.
+Each round proposes five candidates, screens them, evaluates the survivors and selects one to adopt or keeps the current release. An adoption releases the version and adds an attempt to improvement memory. The executor scores the retained version on held-out tasks for monitoring.
 
-Acclimate is open source under Apache-2.0 and self-hosted. Your application runs the agents and keeps its own model credentials. The service sends the harness and evolve feedback to the configured optimizer. Held-out inputs and expected answers stay with the evaluator.
+Acclimate is open source under Apache-2.0 and self-hosted. Your application runs the agents and keeps its own model credentials. The service sends the harness and evolve feedback to the configured optimizer. Held-out inputs and expected answers are stored separately in the service.
 
 ## Run the local stack
 
@@ -21,33 +21,16 @@ The first start pulls the released images, or builds from source in 10 to 20 min
 
 ## Run a learning loop
 
-Install the TypeScript SDK from a verified tarball or build it from a checkout. [SDK installation](packages/sdk/README.md) The built-in `openai()` adapter and service optimizer use OpenAI-compatible Chat Completions endpoints. For Codex, sign in through CLIProxyAPI and set `OPENAI_BASE_URL=http://127.0.0.1:8317/v1`. Set `OPENAI_API_KEY` if your proxy requires one. [CLIProxyAPI setup](apps/docs/content/docs/guides/learning-loop.mdx#use-codex-through-cliproxyapi) Set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` using a machine token with **Promote** and **Evaluate**. With a bundle released and the service optimizer configured, save this as `acclimate.loop.ts`.
+1. In workspace settings, configure an OpenAI-compatible model provider, its key and allowed models.
+2. Open the released bundle’s **Learning** tab. Choose its channel, task model and a different judge model.
+3. Import CSV, JSONL, a spreadsheet or pasted examples. Each task pairs an input with an expected answer or grading criteria. Review the task cards and confirm held-out material. Use **Try** to inspect an executor run before starting a round.
+4. Start learning once at least 20 evolve tasks and 20 held-out tasks pass admission. The same floor applies on resume.
 
-```ts
-import { defineLoop, exact, openai } from '@acclimate/sdk/learning';
+The executor runs each rollout in a fresh sandbox. The service scores candidates on evolve tasks and automatically releases the selected version to the channel. Held-out scores monitor regressions. Inspect the round, usage and release history in the console or roll back an adopted round.
 
-export default defineLoop({
-  bundle: 'support-agent',
-  channel: 'stable',
-  agent: openai({ model: 'gpt-6.2-sol', parse: text => JSON.parse(text) as { action: string } }),
-  cases: './cases.jsonl',
-  grade: exact('action'),
-});
-```
+An application with workspace write access can call `job.expect(expected, { input, output })` after a production job. The SDK sends the pinned version and digest. The service assigns the task’s split and runs admission.
 
-Add labeled tickets with `input` and `expected` fields to `cases.jsonl`, then run `npx acclimate learn`. The CLI splits cases by a stable hash and needs at least one case in each split. Python users can define and run the same loop with `python -m acclimate learn`. [Learning loop quick start](apps/docs/content/docs/guides/learning-loop.mdx)
-
-Use the enrolled app principal to report a known answer for a production job. It becomes an evolve case for the next round.
-
-```ts
-import { createAcclimate } from '@acclimate/sdk';
-
-const job = await createAcclimate().job('support-agent', { channel: 'stable', input: ticket });
-// Run the agent with the files from job.prepare(...), then:
-await job.expect({ action: 'refund' });
-```
-
-To move to a new model, change `openai({ model })` and run `npx acclimate learn` again. The loop records the new setting and keeps its improvement memory, so later rounds build on what earlier models learned.
+Run the `acclimate-executor` container with a provisioned `ACCLIMATE_EXECUTOR_TOKEN` and access to the Docker socket. Build the chat runner image and configure gVisor (`runsc`) in production. Set `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` on the service to a 64-character hex key so workspace provider credentials can be encrypted at rest. [Deployment guide](deploy/README.md#rollout-executor)
 
 ## Deliver content to jobs
 

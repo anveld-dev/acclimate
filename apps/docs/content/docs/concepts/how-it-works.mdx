@@ -11,8 +11,9 @@ On each job start, the SDK resolves the channel, fetches and verifies the payloa
 
 ## Learning loop
 
-Each round scores the incumbent on the evolve split, then proposes five candidates. The optimizer receives the full incumbent harness, evolve case inputs, scores, rollout traces and errors, prior round summaries and diffs for the current setting, and pinned improvement memory. A workspace member with write access can add setup cases. The enrolled app principal can also report production inputs and known expected answers as evolve cases.
+1. In workspace settings, configure an OpenAI-compatible model provider, its key and allowed models.
+2. Open the released bundle’s **Learning** tab. Choose its channel, task model and a different judge model.
+3. Import CSV, JSONL, a spreadsheet or pasted examples. Each task pairs an input with an expected answer or grading criteria. Review the task cards and confirm held-out material. Use **Try** to inspect an executor run before starting a round.
+4. Start learning once at least 20 evolve tasks and 20 held-out tasks pass admission. The same floor applies on resume.
 
-The scanner checks the proposed content and the selector screens candidates before evaluation. The evaluator grades five rollouts per case for each survivor. The selector adopts a candidate or keeps the incumbent. An adoption immediately releases the version and adds an attempt to improvement memory, which future rounds use and jobs never receive. The evaluator scores the retained version against its private held-out split for monitoring only. Inspect scores, candidates and improvement memory in the bundle’s **Learning** tab.
-
-[Enroll a learning loop](/docs/guides/learning-loop)
+The executor runs each rollout in a fresh sandbox. The service scores candidates on evolve tasks and automatically releases the selected version to the channel. Held-out scores monitor regressions. Inspect the round, usage and release history in the console or roll back an adopted round.

@@ -1,6 +1,6 @@
 ---
 title: TypeScript SDK
-description: Public entry points for delivery, payload preparation and local evaluator tools.
+description: Public entry points for delivery, payload preparation and production outcomes.
 ---
 
 Install `@acclimate/sdk` with Node.js 22.22 or later. See [install the SDKs](/docs/get-started/install). Import only the entry points below; other paths inside the package are private and can change in any release.
@@ -10,26 +10,14 @@ Install `@acclimate/sdk` with Node.js 22.22 or later. See [install the SDKs](/do
 | Entry point | Runtime exports |
 | --- | --- |
 | `@acclimate/sdk` | `createAcclimate`, `AcclimateClient`, `ApiError`, `resolveAndCache`, `defaultCacheDir`, `prepareFiles`, `verifyPayloadBytes`, `validatePayload`, `DeliveryError`, `createReceiptReporter`, `TaskExecutionError`, `InfrastructureError`, `compatibilityIssues`, `assertCompatible`, `AcclimateError`, `AcclimateUsageError`, `TransportError` |
-| `@acclimate/sdk/validation` | `validatePayload`, `DeliveryError`, `compatibilityIssues`, `assertCompatible`, `validateEvaluationDescriptor`, `validateEvaluationServiceUrl`, `assertGuidedTarget`, `EvaluationConfigurationError` |
-| `@acclimate/sdk/evaluation` | `defineEvaluation`, `defineApplication`, `preflightEvaluation`, `assertEvaluationOutput`, `createEvaluationManifest`, `restoreEvaluationManifest`, `canonicalEvaluationJson`, `toSafeDiagnostic`, `exitCodeFor`, `EVALUATION_ERROR_CODES`, `EXIT_CODES`, and the error classes `AcclimateError`, `AcclimateUsageError`, `TransportError`, `EvaluationError`, `EvaluationUsageError`, `DefinitionError`, `OutputValidationError`, `AppSetupError`, `EvaluatorConfigError`, `EvaluationBusyError`, `ExecutionUncertainError`, `CallbackCancelled` |
-| `@acclimate/sdk/evaluation` (local runs) | `tryEvaluation`, `loadLocalPayload`, `localPayloadDigest`, `localVersion`, `LocalRunError` check callback shapes without a service. Results are advisory. |
-| `@acclimate/sdk/evaluation` (grading) | `repeatGrade`, `gradeAgreement` and `passAtK` grade an output several times, measure grader agreement and estimate pass@k. |
-| `@acclimate/sdk/evaluation` (run controls) | `parseDuration`, `parseSelection`, `progressLine` and `runWarnings` parse and render execution controls. |
-| `@acclimate/sdk/evaluation/manifest` | `createEvaluationManifest`, `restoreEvaluationManifest`, `canonicalEvaluationJson` |
-| `@acclimate/sdk/evaluation/cli` | `evaluationMain`, `evaluationReadMain`, `parseEvaluatorArguments`, `reportEvaluatorError`, `verboseRequested`, `sdkVersion`, `EVALUATOR_COMMANDS`, `ADAPTER_FREE_COMMANDS` |
-| `@acclimate/sdk/evaluation/app-cli` | `applicationMain`, `loadApplication`, `resolveApplicationFile`, `defineApplication`, and the `ApplicationAdapter` type |
-| `@acclimate/sdk/learning` | `defineLoop`, `openai`, `exact`, `tests`, `OpenAIHttpError`, `serveLearningLoop`, `heldOutDigest`, `addEvolveCases`, `createLearningOutcomeReporter` |
+| `@acclimate/sdk/validation` | `validatePayload`, `DeliveryError`, `compatibilityIssues`, `assertCompatible` |
 | `@acclimate/sdk/native-files` | `prepareNativeFiles`, `nativeSource` and `transcriptTail`, for plugin authors. |
 
 The root entry also exports every wire type, such as `Bundle`, `VersionMetadata`, `Release` and `Page`, plus option types such as `ClientOptions`, `CachePolicy`, `OfflinePolicy` and `PrepareDeliveryOptions`. The types match [`contracts/openapi.json`](/docs/reference/http-api).
 
 ## Commands
 
-| Command | Use |
-| --- | --- |
-| `acclimate` | Use `acclimate learn` to enroll, sync, serve and follow a loop from an `acclimate.loop.ts` config. |
-| `acclimate-learning` | Print a held-out commitment or serve a pre-enrolled loop from a custom app module. |
-| `acclimate-eval` | The [evaluator CLI](/docs/reference/evaluator-cli). It loads `application.mjs` or `application.mts` from the current directory. |
+The `acclimate` executable provides one command. Use `acclimate pull --config /absolute/path/pull.json --bundle ID --channel stable --out payload.json` to save a released payload. Use a new output path. The config is an owner-only JSON file inside an owner-only directory with `schemaVersion` set to 1, `serviceUrl`, `workspaceId`, `scope` and an absolute `cacheDir`. Supply the read credential through `ACCLIMATE_TOKEN` or the private config’s `token` field. Use `tokenFile` for an absolute path to a separate owner-only credential file.
 
 ## Deliver a pinned version
 
@@ -53,28 +41,7 @@ Use `resolveAndCache` when you want a verified version for a native plugin or yo
 | `ApiError` | The service returns an error. It has `status`, `code`, `requestId` and optional `details`. |
 | `DeliveryError` | Delivery finds a malformed response, cache entry or payload. |
 | `TaskExecutionError`, `InfrastructureError` | Thrown from execution callbacks to mark a task failure or an infrastructure failure. |
-| `EvaluationError` | An evaluation step fails. It has a stable `code` and a printable diagnostic. See [error codes](/docs/reference/error-codes). |
-| `DefinitionError`, `OutputValidationError`, `AppSetupError`, `EvaluationUsageError` | `defineEvaluation` rejects a `field` such as `cases[1].caseId`, a callback returns non-JSON output, the application module is invalid, or the command line is invalid. |
-| `LocalRunError` | A local run received an unreadable or invalid payload, or an invalid run control. |
-| `ExecutionUncertainError`, `CallbackCancelled` | Thrown from your callbacks: when external work might still be running, or after the callback stops for cooperative cancellation. |
 
-[Versioning and compatibility](/docs/reference/versioning) covers which SDK versions work with which service versions and how deprecated names are removed.
+## Production outcomes
 
-## Learning
-
-Import loop wire types such as `LearningLoopRequest`, `LearningLoop`, `LearningRoundSummary`, `LearningRound`, `LearningCandidate`, `LearningSelection`, `LearningMemory`, `LearningEvaluation` and `LearningWork` from `@acclimate/sdk`.
-
-| Task | `AcclimateClient` methods |
-| --- | --- |
-| Enroll and control | `enrollLearningLoop`, `pauseLearningLoop`, `resumeLearningLoop`, `stopLearningLoop` |
-| Inspect | `getLearningLoop`, `listLearningRounds`, `getLearningRound`, `getLearningMemory` |
-| Sync evolve cases or report outcomes | `listLearningEvolveCases`, `addLearningEvolveCases`, `reportLearningOutcome` |
-| Serve evaluation work | `getLearningWork`, `startLearningEvaluation`, `reportLearningEvaluation` |
-
-Each loop method takes the workspace ID and bundle ID first. `getPrincipal(workspaceId)` returns `{ principalId, kind, rights }` for the authenticated caller. `listLearningEvolveCases` accepts `{ after?, limit? }` and returns `{ items, next, evolveRevision }`. See the [HTTP contract](/docs/reference/http-api#learning-loop) for the request shapes.
-
-Use `defineLoop(config)` with `LoopConfig`, `LoopAgent`, `LoopCase`, `LoopExecute` and `LoopGrade` to configure the one-command setup. For direct evaluator control, use `serveLearningLoop` with `LearningLoopApp` and `LearningLoopOptions`. [Learning evaluator CLI](/docs/reference/evaluator-cli#learning-evaluator)
-
-`openai({ model, baseURL?, apiKey?, effort?, parse?, render? })` returns a `LoopAgent` whose `.model` supplies the default `setting.policyModel`. The options are typed as `OpenAIOptions`. `render(version)` receives the verified version and returns system text. `parse(text)` receives the first assistant message's text and returns the graded output. Both callbacks may be asynchronous. HTTP failures throw `OpenAIHttpError` with `.status` and a key-redacted `.trace`. [OpenAI-compatible endpoint setup](/docs/guides/learning-loop#run-and-grade-your-agent)
-
-`getLearningRound` returns candidates and the selector decision. `getLearningMemory` returns the latest improvement memory or a specific revision when you supply `revision`. Read memory as a workspace reader other than the app principal.
+An application with workspace write access can call `job.expect(expected, { input, output })` after a production job. The SDK sends the pinned version and digest. The service assigns the task’s split and runs admission.

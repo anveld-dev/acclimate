@@ -13,7 +13,6 @@ import unittest
 import acclimate
 from acclimate import AcclimateClient, ApiError, resolve_and_cache, types
 from acclimate._python_version import require_supported_python
-from acclimate.learning import held_out_digest
 
 ROOT = Path(__file__).resolve().parents[2]
 TS_CLIENT = ROOT / "packages" / "sdk" / "src" / "client.ts"
@@ -53,7 +52,9 @@ class Recorder(http.server.BaseHTTPRequestHandler):
             "path": self.path,
             "key": self.headers.get("Idempotency-Key"),
             "connection": self.headers.get("X-Acclimate-Connection-Id"),
-            "body": json.loads(body) if body else None,
+            "body": json.loads(body) if body and self.headers.get_content_type() == "application/json" else body or None,
+            "media": self.headers.get_content_type(),
+            "session": self.headers.get("X-Acclimate-Session"),
         })
         data = json.dumps(Recorder.response).encode()
         self.send_response(200)
@@ -61,7 +62,7 @@ class Recorder(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    do_GET = do_POST = do_PUT = _record
+    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = _record
 
 
 class ParityTest(unittest.TestCase):
@@ -93,6 +94,23 @@ class ParityTest(unittest.TestCase):
         )
         self.assertEqual(missing, [], "Add these methods or document the omission")
 
+    def test_task_changes_and_imports_preserve_wire_shapes(self):
+        client = AcclimateClient(self.url, "token", "scope", session_token="session")
+        prefix = "/v1/workspaces/w/bundles/b/learning"
+        client.list_learning_tasks("w", "b", split="evolve", flagged=False)
+        self.assertEqual(self.last()["path"], prefix + "/tasks?split=evolve&flagged=false")
+        patch = {"confirm": True}
+        client.edit_learning_task("w", "b", "a/b", patch)
+        self.assertEqual((self.last()["method"], self.last()["path"], self.last()["body"]),
+                         ("PATCH", prefix + "/tasks/a%2Fb", patch))
+        material = b"input,expected\nhello,hi\n"
+        client.import_learning_tasks("w", "b", material, "text/csv", "support tickets.csv")
+        self.assertEqual(self.last()["path"], prefix + "/tasks/import?filename=support+tickets.csv")
+        self.assertEqual((self.last()["body"], self.last()["media"]), (material, "text/csv"))
+        client.export_held_out_tasks("w", "b")
+        self.assertEqual(self.last()["path"], prefix + "/held-out-tasks/export")
+        self.assertEqual(self.last()["session"], "session")
+
     def test_listing_methods_use_the_workspace_routes(self):
         c = self.client
         cases = [
@@ -104,11 +122,6 @@ class ParityTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(call(), {"items": [], "nextCursor": None})
                 self.assertEqual((self.last()["method"], self.last()["path"]), ("GET", path))
-
-    def test_get_principal_uses_the_workspace_route(self):
-        Recorder.response = {"principalId": "machine:app", "kind": "machine", "rights": ["evaluate"]}
-        self.assertEqual(self.client.get_principal("w"), Recorder.response)
-        self.assertEqual((self.last()["method"], self.last()["path"]), ("GET", "/v1/workspaces/w/principal"))
 
     def test_bundle_setup_posts_one_keyed_write(self):
         request = {
@@ -135,55 +148,6 @@ class ParityTest(unittest.TestCase):
         self.assertIsNone(self.last()["connection"])
         with self.assertRaisesRegex(ValueError, "connection_id must be a UUID"):
             AcclimateClient(self.url, "token", "scope", connection_id="not-a-uuid")
-
-    def test_learning_loop_routes_and_idempotency_keys(self):
-        c = self.client
-        prefix = "/v1/workspaces/w/bundles/b/learning"
-        enroll = {"channel": "stable", "appPrincipalId": "machine:app",
-                  "setting": {"domain": "support", "benchmark": "tickets", "policyModel": "model"},
-                  "heldOut": {"digest": "sha256:" + "a" * 64, "cases": 2}}
-        evolve = {"cases": [{"caseId": "a", "input": None, "expected": 1}], "retire": ["b"]}
-        outcome = {"outcomeId": "outcome-id", "versionId": "version-id", "digest": "digest",
-                   "input": None, "expected": 1}
-        start = {"attemptId": "attempt"}
-        report = {"attemptId": "attempt", "error": "learning.held_out_mismatch"}
-        routes = [
-            (lambda: c.enroll_learning_loop("w", "b", enroll), "PUT", "", None, enroll),
-            (lambda: c.get_learning_loop("w", "b"), "GET", "", None, None),
-            (lambda: c.pause_learning_loop("w", "b"), "POST", "/pause", None, None),
-            (lambda: c.resume_learning_loop("w", "b", "resume"), "POST", "/resume", "resume", None),
-            (lambda: c.stop_learning_loop("w", "b"), "POST", "/stop", None, None),
-            (lambda: c.list_learning_rounds("w", "b", before=10, limit=2),
-             "GET", "/rounds?before=10&limit=2", None, None),
-            (lambda: c.get_learning_round("w", "b", "r", evaluation="x y"),
-             "GET", "/rounds/r?evaluation=x+y", None, None),
-            (lambda: c.get_learning_memory("w", "b"), "GET", "/memory", None, None),
-            (lambda: c.get_learning_memory("w", "b", revision=0), "GET", "/memory?revision=0", None, None),
-            (lambda: c.list_learning_evolve_cases("w", "b"), "GET", "/evolve-cases", None, None),
-            (lambda: c.list_learning_evolve_cases("w", "b", after="a:b", limit=100),
-             "GET", "/evolve-cases?after=a%3Ab&limit=100", None, None),
-            (lambda: c.add_learning_evolve_cases("w", "b", evolve), "POST", "/evolve-cases", None, evolve),
-            (lambda: c.report_learning_outcome("w", "b", outcome), "POST", "/outcomes", "outcome-id", outcome),
-            (lambda: c.get_learning_work("w", "b"), "GET", "/work", None, None),
-            (lambda: c.start_learning_evaluation("w", "b", "e", start),
-             "POST", "/evaluations/e/start", "attempt", start),
-            (lambda: c.report_learning_evaluation("w", "b", "e", report, "attempt:error"),
-             "POST", "/evaluations/e/report", "attempt:error", report),
-        ]
-        for call, method, suffix, key, body in routes:
-            with self.subTest(method=method, suffix=suffix):
-                self.assertEqual(call(), Recorder.response)
-                actual = self.last()
-                self.assertEqual((actual["method"], actual["path"], actual["key"], actual["body"]),
-                                 (method, prefix + suffix, key, body))
-
-    def test_live_evolve_cases_preserve_page_and_entry_revisions(self):
-        Recorder.response = {
-            "items": [{"caseId": "a", "input": {"text": "hello"}, "expected": 1, "addedRevision": 2}],
-            "next": "a",
-            "evolveRevision": 3,
-        }
-        self.assertEqual(self.client.list_learning_evolve_cases("w", "b"), Recorder.response)
 
     def test_learning_inspection_preserves_candidate_and_memory_records(self):
         candidate: types.LearningCandidate = {
@@ -224,11 +188,6 @@ class ParityTest(unittest.TestCase):
         }
         Recorder.response = memory
         self.assertEqual(self.client.get_learning_memory("w", "b", revision=1), memory)
-
-    def test_held_out_commitment_matches_shared_fixture(self):
-        fixture = json.loads((FIXTURES / "learning-held-out-v1.json").read_text())
-        self.assertEqual(held_out_digest(fixture["cases"]), fixture["digest"])
-        self.assertEqual(held_out_digest(list(reversed(fixture["cases"]))), fixture["digest"])
 
     def test_offline_policy_matches_the_typescript_shape(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -297,17 +256,6 @@ class NamespaceTest(unittest.TestCase):
 
 
 class OpenApiContractTest(unittest.TestCase):
-    def test_learning_schema_fields_and_required_keys(self):
-        schemas = json.loads((ROOT / "contracts" / "openapi.json").read_text())["components"]["schemas"]
-        for name in ("LearningLoopRequest", "LearningLoop", "LearningEvaluationReport",
-                     "LearningEvaluationReportRequest", "LearningWork", "LearningOutcomeRequest",
-                     "LearningRound", "LearningCandidate", "LearningDiagnosis", "LearningSelection",
-                     "LearningMemory", "LearningEvolveCasesPage", "LearningLiveEvolveCase"):
-            with self.subTest(schema=name):
-                schema, typed_dict = schemas[name], getattr(types, name)
-                self.assertEqual(set(schema["properties"]), set(typed_dict.__annotations__))
-                self.assertEqual(set(schema.get("required", [])), set(typed_dict.__required_keys__))
-
     def test_release_request_schema_matches_both_sdks(self):
         schemas = json.loads((ROOT / "contracts" / "openapi.json").read_text())["components"]["schemas"]
         schema = schemas["PromoteRequest"]

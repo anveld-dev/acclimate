@@ -122,12 +122,6 @@ class Page(TypedDict, Generic[_T]):
     nextCursor: str | None
 
 
-class WorkspacePrincipal(TypedDict):
-    principalId: str
-    kind: Literal["machine", "user"]
-    rights: list[str]
-
-
 class Workspace(TypedDict):
     id: str
     name: str
@@ -255,19 +249,25 @@ class LearningSetting(TypedDict):
     policyModel: str
 
 
-class LearningHeldOut(TypedDict):
-    digest: str
-    cases: int
+class _LearningSettingRequest(TypedDict):
+    domain: str
+    benchmark: str
 
 
 class LearningLoopRequest(TypedDict):
     channel: str
-    appPrincipalId: str
-    setting: LearningSetting
-    heldOut: LearningHeldOut
+    setting: _LearningSettingRequest
+    taskModel: str
+    judgeModel: str
+    maxRoundsPerDay: NotRequired[int]
 
 
 class LearningRoundSummary(TypedDict):
+    taskRevision: int
+    trigger: str
+    incumbentReused: bool
+    taskModel: str | None
+    judgeModel: str | None
     id: str
     number: int
     state: Literal["scoring_incumbent", "proposing", "screening", "evaluating", "selecting",
@@ -286,13 +286,21 @@ class LearningRoundSummary(TypedDict):
     endedAt: str | None
 
 
-class LearningLoop(LearningLoopRequest):
+class LearningLoop(TypedDict):
+    channel: str
+    setting: LearningSetting
+    taskModel: str | None
+    judgeModel: str | None
+    maxRoundsPerDay: int
+    taskRevision: int
+    waiting: str | None
+    alert: LearningJson
+    admittedEvolve: int
+    admittedHeldOut: int
     workspaceId: str
     bundleId: str
     status: LearningLoopStatus
-    pauseReason: Literal["operator", "failed-rounds", "optimizer-context-too-large"] | None
-    evolveRevision: int
-    liveCases: int
+    pauseReason: Literal["operator", "failed-rounds", "optimizer-context-too-large", "tasks-required"] | None
     memoryRevision: int
     nextRound: int
     failedRounds: int
@@ -391,20 +399,6 @@ class _LearningEvaluationIdentity(TypedDict):
     versionId: str
     digest: str
     evolveRevision: int | None
-    deadlineAt: str
-
-
-class LearningWorkItem(_LearningEvaluationIdentity):
-    evaluationId: str
-    roundNumber: int
-    heldOut: LearningHeldOut | None
-    status: Literal["queued", "running"]
-
-
-class LearningWork(TypedDict):
-    bundleId: str
-    status: LearningLoopStatus
-    items: list[LearningWorkItem]
 
 
 class LearningHeldOutRollout(TypedDict):
@@ -426,12 +420,6 @@ class LearningEvaluationReport(TypedDict):
     cases: list[_LearningCaseReport]
 
 
-class LearningEvaluationReportRequest(TypedDict):
-    attemptId: str
-    cases: NotRequired[list[_LearningCaseReport]]
-    error: NotRequired[str]
-
-
 class _LearningCaseSummary(TypedDict):
     caseId: str
     passedRollouts: int
@@ -439,6 +427,7 @@ class _LearningCaseSummary(TypedDict):
 
 
 class LearningEvaluation(_LearningEvaluationIdentity):
+    passedCases: NotRequired[int]
     id: str
     status: LearningEvaluationStatus
     score: float | None
@@ -459,51 +448,11 @@ class LearningRound(LearningRoundSummary):
     memoryDigest: str | None
     historyDigest: str | None
     setting: LearningSetting
-    heldOut: LearningHeldOut
     optimizerModel: str | None
     optimizerReasoningEffort: _ReasoningEffort | None
     selection: LearningSelection | None
     candidates: list[LearningCandidate]
     evaluations: list[LearningEvaluation]
-
-
-class LearningEvaluationStart(TypedDict):
-    attemptId: str
-
-
-class LearningEvolveCase(TypedDict):
-    caseId: str
-    input: LearningJson
-    expected: LearningJson
-
-
-class LearningLiveEvolveCase(LearningEvolveCase):
-    addedRevision: int
-
-
-class LearningEvolveCasesPage(TypedDict):
-    items: list[LearningLiveEvolveCase]
-    next: str | None
-    evolveRevision: int
-
-
-class LearningEvaluationAssignment(TypedDict):
-    evaluation: LearningEvaluation
-    cases: list[LearningEvolveCase] | None
-    heldOut: LearningHeldOut | None
-    reportedCaseIds: list[str]
-
-
-class LearningEvolveCasesRequest(TypedDict):
-    cases: NotRequired[list[LearningEvolveCase]]
-    retire: NotRequired[list[str]]
-
-
-class LearningEvolveCasesReceipt(TypedDict):
-    evolveRevision: int
-    added: int
-    retired: int
-    liveCases: int
 
 
 class LearningOutcomeRequest(TypedDict):
@@ -517,9 +466,9 @@ class LearningOutcomeRequest(TypedDict):
 
 class LearningOutcomeReceipt(TypedDict):
     outcomeId: str
-    caseId: NotRequired[str]
+    taskId: NotRequired[str]
     heldOutCount: NotRequired[int]
-    evolveRevision: int
+    taskRevision: int
 
 
 class _LearningMemoryProvenance(LearningSetting):
@@ -528,7 +477,7 @@ class _LearningMemoryProvenance(LearningSetting):
 
 class _LearningMemoryStoredProvenance(_LearningMemoryProvenance):
     evolveRevision: int
-    heldOutDigest: str
+    heldOutDigest: NotRequired[str]
     optimizerModel: str
 
 
@@ -588,31 +537,125 @@ class LearningRoundPage(TypedDict):
     next: int | None
 
 
+class LearningTaskRequest(TypedDict):
+    input: LearningJson
+    grader: LearningJson
+
+
+class LearningTaskEdit(TypedDict):
+    input: NotRequired[LearningJson]
+    grader: NotRequired[LearningJson]
+    confirm: NotRequired[bool]
+
+
+class LearningTask(TypedDict):
+    taskId: str
+    input: LearningJson
+    grader: LearningJson
+    split: str
+    admission: str
+    addedRevision: int
+
+
+class LearningTaskPage(TypedDict):
+    items: list[LearningTask]
+    next: str | None
+    heldOutCount: int
+
+
+class LearningTaskReceipt(TypedDict):
+    taskId: NotRequired[str]
+    split: NotRequired[str]
+    addedRevision: NotRequired[int]
+    heldOutCount: NotRequired[int]
+
+
+class LearningTaskRevision(TypedDict):
+    taskId: str
+    revision: int
+
+
+class LearningTrialReceipt(TypedDict):
+    trialId: str
+
+
+class LearningTrial(TypedDict):
+    trialId: str
+    kind: str
+    status: str
+    output: NotRequired[LearningJson]
+    gatewayLog: NotRequired[LearningJson]
+    verdict: NotRequired[LearningJson]
+
+
+class LearningImport(TypedDict):
+    importId: str
+    rows: int
+    pending: int
+    converted: int
+    cards: NotRequired[list[LearningTask]]
+    status: NotRequired[str]
+    setAside: NotRequired[int]
+
+
+class LearningUsageDay(TypedDict):
+    day: str
+    rounds: int
+    rollouts: int
+    optimizerTokens: int
+    taskTokens: int
+    judgeTokens: int
+
+
+class LearningUsage(TypedDict):
+    items: list[LearningUsageDay]
+
+
+class LearningRollback(TypedDict):
+    roundId: str
+    note: NotRequired[str]
+
+
+class ModelProvider(TypedDict):
+    baseUrl: str | None
+    allowedModels: list[str]
+    hasKey: bool
+
+
+class ModelProviderRequest(TypedDict):
+    baseUrl: str
+    allowedModels: list[str]
+    apiKey: str
+
+
 __all__ = [
+    "ModelProviderRequest",
+    "ModelProvider",
+    "LearningRollback",
+    "LearningUsage",
+    "LearningUsageDay",
+    "LearningImport",
+    "LearningTrial",
+    "LearningTrialReceipt",
+    "LearningTaskRevision",
+    "LearningTaskReceipt",
+    "LearningTaskPage",
+    "LearningTask",
+    "LearningTaskEdit",
+    "LearningTaskRequest",
     "LearningJson",
     "LearningSetting",
-    "LearningHeldOut",
     "LearningLoopRequest",
     "LearningRoundSummary",
     "LearningLoop",
     "LearningDiagnosis",
     "LearningSelection",
     "LearningCandidate",
-    "LearningWorkItem",
-    "LearningWork",
     "LearningHeldOutRollout",
     "LearningRollout",
     "LearningEvaluationReport",
-    "LearningEvaluationReportRequest",
     "LearningEvaluation",
     "LearningRound",
-    "LearningEvaluationStart",
-    "LearningEvolveCase",
-    "LearningEvaluationAssignment",
-    "LearningLiveEvolveCase",
-    "LearningEvolveCasesPage",
-    "LearningEvolveCasesRequest",
-    "LearningEvolveCasesReceipt",
     "LearningOutcomeRequest",
     "LearningOutcomeReceipt",
     "LearningMemory",
@@ -637,7 +680,6 @@ __all__ = [
     "ConnectionObservationPage",
     "Page",
     "Workspace",
-    "WorkspacePrincipal",
     "Channel",
     "BundleOrigin",
     "BundleSetupRequest",

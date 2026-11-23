@@ -849,12 +849,8 @@ export async function gradeRepositoryTests({
   }
 }
 
-async function evaluationErrors() {
-  return import('@acclimate/sdk/evaluation');
-}
-async function uncertain(cause) {
-  const { ExecutionUncertainError } = await evaluationErrors();
-  return new ExecutionUncertainError(cause === undefined ? undefined : { cause });
+function uncertain(cause) {
+  return Object.assign(new Error('Native execution may still be running.', { cause }), { name: 'ExecutionUncertainError', code: 'execution.uncertain' });
 }
 
 const HARNESS_NAME = /^[a-z][a-z0-9-]{0,63}$/;
@@ -928,7 +924,7 @@ export async function runRepositoryJob(options) {
       text((await safeRead(context.privateJobDirectory, 'binding.json', 16 * 1024)).bytes),
     );
   } catch {
-    fail('native.execution_binding', { path: 'binding.json', rule: 'unreadable evaluator binding' });
+    fail('native.execution_binding', { path: 'binding.json', rule: 'unreadable job binding' });
   }
   const expectedBinding = {
     requestId: context.requestId,
@@ -961,13 +957,13 @@ export async function runRepositoryJob(options) {
         overlap(context.privateJobDirectory, source.sourceRoot)))
   )
     fail('native.overlapping_roots', {
-      rule: 'sourceRoot, stateRoot workspaces/artifacts and the evaluator journal must not contain each other',
+      rule: 'sourceRoot, stateRoot workspaces/artifacts and the job record directory must not contain each other',
     });
   await canonicalDirectory(artifactRoot, { private: true, create: true });
   const artifactDirectory = path.join(artifactRoot, context.jobId);
   await mkdir(artifactDirectory, { mode: 0o700 });
   await syncDirectory(artifactRoot);
-  // A private locator lets the `jobs` CLI find the evaluator's job record later.
+  // A private locator lets the `jobs` CLI find the job record later.
   await exclusiveWrite(artifactDirectory, 'locator.json', jsonBytes({
     schemaVersion: 1, jobId: context.jobId, privateJobDirectory: context.privateJobDirectory,
     harness, caseId, repetition, side: context.side, createdAt: new Date().toISOString(),
@@ -1063,10 +1059,10 @@ export async function runRepositoryJob(options) {
       });
     } catch (cause) {
       // A rejected harness promise never proves its process or provider job stopped.
-      throw await uncertain(cause);
+      throw uncertain(cause);
     }
     if (!run || run.stopped !== true)
-      throw await uncertain(run?.error ? Object.assign(new Error(String(run.error.message ?? 'harness stop unconfirmed')), { code: run.error.code }) : undefined);
+      throw uncertain(run?.error ? Object.assign(new Error(String(run.error.message ?? 'harness stop unconfirmed')), { code: run.error.code }) : undefined);
     record.facts.confirmedStopped = true;
     await save();
     const outcome = classifyRun(run);
@@ -1101,8 +1097,7 @@ export async function runRepositoryJob(options) {
         hint: 'The private failure.json holds the redacted provider message',
       });
     if (outcome.kind === 'cancelled') {
-      const { CallbackCancelled } = await evaluationErrors();
-      throw new CallbackCancelled();
+      throw Object.assign(new Error('Native execution cancelled.'), { name: 'CallbackCancelled' });
     }
     const executionStatus = outcome.kind === 'task_failed' ? 'task_failed' : run.executionStatus;
     return {

@@ -1,5 +1,9 @@
 import { AcclimateError } from './errors.js';
-import type { Usage } from './evaluation/types.js';
+export interface Usage {
+  inputTokens?: number;
+  outputTokens?: number;
+  costUsd?: number;
+}
 
 export interface ExecutionResult<TOutput = unknown> {
   /** Structured-cloneable data; each grade attempt receives its own copy. */

@@ -6,13 +6,6 @@
  *   client.prepare() -> prepare(delivery) -> query() -> reportStarted() at session init
  *   -> retain the result -> cleanup
  *
- * Evaluation: the same module exports `cases`, `execute` and `grade`, so
- * `acclimate-eval try` can call the same `runClaude` for a local payload:
- *   execute({ version }) -> prepare(version) -> query({ ...claudeSessionOptions(p), model, abortController })
- *   -> cleanup
- *
- * The verified version comes from `client.prepare()` in delivery and from the
- * evaluator's `version` argument in evaluation. Both are accepted by `prepare`.
  */
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -21,8 +14,6 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { Options, SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
 import { AcclimateClient, createReceiptReporter } from '@acclimate/sdk';
 import type { PreparedDelivery, VerifiedVersion } from '@acclimate/sdk';
-import { ExecutionUncertainError } from '@acclimate/sdk/evaluation';
-import type { EvaluationCase, EvaluationExecutionResult } from '@acclimate/sdk/evaluation';
 import { prepare } from '@acclimate/claude-plugin';
 import { claudeSessionOptions } from '@acclimate/claude-plugin/native';
 
@@ -93,53 +84,6 @@ export async function runClaude(
     if (finished) await prepared.cleanup();
     else console.error(`Claude session end is unknown; inputs kept at ${prepared.cwd}`);
   }
-}
-
-// ---- Evaluation contract: acclimate-eval loads these exports from this module. ----
-
-export const configId = 'claude-agent';
-export const runtime = {
-  settings: { harness: 'claude', model: process.env.CLAUDE_MODEL ?? null, policy: sessionPolicy },
-};
-export const cases: EvaluationCase<{ prompt: string }, { includes: string }>[] = [
-  {
-    caseId: 'names-guidance',
-    input: { prompt: 'In one sentence, name the most important rule in your project guidance.' },
-    expected: { includes: 'rule' },
-  },
-];
-
-export async function execute({
-  version,
-  input,
-  signal,
-}: {
-  version: VerifiedVersion;
-  input: { prompt: string };
-  signal: AbortSignal;
-}): Promise<EvaluationExecutionResult<{ answer: string }>> {
-  let run: ClaudeRun;
-  try {
-    run = await runClaude(version, { prompt: input.prompt, model: requiredModel(), signal });
-  } catch (cause) {
-    // A rejected query does not prove the Claude process stopped.
-    throw new ExecutionUncertainError({ cause });
-  }
-  return {
-    output: { answer: run.output },
-    executionStatus: run.status,
-    ...(run.usage ? { usage: run.usage } : {}),
-  };
-}
-
-export async function grade({
-  output,
-  expected,
-}: {
-  output: { answer: string };
-  expected: { includes: string };
-}) {
-  return { reward: Number(output.answer.toLowerCase().includes(expected.includes)) };
 }
 
 // ---- Delivery: run the current channel version for one real job. ----

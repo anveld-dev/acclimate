@@ -34,7 +34,6 @@ from typing import get_type_hints
 import acclimate
 from acclimate import AcclimateClient, CreateReleaseRequest, Release
 from acclimate import types
-from acclimate.evaluation import ExecuteInput, GradeInput
 root = Path(acclimate.__file__).resolve().parent
 assert Path(sys.prefix).resolve() in root.parents, "SDK is not installed in consumer venv"
 assert (root / "py.typed").is_file()
@@ -50,8 +49,6 @@ for name in ("FileKind", "CompatibilityTarget", "Operation"):
 hints = get_type_hints(AcclimateClient.create_release)
 assert hints["request"] is CreateReleaseRequest and hints["return"] is Release
 assert CreateReleaseRequest.__required_keys__ == {"versionId", "expectedRevision", "unevaluatedReason"}
-assert get_type_hints(ExecuteInput)["version"] is acclimate.VerifiedVersion
-assert {"output", "expected"} <= get_type_hints(GradeInput).keys()
 print(json.dumps({"sdkPath": str(root), "pep561Marker": True, "runtimeDependencies": []}))
 '''], cwd=directory, env=env, check=True, text=True, capture_output=True,
         )

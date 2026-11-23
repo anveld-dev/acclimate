@@ -29,7 +29,7 @@ const entries = [
   {
     title: 'Learning loop',
     href: '/docs/guides/learning-loop',
-    body: 'Enroll a bundle, sync cases and run the evaluator.',
+    body: 'Configure a bundle, review tasks and start learning.',
   },
   {
     title: 'Integrations',

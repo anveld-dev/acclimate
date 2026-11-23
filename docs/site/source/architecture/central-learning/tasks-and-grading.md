@@ -1,8 +1,8 @@
 # Tasks and grading
 
-**Status: proposed design. Not built yet.** The shipped loop is described in the [learning contract](../../../contracts/learning.md).
+**Status: built.** Follow-up work is listed in the [release plan](plan.md#after-the-first-release).
 
-A task is one thing the agent is asked to do, plus how to judge the result. Tasks live in the service. They replace the evolve cases that `acclimate learn` synced from a file and the held-out cases that stayed in the application. Routes, tables and exact field names are in [API and data](api-and-data.md). The console steps are in [experience](experience.md).
+A task is one thing the agent is asked to do, plus how to judge the result. Tasks live in the service. Routes, tables and exact field names are in [API and data](api-and-data.md). The console steps are in [experience](experience.md).
 
 ## The task
 
@@ -29,7 +29,7 @@ A task is one thing the agent is asked to do, plus how to judge the result. Task
 | Field | Rule |
 | --- | --- |
 | `taskId` | Today's `case_id` format and values carry over, so memory attempts that name a case stay valid. |
-| `input` | JSON, at most 64 KiB, the limit `job.expect()` and evolve cases use today. The `chat` harness accepts a string or a `{messages}` list ending with a user turn. Any other JSON is sent as one user message holding the JSON text, which is what the `openai()` adapter does today. |
+| `input` | JSON, at most 64 KiB, the limit `job.expect()` and evolve cases use today. The `chat` harness accepts a string or a `{messages}` list ending with a user turn. Any other JSON is sent as one user message holding the JSON text. |
 | `grader.type` | `exact` or `criteria`. A `check` script comes with the `codex` harness. |
 | `grader.expected` | The expected JSON answer for `exact`. |
 | `grader.reference` | Optional reference answer for `criteria`. |
@@ -86,7 +86,7 @@ The check catches broken graders. It does not catch a task that is answerable bu
 The service assigns the split. The developer never chooses it and can't move a task across it.
 
 - **By group.** Tasks cut from the same conversation, the same imported row group or the same production job share a `group`, and the whole group lands on one side. Near-duplicate inputs found at import are merged into one group.
-- **By hash.** Today `defineLoop` puts a case in held-out when `sha256(caseId)`, read as a 256-bit integer, is below `ceil(split × 2^256)`, with `split = 0.5`. The service keeps that rule and applies it to the group.
+- **By hash.** The service uses a stable hash of the group to assign its split.
 - **Permanent.** The group is derived from the source, not from a name the user can edit. Editing a task does not move it.
 - **Evidence rule.** A held-out task needs a reference that came from a person: an expected answer present in the source material or outcome, or criteria a person wrote or confirmed in review. A held-out task whose criteria were only drafted by conversion stays `pending` until a person confirms them. It does not move to evolve.
 
@@ -105,7 +105,7 @@ Held-out content is not encrypted. The paper requires that the optimizer never s
 
 ## The Start floor
 
-Start is refused until the loop has 20 admitted evolve tasks and 20 admitted held-out tasks. Today a round starts with one live case. With a handful of held-out tasks, one flip swamps any real drop. If admitted tasks later fall below the floor, the loop pauses with the reason `tasks-required`. The floor is an [agreed decision](README.md#decisions).
+Start and resume are refused until the loop has 20 admitted evolve tasks and 20 admitted held-out tasks. With a handful of held-out tasks, one flip swamps any real drop. If admitted tasks later fall below the floor, the loop pauses with the reason `tasks-required`.
 
 ## Production outcomes
 
@@ -115,10 +115,9 @@ Start is refused until the loop has 20 admitted evolve tasks and 20 admitted hel
 - **No self-written references.** When `output` is supplied and equals `expected`, the outcome is rejected. The delivered agent never authors tasks, criteria or references.
 - **Provenance.** The source is `outcome`, stored with the delivered version and the reporting principal.
 - **Admission.** The outcome passes the same admission check as any other task.
-- **Split.** The group is the job id, and the group hash decides the split. Outcomes therefore reach held-out as well as evolve, which they never do today. Every outcome carries a reference, so the evidence rule is met.
-- **Right.** `/outcomes` requires `evaluate` today. That right is removed, so the route moves to `write`.
+- **Split.** The group is the job id, and the group hash decides the split. Outcomes therefore reach held-out as well as evolve. Every outcome carries a reference, so the evidence rule is met.
+- **Right.** Submitting an outcome requires workspace write access.
 
-Outcomes in held-out and the right change are recorded in [decisions](README.md#decisions).
 
 ## Editing and retiring
 

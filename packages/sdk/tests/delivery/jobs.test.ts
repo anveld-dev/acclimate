@@ -31,7 +31,7 @@ test('job pins the verified version and retries one outcome body and idempotency
         attempts.push({ key: new Headers(init?.headers).get('idempotency-key'), body });
         if (attempts.length === 1)
           return Response.json({ error: { code: 'unavailable', message: 'try again', requestId: 'retry' } }, { status: 503 });
-        return Response.json({ outcomeId: body.outcomeId, caseId: 'outcome:' + body.outcomeId, evolveRevision: 1 });
+        return Response.json({ outcomeId: body.outcomeId, taskId: 'outcome:' + body.outcomeId, taskRevision: 1 });
       },
     });
     const input = { ticket: 1 };

@@ -1,7 +1,6 @@
 """Acclimate Python SDK.
 
-Import the client, delivery helpers and wire types from this package. The
-evaluator lives in ``acclimate.evaluation``. Every name listed in ``__all__`` is
+Import the client, delivery helpers and wire types from this package. Every name listed in ``__all__`` is
 public; anything else is an implementation detail.
 """
 

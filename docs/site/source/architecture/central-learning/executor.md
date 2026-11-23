@@ -1,8 +1,8 @@
 # Executor
 
-**Status: proposed design. Not built yet.** The shipped loop is described in the [learning contract](../../../contracts/learning.md).
+**Status: built.** Follow-up work is listed in the [release plan](plan.md#after-the-first-release).
 
-The executor runs every rollout and every grade. Nothing runs on the developer's machine. Today the service only leases evaluations to an application's `acclimate learn` process and accepts its report (`src/learning/evaluations.rs`). No sandbox, gateway or executor exists yet, so everything here is new. Routes and tables are in [API and data](api-and-data.md).
+The executor runs each rollout and grades its output. Its internal API is documented in [API and data](api-and-data.md).
 
 ## The container
 
@@ -31,6 +31,7 @@ When the service queues an evaluation, it writes one `learning_rollouts` row per
 | `running` | An executor holds the lease and is running the harness. |
 | `grading` | The harness finished and the grader is running. |
 | `scored` | The grader gave a verdict. |
+| `converted` | The executor returned task cards for a material conversion batch. |
 | `failed` | An infrastructure failure. Not a score. |
 | `cancelled` | Its round ended first. |
 
@@ -40,7 +41,6 @@ Rules:
 - Only infrastructure failures are retried, once. They are gateway upstream failures, executor crashes and sandbox start failures.
 - An agent that hits its token or time limit is not an infrastructure failure. The rollout is `scored` as a fail.
 - **Errors are never scores.** A rollout that fails twice makes its evaluation fail, and a failed evaluation fails the round as it does today. A `failed` rollout is never counted as a failed task and never dropped from the count.
-- Leases replace `/work`, `/start`, `/report`, attempt ids and the run deadline. See [API and data](api-and-data.md).
 
 Prior art behind these rules: Harbor deleted unfinished runs on resume, so a sleeping laptop lost hours of work. Inspect dropped errored samples from the denominator without saying so.
 
@@ -57,7 +57,6 @@ Prior art behind these rules: Harbor deleted unfinished runs on resume, so a sle
 
 The `chat` runner runs no user code, but the bundle it renders is written by the optimizer, and the `codex` harness will run code. Shipping the sandbox first means the later harness reuses isolation that already carries every round.
 
-Prior art: a Harbor adapter baked gold tests into the agent's image, and agents read them in 56–90% of tasks. Leaderboard agents downloaded solutions from the internet. Network allowlists fell back to open internet without an error.
 
 ## The gateway
 

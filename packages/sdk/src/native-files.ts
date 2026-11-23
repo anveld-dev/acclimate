@@ -235,4 +235,4 @@ export async function prepareNativeFiles(
   };
 }
 
-export { transcriptTail } from './learning/trace.js';
+export { transcriptTail } from './trace.js';

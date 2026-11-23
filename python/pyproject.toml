@@ -33,7 +33,7 @@ Changelog = "https://github.com/anveld-dev/acclimate/blob/main/CHANGELOG.md"
 Issues = "https://github.com/anveld-dev/acclimate/issues"
 
 [project.scripts]
-acclimate = "acclimate.evaluation_app:main"
+acclimate = "acclimate.pull:main"
 
 [tool.flit.module]
 name = "acclimate"

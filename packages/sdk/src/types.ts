@@ -1,3 +1,4 @@
+import type { Json } from './json.js';
 export type CompatibilityTarget = 'generic' | 'codex' | 'claude' | 'pi' | 'cursor';
 export type FileKind = 'instruction' | 'skill' | 'memory';
 export interface BundleFile {
@@ -74,11 +75,6 @@ export interface Page<T> {
 export interface ListOptions {
   limit?: number;
   cursor?: string;
-}
-export interface WorkspacePrincipal {
-  principalId: string;
-  kind: 'machine' | 'user';
-  rights: string[];
 }
 export interface Workspace {
   id: string;
@@ -183,24 +179,28 @@ export interface LearningSetting {
   benchmark: string;
   policyModel: string;
 }
-export interface LearningHeldOut {
-  digest: string;
-  cases: number;
-}
 export interface LearningLoopRequest {
   channel: string;
-  appPrincipalId: string;
-  setting: LearningSetting;
-  heldOut: LearningHeldOut;
+  setting: Pick<LearningSetting, 'domain' | 'benchmark'>;
+  taskModel: string;
+  judgeModel: string;
+  maxRoundsPerDay?: number;
 }
 export type LearningLoopStatus = 'running' | 'paused' | 'stopped';
-export interface LearningLoop extends LearningLoopRequest {
+export interface LearningLoop extends Omit<LearningLoopRequest, 'taskModel' | 'judgeModel'> {
+  taskModel: string | null;
+  judgeModel: string | null;
+  maxRoundsPerDay: number;
+  admittedEvolve: number;
+  admittedHeldOut: number;
+  alert: Json;
+  setting: LearningSetting;
+  waiting: string | null;
+  taskRevision: number;
   workspaceId: string;
   bundleId: string;
   status: LearningLoopStatus;
-  pauseReason: 'operator' | 'failed-rounds' | 'optimizer-context-too-large' | null;
-  evolveRevision: number;
-  liveCases: number;
+  pauseReason: 'operator' | 'failed-rounds' | 'optimizer-context-too-large' | 'tasks-required' | null;
   memoryRevision: number;
   nextRound: number;
   failedRounds: number;
@@ -211,6 +211,11 @@ export interface LearningLoop extends LearningLoopRequest {
   rounds: LearningRoundSummary[];
 }
 export interface LearningRoundSummary {
+  trigger: string;
+  incumbentReused: boolean;
+  taskModel: string | null;
+  judgeModel: string | null;
+  taskRevision: number;
   id: string;
   number: number;
   state: 'scoring_incumbent' | 'proposing' | 'screening' | 'evaluating' | 'selecting'
@@ -236,7 +241,6 @@ export interface LearningRound extends LearningRoundSummary {
   memoryDigest: string | null;
   historyDigest: string | null;
   setting: LearningSetting;
-  heldOut: LearningHeldOut;
   optimizerModel: string | null;
   selection: LearningSelection | null;
   candidates: LearningCandidate[];
@@ -259,7 +263,7 @@ export interface LearningCandidate {
   sample: number;
   status: 'generating' | 'generated' | 'dropped' | 'screened_out' | 'evaluating'
     | 'evaluated' | 'evaluation_failed';
-  dropReason: 'provider-failed' | 'format-rejected' | 'scanner-rejected' | 'no-change' | null;
+  dropReason: 'provider-failed' | 'format-rejected' | 'scanner-rejected' | 'no-change' | 'blocked-version' | null;
   rationale: string | null;
   changes: {
     edits: { path: string; oldText: string; newText: string }[];
@@ -273,27 +277,15 @@ export interface LearningCandidate {
   evolveScore: number | null;
 }
 export type LearningEvaluationStatus = 'queued' | 'running' | 'scored' | 'failed' | 'cancelled';
-export interface LearningWorkItem {
-  evaluationId: string;
+export interface LearningEvaluation {
   roundId: string;
-  roundNumber: number;
-  role: 'incumbent' | 'candidate' | 'retained';
+  role: string;
   sample: number | null;
   split: 'evolve' | 'heldOut';
   versionId: string;
   digest: string;
   evolveRevision: number | null;
-  heldOut: LearningHeldOut | null;
-  status: 'queued' | 'running';
-  deadlineAt: string;
-}
-export interface LearningWork {
-  bundleId: string;
-  status: LearningLoopStatus;
-  items: LearningWorkItem[];
-}
-export interface LearningEvaluation extends Pick<LearningWorkItem,
-  'roundId' | 'role' | 'sample' | 'split' | 'versionId' | 'digest' | 'evolveRevision' | 'deadlineAt'> {
+  passedCases?: number;
   id: string;
   status: LearningEvaluationStatus;
   score: number | null;
@@ -316,50 +308,19 @@ export interface LearningRollout extends LearningHeldOutRollout {
 export interface LearningEvaluationReport {
   cases: { caseId: string; rollouts: LearningRollout[] }[];
 }
-export type LearningEvaluationReportRequest = { attemptId: string } & (
-  | (LearningEvaluationReport & { error?: never })
-  | { error: string; cases?: never }
-);
-export interface LearningEvaluationStart {
-  attemptId: string;
-}
-export interface LearningEvaluationAssignment {
-  evaluation: LearningEvaluation;
-  cases: LearningEvolveCase[] | null;
-  heldOut: LearningHeldOut | null;
-  reportedCaseIds: string[];
-}
-export interface LearningEvolveCase<I = import('./evaluation/types.js').Json, E = import('./evaluation/types.js').Json> {
-  caseId: string;
-  input: I;
-  expected: E;
-}
-export interface LearningEvolveCasesPage {
-  items: (LearningEvolveCase & { addedRevision: number })[];
-  next: string | null;
-  evolveRevision: number;
-}
-export interface LearningEvolveCasesRequest {
-  cases?: LearningEvolveCase[];
-  retire?: string[];
-}
-export interface LearningEvolveCasesReceipt {
-  evolveRevision: number;
-  added: number;
-  retired: number;
-  liveCases: number;
-}
-export interface LearningOutcomeRequest extends Pick<LearningEvolveCase, 'input' | 'expected'> {
-  output?: LearningEvolveCase['input'];
+export interface LearningOutcomeRequest {
+  input: Json;
+  expected: Json;
+  output?: Json;
   outcomeId: string;
   versionId: string;
   digest: string;
 }
 export interface LearningOutcomeReceipt {
   outcomeId: string;
-  caseId?: string;
+  taskId?: string;
   heldOutCount?: number;
-  evolveRevision: number;
+  taskRevision: number;
 }
 export interface LearningMemory {
   currentRevision: number;
@@ -398,8 +359,99 @@ export interface LearningMemory {
     provenance: LearningSetting & {
       round: number;
       evolveRevision: number;
-      heldOutDigest: string;
+      heldOutDigest?: string;
       optimizerModel: string;
     };
   }[];
+}
+
+export interface LearningTaskRequest {
+  input: Json;
+  grader: Json;
+}
+
+export interface LearningTaskEdit {
+  input?: Json;
+  grader?: Json;
+  confirm?: boolean;
+}
+
+export interface LearningTask {
+  taskId: string;
+  input: Json;
+  grader: Json;
+  split: string;
+  admission: string;
+  addedRevision: number;
+}
+
+export interface LearningTaskPage {
+  items: LearningTask[];
+  next: string|null;
+  heldOutCount: number;
+}
+
+export interface LearningTaskReceipt {
+  taskId?: string;
+  split?: string;
+  addedRevision?: number;
+  heldOutCount?: number;
+}
+
+export interface LearningTaskRevision {
+  taskId: string;
+  revision: number;
+}
+
+export interface LearningTrialReceipt {
+  trialId: string;
+}
+
+export interface LearningTrial {
+  trialId: string;
+  kind: string;
+  status: string;
+  output?: Json;
+  gatewayLog?: Json;
+  verdict?: Json;
+}
+
+export interface LearningImport {
+  importId: string;
+  rows: number;
+  pending: number;
+  converted: number;
+  cards?: LearningTask[];
+  status?: string;
+  setAside?: number;
+}
+
+export interface LearningUsageDay {
+  day: string;
+  rounds: number;
+  rollouts: number;
+  optimizerTokens: number;
+  taskTokens: number;
+  judgeTokens: number;
+}
+
+export interface LearningUsage {
+  items: LearningUsageDay[];
+}
+
+export interface LearningRollback {
+  roundId: string;
+  note?: string;
+}
+
+export interface ModelProvider {
+  baseUrl: string|null;
+  allowedModels: string[];
+  hasKey: boolean;
+}
+
+export interface ModelProviderRequest {
+  baseUrl: string;
+  allowedModels: string[];
+  apiKey: string;
 }

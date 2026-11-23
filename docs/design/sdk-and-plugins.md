@@ -15,6 +15,6 @@ The TypeScript plugins map verified bundle content to job-local files and option
 
 See the [SDK architecture](../architecture/sdk.md) for the delivery and preparation boundary.
 
-## Learning evaluators
+## Production outcomes
 
-An app can also run an evaluator with `defineLoop` in TypeScript or `define_loop` in Python. The evaluator runs the app's agent against a pinned harness version and reports case results. [Evaluator operations](../evaluator-operations.md) covers setup and credentials.
+An application with workspace write access can call `job.expect(expected, { input, output })` after a production job. The SDK sends the pinned version and digest. The service assigns the task’s split and runs admission.

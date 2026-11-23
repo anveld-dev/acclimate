@@ -74,5 +74,4 @@ Migrations 0017 and 0018 permanently drop the old change and connection-learning
    ```
 
    Before upgrading, record the delivered version ID for each affected connection. After upgrading, you can release that version on the source channel with a reason. This also updates any other connection using that channel.
-3. Stop evaluators for the removed workflows before the upgrade. Migration 0018 drops their queued rounds, proposals and evaluation requests. Configure the new evaluator against a bundle and channel in the [learning loop guide](/docs/guides/learning-loop).
 4. `learn-<connectionId>` channels stay as ordinary channels with their release history.

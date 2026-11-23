@@ -1,5 +1,11 @@
 # Changelog
 
+## Breaking change — central learning
+
+Learning now runs in the service. The application loop definitions, evaluation starters, evaluator commands and learning CLI have been removed. Configure a model provider, import and review tasks, and start learning in the bundle’s Learning tab. SDKs deliver releases and report production outcomes. The remaining command is `acclimate pull`.
+
+Run the `acclimate-executor` container with a provisioned `ACCLIMATE_EXECUTOR_TOKEN` and access to the Docker socket. Build the chat runner image and configure gVisor (`runsc`) in production. Set `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` on the service to a 64-character hex key so workspace provider credentials can be encrypted at rest.
+
 All notable changes to Acclimate will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).

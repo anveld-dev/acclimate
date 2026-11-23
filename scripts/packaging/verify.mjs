@@ -1,7 +1,7 @@
+import { constants } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
-import { isDeepStrictEqual } from 'node:util';
 import { execFileSync, spawn } from 'node:child_process';
-import { lstat, chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -122,35 +122,19 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { AcclimateClient, ApiError, resolveAndCache, prepareFiles, createAcclimate } from '@acclimate/sdk';
 import { validatePayload, compatibilityIssues } from '@acclimate/sdk/validation';
-import { defineEvaluation, preflightEvaluation } from '@acclimate/sdk/evaluation';
-import { serveLearningLoop, heldOutDigest, createLearningOutcomeReporter, addEvolveCases, defineLoop, exact, tests, openai, OpenAIHttpError } from '@acclimate/sdk/learning';
-import { evaluationMain } from '@acclimate/sdk/evaluation/cli';
-import { createEvaluationManifest, restoreEvaluationManifest } from '@acclimate/sdk/evaluation/manifest';
 import { prepare as prepareCodex } from '@acclimate/codex-plugin';
 import { prepare as prepareClaude } from '@acclimate/claude-plugin';
 import { prepare as pi } from '@acclimate/pi-plugin';
 import { prepare as cursor } from '@acclimate/cursor-plugin';
 for (const value of [AcclimateClient, ApiError, resolveAndCache, prepareFiles, prepareCodex, prepareClaude, pi, cursor, createAcclimate]) assert.equal(typeof value, 'function');
-for (const value of [defineEvaluation, preflightEvaluation, evaluationMain, createEvaluationManifest, restoreEvaluationManifest, serveLearningLoop, heldOutDigest, createLearningOutcomeReporter, addEvolveCases, defineLoop, exact, tests, openai, OpenAIHttpError]) assert.equal(typeof value, 'function');
-assert.equal(openai({ model: 'fixture' }).model, 'fixture');
 assert.equal(Object.hasOwn(await import('@acclimate/codex-plugin'), 'codex'), false);
 assert.equal(Object.hasOwn(await import('@acclimate/claude-plugin'), 'claude'), false);
 assert.equal(Object.hasOwn(await import('@acclimate/claude-plugin/native'), 'claude'), false);
 await assert.rejects(import('@acclimate/codex-plugin/native'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
 const rootExports = await import('@acclimate/sdk');
-const evaluatorExports = await import('@acclimate/sdk/evaluation');
 for (const name of ['compare', 'submitComparison']) assert.equal(Object.hasOwn(rootExports, name), false);
-for (const name of ['runEvaluation', 'planEvaluation', 'runLocalComparison', 'createEvaluationProgressReporter'])
-  assert.equal(Object.hasOwn(evaluatorExports, name), false);
-for (const subpath of ['evaluation/policy', 'evaluation/artifacts', 'evaluation/analysis', 'evaluation/progress', 'learning/loop'])
+for (const subpath of ['learning', 'evaluation', 'evaluation/cli', 'evaluation/manifest', 'evaluation/app-cli', 'evaluation/policy', 'evaluation/artifacts', 'evaluation/analysis', 'evaluation/progress', 'learning/loop'])
   await assert.rejects(import('@acclimate/sdk/' + subpath), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
-const application = defineEvaluation({configId:'installed-check',configRevision:'1',datasetRevision:'cases-1',graderRevision:'grade-1',runtime:{app:'fixture'},execution:'model-free',cases:[{caseId:'task',input:{value:1},expected:1}],execute:async()=>({output:1}),grade:async()=>({reward:1})});
-assert.equal(application.descriptor.runtime.configId, 'installed-check');
-const manifest = createEvaluationManifest({configId:'installed-manifest',execution:'model-free',cases:[{caseId:'task',input:{value:1},expected:1}],grader:{sourceUtf8:'return expected === output;'},runtime:{settings:{temperature:0.1},artifacts:{app:'sha256:'+'a'.repeat(64)}}});
-assert.deepEqual(restoreEvaluationManifest(manifest.privateManifestJson).descriptor, manifest.descriptor);
-assert.deepEqual(defineEvaluation({...manifest.definition,execute:async()=>({output:1}),grade:async()=>({reward:1})}).descriptor, manifest.descriptor);
-assert.deepEqual(application.descriptor.expectedCases,[{caseId:'task',repetition:0}]);
-assert.equal(JSON.stringify(application.descriptor).includes('expected"'),false);
 const bundle = {version:{id:'v1',bundleId:'b',parentVersionId:null,digest:'sha256:test',createdAt:'now'},payload:{schemaVersion:1,files:[{path:'instructions.md',kind:'instruction',text:'Hello'}]},resolvedAt:0,stale:false};
 validatePayload(bundle.payload);
 assert.deepEqual(compatibilityIssues(bundle.payload, 'codex'), []);
@@ -162,10 +146,6 @@ for (const prepare of [prepareCodex, prepareClaude, pi, cursor]) { const staged 
     `
 import { AcclimateClient, createAcclimate, type AcclimateJob, type VerifiedVersion } from '@acclimate/sdk';
 import { validatePayload, compatibilityIssues } from '@acclimate/sdk/validation';
-import { defineEvaluation, preflightEvaluation } from '@acclimate/sdk/evaluation';
-import { serveLearningLoop, heldOutDigest, createLearningOutcomeReporter, addEvolveCases, defineLoop, exact, tests, openai, OpenAIHttpError, type LearningLoopApp, type LearningLoopOptions } from '@acclimate/sdk/learning';
-import { evaluationMain } from '@acclimate/sdk/evaluation/cli';
-import { createEvaluationManifest, restoreEvaluationManifest } from '@acclimate/sdk/evaluation/manifest';
 import { prepare as prepareCodex } from '@acclimate/codex-plugin';
 import { prepare as prepareClaude } from '@acclimate/claude-plugin';
 import { prepare as pi } from '@acclimate/pi-plugin';
@@ -174,22 +154,16 @@ declare const bundle: VerifiedVersion;
 validatePayload(bundle.payload);
 void compatibilityIssues(bundle.payload, 'codex');
 void [AcclimateClient, prepareCodex(bundle), prepareClaude(bundle), pi(bundle), cursor(bundle)];
-void [defineEvaluation, preflightEvaluation, evaluationMain, createEvaluationManifest, restoreEvaluationManifest];
-const learningApp = { execution: 'model-free', heldOut: [{caseId: 'test', input: 0, expected: 1}],
-  execute: ({ input }) => ({ output: input }), grade: () => ({ score: 1, passed: true }) } satisfies LearningLoopApp<number, number, number>;
-const options: LearningLoopOptions<number, number, number> = { configPath: 'evaluator.json', bundleId: 'b', app: learningApp, caseConcurrency: 4 };
 declare const job: AcclimateJob;
-void [createAcclimate, job.prepare(prepareCodex), job.expect, tests, exact];
-void defineLoop({ bundle: 'b', channel: 'stable', cases: [{ input: 1, expected: { count: 2 } }],
-  agent: openai({ model: 'fixture', parse: (text) => text.length }),
-  grade: (output, expected) => Number(output.toFixed() === expected.count.toFixed()) });
-void [serveLearningLoop<number, number, number>, options, heldOutDigest(learningApp.heldOut), createLearningOutcomeReporter, addEvolveCases, defineLoop, exact, tests, openai, OpenAIHttpError];
+void [createAcclimate, job.prepare(prepareCodex), job.expect];
 `,
   );
   run(process.execPath, ['consumer.mjs'], temp);
-  await cp(join(root, 'scripts/packaging/fixtures/learn-consumer.mjs'), join(temp, 'learn-consumer.mjs'));
-  run(join(temp, 'node_modules/.bin/acclimate'), ['--help'], temp);
-  run(process.execPath, ['learn-consumer.mjs'], temp);
+  const pullBin = join(temp, 'node_modules/.bin/acclimate');
+  run(pullBin, ['--help'], temp);
+  run(pythonExecutable, ['python/tests/test_pull.py'], root, {
+    ...process.env, PYTHONPATH: join(root, 'python'), ACCLIMATE_TEST_PULL_BIN: pullBin,
+  });
   run(
     process.execPath,
     [
@@ -213,6 +187,7 @@ void [serveLearningLoop<number, number, number>, options, heldOutDigest(learning
   await cp(join(root, 'node_modules'), join(temp, 'node_modules'), {
     recursive: true,
     force: false,
+    mode: constants.COPYFILE_FICLONE,
     filter: (source) =>
       !source.startsWith(join(root, 'node_modules/@acclimate')) && !source.includes('/.bin'),
   });
@@ -285,65 +260,6 @@ void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiRe
     await mkdir(extractedStarters, { mode: 0o700 });
     for (const starter of starters)
       run('tar', ['-xzf', join(stage, starter.file), '-C', extractedStarters]);
-    const app = join(extractedStarters, 'evaluation-starter');
-    // The Python-only starter must work with the wheel alone, without Node files.
-    run(pythonExecutable, [
-      'scripts/packaging/verify-wheel.py', '--wheel', join(stage, wheelName),
-      '--starter', join(extractedStarters, 'python-evaluation-starter'),
-    ]);
-    // Supply the external application's own adapter and cases after extraction.
-    const testApplication = join(root, 'scripts/packaging/fixtures/evaluator');
-    for (const name of ['application.mjs', 'agent.mjs', 'cases.json'])
-      await cp(join(testApplication, name), join(app, name), { errorOnExist: true, force: false });
-    await chmod(join(app, 'cases.json'), 0o600);
-    const appEnv = { ...process.env, ACCLIMATE_EVALUATOR_CASES: join(app, 'cases.json') };
-    const describe = entry => JSON.parse(execFileSync(process.execPath, [entry, 'describe'], {
-      cwd: app, env: appEnv, encoding: 'utf8',
-    }));
-    const descriptor = describe('acclimate-eval.mjs');
-    const bin = join(temp, 'node_modules/.bin/acclimate-eval');
-    run(bin, ['--help'], app);
-    run(join(temp, 'node_modules/.bin/acclimate-learning'), ['--help'], app);
-    for (const name of ['acclimate-operator']) {
-      if (await lstat(join(temp, 'node_modules/.bin', name)).catch(error => {
-        if (error.code !== 'ENOENT') throw error;
-        return null;
-      })) throw new Error('Removed SDK command is installed: ' + name);
-    }
-    const installedDescriptor = JSON.parse(execFileSync(bin, ['describe'], { cwd: app, env: appEnv, encoding: 'utf8' }));
-    if (!isDeepStrictEqual(installedDescriptor, descriptor))
-      throw new Error('SDK binary and starter describe different installed applications');
-
-    if (descriptor.runtime.execution !== 'live' || descriptor.runtime.configId !== 'installed-qualification-worker'
-        || descriptor.expectedCases.length !== 2)
-      throw new Error('Distributed evaluator did not describe its installed application');
-    // Node loads the adopter's TypeScript adapter directly. Check the shipped
-    // declaration and run that same source through the installed CLI.
-    await rename(join(app, 'application.mjs'), join(app, 'qualification-app.mjs'));
-    await writeFile(join(app, 'application.mts'), `
-import type { ApplicationAdapter } from '@acclimate/sdk/evaluation';
-import { configId, runtime, grader, execute as executePayment, grade as gradePayment } from './qualification-app.mjs';
-type Task = { scenario: string };
-type Result = { charges: number; succeeded: boolean };
-const adapter: ApplicationAdapter<Task, Result, Result> = {
-  configId, runtime, grader,
-  execute: run => executePayment(run),
-  grade: run => gradePayment(run),
-};
-export { configId, runtime, grader };
-export const { execute, grade } = adapter;
-`);
-    run(process.execPath, [
-      join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--allowJs',
-      // Load only Node's ambient types, as an installed consumer would; workspace
-      // @types packages hoisted into the checkout must not leak into this check.
-      '--types', 'node',
-      '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', 'application.mts',
-    ], app);
-    const typed = describe('acclimate-eval.mjs');
-    if (typed.runtime.configId !== descriptor.runtime.configId ||
-        !isDeepStrictEqual(typed.expectedCases, descriptor.expectedCases))
-      throw new Error('Native TypeScript adapter lost application identity or case inventory');
     const native = join(extractedStarters, 'native-repository-starter');
     await cp(join(root, 'examples/native-repository/test'), join(native, 'test'), { recursive: true });
     run(process.execPath, ['--test', 'test/installed.test.mjs'], native);
@@ -386,13 +302,8 @@ export const { execute, grade } = adapter;
             typescriptConsumer: 'passed',
             nativeOptionalPeers: 'passed',
             pythonIsolatedWheel: 'passed',
-            installedEvaluatorImports: 'passed',
-            installedEvaluatorDescriptor: 'passed',
-            typescriptStarterBuild: 'passed',
-            pythonEvaluatorImports: 'passed',
-            pythonInstalledApplicationDescriptor: 'passed',
             installedNativeRepositoryHelpers: 'passed with external test inputs',
-            distributedStarterArchives: 'passed: extracted evaluation and native consumers',
+            distributedStarterArchives: 'passed: extracted native consumer',
             standaloneConsoleRuntime: process.argv.includes('--console-runtime') ? 'passed' : 'not run',
           },
           publication: 'not run',

@@ -1,9 +1,8 @@
 ---
-title: Error codes and exit codes
-description: Look up what an evaluator diagnostic or exit code means and what to do next.
+title: SDK error codes
+description: Identify delivery, transport and service failures.
 ---
 
-Use `code` on SDK errors and evaluator diagnostics to identify failures in program logic. The generated table covers evaluator diagnostics and their default exit codes. The learning adapters also expose `OpenAIHttpError`, with the provider’s HTTP status and a key-redacted trace.
 
 ## Error classes
 
@@ -16,90 +15,7 @@ Catch `AcclimateError` to handle errors in the SDK’s coded hierarchy, then bra
 | `TransportError` | `acclimate.TransportError` | The service request failed at the transport layer. Python uses `transport.unreachable`. TypeScript can also use `transport.timeout`. It carries `serviceUrl` (`service_url` in Python). |
 | `ApiError` | `acclimate.ApiError` | The service's error code, such as `not_found` or `revision_conflict`, with the HTTP `status`. |
 | `DeliveryError` | `acclimate.DeliveryError` | Delivery and cache codes such as `invalid_payload`, `unsafe_cache` and `cache_miss`. |
-| `EvaluationError` | `acclimate.evaluation.EvaluationError` | The diagnostic codes in the table below. `diagnostic` holds the safe fields. |
-| `DefinitionError` | `acclimate.evaluation.DefinitionError` | `definition.invalid` from `defineEvaluation` or `define_evaluation`. `field` and `reason` name the problem. |
-| `OutputValidationError` | `acclimate.evaluation.OutputValidationError` | `output.invalid`: a callback returned a value that is not plain JSON. |
-| `AppSetupError` | `SetupError` (internal) | `application.invalid`, `application.import_failed` or `definition.invalid` while loading the application module. |
-| `EvaluationUsageError` | `EvaluationUsageError` (internal) | The `usage.*` codes for an invalid command line. |
-| `TaskExecutionError`, `InfrastructureError` | `TaskExecutionError` | Raise these from an execute callback. |
 
 The [TypeScript SDK reference](/docs/reference/typescript-sdk) lists public exports.
 
-## Reading a diagnostic
-
-The local evaluator CLI (`acclimate-eval` in TypeScript, or `python -m acclimate` for the local evaluation commands) prints errors to stderr. On a terminal you get readable text. Otherwise, or with `--json`, you get one JSON line:
-
-```json
-{"schemaVersion":1,"command":"try","error":{"code":"usage.missing_flag","field":"--live","reason":"This evaluator is live. Add --live to authorize model calls.","phase":"configure","executionState":"not_started","nextAction":"fix_command","message":"A required flag is missing. --live: This evaluator is live. Add --live to authorize model calls."}}
-```
-
-| Field | Meaning |
-| --- | --- |
-| `code` | One of the codes below. |
-| `message` | The readable explanation. |
-| `field`, `reason` | The flag, file, definition field or case that caused the error, and why. |
-| `hint` | What to try next. |
-| `nextAction` | A machine-readable next step. |
-| `phase`, `executionState` | Where the error happened and whether callbacks may have started. |
-| `serviceUrl` | The service the evaluator tried to reach, for `service.unavailable`. |
-| `cause` | The first line of the underlying exception, such as an `ImportError` in your module. |
-
-Pass `--verbose`, or set `ACCLIMATE_DEBUG=1`, to include the full stack trace and chained cause.
-
-Diagnostics never include config paths, tokens, case inputs or expected values. Callback failures during a run are recorded privately on the evaluator machine.
-
-## Exit codes and diagnostic codes
-
-Use the exit code to distinguish an invalid configuration, a runtime failure and an uncertain callback.
-
-{/* BEGIN GENERATED: npx tsx scripts/error-codes.ts --write */}
-
-### Exit codes
-
-| Exit | Name | Meaning |
-| --- | --- | --- |
-| 0 | `ok` | The command succeeded. |
-| 1 | `usage` | Fix the command line, configuration or application. |
-| 4 | `infrastructure` | The service or local runtime failed. |
-| 5 | `recovery` | Check local ownership or callback state before retrying. |
-
-### Diagnostic codes
-
-Execution state overrides the default exit: a diagnostic with `executionState` `may_have_started` or `report_saved` always exits 5.
-
-| Code | Exit | Next action | Meaning |
-| --- | --- | --- | --- |
-| `usage.missing_command` | 1 | `fix_command` | No command given. Run with --help to list the commands. |
-| `usage.unknown_command` | 1 | `fix_command` | Unknown command. Run with --help to list the commands. |
-| `usage.unknown_flag` | 1 | `fix_command` | This command does not accept that flag. |
-| `usage.missing_flag` | 1 | `fix_command` | A required flag is missing. |
-| `usage.invalid_flag` | 1 | `fix_command` | A flag has an invalid or repeated value. |
-| `usage.conflicting_flags` | 1 | `fix_command` | These flags cannot be used together. |
-| `config.missing` | 1 | `fix_config` | The evaluator config file does not exist. |
-| `config.schema` | 1 | `fix_config` | The evaluator config or command input has an invalid field. |
-| `config.permissions` | 1 | `fix_config` | A private file or directory has unsafe ownership, mode or path. |
-| `config.url` | 1 | `fix_config` | serviceUrl must be an https:// origin, or http:// on localhost, with no path, query or credentials. |
-| `definition.invalid` | 1 | `fix_application` | The evaluation definition is invalid. |
-| `application.invalid` | 1 | `fix_application` | The application module does not export a valid adapter. |
-| `learning.apps_invalid_export` | 1 | `fix_application` | Default-export an object with execute, grade, heldOut and an execution mode. |
-| `learning.held_out_mismatch` | 1 | `fix_application` | The installed held-out cases do not match the loop's held-out commitment. |
-| `application.import_failed` | 1 | `fix_application` | The application module could not be imported. |
-| `payload.incompatible` | 1 | `fix_command` | The payload breaks a compatibility rule of a native harness the application declares. |
-| `output.invalid` | 1 | `fix_application` | A callback returned a value that is not plain JSON. |
-| `runtime.unsupported` | 1 | `fix_config` | This platform cannot run the evaluator. Use Linux or macOS with python3 available. |
-| `bundle.missing` | 1 | `fix_config` | The bundle does not exist in this workspace or the evaluator cannot read it. |
-| `guided_target_unsupported` | 1 | `fix_config` | The workspace or bundle identifier is not in the supported format. |
-| `auth.denied` | 1 | `ask_operator` | The service denied this token. Check the evaluator token and its permissions. |
-| `descriptor.mismatch` | 1 | `fix_application` | The installed descriptor is invalid. |
-| `service.unavailable` | 4 | `check_service` | The Acclimate service is unreachable or returned a server error. |
-| `transport.response_too_large` | 4 | `fix_config` | A service response exceeded the size limit. |
-| `journal.busy` | 5 | `retry_same_command` | Another evaluator process holds the local evaluator lock. No execution started here. |
-| `journal.invalid` | 5 | `fix_config` | The journal is corrupt or was edited. |
-| `journal.ownership_lost` | 5 | `inspect_external_app` | This process lost ownership of the journal during the run. |
-| `execution.uncertain` | 5 | `inspect_external_app` | Callbacks may have started, and the evaluator cannot prove they stopped. |
-| `evidence.identity_mismatch` | 1 | `fix_config` | The version or digest does not match the expected identity. |
-| `evidence.malformed` | 1 | `fix_config` | The service returned evidence in an unexpected shape. |
-| `evidence.incomplete` | 1 | `fix_config` | The bundle inventory exceeded the preflight read limit. |
-| `internal.error` | 4 | `fix_config` | An unexpected error occurred. Rerun with --verbose or ACCLIMATE_DEBUG=1 for details. |
-
-{/* END GENERATED */}
+Inspect `code` on an SDK error and include the service request ID when reporting an HTTP failure.

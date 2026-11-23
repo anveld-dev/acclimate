@@ -2,34 +2,6 @@
 
 Deliver versioned agent instructions, skills and memory to jobs with the Acclimate Python SDK. It requires Python 3.11 or later on Linux or macOS and has no third-party dependencies.
 
-## Test an evaluator adapter
-
-[Install the wheel](#install) in your application's Python environment.
-
-```python
-# application.py, next to your agent
-from acclimate.evaluation import ExecutionResult, GradeResult
-from support_agent import run_agent, score_result, saved_cases
-
-cases = saved_cases  # [{"caseId": ..., "input": ..., "expected": ...}]
-
-def execute(run):  # run.version holds the version under test
-    result = run_agent(files=run.version["payload"]["files"], task=run.input)
-    return ExecutionResult(output=result.answer)
-
-def grade(run):
-    return GradeResult(reward=score_result(run.output, run.expected))
-```
-
-```sh
-acclimate describe
-acclimate try --live --payload ./bundle
-```
-
-`try` runs the selected cases and checks the values your callbacks return. `describe` prints revision hashes and case IDs while keeping inputs and expected answers local. `python -m acclimate` runs the same CLI as `acclimate`.
-
-For a complete agent you can run without a model provider, see the [Python support agent example](https://github.com/anveld-dev/acclimate/tree/main/examples/python-support-agent). To start your own, copy the [Python evaluation starter](https://github.com/anveld-dev/acclimate/tree/main/examples/python-evaluation-starter).
-
 ## Install
 
 Use the wheel from a GitHub release or build it from a checkout. Verify release artifacts against `SHA256SUMS` and install the wheel without an index. Registry installation with `pip install acclimate-sdk` requires a separate PyPI publication.
@@ -59,23 +31,9 @@ with client.prepare(workspace_id, bundle_id, channel="stable") as prepared:
 
 Set the connection UUID in `ACCLIMATE_CONNECTION`. Each new job checks its connection online. Verified file contents can then be reused from disk. A job already running keeps its prepared files until cleanup.
 
-## Run a learning loop
+## Report a production outcome
 
-With your bundle released and the service optimizer configured, set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` for a machine principal with `evaluate` and `promote`. Save `acclimate_loop.py` in your app directory.
-
-```python
-from acclimate.learning import define_loop, exact, openai
-
-loop = define_loop(
-    bundle="support-agent",
-    channel="stable",
-    agent=openai(model="gpt-6.2-sol"),
-    cases="cases.jsonl",
-    grade=exact(),
-)
-```
-
-Each case needs `input` and `expected`. This example grades raw model text, so use string answers. Configure `OPENAI_API_KEY` and, for a compatible endpoint such as CLIProxyAPI, `OPENAI_BASE_URL`. Run `python -m acclimate learn` to enroll and serve the loop. Use `Acclimate().job(bundle, channel="stable", input=task)` to pin a production version. The enrolled app principal can call `job.expect(expected)` when a known answer is available.
+Use `job.expect(expected, input=task, output=response)` with a write credential. The service admits and splits the task.
 
 ## Client conventions
 
@@ -85,7 +43,7 @@ Each case needs `input` and `expected`. This example grades raw model text, so u
 - The client rejects redirects, so the token never leaves the configured origin, and bounds every response.
 - See the [Python SDK reference](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/reference/python-sdk.mdx).
 
-The client and delivery helpers are synchronous. `define_evaluation` accepts coroutine callbacks and runs them to completion.
+The client and delivery helpers are synchronous.
 
 ## Report delivery
 
@@ -105,9 +63,7 @@ export ACCLIMATE_CONNECTION=YOUR_CONNECTION_ID
 PYTHONPATH=python python3.11 python/examples/delivery_check.py
 ```
 
-## Diagnose an evaluation
-
-Run `acclimate try --json` to see callback shape issues. Use `--verbose` for a setup error traceback. Run `acclimate doctor --config "$EVALUATOR_CONFIG" --bundle "$BUNDLE_ID"` to check configuration, local storage and bundle access.
+Use `acclimate pull --config /absolute/path/pull.json --bundle ID --channel stable --out payload.json` to save a released payload. Use a new output path. The config is an owner-only JSON file inside an owner-only directory with `schemaVersion` set to 1, `serviceUrl`, `workspaceId`, `scope` and an absolute `cacheDir`. Supply the read credential through `ACCLIMATE_TOKEN` or the private config’s `token` field.
 
 ## Develop the SDK
 

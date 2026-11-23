@@ -4,7 +4,6 @@
     "self-host",
     "deploy",
     "reverse-proxy",
-    "evaluator-access",
     "health-and-readiness",
     "backup-and-restore",
     "upgrades-and-recovery"

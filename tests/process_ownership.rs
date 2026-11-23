@@ -31,6 +31,7 @@ fn service_with_mail(url: &str, address: &str, mail: bool) -> Service {
         .env("ACCLIMATE_LOGIN_TOKEN", "fixture-login")
         .env("ACCLIMATE_CONSOLE_TOKEN", "fixture-console")
         .env("ACCLIMATE_OPERATORS", r#"[{"issuer":"https://fixture.example","subject":"operator"}]"#)
+        .env("ACCLIMATE_INTERNAL_BIND", "127.0.0.1:0")
         .env("ACCLIMATE_BIND", address)
         .stdout(Stdio::null()).stderr(Stdio::null());
     if mail {

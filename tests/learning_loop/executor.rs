@@ -162,7 +162,7 @@ async fn evaluation_assembly_uses_all_five_scores_per_task() {
     let pool = &f.state.db;
     let evaluation = item["evaluationId"].as_str().unwrap().parse().unwrap();
     let mut tx = pool.begin().await.unwrap();
-    sqlx::query("UPDATE learning_rounds SET runtime='{}' WHERE id=(SELECT round_id FROM learning_evaluations WHERE id=$1)")
+    sqlx::query("UPDATE learning_rounds SET runtime=jsonb_build_object('taskModel','task','judgeModel','judge') WHERE id=(SELECT round_id FROM learning_evaluations WHERE id=$1)")
         .bind(evaluation).execute(&mut *tx).await.unwrap();
     executor::queue_evaluation(&mut tx, evaluation)
         .await

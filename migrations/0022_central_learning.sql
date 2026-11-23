@@ -61,11 +61,29 @@ CREATE INDEX learning_rollouts_expiry ON learning_rollouts (lease_expires_at) WH
 -- Executor grading and trial work
 ALTER TABLE learning_trials
     ADD COLUMN kind text NOT NULL DEFAULT 'try' CHECK (kind IN ('try','admission','conversion')),
-    ADD CHECK (runtime->>'judgeModel' IS DISTINCT FROM runtime->>'taskModel' OR runtime->>'judgeModel' IS NULL);
+    ADD CHECK (runtime IS NULL OR (coalesce(jsonb_typeof(runtime->'judgeModel') = 'string' AND jsonb_typeof(runtime->'taskModel') = 'string', false) AND runtime->>'judgeModel' <> runtime->>'taskModel'));
 ALTER TABLE learning_rounds
-    ADD CHECK (runtime->>'judgeModel' IS DISTINCT FROM runtime->>'taskModel' OR runtime->>'judgeModel' IS NULL);
+    ADD CHECK (runtime IS NULL OR (coalesce(jsonb_typeof(runtime->'judgeModel') = 'string' AND jsonb_typeof(runtime->'taskModel') = 'string', false) AND runtime->>'judgeModel' <> runtime->>'taskModel'));
 ALTER TABLE learning_rollouts
     ADD COLUMN votes jsonb,
     ADD COLUMN conversion_result jsonb,
     DROP CONSTRAINT learning_rollouts_status_check,
     ADD CHECK (status IN ('queued','running','grading','scored','converted','failed','cancelled'));
+
+-- The joining task service can consume this row in its own revision transaction.
+CREATE VIEW learning_admission_results AS
+SELECT t.id AS trial_id, t.project_id, t.bundle_id,
+       CASE WHEN NOT ready THEN 'pending'
+            WHEN reason IS NULL THEN 'admitted' ELSE 'set-aside' END AS admission,
+       CASE WHEN ready THEN reason END AS admission_reason
+FROM learning_trials t
+JOIN learning_rollouts empty_answer ON empty_answer.trial_id=t.id AND empty_answer.task_id='empty'
+LEFT JOIN learning_rollouts reference ON reference.trial_id=t.id AND reference.task_id='reference'
+CROSS JOIN LATERAL (
+    SELECT empty_answer.status='scored' AND (reference.id IS NULL OR reference.status='scored') AS ready,
+           CASE WHEN reference.passed=false THEN 'reference-failed'
+                WHEN empty_answer.passed THEN 'empty-passed'
+                WHEN coalesce(reference.votes,empty_answer.votes) @> '[true,false]'::jsonb
+                     THEN 'judge-unstable' END AS reason
+) outcome
+WHERE t.kind='admission';

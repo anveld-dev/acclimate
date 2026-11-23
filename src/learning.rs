@@ -482,6 +482,9 @@ struct RoundSummary {
     progress: Value,
     #[serde(serialize_with = "serialize_held_out_error")]
     held_out_error: Option<String>,
+    /// `{code, message}` from the first failed rollout of the evaluation that ended the round.
+    /// The message is recorded for evolve rollouts only.
+    failure_cause: Option<Value>,
     trigger: String,
     incumbent_reused: bool,
     task_model: Option<String>,
@@ -501,7 +504,7 @@ fn serialize_held_out_error<S: serde::Serializer>(
     )
 }
 
-const ROUND_SELECT:&str="SELECT r.*,CASE WHEN r.held_out_error='no-matching-executor' THEN r.held_out_error ELSE r.reason END AS public_reason,(SELECT jsonb_build_object('scored',count(*) FILTER(WHERE l.status='scored'),'total',count(*)) FROM learning_evaluations e JOIN learning_rollouts l ON l.evaluation_id=e.id WHERE e.round_id=r.id) AS progress,c.changes AS diff,c.diagnosis,coalesce(c.evolve_score,r.incumbent_score) AS evolve_score
+const ROUND_SELECT:&str="SELECT r.*,CASE WHEN r.held_out_error='no-matching-executor' THEN r.held_out_error ELSE r.reason END AS public_reason,CASE WHEN r.failure_code IS NOT NULL THEN jsonb_build_object('code',r.failure_code,'message',CASE WHEN r.failure_split='evolve' THEN r.failure_message END) END AS failure_cause,(SELECT jsonb_build_object('scored',count(*) FILTER(WHERE l.status='scored'),'total',count(*)) FROM learning_evaluations e JOIN learning_rollouts l ON l.evaluation_id=e.id WHERE e.round_id=r.id) AS progress,c.changes AS diff,c.diagnosis,coalesce(c.evolve_score,r.incumbent_score) AS evolve_score
     FROM learning_rounds r LEFT JOIN learning_candidates c ON (c.round_id,c.sample)=(r.id,r.adopted_sample)";
 async fn active_round(
     tx: &mut Tx<'_>,
@@ -545,7 +548,10 @@ async fn loop_document(
     let active = active_round(tx, project, bundle).await.map_err(db)?;
     let recent = summaries(tx, project, bundle, None, 10).await?;
     let (e, h) = controls::counts(tx, project, bundle).await.map_err(db)?;
+    let next_round_at = controls::next_round_at(tx, &row).await.map_err(db)?;
+    let tasks_needed = controls::tasks_to_wake(tx, &row).await.map_err(db)?;
     Ok(json!({
+        "nextRoundAt":next_round_at,"evolveTasksNeeded":tasks_needed,
         "taskModel":row.task_model,"judgeModel":row.judge_model,"taskRevision":row.task_revision,
         "maxRoundsPerDay":row.max_rounds_per_day,"waiting":row.waiting,"alert":row.alert,
         "admittedEvolve":e,"admittedHeldOut":h,"optimizerConfigured":optimizer_configured,

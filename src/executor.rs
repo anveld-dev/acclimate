@@ -423,8 +423,7 @@ struct JudgeTokens {
 #[derive(Deserialize)]
 struct InfraError {
     code: String,
-    #[serde(rename = "message")]
-    _message: String,
+    message: String,
 }
 async fn result(
     State(s): State<Service>,
@@ -476,9 +475,10 @@ async fn result(
             ) {
                 return Err(invalid());
             }
-            sqlx::query("UPDATE learning_rollouts SET status=CASE attempts WHEN 2 THEN 'failed' ELSE 'queued' END,error_code=CASE attempts WHEN 2 THEN $2 END,tokens=$3,lease_token_hash=NULL WHERE lease_id=$1")
+            sqlx::query("UPDATE learning_rollouts SET status=CASE attempts WHEN 2 THEN 'failed' ELSE 'queued' END,error_code=CASE attempts WHEN 2 THEN $2 END,error_message=CASE attempts WHEN 2 THEN left($3,500) END,tokens=$4,lease_token_hash=NULL WHERE lease_id=$1")
         .bind(id)
         .bind(error.code)
+        .bind(error.message)
         .bind(tokens.map(|counts|json!(counts)))
         .execute(&mut *tx)
         .await

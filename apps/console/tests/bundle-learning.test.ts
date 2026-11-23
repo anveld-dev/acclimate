@@ -447,8 +447,11 @@ test('renders keep and empty candidate and memory states', () => {
     detail: {
       ok: true,
       parentFiles: null,
+      problems: null,
       round: {
         ...detailRound,
+        failureCause: null,
+        incumbentEvaluationId: null,
         reverted: false,
         confirmedParentScore: null,
         confirmedAdoptionScore: null,

@@ -98,6 +98,9 @@ const descriptions: Record<string, string> = {
   'no-evaluated-candidates': 'No candidate finished evaluation.',
   'channel-moved': 'The channel changed while this round was running.',
   'incumbent-evaluation-failed': 'Evaluation of the current version failed.',
+  'candidate-evaluation-failed': 'Evaluation of a candidate version failed.',
+  'provider-unavailable':
+    'The model provider was unavailable or rate limited. Learning tries again ten minutes after the failed round. If this keeps happening, check the provider and its rate limits.',
   'optimizer-required':
     'The service has no optimizer model. An operator must set ACCLIMATE_MODEL_ENDPOINT, ACCLIMATE_MODEL_TOKEN and ACCLIMATE_MODEL on the service. On the local stack, export them and run npm run local:up again.',
   'held-out-evaluation-failed': 'The regression check on held-out tasks could not run.',
@@ -125,6 +128,7 @@ const descriptions: Record<string, string> = {
   pending: 'Waiting for admission checks.',
   admitted: 'Admitted for learning.',
   'set-aside': 'Set aside for review.',
+  duplicate: 'This row matches a task that already exists.',
   'rollout-error': 'An executor run ended with an error.',
   'judge-disagreement': 'The judge disagreed across repeated judgments.',
   'split-rollouts': 'Repeated runs gave different verdicts.',
@@ -144,3 +148,29 @@ const descriptions: Record<string, string> = {
 export function describeLearning(code: string) {
   return descriptions[code] ?? code.replaceAll('-', ' ');
 }
+
+// What a failed rollout's error code means and what to do about it.
+const failureCauses: Record<string, string> = {
+  'gateway-upstream':
+    'The model provider was unavailable, rate limited or overloaded. Check the provider and its rate limits.',
+  'sandbox-start':
+    "The executor could not start a sandbox for the run. Ask the operator to check the executor's sandbox runtime.",
+  executor:
+    "The executor stopped or reported an error during the run. Ask the operator to check the executor's logs.",
+  'judge-budget':
+    'The judge model ran out of its token limit while grading. Check the judge model and its limits.',
+  'judge-invalid-reply':
+    'The judge model did not return a valid judgment. Check the judge model, or choose another one in learning setup.',
+};
+export function describeFailureCause(code: string) {
+  return failureCauses[code] ?? 'A run failed with error ' + code + '. Ask the operator to check the executor.';
+}
+
+/** Shows the start of a task ID, which is enough to tell tasks apart in a list. */
+export function shortTaskId(id: string) {
+  return id.length > 12 ? id.slice(0, 8) + '…' : id;
+}
+
+/** The Learning page opens the card with this element ID when the URL names it. */
+export const taskAnchor = (id: string) => 'task-' + id;
+

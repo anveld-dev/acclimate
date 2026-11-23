@@ -202,7 +202,12 @@ async fn advance_locked(
     .await?;
     match (role, status.as_str()) {
         ("incumbent", "failed") => {
-            return fail_round(tx, row, round.id, "incumbent-evaluation-failed").await;
+            // A provider outage is not a problem with the loop, so it waits rather than pausing.
+            let reason = match record_failure_cause(tx, round.id, "incumbent").await? {
+                Some(true) => "provider-unavailable",
+                _ => "incumbent-evaluation-failed",
+            };
+            return fail_round(tx, row, round.id, reason).await;
         }
         ("incumbent", "scored") => {
             let pins = Pins::load(tx, round.id).await?;
@@ -227,10 +232,11 @@ async fn advance_locked(
             } else {
                 error
             };
-            if (exhausted || status == "failed")
-                && let Some(version) = round.adopted_version_id
-            {
-                alert_incomplete_check(tx, row, round.id, version).await?;
+            if exhausted || status == "failed" {
+                record_failure_cause(tx, round.id, "retained").await?;
+                if let Some(version) = round.adopted_version_id {
+                    alert_incomplete_check(tx, row, round.id, version).await?;
+                }
             }
             if !exhausted && score.is_some() && super::controls::monitor(tx, row, &round).await? {
                 return Ok(());
@@ -357,6 +363,25 @@ async fn queue(
     Ok(id)
 }
 
+/// Records the first failed rollout of the round's evaluations in `role` as the round's failure
+/// cause, and returns whether every failed rollout was a model provider failure. A held-out
+/// rollout's message is never recorded, because held-out content stays with the service.
+async fn record_failure_cause(
+    tx: &mut Tx<'_>,
+    round: Uuid,
+    role: &str,
+) -> Result<Option<bool>, sqlx::Error> {
+    sqlx::query_scalar("WITH failed AS (
+        SELECT l.error_code,l.error_message,e.split,l.task_id,l.rollout,e.created_at FROM learning_rollouts l
+        JOIN learning_evaluations e ON e.id=l.evaluation_id WHERE e.round_id=$1 AND e.role=$2 AND l.status='failed'
+    ), first AS (SELECT * FROM failed ORDER BY created_at,task_id COLLATE \"C\",rollout LIMIT 1)
+    UPDATE learning_rounds r SET failure_code=f.error_code,failure_split=f.split,
+        failure_message=CASE WHEN f.split='evolve' THEN f.error_message END
+    FROM first f WHERE r.id=$1
+    RETURNING (SELECT coalesce(bool_and(error_code='gateway-upstream'),false) FROM failed)")
+        .bind(round).bind(role).fetch_optional(&mut **tx).await
+}
+
 async fn alert_incomplete_check(
     tx: &mut Tx<'_>,
     row: &LoopRow,
@@ -390,7 +415,8 @@ async fn fail_round(
     .bind(reason)
     .execute(&mut **tx)
     .await?;
-    if reason == "no-matching-executor" {
+    // Neither reason is a fault of the bundle or the loop, so neither counts toward a pause.
+    if matches!(reason, "no-matching-executor" | "provider-unavailable") {
         return Ok(());
     }
     let max = positive_setting("ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS", 3);

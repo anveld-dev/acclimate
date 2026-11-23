@@ -167,7 +167,7 @@ Build the runner before starting Compose with
 `docker build -t acclimate-chat:1 executor/runner`. The executor resolves
 this tag once at startup and launches each sandbox by immutable image ID.
 Set `ACCLIMATE_EXECUTOR_TOKEN` to a provisioned executor credential and
-set the service's `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` to 64 hex characters.
+set the service's `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` to 64 hex characters. Set `ACCLIMATE_PROVIDER_HTTP_HOSTS` on the service and executor to a comma-separated list of exact hostnames when a local proxy requires HTTP or loopback access. The default is empty.
 Compose binds port 3001 to the service address on the private executor network.
 The executor reaches the workspace model endpoint over `executor-egress`.
 Attach a containerized model proxy to that network when using its Compose hostname.

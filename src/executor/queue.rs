@@ -6,7 +6,7 @@ pub async fn queue_evaluation(
     tx: &mut Transaction<'_, Postgres>,
     evaluation: Uuid,
 ) -> Result<u64, sqlx::Error> {
-    let split: String = sqlx::query_scalar("SELECT split FROM learning_evaluations WHERE id=$1")
+    let split: String = sqlx::query_scalar("SELECT e.split FROM learning_evaluations e JOIN learning_rounds r ON r.id=e.round_id JOIN workspace_model_providers p ON p.project_id=r.project_id WHERE e.id=$1 AND p.verification->>'status'='verified' FOR SHARE OF p")
         .bind(evaluation)
         .fetch_one(&mut **tx)
         .await?;

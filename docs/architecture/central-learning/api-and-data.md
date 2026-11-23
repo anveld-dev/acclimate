@@ -19,7 +19,7 @@ All bundle routes sit under `/v1/workspaces/{ws}/bundles/{b}/learning`.
 | `PATCH /tasks/{id}` | Edit a task. Bumps the task revision and re-runs admission. | write |
 | `DELETE /tasks/{id}` | Retire a task. Rows are kept. | write |
 | `POST /tasks/import` | Streamed upload of a spreadsheet, CSV, JSONL or pasted text. Returns an import with counts, and the drafted task cards for a console session. | write |
-| `GET /tasks/imports/{id}` | Import status and counts of converted, pending and set-aside source rows | read |
+| `GET /tasks/imports/{id}` | Import status and counts (`rows`, `converted`, `pending`, `setAsideCount`), a nullable failure `message`, and `setAside: [{row, source, reason}]`. Machine tokens receive an empty list. | read |
 | `POST /tasks/{id}/try` | Run one task on the executor against the channel head. Returns a trial ID. | write |
 | `GET /trials/{id}` | A trial's status, gateway log, output and verdict | read |
 | `GET /held-out-tasks/export` | Download the held-out tasks | console session only |
@@ -29,11 +29,11 @@ All bundle routes sit under `/v1/workspaces/{ws}/bundles/{b}/learning`.
 | `POST /outcomes` | A production outcome from `job.expect()` | write |
 | `GET /memory` | Improvement memory at a revision | read |
 
-One workspace route is added: `GET` and `PUT /v1/workspaces/{ws}/model-provider`. It holds the base URL, the key and the allowed models. `PUT` needs a signed-in administrator. The key is write-only: `GET` returns whether one is set and never its value.
+One workspace route is added: `GET` and `PUT /v1/workspaces/{ws}/model-provider`. It holds the base URL, the key and the allowed models. `PUT` needs a signed-in administrator. Both methods return `verification: {status, checkedAt, models: [{model, ok, usage, message}]}`. Saving resets status to `pending`, checkedAt to null and models to an empty list. Start, resume and new executor work require status `verified`. The key is write-only: `GET` returns whether one is set and never its value.
 
 As today, a signed-in caller needs the administrator role wherever a machine token needs `promote`.
 
-**Request limits.** The service applies a 2 MiB body limit to every route today (`DefaultBodyLimit` in `src/lib.rs`). `/tasks/import` is mounted outside that limit, reads the body as a stream, and has its own cap (64 MiB, with the same limit set in the proxy). Every other route keeps 2 MiB.
+**Request limits.** The service applies a 2 MiB body limit to every route today (`DefaultBodyLimit` in `src/lib.rs`). `/tasks/import` is mounted outside that limit, reads the body as a stream, and has its own cap (64 MiB, with the same limit set in the proxy). Other public routes keep 2 MiB. The internal listener accepts 32 MiB and has 64 independent concurrency permits.
 
 A round pins its task revision at start. Edits apply to the next round.
 
@@ -70,12 +70,16 @@ Bodies are JSON with camelCase fields. The lease route takes the executor token 
   "bundle": {},
   "input": "string, {messages} or other JSON",
   "taskModel": "gpt-6.2-sol",
-  "limits": {"maxTokens": 200000, "timeoutSeconds": 600},
+  "limits": {"maxTokens": 200000, "judgeMaxTokens": 64000, "timeoutSeconds": 600},
   "provider": {"baseUrl": "https://proxy.internal:8317/v1", "apiKey": "…"}
 }
 ```
 
 `bundle` is the bundle payload document that delivery serves today. `kind` is `rollout` for round and trial rollouts. `conversion` is added with material conversion.
+
+The judge has a separate 64,000-token allowance across its calls.
+
+**Provider probe.** Saving a provider queues a lease with `{kind:"probe",leaseId,leaseToken,expiresAt,heartbeatSeconds,provider:{baseUrl,apiKey},models:[string]}`. The executor skips the sandbox and makes a minimal chat completion for every listed model. It posts `{models:[{model,ok,usage,message}]}` to the result route. The boolean `usage` records whether the response included a usage object. The message is a brief diagnostic string or null. Verification succeeds when every allowed model answered and reported usage. The executor must check the resolved address at connection time, pin that address, and disable redirects. HTTPS is required except for exact hosts in the comma-separated `ACCLIMATE_PROVIDER_HTTP_HOSTS` setting. Link-local and metadata addresses are always forbidden. Loopback requires an allowlisted host.
 
 **Heartbeat.** The request is `{}` and the response is `{expiresAt}`. A lease the service has already expired answers 409, and the executor stops the rollout.
 
@@ -93,7 +97,7 @@ Bodies are JSON with camelCase fields. The lease route takes the executor token 
 {"error": {"code": "gateway-upstream", "message": "…"}}
 ```
 
-Error codes are `gateway-upstream`, `sandbox-start` and `executor`. An error result is accepted from `running` or `grading`. A rollout that stopped on a limit still posts its output and then a failing verdict.
+Error codes are `gateway-upstream`, `sandbox-start` and `executor`. An error result may include the same `tokens: {task, judge}` counts as a scored result when a failed attempt consumed tokens. An error result is accepted from `running` or `grading`. A rollout that stopped on a limit still posts its output and then a failing verdict.
 
 **Judge votes.** A `criteria` verdict also carries `votes`, the pass or fail of each judge run in order, and `reasons` holds the judge's written reason per criterion from the majority run. `passed` is the majority of `votes`.
 
@@ -109,7 +113,7 @@ Error codes are `gateway-upstream`, `sandbox-start` and `executor`. An error res
  "tokens": {"judge": {"input": 0, "output": 0}}}
 ```
 
-Every card names a source row, and the service rejects a card whose `row` was not in the material.
+A row can produce multiple cards. Rows whose compact JSON representation (including row number, source and material) exceeds 65,536 UTF-8 bytes are set aside with reason `too-large` before conversion. Every card names a source row, and the service rejects a card whose `row` was not in the material.
 
 **Gateway log.** `gatewayLog` and `judgeLog` are lists of `{at, route, model, status, request, response, usage}`, one entry per upstream call, with bodies as sent and received. The provider key is never in an entry.
 
@@ -179,7 +183,7 @@ Rollout rows are inserted in the same transaction that queues their evaluation. 
 
 | Table | Change |
 | --- | --- |
-| `learning_loops` | Add `task_model`, `judge_model`, `max_rounds_per_day` (default 4), `waiting`, `idle_rounds`, `alert`. Add `tasks-required` to the `pause_reason` check. |
+| `learning_loops` | Add `task_model`, `judge_model`, `max_rounds_per_day` (default 4), `waiting`, `started_at`, `resumed_at`, `alert`. Add `tasks-required` to the `pause_reason` check. |
 | `learning_rounds` | Add `task_model`, `judge_model`, `runtime` (the [runtime identity](executor.md)), `trigger`, `incumbent_reused`. |
 | `learning_candidates` | Add `blocked-version` to the `drop_reason` check, which allows four values today. |
 

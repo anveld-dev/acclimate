@@ -83,16 +83,20 @@ pub(super) async fn provider(
     h: HeaderMap,
 ) -> Reply {
     let mut tx = auth::read_transaction(&s, &h, &p).await?;
-    let row: Option<(String, Vec<String>)> = sqlx::query_as(
-        "SELECT base_url,allowed_models FROM workspace_model_providers WHERE project_id=$1",
+    let row: Option<(String, Vec<String>, Value)> = sqlx::query_as(
+        "SELECT base_url,allowed_models,verification FROM workspace_model_providers WHERE project_id=$1",
     )
     .bind(&p)
     .fetch_optional(&mut *tx)
     .await
     .map_err(db)?;
     Ok(Json(match row {
-        Some((url, models)) => json!({"baseUrl":url,"allowedModels":models,"hasKey":true}),
-        None => json!({"baseUrl":null,"allowedModels":[],"hasKey":false}),
+        Some((url, models, verification)) => {
+            json!({"baseUrl":url,"allowedModels":models,"hasKey":true,"verification":verification})
+        }
+        None => {
+            json!({"baseUrl":null,"allowedModels":[],"hasKey":false,"verification":{"status":"pending","checkedAt":null,"models":[]}})
+        }
     }))
 }
 pub(super) async fn set_provider(
@@ -101,7 +105,7 @@ pub(super) async fn set_provider(
     h: HeaderMap,
     raw: Body,
 ) -> Reply {
-    let (tx, a) = actor_tx(&s, &h, &p, "promote").await?;
+    let (mut tx, a) = actor_tx(&s, &h, &p, "promote").await?;
     if a.user_id.is_none() {
         return Err(denied());
     }
@@ -116,23 +120,33 @@ pub(super) async fn set_provider(
                 "Provider encryption unavailable",
             )
         })?;
-    tx.commit().await.map_err(db)?;
-    key.store(
-        &s.db,
+    key.store_in(
+        &mut tx,
         &p,
         &input.base_url,
         &input.allowed_models,
         &input.api_key,
     )
     .await
-    .map_err(|e| match e.to_string().as_str() {
-        "invalid provider endpoint" | "provider requires a key and allowed models" => {
+    .map_err(|e| {
+        if e.kind() == std::io::ErrorKind::InvalidInput {
             invalid(e.to_string())
+        } else {
+            db(e)
         }
-        _ => db(e),
     })?;
+    commands::audit_mutation(
+        &mut tx,
+        &a,
+        &p,
+        &format!("/v1/workspaces/{p}/model-provider"),
+        &Uuid::new_v4().to_string(),
+    )
+    .await?;
+    tx.commit().await.map_err(db)?;
+    let verification = json!({"status":"pending","checkedAt":null,"models":[]});
     Ok(Json(
-        json!({"baseUrl":input.base_url,"allowedModels":input.allowed_models,"hasKey":true}),
+        json!({"baseUrl":input.base_url,"allowedModels":input.allowed_models,"hasKey":true,"verification":verification}),
     ))
 }
 pub(super) async fn usage(

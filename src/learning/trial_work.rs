@@ -3,36 +3,55 @@ use super::*;
 use crate::executor::trials::{self, TrialTarget};
 use tasks::Split;
 
-type AdmissionSource = (String, Uuid, Uuid, Value, String, Value, Value, i64);
+type AdmissionSource = (String, Uuid, Uuid, Value, String, Value, i64);
+fn trial_error(error: sqlx::Error) -> crate::ApiErr {
+    match error {
+        sqlx::Error::Protocol(message) => invalid(message),
+        sqlx::Error::RowNotFound => conflict("Workspace provider changed"),
+        other => db(other),
+    }
+}
+
 type AdmissionResult = (String, Uuid, String, i64, String, Option<String>);
 
 const TARGET: &str = "JOIN learning_loops l USING(project_id,bundle_id)
  JOIN channels c ON (c.project_id,c.bundle_id,c.name)=(l.project_id,l.bundle_id,l.channel)
  JOIN workspace_model_providers p ON p.project_id=l.project_id";
-const READY: &str = "l.task_model=ANY(p.allowed_models) AND l.judge_model=ANY(p.allowed_models) AND l.task_model<>l.judge_model";
+const READY: &str = "p.verification->>'status'='verified' AND l.task_model=ANY(p.allowed_models) AND l.judge_model=ANY(p.allowed_models) AND l.task_model<>l.judge_model";
 const RUNTIME: &str =
     "jsonb_build_object('taskModel',l.task_model,'judgeModel',l.judge_model,'baseUrl',p.base_url)";
 
 pub(crate) async fn dispatch(tx: &mut Tx<'_>, executor: &Value) -> ApiResult<()> {
-    // A Try pins its channel and models at request time and its executor before leasing.
-    sqlx::query("UPDATE learning_trials SET runtime=runtime||jsonb_build_object('executor',$1::jsonb) WHERE id=(SELECT id FROM learning_trials WHERE kind='try' AND NOT runtime ? 'executor' ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED)").bind(executor).execute(&mut **tx).await.map_err(db)?;
+    // Rebind untouched trials. A partially executed trial cannot mix runtimes.
+    sqlx::query("UPDATE learning_rollouts r SET status='cancelled' FROM learning_trials t JOIN workspace_model_providers p USING(project_id)
+        WHERE r.trial_id=t.id AND r.status='queued' AND (t.runtime->>'baseUrl'<>p.base_url OR NOT (t.runtime->>'taskModel'=ANY(p.allowed_models) AND t.runtime->>'judgeModel'=ANY(p.allowed_models)) OR
+        (t.runtime->'executor'<>$1 AND NOT EXISTS(SELECT FROM executor_credentials c WHERE c.runtime=t.runtime->'executor' AND c.revoked_at IS NULL AND c.last_seen_at>now()-interval '1 minute')
+        AND EXISTS(SELECT FROM learning_rollouts sibling WHERE sibling.trial_id=t.id AND sibling.attempts>0)))").bind(executor).execute(&mut **tx).await.map_err(db)?;
+    sqlx::query("UPDATE learning_trials t SET runtime=runtime||jsonb_build_object('executor',$1::jsonb)
+        WHERE runtime->'executor' IS DISTINCT FROM $1 AND EXISTS(SELECT FROM learning_rollouts r WHERE r.trial_id=t.id AND r.status='queued')
+        AND NOT EXISTS(SELECT FROM learning_rollouts r WHERE r.trial_id=t.id AND r.attempts>0)
+        AND NOT EXISTS(SELECT FROM executor_credentials c WHERE c.runtime=t.runtime->'executor' AND c.revoked_at IS NULL AND c.last_seen_at>now()-interval '1 minute')").bind(executor).execute(&mut **tx).await.map_err(db)?;
     for split in [Split::Evolve, Split::HeldOut] {
         let table = split.table();
+        let confirmed = if split == Split::HeldOut {
+            "AND s.confirmed_by IS NOT NULL"
+        } else {
+            ""
+        };
+        sqlx::query(&format!("UPDATE {table} s SET admission='set-aside',admission_reason='check-failed' WHERE s.retired_revision IS NULL AND s.admission='pending' AND EXISTS(SELECT FROM learning_rollouts r WHERE r.trial_id=s.admission_trial AND r.status IN ('failed','cancelled'))")).execute(&mut **tx).await.map_err(db)?;
         let query = format!(
             "SELECT s.project_id,s.bundle_id,c.version_id,{RUNTIME},
-                    s.task_id,s.input,s.grader,s.added_revision
+                    s.task_id,s.grader,s.added_revision
              FROM {table} s {TARGET}
              WHERE {READY} AND s.admission='pending' AND s.retired_revision IS NULL
-               AND (s.admission_trial IS NULL OR EXISTS (
-                   SELECT FROM learning_rollouts r WHERE r.trial_id=s.admission_trial
-                     AND r.status='failed' AND r.lease_expires_at < now()-interval '1 minute'))
+               AND s.admission_trial IS NULL {confirmed}
              ORDER BY s.added_revision,s.task_id LIMIT 1 FOR UPDATE OF s SKIP LOCKED"
         );
         let row: Option<AdmissionSource> = sqlx::query_as(&query)
             .fetch_optional(&mut **tx)
             .await
             .map_err(db)?;
-        if let Some((project, bundle, version, mut runtime, id, input, grader, revision)) = row {
+        if let Some((project, bundle, version, mut runtime, id, grader, revision)) = row {
             runtime["executor"] = executor.clone();
             let trial = trials::run_admission(
                 tx,
@@ -42,22 +61,18 @@ pub(crate) async fn dispatch(tx: &mut Tx<'_>, executor: &Value) -> ApiResult<()>
                     version,
                     runtime: &runtime,
                 },
-                &input,
                 &grader,
             )
             .await
-            .map_err(db)?;
+            .map_err(trial_error)?;
             sqlx::query(&format!("UPDATE {table} SET admission_trial=$5 WHERE (project_id,bundle_id,task_id,added_revision)=($1,$2,$3,$4)")).bind(project).bind(bundle).bind(id).bind(revision).bind(trial).execute(&mut **tx).await.map_err(db)?;
         }
     }
+    sqlx::query("UPDATE learning_task_imports i SET failure='Conversion failed' WHERE failure IS NULL AND EXISTS(SELECT FROM learning_rollouts r WHERE r.trial_id=i.conversion_trial AND r.status IN ('failed','cancelled'))").execute(&mut **tx).await.map_err(db)?;
     let q = format!(
         "SELECT s.id,s.project_id,s.bundle_id,c.version_id,{RUNTIME} FROM learning_task_imports s {TARGET}
          WHERE {READY} AND s.converted_rows+s.set_aside_rows<s.row_count
-           AND (s.conversion_trial IS NULL OR (
-               EXISTS (SELECT FROM learning_rollouts r WHERE r.trial_id=s.conversion_trial
-                        AND r.status='failed' AND r.lease_expires_at < now()-interval '1 minute')
-               AND NOT EXISTS (SELECT FROM learning_rollouts r WHERE r.trial_id=s.conversion_trial
-                               AND r.status IN ('queued','running'))))
+           AND s.conversion_trial IS NULL AND s.failure IS NULL
          LIMIT 1 FOR UPDATE OF s SKIP LOCKED"
     );
     let row: Option<(Uuid, String, Uuid, Uuid, Value)> = sqlx::query_as(&q)
@@ -78,7 +93,7 @@ pub(crate) async fn dispatch(tx: &mut Tx<'_>, executor: &Value) -> ApiResult<()>
             &material,
         )
         .await
-        .map_err(db)?;
+        .map_err(trial_error)?;
         sqlx::query("UPDATE learning_task_imports SET conversion_trial=$2 WHERE id=$1")
             .bind(id)
             .bind(trial)
@@ -175,7 +190,7 @@ pub(super) async fn try_task(
                 &grader,
             )
             .await
-            .map_err(db)?;
+            .map_err(trial_error)?;
             sqlx::query("UPDATE learning_trials SET held_out=$2 WHERE id=$1")
                 .bind(trial)
                 .bind(split == Split::HeldOut)
@@ -210,7 +225,7 @@ pub(super) async fn import_status(
     Path((p, b, id)): RoutePath,
     h: HeaderMap,
 ) -> Reply {
-    let (mut tx, _) = actor_tx(&s, &h, &p, "read").await?;
-    let doc=sqlx::query_scalar("SELECT jsonb_build_object('importId',id,'rows',row_count,'converted',converted_rows,'setAside',set_aside_rows,'pending',row_count-converted_rows-set_aside_rows,'status',CASE WHEN row_count=converted_rows+set_aside_rows THEN 'completed' ELSE 'pending' END) FROM learning_task_imports WHERE (project_id,bundle_id,id)=($1,$2,$3)").bind(p).bind(path(&b)?).bind(path(&id)?).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(||missing("Import not found"))?;
+    let (mut tx, actor) = actor_tx(&s, &h, &p, "read").await?;
+    let doc=sqlx::query_scalar("SELECT jsonb_build_object('importId',id,'rows',row_count,'converted',converted_rows,'setAsideCount',set_aside_rows,'setAside',CASE WHEN $4 THEN (SELECT coalesce(jsonb_agg(jsonb_build_object('row',row_number,'source',i.source,'reason',reason) ORDER BY row_number),'[]') FROM learning_task_import_rows WHERE import_id=i.id AND status='set-aside') ELSE '[]'::jsonb END,'message',failure,'pending',row_count-converted_rows-set_aside_rows,'status',CASE WHEN failure IS NOT NULL THEN 'failed' WHEN row_count=converted_rows+set_aside_rows THEN 'completed' ELSE 'pending' END) FROM learning_task_imports i WHERE (project_id,bundle_id,id)=($1,$2,$3)").bind(p).bind(path(&b)?).bind(path(&id)?).bind(actor.user_id.is_some()).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(||missing("Import not found"))?;
     Ok(Json(doc))
 }

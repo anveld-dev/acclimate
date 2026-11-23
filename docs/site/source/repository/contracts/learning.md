@@ -22,7 +22,7 @@ All paths below are relative to `/v1/workspaces/{workspaceId}/bundles/{bundleId}
 | `PATCH /tasks/{id}`, `DELETE /tasks/{id}` | Write | Edit or retire a task revision |
 | `POST /tasks/{id}/try` | Write | Queue one trial at the channel head and return its ID |
 | `GET /trials/{id}` | Read | Try status, gateway log, output and verdict. Held-out trials require a console session. |
-| `GET /tasks/imports/{id}` | Read | Import status and counts of converted, pending and set-aside rows |
+| `GET /tasks/imports/{id}` | Read | Import status, counts (`rows`, `converted`, `pending`, `setAsideCount`), `message` on failure and `setAside: [{row, source, reason}]` for signed-in sessions. Machine callers receive an empty list |
 | `POST /tasks/import` | Write | Import ID, row counts and, for console sessions, drafted cards |
 | `GET /held-out-tasks/export` | Console session with read access | All live held-out cards |
 
@@ -42,7 +42,7 @@ Create a task with `{input, grader}`. The grader is `{type: "exact", expected}` 
 
 List with `split`, `source`, `admission`, `flagged`, `after` and `limit`. The default page has 20 cards and the maximum is 100. Machine credentials can read evolve cards and aggregate held-out counts. Only console sessions can read or change individual held-out tasks.
 
-Import the raw file body with an optional `filename` query parameter. Supported media types are `text/csv`, `application/x-ndjson`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` and `text/plain`. Rows with both input and expected fields become pending exact tasks. Remaining material retains its source and row number for conversion. Spreadsheet row numbers start at one and advance by 1,048,576 for each subsequent worksheet. Imports group matching source conversations together. Inputs that match after case and whitespace normalization share a group. An import that would join two previously assigned groups returns a conflict. CSV fields are strings and JSONL fields retain their JSON types.
+Import the raw file body with an optional `filename` query parameter. Supported media types are `text/csv`, `application/x-ndjson`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` and `text/plain`. An import accepts at most 10,000 material rows. Re-uploading identical bytes in the same bundle returns the original import ID and current counts. Rows with both input and expected fields become pending exact tasks. Remaining material retains its source and row number for conversion. Spreadsheet row numbers start at one and advance by 1,048,576 for each subsequent worksheet. Imports group matching source conversations together. Inputs that match after case and whitespace normalization share a group. An import that would join two previously assigned groups returns a conflict. CSV fields are strings and JSONL fields retain their JSON types.
 
 ## Outcomes and scoring
 
@@ -78,12 +78,12 @@ Errors include `400 invalid_content`, `401 unauthenticated`, `403 denied`, `404 
 
 ## Service-side controls
 
-A signed-in workspace administrator configures the workspace model provider with `PUT /v1/workspaces/{workspaceId}/model-provider` and a JSON body containing `baseUrl`, `allowedModels` and `apiKey`. Readers can GET the same route to see the endpoint, allowed models and `hasKey`. The key is write-only.
+A signed-in workspace administrator configures the workspace model provider with `PUT /v1/workspaces/{workspaceId}/model-provider` and a JSON body containing `baseUrl`, `allowedModels` and `apiKey`. Readers can GET the same route to see the endpoint, allowed models and `hasKey`. The key is write-only. PUT queues verification and returns pending. Both provider responses include `verification: {status, checkedAt, models: [{model, ok, usage, message}]}`. Status is `pending`, `verified` or `failed`. The timestamp is null while pending. Start and executor work require a verified provider.
 
 Loop enrollment accepts distinct `taskModel` and `judgeModel` from the allowed list, and a positive `maxRoundsPerDay` (default 4). The service fills `setting.policyModel` from the task model. Central enrollments begin paused. Start with `POST /start` after both splits have at least 20 admitted tasks. A running loop started this way pauses with `tasks-required` if either count falls below 20. An active round can finish.
 
 The worker pins both models and the task revision. A round records its trigger as `start`, `resume`, `adoption`, `task-change` or `retry`. After two keeps the loop waits for new evidence. A change must affect at least five evolve tasks and at least ten percent of live evolve tasks. The rolling 24-hour cap leaves a triggered round waiting until capacity opens. Loop GET returns `waiting`, `admittedEvolve`, `admittedHeldOut` and the aggregate regression `alert`. The starting thresholds are shared by all bundles.
 
-Round detail includes candidate changes, diagnosis and evolve evaluations. Matching incumbent measurements are copied into the next round and marked by `incumbentReused`. The daily `GET /usage` entries use UTC dates and report rounds, rollouts and provider-reported optimizer, task and judge token totals. The flagged task filter selects evolve tasks with judge-vote disagreement, inconsistent rollout verdicts, rollout errors, or no passing candidate in two or more measured rounds since their last edit.
+Round detail includes candidate changes, diagnosis and evolve evaluations. Matching incumbent measurements are copied into the next round and marked by `incumbentReused`. The daily `GET /usage` entries use UTC dates and report rounds, rollouts and provider-reported optimizer, task and judge token totals. The flagged task filter selects evolve tasks with judge-vote disagreement, rollout errors, or no passing candidate in two or more measured rounds since their last edit.
 
 A held-out drop raises a score-and-count alert. If an adoption drops at least 0.10 with two or more pass-to-fail flips, the service measures the parent and adoption again and restores the parent if both thresholds hold again and the channel still points at that release. Operators can request a rollback with `POST /rollback` and `{roundId, note?}`. The removed digest is blocked for future candidates. Historical decisions and memory remain append-only.

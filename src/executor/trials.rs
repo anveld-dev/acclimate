@@ -4,6 +4,8 @@ use sqlx::{PgPool, Row};
 use std::collections::HashSet;
 use uuid::Uuid;
 
+pub(crate) const CONVERSION_BYTES: usize = 64 * 1024;
+
 pub struct TrialTarget<'a> {
     pub project: &'a str,
     pub bundle: Uuid,
@@ -19,7 +21,7 @@ async fn create(tx: &mut Tx<'_>, target: &TrialTarget<'_>, kind: &str) -> Result
     if task.is_none() || judge.is_none() || judge == task {
         return Err(sqlx::Error::Protocol("invalid trial models".into()));
     }
-    sqlx::query_scalar("INSERT INTO learning_trials(project_id,bundle_id,version_id,runtime,kind) SELECT $1,$2,$3,$4,$5 FROM workspace_model_providers WHERE project_id=$1 AND base_url=$6 AND $7=ANY(allowed_models) AND ($8::text IS NULL OR $8=ANY(allowed_models)) RETURNING id")
+    sqlx::query_scalar("INSERT INTO learning_trials(project_id,bundle_id,version_id,runtime,kind) SELECT $1,$2,$3,$4,$5 FROM workspace_model_providers WHERE project_id=$1 AND verification->>'status'='verified' AND base_url=$6 AND $7=ANY(allowed_models) AND ($8::text IS NULL OR $8=ANY(allowed_models)) FOR SHARE RETURNING id")
         .bind(target.project).bind(target.bundle).bind(target.version).bind(runtime).bind(kind).bind(runtime["baseUrl"].as_str()).bind(task).bind(judge).fetch_one(&mut **tx).await
 }
 async fn job(tx: &mut Tx<'_>, id: Uuid, task: &str, input: &Value, grader: &Value) -> Result<()> {
@@ -28,8 +30,8 @@ async fn job(tx: &mut Tx<'_>, id: Uuid, task: &str, input: &Value, grader: &Valu
     Ok(())
 }
 
-fn validate_grader(grader: &Value) -> Result<()> {
-    let valid = match grader["type"].as_str() {
+pub(crate) fn valid_grader(grader: &Value) -> bool {
+    match grader["type"].as_str() {
         Some("exact") => grader.get("expected").is_some(),
         Some("criteria") => grader["criteria"].as_array().is_some_and(|cs| {
             (1..=10).contains(&cs.len())
@@ -38,8 +40,10 @@ fn validate_grader(grader: &Value) -> Result<()> {
                     .all(|c| c.as_str().is_some_and(|s| !s.trim().is_empty()))
         }),
         _ => false,
-    };
-    if valid {
+    }
+}
+fn validate_grader(grader: &Value) -> Result<()> {
+    if valid_grader(grader) {
         Ok(())
     } else {
         Err(sqlx::Error::Protocol("invalid task grader".into()))
@@ -62,7 +66,6 @@ pub async fn start_try(
 pub async fn run_admission(
     tx: &mut Tx<'_>,
     target: &TrialTarget<'_>,
-    _input: &Value,
     grader: &Value,
 ) -> Result<Uuid> {
     validate_grader(grader)?;
@@ -97,14 +100,17 @@ pub async fn queue_conversion(
     }
     let id = create(tx, target, "conversion").await?;
     // Keep each batch small enough for its requests, replies and gateway log.
-    // A single large source row stays intact so its provenance survives conversion.
+    // Import processing has already set aside rows above the batch limit.
     let mut start = 0;
     while start < rows.len() {
         let mut end = start;
         let mut bytes = 0;
         while end < rows.len() && end - start < 16 {
             let size = rows[end].to_string().len();
-            if end > start && bytes + size > 64 * 1024 {
+            if size > CONVERSION_BYTES {
+                return Err(sqlx::Error::Protocol("oversized conversion row".into()));
+            }
+            if end > start && bytes + size > CONVERSION_BYTES {
                 break;
             }
             bytes += size;
@@ -127,18 +133,28 @@ pub(super) fn valid_conversion(material: &Value, cards: &[Value], aside: &[Value
     let Some(rows) = material["rows"].as_array() else {
         return false;
     };
-    let mut pending: HashSet<_> = rows.iter().filter_map(|r| r["row"].as_u64()).collect();
-    cards.iter().all(|c| {
-        c["row"].as_u64().is_some_and(|n| pending.remove(&n))
-            && c.get("input").is_some()
-            && c["criteriaDrafted"].is_boolean()
-            && validate_grader(&c["grader"]).is_ok()
-            && rows
-                .iter()
-                .any(|r| r["row"] == c["row"] && r["source"] == c["group"])
-    }) && aside.iter().all(|s| {
-        s["reason"] == "no-reference" && s["row"].as_u64().is_some_and(|n| pending.remove(&n))
-    }) && pending.is_empty()
+    let known: HashSet<_> = rows.iter().filter_map(|r| r["row"].as_u64()).collect();
+    let mut covered = HashSet::new();
+    for c in cards {
+        let Some(n) = c["row"].as_u64() else {
+            return false;
+        };
+        if !known.contains(&n)
+            || c.get("input").is_none()
+            || !c["criteriaDrafted"].is_boolean()
+            || validate_grader(&c["grader"]).is_err()
+            || !c["group"].is_string()
+        {
+            return false;
+        }
+        covered.insert(n);
+    }
+    aside.iter().all(|s| {
+        s["reason"] == "no-reference"
+            && s["row"]
+                .as_u64()
+                .is_some_and(|n| known.contains(&n) && covered.insert(n))
+    }) && known == covered
 }
 
 pub async fn read_trial(pool: &PgPool, project: &str, bundle: Uuid, id: Uuid) -> Result<Value> {

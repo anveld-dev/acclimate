@@ -1,3 +1,4 @@
+mod probe;
 mod provider;
 pub use provider::ProviderKey;
 mod queue;
@@ -20,6 +21,9 @@ use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow};
 use std::sync::Arc;
 use uuid::Uuid;
 
+const TASK_MAX_TOKENS: usize = 200_000;
+const JUDGE_MAX_TOKENS: usize = 64_000;
+
 type Tx<'a> = Transaction<'a, Postgres>;
 #[derive(Clone)]
 struct Service {
@@ -37,7 +41,8 @@ pub fn router(
         .route("/internal/executor/leases/{id}/heartbeat", post(heartbeat))
         .route("/internal/executor/leases/{id}/output", post(output))
         .route("/internal/executor/leases/{id}/result", post(result))
-        .layer(axum::middleware::from_fn(crate::request_limits))
+        .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024))
+        .layer(axum::middleware::from_fn(crate::request_limits::<true>))
         .with_state(Service {
             pool,
             key: key.map(Arc::new),
@@ -57,10 +62,13 @@ pub async fn create_credential(pool: &PgPool) -> Result<(Uuid, String), sqlx::Er
     Ok((id, token))
 }
 pub async fn revoke_credential(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
     sqlx::query_scalar::<_,Uuid>("UPDATE executor_credentials SET revoked_at=coalesce(revoked_at,now()) WHERE id=$1 RETURNING id")
         .bind(id)
-        .fetch_one(pool).await?;
-    Ok(())
+        .fetch_one(&mut *tx).await?;
+    sqlx::query("UPDATE learning_rollouts SET status=CASE WHEN attempts=2 THEN 'failed' ELSE 'queued' END,error_code=CASE WHEN attempts=2 THEN 'executor' END,lease_token_hash=NULL WHERE lease_owner=$1 AND status IN ('running','grading')").bind(id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE workspace_model_providers SET probe_expires=now(),probe_token=NULL WHERE probe_owner=$1").bind(id).execute(&mut *tx).await?;
+    tx.commit().await
 }
 fn unauthorized() -> crate::ApiErr {
     err(
@@ -117,7 +125,7 @@ async fn lease(
         if tokio::time::Instant::now() >= deadline {
             return Ok(StatusCode::NO_CONTENT.into_response());
         }
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 }
 pub(crate) async fn expire_leases<'a>(
@@ -156,15 +164,19 @@ async fn claim(s: &Service, hash: &str, executor: &Value) -> ApiResult<Option<Va
     .execute(&mut *tx)
     .await
     .map_err(db)?;
+    if let Some(doc) = probe::claim(&mut tx, owner, s.key.as_deref()).await? {
+        tx.commit().await.map_err(db)?;
+        return Ok(Some(doc));
+    }
     crate::learning::trial_work::dispatch(&mut tx, executor).await?;
     let row = sqlx::query("SELECT l.id,l.input,l.grader,t.kind,v.project_id,convert_from(v.payload,'UTF8')::jsonb AS bundle,p.base_url,p.encrypted_key,coalesce(r.runtime,t.runtime) AS runtime
         FROM learning_rollouts l LEFT JOIN learning_evaluations e ON e.id=l.evaluation_id LEFT JOIN learning_rounds r ON r.id=e.round_id
         LEFT JOIN learning_trials t ON t.id=l.trial_id JOIN versions v ON v.id=coalesce(e.version_id,t.version_id)
         JOIN workspace_model_providers p ON p.project_id=v.project_id
-        WHERE l.status='queued' AND coalesce(r.runtime,t.runtime)->'executor'=$1 AND coalesce(r.runtime,t.runtime)->>'baseUrl'=p.base_url
+        WHERE p.verification->>'status'='verified' AND l.status='queued' AND coalesce(r.runtime,t.runtime)->'executor'=$1 AND coalesce(r.runtime,t.runtime)->>'baseUrl'=p.base_url
         AND coalesce(r.runtime,t.runtime)->>'taskModel'=ANY(p.allowed_models)
         AND (coalesce(r.runtime,t.runtime)->>'judgeModel' IS NULL OR coalesce(r.runtime,t.runtime)->>'judgeModel'=ANY(p.allowed_models))
-        ORDER BY (l.trial_id IS NULL),l.created_at,l.id FOR UPDATE OF l SKIP LOCKED LIMIT 1")
+        ORDER BY CASE WHEN t.kind='try' THEN 0 WHEN l.evaluation_id IS NOT NULL THEN 1 ELSE 2 END,l.created_at,l.id FOR UPDATE OF l SKIP LOCKED LIMIT 1")
         .bind(executor)
         .fetch_optional(&mut *tx)
         .await
@@ -177,20 +189,21 @@ async fn claim(s: &Service, hash: &str, executor: &Value) -> ApiResult<Option<Va
     let project: String = row.get("project_id");
     let endpoint: String = row.get("base_url");
     let runtime: Value = row.get("runtime");
-    let key = s
-        .key
-        .as_ref()
-        .and_then(|key| {
-            key.open(
-                &project,
-                &endpoint,
-                &mut row.get::<Vec<u8>, _>("encrypted_key"),
-            )
-        })
-        .ok_or_else(|| db("provider key unavailable"))?;
+    let key = s.key.as_ref().and_then(|key| {
+        key.open(
+            &project,
+            &endpoint,
+            &mut row.get::<Vec<u8>, _>("encrypted_key"),
+        )
+    });
+    let Some(key) = key else {
+        sqlx::query("UPDATE workspace_model_providers SET verification=jsonb_build_object('status','failed','checkedAt',now(),'models',(SELECT jsonb_agg(jsonb_build_object('model',m,'ok',false,'usage',false,'message','Provider key unavailable')) FROM unnest(allowed_models) m)) WHERE project_id=$1 AND encrypted_key=$2").bind(&project).bind(row.get::<Vec<u8>,_>("encrypted_key")).execute(&mut *tx).await.map_err(db)?;
+        tx.commit().await.map_err(db)?;
+        return Ok(None);
+    };
     let lease = Uuid::new_v4();
     let bearer = secret();
-    let expires: DateTime<Utc> = sqlx::query_scalar("UPDATE learning_rollouts SET status='running',lease_id=$2,lease_token_hash=$3,lease_owner=$4,attempts=attempts+1,lease_expires_at=clock_timestamp()+interval '45 seconds',output=NULL,stop=NULL,gateway_log=NULL WHERE id=$1 RETURNING lease_expires_at")
+    let expires: DateTime<Utc> = sqlx::query_scalar("UPDATE learning_rollouts SET status='running',lease_id=$2,lease_token_hash=$3,lease_owner=$4,attempts=attempts+1,lease_expires_at=clock_timestamp()+interval '45 seconds',output=NULL,stop=NULL,gateway_log=NULL,tokens=NULL WHERE id=$1 RETURNING lease_expires_at")
         .bind(id)
         .bind(lease)
         .bind(digest(bearer.as_bytes()))
@@ -202,7 +215,7 @@ async fn claim(s: &Service, hash: &str, executor: &Value) -> ApiResult<Option<Va
     tx.commit().await.map_err(db)?;
     let mut doc = json!({
         "leaseId":lease,"leaseToken":bearer,"expiresAt":expires,"heartbeatSeconds":15,
-        "rolloutId":id,"provider":{"baseUrl":endpoint,"apiKey":key},"limits":{"maxTokens":200000,"timeoutSeconds":600}
+        "rolloutId":id,"provider":{"baseUrl":endpoint,"apiKey":key},"limits":{"maxTokens":TASK_MAX_TOKENS,"judgeMaxTokens":JUDGE_MAX_TOKENS,"timeoutSeconds":600}
     });
     let input = row.get::<Value, _>("input");
     let fields = match row.get::<Option<String>, _>("kind").as_deref() {
@@ -254,6 +267,7 @@ async fn heartbeat(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Value>> {
+    if let Some(expires)=sqlx::query_scalar::<_,DateTime<Utc>>("UPDATE workspace_model_providers SET probe_expires=now()+interval '45 seconds' WHERE probe_id=$1 AND probe_token=$2 AND probe_expires>now() AND EXISTS(SELECT FROM executor_credentials WHERE id=probe_owner AND revoked_at IS NULL) RETURNING probe_expires").bind(id).bind(token(&headers)?).fetch_optional(&s.pool).await.map_err(db)? { return Ok(Json(json!({"expiresAt":expires}))) }
     let expires: DateTime<Utc> = sqlx::query_scalar("UPDATE learning_rollouts SET lease_expires_at=clock_timestamp()+interval '45 seconds' WHERE lease_id=$1 AND lease_token_hash=$2 AND lease_expires_at>clock_timestamp() AND status IN ('running','grading') RETURNING lease_expires_at")
         .bind(id)
         .bind(token(&headers)?)
@@ -349,8 +363,12 @@ struct Tokens {
 #[derive(Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
 enum ResultBody {
+    Probe {
+        models: Vec<probe::ModelResult>,
+    },
     Error {
         error: InfraError,
+        tokens: Option<Tokens>,
     },
     Converted {
         cards: Vec<Value>,
@@ -382,9 +400,15 @@ async fn result(
     State(s): State<Service>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-    Json(req): Json<ResultBody>,
+    Json(body): Json<Value>,
 ) -> ApiResult<StatusCode> {
     let mut tx = s.pool.begin().await.map_err(db)?;
+    let req = serde_json::from_value::<ResultBody>(body);
+    if let Ok(ResultBody::Probe { models }) = req {
+        probe::finish(&mut tx, id, &token(&headers)?, models).await?;
+        tx.commit().await.map_err(db)?;
+        return Ok(StatusCode::NO_CONTENT);
+    }
     let row = lock_active_lease(&mut tx, id, &headers).await?;
     if let Some(trial) = row.get::<Option<Uuid>, _>("trial_id") {
         sqlx::query("SELECT id FROM learning_trials WHERE id=$1 FOR UPDATE")
@@ -393,20 +417,41 @@ async fn result(
             .await
             .map_err(db)?;
     }
+    let req = match req {
+        Ok(ResultBody::Scored { .. })
+            if row.get::<Option<String>, _>("kind").as_deref() == Some("conversion") =>
+        {
+            reject_conversion(&mut tx, id, row.get("trial_id"), None).await?;
+            tx.commit().await.map_err(db)?;
+            return Err(invalid());
+        }
+        Ok(body) => body,
+        Err(_) if row.get::<Option<String>, _>("kind").as_deref() == Some("conversion") => {
+            reject_conversion(&mut tx, id, row.get("trial_id"), None).await?;
+            tx.commit().await.map_err(db)?;
+            return Err(invalid());
+        }
+        Err(_) => return Err(invalid()),
+    };
     match req {
-        ResultBody::Error { error } => {
+        ResultBody::Probe { .. } => unreachable!(),
+        ResultBody::Error { error, tokens } => {
             if !matches!(
                 error.code.as_str(),
                 "gateway-upstream" | "sandbox-start" | "executor"
             ) {
                 return Err(invalid());
             }
-            sqlx::query("UPDATE learning_rollouts SET status=CASE attempts WHEN 2 THEN 'failed' ELSE 'queued' END,error_code=CASE attempts WHEN 2 THEN $2 END,lease_token_hash=NULL WHERE lease_id=$1")
+            sqlx::query("UPDATE learning_rollouts SET status=CASE attempts WHEN 2 THEN 'failed' ELSE 'queued' END,error_code=CASE attempts WHEN 2 THEN $2 END,tokens=$3,lease_token_hash=NULL WHERE lease_id=$1")
         .bind(id)
         .bind(error.code)
+        .bind(tokens.map(|counts|json!(counts)))
         .execute(&mut *tx)
         .await
         .map_err(db)?;
+            if row.get::<Option<String>, _>("kind").as_deref() == Some("conversion") {
+                sqlx::query("UPDATE learning_task_imports SET failure='Conversion failed after two attempts' WHERE conversion_trial=$1 AND EXISTS(SELECT FROM learning_rollouts WHERE lease_id=$2 AND status='failed')").bind(row.get::<Uuid,_>("trial_id")).bind(id).execute(&mut *tx).await.map_err(db)?;
+            }
         }
         ResultBody::Converted {
             cards,
@@ -419,11 +464,26 @@ async fn result(
             {
                 return Err(conflict());
             }
-            if !trials::valid_conversion(&row.get::<Value, _>("input"), &cards, &set_aside) {
-                return Err(invalid());
+            let applied =
+                if trials::valid_conversion(&row.get::<Value, _>("input"), &cards, &set_aside) {
+                    crate::learning::trial_work::convert(
+                        &mut tx,
+                        row.get("trial_id"),
+                        &cards,
+                        &set_aside,
+                    )
+                    .await
+                } else {
+                    Err(invalid())
+                };
+            if let Err(error) = applied {
+                if error.0.is_client_error() {
+                    reject_conversion(&mut tx, id, row.get("trial_id"), Some(json!(tokens)))
+                        .await?;
+                    tx.commit().await.map_err(db)?;
+                }
+                return Err(error);
             }
-            crate::learning::trial_work::convert(&mut tx, row.get("trial_id"), &cards, &set_aside)
-                .await?;
             sqlx::query("UPDATE learning_rollouts SET status='converted',conversion_result=$2,judge_log=$3,tokens=$4,lease_token_hash=NULL WHERE lease_id=$1")
                 .bind(id).bind(json!({"cards":cards,"setAside":set_aside})).bind(json!(judge_log)).bind(json!(tokens)).execute(&mut *tx).await.map_err(db)?;
         }
@@ -480,4 +540,15 @@ async fn result(
     .await?;
     tx.commit().await.map_err(db)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn reject_conversion(
+    tx: &mut Tx<'_>,
+    lease: Uuid,
+    trial: Uuid,
+    tokens: Option<Value>,
+) -> ApiResult<()> {
+    sqlx::query("UPDATE learning_rollouts SET status='failed',error_code='invalid-conversion',tokens=$2,lease_token_hash=NULL WHERE lease_id=$1").bind(lease).bind(tokens).execute(&mut **tx).await.map_err(db)?;
+    sqlx::query("UPDATE learning_task_imports SET failure='Executor returned invalid conversion material' WHERE conversion_trial=$1").bind(trial).execute(&mut **tx).await.map_err(db)?;
+    Ok(())
 }

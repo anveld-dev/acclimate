@@ -47,10 +47,6 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
         INSERT INTO learning_evolve_cases(project_id,bundle_id,case_id,input,expected,source,added_revision)
         SELECT project_id,id,'old-task','1','2','setup',1 FROM bundles;")
         .execute(&mut connection).await.unwrap();
-    connection
-        .apply(migrator.iter().find(|m| m.version == 22).unwrap())
-        .await
-        .unwrap();
     sqlx::raw_sql("UPDATE machine_tokens SET rights=CASE name WHEN 'Reader' THEN ARRAY['read','evaluate','read'] ELSE ARRAY['evaluate'] END;
         INSERT INTO machine_tokens(id,project_id,principal_id,name,secret_hash,secret_prefix,rights,created_by,expires_at)
         VALUES(gen_random_uuid(),'test','machine:writer','Writer','test-key-hash','test',ARRAY['write','evaluate','write'],'fixture',now()+interval '1 day');
@@ -59,12 +55,16 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
           FROM channels WHERE name='stable';
         INSERT INTO learning_evaluations(id,round_id,role,split,version_id,digest,evolve_revision,deadline_at)
         SELECT gen_random_uuid(),r.id,'incumbent','evolve',v.id,v.digest,1,now()+interval '1 day' FROM learning_rounds r JOIN versions v ON v.id=r.parent_version_id;
-        INSERT INTO learning_rollouts(evaluation_id,task_id,rollout,input,grader) SELECT id,'old-task',1,'1','{}' FROM learning_evaluations;
         UPDATE learning_loops SET evolve_revision=2;
         WITH outcome AS (SELECT gen_random_uuid() AS id)
         INSERT INTO learning_evolve_cases(project_id,bundle_id,case_id,input,expected,source,outcome_id,version_id,added_revision)
         SELECT c.project_id,c.bundle_id,'outcome:'||o.id,'1','2','outcome',o.id,c.version_id,2 FROM channels c CROSS JOIN outcome o WHERE c.name='stable';")
         .execute(&mut connection).await.unwrap();
+    connection
+        .apply(migrator.iter().find(|m| m.version == 22).unwrap())
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO learning_rollouts(evaluation_id,task_id,rollout,input,grader) SELECT id,'old-task',1,'1','{}' FROM learning_evaluations;").execute(&mut connection).await.unwrap();
     migrator.run(&mut connection).await.unwrap();
     let cutover:(String,i64,i64)=sqlx::query_as("SELECT pause_reason,task_revision,(SELECT count(*) FROM learning_tasks) FROM learning_loops")
         .fetch_one(&mut connection).await.unwrap();
@@ -128,6 +128,16 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
             "workspace_model_providers",
         ]
     );
+    let indexed: bool =
+        sqlx::query_scalar("SELECT to_regclass('learning_rollouts_trial') IS NOT NULL")
+            .fetch_one(&mut connection)
+            .await
+            .unwrap();
+    assert!(indexed);
+    for view in ["learning_round_tasks", "learning_round_held_out_tasks"] {
+        let n:i64=sqlx::query_scalar("SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=$1 AND column_name IN ('admission_revision','admission_trial')").bind(view).fetch_one(&mut connection).await.unwrap();
+        assert_eq!(n, 2);
+    }
     let effort_column: (String, String) = sqlx::query_as(
         "SELECT data_type,is_nullable FROM information_schema.columns
          WHERE table_schema=current_schema() AND table_name='learning_rounds'
@@ -161,7 +171,6 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
         [
             "learning_memory_append_only",
             "learning_record_rollout_usage",
-            "learning_stamp_admission",
             "machine_token_events_append_only"
         ]
     );

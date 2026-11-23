@@ -209,6 +209,8 @@ impl Fixture {
             )
             .await
             .unwrap();
+        self.state.runtime.ownership_acquired();
+        executor_tests::verify_provider(&self.internal(), &self.token, &Self::identity()).await;
     }
     fn internal(&self) -> axum::Router {
         acclimate_service::executor::router(
@@ -445,7 +447,8 @@ async fn streamed_import_preserves_rows_and_returns_cards_only_to_people() {
     let f = Fixture::new().await;
     f.enroll().await;
     let person = format!("console/{}", session(&f, "editor").await);
-    for who in ["writer", &person] {
+    let mut previous_id = Value::Null;
+    for who in [&person, "writer"] {
         let material = json!({"input":null,"expected":{"answer":42}});
         let reply = f
             .ok(
@@ -461,7 +464,9 @@ async fn streamed_import_preserves_rows_and_returns_cards_only_to_people() {
         assert_eq!(reply["pending"], 0);
         if who == "writer" {
             assert!(reply.get("cards").is_none());
+            assert_eq!(reply["importId"], previous_id);
         } else {
+            previous_id = reply["importId"].clone();
             let card = &reply["cards"][0];
             assert_eq!(card["sourceFile"], "tickets.jsonl");
             assert_eq!(card["sourceRow"], 1);
@@ -475,7 +480,16 @@ async fn streamed_import_preserves_rows_and_returns_cards_only_to_people() {
     let reply = f
         .ok("POST", "/tasks/import", "writer", None, json!(long))
         .await;
-    assert_eq!(reply["pending"], 1);
+    assert_eq!(reply["pending"], 0);
+    let path = format!("/tasks/imports/{}", reply["importId"].as_str().unwrap());
+    let status = f.ok("GET", &path, &person, None, Value::Null).await;
+    assert_eq!(
+        status["setAside"],
+        json!([{"row":1,"source":"paste","reason":"too-large"}])
+    );
+    let status = f.ok("GET", &path, "writer", None, Value::Null).await;
+    assert_eq!(status["setAsideCount"], 1);
+    assert_eq!(status["setAside"], json!([]));
     assert_eq!(
         f.req("POST", "/tasks", "writer", None, json!({"input":long}))
             .await
@@ -607,6 +621,15 @@ async fn model_settings_and_provider_key_custody() {
     if std::env::var_os("ACCLIMATE_PROVIDER_ENCRYPTION_KEY").is_some() {
         let result = f.ok("PUT", &route, &admin, None, provider).await;
         assert!(!result.to_string().contains("private-provider-fixture"));
+        assert_eq!(result["verification"]["status"], "pending");
+        let audits: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM mutation_audit WHERE path=$1 AND actor_user_id IS NOT NULL",
+        )
+        .bind(&route)
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap();
+        assert_eq!(audits, 1);
     } else {
         assert_eq!(f.req("PUT", &route, &admin, None, provider).await.0, 503);
         acclimate_service::executor::ProviderKey::from_hex(&"42".repeat(32))
@@ -697,4 +720,159 @@ async fn two_exhausted_leases_fail_the_incumbent_and_pause_after_three_rounds() 
     .await
     .unwrap();
     assert_eq!(open, 0);
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn machine_import_of_known_held_out_input_returns_counts() {
+    let f = Fixture::new().await;
+    f.enroll().await;
+    let person = format!("console/{}", session(&f, "editor").await);
+    let route = "/tasks/import?filename=known.JSONL";
+    let mut held = None;
+    for n in 0..100 {
+        let input = format!("known question {n}");
+        let receipt = f
+            .ok(
+                "POST",
+                route,
+                &person,
+                None,
+                json!({"input":input,"expected":"private-reference"}),
+            )
+            .await;
+        let card = &receipt["cards"][0];
+        if card["split"] == "held-out" {
+            held = Some((input, card["taskId"].clone()));
+            break;
+        }
+    }
+    let (input, id) = held.unwrap();
+    let receipt = f
+        .ok(
+            "POST",
+            route,
+            "writer",
+            None,
+            json!({"input":input,"expected":"writer reference"}),
+        )
+        .await;
+    assert!(receipt["importId"].is_string());
+    assert_eq!(
+        receipt,
+        json!({"importId":receipt["importId"],"rows":1,"converted":1,"pending":0,"setAsideCount":0})
+    );
+    let page = f.ok("GET", "/tasks", "writer", None, Value::Null).await;
+    for card in page["items"].as_array().unwrap() {
+        assert_ne!(card["input"], input);
+        assert_ne!(card["taskId"], id);
+    }
+    let trial = f
+        .ok(
+            "POST",
+            &format!("/tasks/{}/try", id.as_str().unwrap()),
+            &person,
+            None,
+            json!({}),
+        )
+        .await;
+    let path = format!("/trials/{}", trial["trialId"].as_str().unwrap());
+    assert_eq!(
+        f.req("GET", &path, "writer", None, Value::Null).await.0,
+        404
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn provider_probe_supersedes_old_leases_and_requires_usage() {
+    let f = Fixture::new().await;
+    f.enroll().await;
+    f.seed().await;
+    let models = ["task".into(), "judge".into()];
+    let app = f.internal();
+    let identity = json!({"executor":Fixture::identity()});
+    for i in 0..2 {
+        Fixture::key()
+            .store(
+                &f.state.db,
+                &f.project,
+                "https://example.invalid",
+                &models,
+                "test",
+            )
+            .await
+            .unwrap();
+        let pending = f
+            .ok(
+                "GET",
+                &format!("/v1/workspaces/{}/model-provider", f.project),
+                "reader",
+                None,
+                Value::Null,
+            )
+            .await;
+        assert_eq!(
+            pending["verification"],
+            json!({"status":"pending","checkedAt":null,"models":[]})
+        );
+        assert_eq!(
+            f.req("POST", "/start", "admin", None, Value::Null).await.0,
+            409
+        );
+        let lease = executor_tests::post(&app, "", &f.token, identity.clone())
+            .await
+            .1;
+        assert_eq!(lease["kind"], "probe");
+        assert_eq!(
+            executor_tests::act(&app, &lease, "heartbeat", json!({}))
+                .await
+                .0,
+            200
+        );
+        if i == 0 {
+            Fixture::key()
+                .store(
+                    &f.state.db,
+                    &f.project,
+                    "https://example.invalid",
+                    &models,
+                    "replacement",
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                executor_tests::act(&app, &lease, "result", json!({"models":[]}))
+                    .await
+                    .0,
+                409
+            );
+        } else {
+            let results = json!([{"model":"judge","ok":true,"usage":false,"message":"missing usage"},{"model":"task","ok":true,"usage":true,"message":null}]);
+            assert_eq!(
+                executor_tests::act(&app, &lease, "result", json!({"models":results}))
+                    .await
+                    .0,
+                204
+            );
+            let state = f
+                .ok(
+                    "GET",
+                    &format!("/v1/workspaces/{}/model-provider", f.project),
+                    "reader",
+                    None,
+                    Value::Null,
+                )
+                .await;
+            assert_eq!(state["verification"]["status"], "failed");
+            assert!(state["verification"]["checkedAt"].is_string());
+            assert_eq!(state["verification"]["models"], results);
+            assert_eq!(
+                executor_tests::post(&app, "", &f.token, identity.clone())
+                    .await
+                    .0,
+                204
+            );
+        }
+    }
 }

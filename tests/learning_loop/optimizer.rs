@@ -69,7 +69,7 @@ async fn model(
             assert!(!inner.contains(['<', '>']));
             let data: Value = serde_json::from_str(inner).unwrap();
             assert!(!inner.contains(HELD_OUT));
-            for marker in ["held-out-sentinel", "private-trial-log", "private-trial-result","private-gateway-log"] {
+            for marker in ["held-out-sentinel", "private-trial-log", "private-trial-result","private-gateway-log","private-judge-reason"] {
                 assert!(!inner.contains(marker));
             }
             let n = {
@@ -143,6 +143,9 @@ pub(super) async fn evaluate(f: &Fixture, item: &Value, cases: &[Value]) {
         assert_eq!(status, 200, "{grader}");
         let counts = json!({"input":1,"output":2});
         let mut verdict = json!({"score":i32::from(passed),"passed":passed,"reasons":[]});
+        if task.starts_with("held-out") {
+            verdict["reasons"] = json!(["private-judge-reason"]);
+        }
         if grader["grader"]["type"] == "criteria" {
             verdict["votes"] = json!([passed, !passed, passed]);
             verdict["reasons"] = json!(["Evidence is incomplete."]);
@@ -215,7 +218,7 @@ async fn adoption_releases_only_selected_sample_and_merges_memory_across_rounds(
             INSERT INTO learning_trials(project_id,bundle_id,version_id,runtime,held_out)
             VALUES ($1,$2,$3,'{"taskModel":"task","judgeModel":"judge"}',true) RETURNING id)
             INSERT INTO learning_rollouts(trial_id,task_id,rollout,input,grader,status,score,passed,gateway_log,reasons)
-            SELECT id,'held-out-sentinel',1,'null','{}','scored',1,true,'["private-trial-log"]','["private-trial-result","private-gateway-log"]' FROM trial"#)
+            SELECT id,'held-out-sentinel',1,'null','{}','scored',1,true,'["private-trial-log"]','["private-trial-result","private-gateway-log","private-judge-reason"]' FROM trial"#)
             .bind(&f.project).bind(f.bundle).bind(f.version).execute(&f.state.db).await.unwrap();
         f.ok("GET", "/memory", "reader", None, Value::Null).await
     };

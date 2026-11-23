@@ -1,9 +1,11 @@
-ALTER TABLE learning_rounds ADD COLUMN runtime jsonb;
+ALTER TABLE learning_rounds ADD COLUMN runtime jsonb CHECK (runtime IS NULL OR (coalesce(jsonb_typeof(runtime->'judgeModel') = 'string' AND jsonb_typeof(runtime->'taskModel') = 'string', false) AND runtime->>'judgeModel' <> runtime->>'taskModel'));
 
 CREATE TABLE executor_credentials (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     token_hash text UNIQUE NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
+    runtime jsonb,
+    last_seen_at timestamptz,
     revoked_at timestamptz
 );
 
@@ -11,6 +13,12 @@ CREATE TABLE workspace_model_providers (
     project_id text PRIMARY KEY REFERENCES projects(id),
     base_url text NOT NULL,
     encrypted_key bytea NOT NULL,
+    verification jsonb NOT NULL DEFAULT '{"status":"pending","checkedAt":null,"models":[]}',
+    probe_id uuid UNIQUE,
+    probe_token text,
+    probe_owner uuid REFERENCES executor_credentials(id),
+    probe_expires timestamptz,
+    probe_attempts smallint NOT NULL DEFAULT 0,
     allowed_models text[] NOT NULL
 );
 
@@ -19,7 +27,9 @@ CREATE TABLE learning_trials (
     project_id text NOT NULL,
     bundle_id uuid NOT NULL,
     version_id uuid NOT NULL,
-    runtime jsonb NOT NULL,
+    kind text NOT NULL DEFAULT 'try' CHECK (kind IN ('try','admission','conversion')),
+    held_out boolean NOT NULL DEFAULT true,
+    runtime jsonb NOT NULL CHECK (runtime IS NULL OR (coalesce(jsonb_typeof(runtime->'judgeModel') = 'string' AND jsonb_typeof(runtime->'taskModel') = 'string', false) AND runtime->>'judgeModel' <> runtime->>'taskModel')),
     created_at timestamptz NOT NULL DEFAULT now(),
     FOREIGN KEY (project_id,bundle_id,version_id) REFERENCES versions(project_id,bundle_id,id)
 );
@@ -32,7 +42,9 @@ CREATE TABLE learning_rollouts (
     rollout smallint NOT NULL CHECK (rollout BETWEEN 1 AND 5),
     input jsonb NOT NULL,
     grader jsonb NOT NULL,
-    status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','grading','scored','failed','cancelled')),
+    votes jsonb,
+    conversion_result jsonb,
+    status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','grading','scored','converted','failed','cancelled')),
     lease_id uuid,
     lease_token_hash text,
     lease_owner uuid REFERENCES executor_credentials(id),
@@ -77,6 +89,8 @@ CREATE TABLE learning_tasks (
     output jsonb,
     confirmed_by text,
     admission text NOT NULL DEFAULT 'pending' CHECK (admission IN ('pending','admitted','set-aside')),
+    admission_revision bigint,
+    admission_trial uuid REFERENCES learning_trials(id),
     admission_reason text,
     added_revision bigint NOT NULL,
     retired_revision bigint CHECK (retired_revision > added_revision),
@@ -86,6 +100,7 @@ CREATE TABLE learning_tasks (
 );
 CREATE UNIQUE INDEX learning_tasks_live ON learning_tasks(project_id,bundle_id,task_id) WHERE retired_revision IS NULL;
 CREATE TABLE learning_held_out_tasks (LIKE learning_tasks INCLUDING ALL,
+    FOREIGN KEY(admission_trial) REFERENCES learning_trials(id),
     FOREIGN KEY (project_id,bundle_id) REFERENCES learning_loops(project_id,bundle_id),
     CHECK (admission <> 'admitted' OR confirmed_by IS NOT NULL)
 );
@@ -98,6 +113,9 @@ CREATE VIEW learning_round_held_out_tasks AS SELECT * FROM learning_held_out_tas
 
 CREATE TABLE learning_task_imports (
     id uuid PRIMARY KEY, project_id text NOT NULL, bundle_id uuid NOT NULL, source text NOT NULL,
+    conversion_trial uuid REFERENCES learning_trials(id),
+    UNIQUE(project_id,bundle_id,digest),
+    failure text,
     digest text NOT NULL, author text NOT NULL, format text NOT NULL, row_count bigint NOT NULL,
     converted_rows bigint NOT NULL DEFAULT 0, set_aside_rows bigint NOT NULL DEFAULT 0,
     FOREIGN KEY(project_id,bundle_id) REFERENCES learning_loops(project_id,bundle_id)
@@ -114,18 +132,6 @@ CREATE TABLE learning_task_groups (
     FOREIGN KEY(project_id,bundle_id) REFERENCES learning_loops(project_id,bundle_id)
 );
 
--- Executor grading and trial work
-ALTER TABLE learning_trials
-    ADD COLUMN kind text NOT NULL DEFAULT 'try' CHECK (kind IN ('try','admission','conversion')),
-    ADD CHECK (runtime IS NULL OR (coalesce(jsonb_typeof(runtime->'judgeModel') = 'string' AND jsonb_typeof(runtime->'taskModel') = 'string', false) AND runtime->>'judgeModel' <> runtime->>'taskModel'));
-ALTER TABLE learning_rounds
-    ADD CHECK (runtime IS NULL OR (coalesce(jsonb_typeof(runtime->'judgeModel') = 'string' AND jsonb_typeof(runtime->'taskModel') = 'string', false) AND runtime->>'judgeModel' <> runtime->>'taskModel'));
-ALTER TABLE learning_rollouts
-    ADD COLUMN votes jsonb,
-    ADD COLUMN conversion_result jsonb,
-    DROP CONSTRAINT learning_rollouts_status_check,
-    ADD CHECK (status IN ('queued','running','grading','scored','converted','failed','cancelled'));
-
 -- The joining task service can consume this row in its own revision transaction.
 CREATE VIEW learning_admission_results AS
 SELECT t.id AS trial_id, t.project_id, t.bundle_id,
@@ -136,10 +142,12 @@ FROM learning_trials t
 JOIN learning_rollouts empty_answer ON empty_answer.trial_id=t.id AND empty_answer.task_id='empty'
 LEFT JOIN learning_rollouts reference ON reference.trial_id=t.id AND reference.task_id='reference'
 CROSS JOIN LATERAL (
-    SELECT empty_answer.status='scored' AND (reference.id IS NULL OR reference.status='scored') AS ready,
-           CASE WHEN reference.passed=false THEN 'reference-failed'
+    SELECT empty_answer.status IN ('failed','cancelled') OR coalesce(reference.status IN ('failed','cancelled'),false) OR
+           (empty_answer.status='scored' AND (reference.id IS NULL OR reference.status='scored')) AS ready,
+           CASE WHEN empty_answer.status IN ('failed','cancelled') OR reference.status IN ('failed','cancelled') THEN 'check-failed'
+                WHEN reference.passed=false THEN 'reference-failed'
                 WHEN empty_answer.passed THEN 'empty-passed'
-                WHEN coalesce(reference.votes,empty_answer.votes) @> '[true,false]'::jsonb
+                WHEN reference.votes @> '[true,false]'::jsonb OR empty_answer.votes @> '[true,false]'::jsonb
                      THEN 'judge-unstable' END AS reason
 ) outcome
 WHERE t.kind='admission';
@@ -174,7 +182,7 @@ CREATE TABLE learning_usage (
     rounds bigint NOT NULL DEFAULT 0, rollouts bigint NOT NULL DEFAULT 0,
     optimizer_tokens bigint NOT NULL DEFAULT 0, task_tokens bigint NOT NULL DEFAULT 0, judge_tokens bigint NOT NULL DEFAULT 0,
     PRIMARY KEY(project_id,bundle_id,day),
-    FOREIGN KEY(project_id,bundle_id) REFERENCES learning_loops(project_id,bundle_id)
+    FOREIGN KEY(project_id,bundle_id) REFERENCES bundles(project_id,id)
 );
 CREATE FUNCTION learning_record_rollout_usage() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -182,63 +190,22 @@ BEGIN
     SELECT r.project_id,r.bundle_id,(now() AT TIME ZONE 'UTC')::date,1,
         coalesce((NEW.tokens #>> '{task,input}')::bigint,0)+coalesce((NEW.tokens #>> '{task,output}')::bigint,0),
         coalesce((NEW.tokens #>> '{judge,input}')::bigint,0)+coalesce((NEW.tokens #>> '{judge,output}')::bigint,0)
-    FROM learning_evaluations e JOIN learning_rounds r ON r.id=e.round_id WHERE e.id=NEW.evaluation_id
+    FROM (SELECT r.project_id,r.bundle_id FROM learning_evaluations e JOIN learning_rounds r ON r.id=e.round_id WHERE e.id=NEW.evaluation_id
+          UNION ALL SELECT project_id,bundle_id FROM learning_trials WHERE id=NEW.trial_id) r
     ON CONFLICT(project_id,bundle_id,day) DO UPDATE SET rollouts=learning_usage.rollouts+1,
         task_tokens=learning_usage.task_tokens+excluded.task_tokens,judge_tokens=learning_usage.judge_tokens+excluded.judge_tokens;
     RETURN NEW;
 END $$;
 CREATE TRIGGER learning_rollout_usage AFTER UPDATE OF status ON learning_rollouts FOR EACH ROW
-    WHEN (NEW.evaluation_id IS NOT NULL AND NEW.status='scored' AND OLD.status<>'scored') EXECUTE FUNCTION learning_record_rollout_usage();
+    WHEN (OLD.status IN ('running','grading') AND NEW.status IN ('queued','failed','scored','converted')) EXECUTE FUNCTION learning_record_rollout_usage();
 ALTER TABLE learning_evaluations ADD COLUMN measurement text NOT NULL DEFAULT 'initial'
     CHECK (measurement IN ('initial','confirm-parent','confirm-adoption')),
     DROP CONSTRAINT learning_evaluations_round_id_role_sample_key,
     ADD UNIQUE NULLS NOT DISTINCT (round_id,role,sample,measurement),
     ADD CHECK (measurement='initial' OR role='retained');
 
--- Evidence from real candidate evaluations only. A task edit resets its evidence.
-CREATE VIEW learning_flagged_tasks AS
-SELECT t.project_id,t.bundle_id,t.task_id,
-    CASE WHEN bool_or(errored) THEN 'rollout-error'
-         WHEN bool_or(passes BETWEEN 1 AND 4) THEN 'split-rollouts'
-         ELSE 'persistent-failure' END AS reason
-FROM learning_tasks t JOIN learning_rounds r ON (r.project_id,r.bundle_id)=(t.project_id,t.bundle_id)
-    AND r.task_revision>=t.added_revision
-JOIN learning_evaluations e ON e.round_id=r.id AND e.role='candidate' AND e.status='scored'
-CROSS JOIN LATERAL jsonb_array_elements(e.report->'cases') c
-CROSS JOIN LATERAL (
-    SELECT count(*) FILTER (WHERE v->>'passed'='true') passes,bool_or(v->>'error' IS NOT NULL) errored
-    FROM jsonb_array_elements(c->'rollouts') v
-) verdict
-WHERE t.retired_revision IS NULL AND c->>'caseId'=t.task_id
-GROUP BY t.project_id,t.bundle_id,t.task_id
-HAVING bool_or(errored OR passes BETWEEN 1 AND 4)
-    OR (count(DISTINCT r.number)>=2 AND max(passes)<3);
-
--- Admission can finish after the round that pinned the pending task's revision.
-ALTER TABLE learning_tasks ADD COLUMN admission_revision bigint;
-ALTER TABLE learning_held_out_tasks ADD COLUMN admission_revision bigint;
-CREATE FUNCTION learning_stamp_admission() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-    UPDATE learning_loops SET task_revision=task_revision+1
-    WHERE (project_id,bundle_id)=(NEW.project_id,NEW.bundle_id)
-    RETURNING task_revision INTO NEW.admission_revision;
-    RETURN NEW;
-END $$;
-CREATE TRIGGER learning_evolve_admission_revision BEFORE UPDATE OF admission ON learning_tasks
-    FOR EACH ROW WHEN (OLD.admission IS DISTINCT FROM NEW.admission AND
-        (OLD.admission='admitted' OR NEW.admission='admitted')) EXECUTE FUNCTION learning_stamp_admission();
-CREATE TRIGGER learning_held_out_admission_revision BEFORE UPDATE OF admission ON learning_held_out_tasks
-    FOR EACH ROW WHEN (OLD.admission IS DISTINCT FROM NEW.admission AND
-        (OLD.admission='admitted' OR NEW.admission='admitted')) EXECUTE FUNCTION learning_stamp_admission();
-
--- Admission and conversion are dispatched from their durable source rows.
-ALTER TABLE learning_loops ADD COLUMN IF NOT EXISTS task_model text,
-                           ADD COLUMN IF NOT EXISTS judge_model text;
-ALTER TABLE learning_tasks ADD COLUMN admission_trial uuid REFERENCES learning_trials(id);
-ALTER TABLE learning_held_out_tasks ADD COLUMN admission_trial uuid REFERENCES learning_trials(id);
-ALTER TABLE learning_task_imports ADD COLUMN conversion_trial uuid REFERENCES learning_trials(id);
-ALTER TABLE learning_trials ADD COLUMN held_out boolean NOT NULL DEFAULT true;
-
 CREATE INDEX learning_tasks_admission_trial ON learning_tasks(admission_trial) WHERE admission_trial IS NOT NULL;
 CREATE INDEX learning_held_out_tasks_admission_trial ON learning_held_out_tasks(admission_trial) WHERE admission_trial IS NOT NULL;
 CREATE INDEX learning_imports_conversion_trial ON learning_task_imports(conversion_trial) WHERE conversion_trial IS NOT NULL;
+
+CREATE INDEX learning_rollouts_trial ON learning_rollouts(trial_id) WHERE trial_id IS NOT NULL;

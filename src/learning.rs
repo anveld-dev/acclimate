@@ -396,6 +396,14 @@ async fn change_status(
                 "At least 20 admitted tasks in each split are required",
             ));
         }
+        let verification: Option<String> = sqlx::query_scalar(
+            "SELECT verification->>'status' FROM workspace_model_providers WHERE project_id=$1 FOR SHARE"
+        ).bind(project).fetch_optional(&mut *tx).await.map_err(db)?;
+        if verification.as_deref() != Some("verified") {
+            return Err(conflict(
+                "Verify the workspace model provider before starting",
+            ));
+        }
         if row.task_model.is_none() || row.judge_model.is_none() {
             return Err(conflict(
                 "Configure the task and judge models before starting",

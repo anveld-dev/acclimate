@@ -11,8 +11,6 @@ COPY scripts/packaging/release-metadata.mjs scripts/packaging/release-metadata.j
 # Release metadata checks the wheel version against the JavaScript packages.
 COPY python/pyproject.toml ./python/pyproject.toml
 COPY apps/console ./apps/console
-# Public evaluator descriptor/config matching is imported by the console.
-COPY examples/evaluation/descriptor.ts examples/evaluation/adapter.ts ./examples/evaluation/
 RUN npm run build:packages && npm run build:console
 # Nitro emits a standalone server tree, including its traced runtime dependencies.
 

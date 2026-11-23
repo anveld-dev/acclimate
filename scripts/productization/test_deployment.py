@@ -130,7 +130,9 @@ class DeploymentTests(unittest.TestCase):
             if line.startswith('FROM '): stage+=1
             if stage==1 and line.startswith('COPY '):
                 for pattern in shlex.split(line)[1:-1]:
-                    sources.extend(ROOT.glob(pattern))
+                    matches = list(ROOT.glob(pattern))
+                    self.assertTrue(matches, "Missing console builder COPY source: " + pattern)
+                    sources.extend(matches)
         def copied(path):
             return any(path==source or source.is_dir() and source in path.parents for source in sources)
         pending=list((ROOT/'packages').glob('*/src/**/*.ts'))+list((ROOT/'apps/console/src').rglob('*.ts'))+list((ROOT/'apps/console/src').rglob('*.tsx'))+[ROOT/'apps/console/vite.config.ts', ROOT/'scripts/build-packages.mjs', ROOT/'python/pyproject.toml']
@@ -178,8 +180,7 @@ class DeploymentTests(unittest.TestCase):
         # The context's positive allowlist must admit the new cross-root files;
         # its final secret exclusions still apply independently.
         ignore=(ROOT/'.dockerignore').read_text().splitlines()
-        for name in ('examples/','examples/evaluation/','examples/evaluation/descriptor.ts','examples/evaluation/adapter.ts',
-                     'scripts/', 'scripts/build-packages.mjs', 'scripts/packaging/',
+        for name in ('scripts/', 'scripts/build-packages.mjs', 'scripts/packaging/',
                      'scripts/packaging/release-metadata.mjs', 'scripts/packaging/release-metadata.json',
                      'scripts/packaging/build-receipt.mjs', 'python/', 'python/pyproject.toml'):
             self.assertIn('!'+name,ignore)

@@ -67,10 +67,9 @@ const empty: Extract<LearningState, { ok: true }> = {
   bundleName: 'Support',
   loop: null,
   channels: ['canary'],
-  principals: [],
+
   rounds: [],
   activeEvaluation: null,
-  caseSnapshot: null,
   canManage: true,
   canEditCases: true,
   detail: null,
@@ -103,21 +102,14 @@ function bundleFixture(url: URL, role = 'admin'): Response | undefined {
 }
 
 test('enrollment and recovery render for the appropriate states and roles', () => {
-  assert.match(markup(empty), /Enroll loop/);
-  assert.match(markup(empty), /acclimate-learning held-out/);
-  assert.match(markup({ ...empty, channels: [] }), /Release a version on a channel/);
-  assert.doesNotMatch(markup({ ...empty, canManage: false }), /Enroll loop/);
-  assert.match(markup({ ok: false, message: 'Access denied' }), /role="alert"[^>]*>Access denied/);
-  assert.match(markup({ ...empty, loop }), />Pause<.*>Stop</);
+  assert.match(markup(empty), /Save learning settings/);
+  assert.match(markup({ ...empty, loop }), /Import material/);
   assert.match(
-    markup({ ...empty, loop: { ...loop, status: 'paused', pauseReason: 'operator' } }),
-    />Resume<.*operator|operator.*>Resume</,
+    markup({ ...empty, loop: { ...loop, status: 'paused' } }),
+    /Start needs 20 more evolve and 20 more held-out/,
   );
-  assert.match(markup({ ...empty, loop: { ...loop, status: 'stopped' } }), />Restart loop</);
-  assert.doesNotMatch(
-    markup({ ...empty, canManage: false, canEditCases: false, loop }),
-    />(Pause|Resume|Stop|Add case|Retire case)</,
-  );
+  assert.doesNotMatch(markup({ ...empty, canManage: false }), /Save learning settings/);
+  assert.match(markup({ ok: false, message: 'Access denied' }), /role="alert"/);
 });
 
 test('renders round states, evaluation progress and decreasing measured scores', () => {
@@ -179,20 +171,15 @@ test('renders round states, evaluation progress and decreasing measured scores',
       },
       round,
     ],
-    caseSnapshot: {
-      roundNumber: 1,
-      revision: 1,
-      cases: [{ caseId: 'evolve-01', meanScore: 0.6, passedRollouts: 3 }],
-    },
   });
-  assert.match(html, /Round 1 · Incumbent evolve score · 0\.9/);
-  assert.match(html, /Round 2 · Incumbent evolve score · 0\.6/);
+  assert.match(html, /Round 1 · Evolve score · 0\.9/);
+  assert.match(html, /Round 2 · Evolve score · 0\.6/);
   assert.match(html, /Round 2 · Held-out score \(monitoring only\) · 0/);
   assert.match(html, /Monitoring timed out/);
   assert.match(html, />Failed<\/td>/);
   assert.match(html, />Stopped<\/td>/);
   assert.match(html, /adopted.*kept|kept.*adopted/);
-  assert.match(html, /evolve-01/);
+  assert.match(html, /Small held-out sets/);
   assert.doesNotMatch(html, />(Approve|Review|Rollout)</);
 });
 
@@ -203,7 +190,7 @@ test('distinguishes an unenrolled bundle from access and service errors', async 
     return bundleFixture(url) ?? response({}, 500);
   };
   const state = await readLearningState(env, scope, fetcher);
-  assert.deepEqual(state, { ...empty, principals: [{ name: 'App', principalId: 'machine:app' }] });
+  assert.deepEqual(state, empty);
   for (const status of [403, 503]) {
     const denied = await readLearningState(
       env,
@@ -268,9 +255,6 @@ test('round pagination uses before and round reads omit trace requests and held-
     [path + '/rounds?limit=100', path + '/rounds?limit=100&before=1', path + '/rounds/' + round.id],
   );
   assert.equal(state.activeEvaluation?.status, 'running');
-  assert.deepEqual(state.caseSnapshot?.cases, [
-    { caseId: 'case-a', passedRollouts: 3, meanScore: 0.6 },
-  ]);
   assert.doesNotMatch(JSON.stringify(state), /sentinel/);
 });
 
@@ -528,8 +512,7 @@ test('round detail and historical memory load with the session and render for ed
     '9 / 10',
     'Optimizer model optimizer · evolve revision 2',
     'Revision 1 of 2',
-    'Add an evolve case',
-    'Retire an evolve case',
+    'Export held-out tasks',
   ])
     assert.ok(html.includes(label), label);
   assert.doesNotMatch(html, /appToken|>Pause</);

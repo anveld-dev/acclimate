@@ -2,13 +2,10 @@ import { ApiError, type AcclimateClient, type LearningRound } from '@acclimate/s
 import { readVersion } from './release-history';
 import { consoleClient } from './console-client';
 import { allPages } from './listing';
-import { accessTransport } from './access-core';
-import type { MachineToken } from './machine-token-core';
 import type { Environment } from './selection';
 import {
   enrollmentError,
   evolveCaseBody,
-  type CaseSummary,
   type ActiveEvaluation,
   type LearningCommand,
   type LearningScope,
@@ -59,6 +56,7 @@ async function readRoundDetail(
 ) {
   try {
     const {
+      id,
       number,
       channel,
       channelRevision,
@@ -89,6 +87,7 @@ async function readRoundDetail(
     return {
       ok: true as const,
       round: {
+        id,
         number,
         channel,
         channelRevision,
@@ -162,24 +161,6 @@ export async function readLearningState(
       inspect(api, scope),
       allPages((cursor) => api.listChannels(workspaceId, bundleId, { cursor, limit: 100 })),
     ]);
-    const needsEnrollment = !loop || loop.status === 'stopped';
-    const principals =
-      canManage && needsEnrollment
-        ? await accessTransport(
-            env,
-            fetcher,
-          )(`/v1/workspaces/${encodeURIComponent(workspaceId)}/machine-tokens`)
-            .then(({ items }: { items: MachineToken[] }) =>
-              items
-                .filter(
-                  ({ status, rights }) =>
-                    status === 'active' &&
-                    (rights.includes('evaluate') || rights.includes('write')),
-                )
-                .map(({ name, principalId }) => ({ name, principalId })),
-            )
-            .catch(() => [])
-        : [];
     const rounds = loop
       ? await allPages(async (before) => {
           const page = await api.listLearningRounds(workspaceId, bundleId, {
@@ -190,26 +171,17 @@ export async function readLearningState(
         })
       : [];
     const activeId = loop?.activeRound?.id;
-    const lastScoredId = rounds.find((round) => round.incumbentScore !== null)?.id;
     const loadRound = (id: string) => api.getLearningRound(workspaceId, bundleId, id);
     const activeRead = activeId ? loadRound(activeId) : null;
-    const lastScoredRead =
-      lastScoredId && lastScoredId !== activeId ? loadRound(lastScoredId) : null;
     const detailId = options.round;
-    const [active, lastScored, detail, memory] = await Promise.all([
+    const [active, detail, memory] = await Promise.all([
       activeRead,
-      lastScoredRead,
       loop && detailId
         ? uuid.test(detailId)
           ? readRoundDetail(
               env,
               scope,
-              () =>
-                (detailId === activeId
-                  ? activeRead
-                  : detailId === lastScoredId
-                    ? lastScoredRead
-                    : null) ?? loadRound(detailId),
+              () => (detailId === activeId && activeRead ? activeRead : loadRound(detailId)),
               fetcher,
             )
           : { ok: false as const, message: 'Invalid learning round ID.' }
@@ -229,24 +201,6 @@ export async function readLearningState(
           reportedCases: openEvaluation.reportedCases,
         }
       : null;
-    let caseSnapshot: { roundNumber: number; revision: number; cases: CaseSummary[] } | null = null;
-    for (const round of [active, lastScored]) {
-      const cases = round?.evaluations.find(
-        ({ split, role }) => split === 'evolve' && role === 'incumbent',
-      )?.caseSummaries;
-      if (round && cases?.length) {
-        caseSnapshot = {
-          roundNumber: round.number,
-          revision: round.evolveRevision,
-          cases: cases.map(({ caseId, passedRollouts, meanScore }) => ({
-            caseId,
-            passedRollouts,
-            meanScore,
-          })),
-        };
-        break;
-      }
-    }
     return {
       ok: true as const,
       bundleName: bundle.name,
@@ -256,10 +210,8 @@ export async function readLearningState(
       detail,
       memory,
       channels: channels.map(({ name }) => name),
-      principals,
       rounds,
       activeEvaluation,
-      caseSnapshot,
     };
   } catch (error) {
     return failure(error);

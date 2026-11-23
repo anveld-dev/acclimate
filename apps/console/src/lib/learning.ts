@@ -14,7 +14,6 @@ export const activeRoundStates = [
   'selecting',
   'scoring_held_out',
 ] as const;
-export type CaseSummary = NonNullable<LearningEvaluation['caseSummaries']>[number];
 export type ActiveEvaluation = Pick<
   LearningEvaluation,
   'role' | 'sample' | 'split' | 'status' | 'cases' | 'reportedCases'

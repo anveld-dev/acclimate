@@ -24,7 +24,7 @@ class BrowserFixture:
         self.ca_path.write_bytes(self.identity.ca_path.read_bytes() + self.proxy.ca_path.read_bytes())
         self.log = open(world.h.dir / ('console-' + str(self.console_port) + '.log'), 'w+')
         env = {key: value for key,value in world.h.env.items() if not key.startswith('CONSOLE_')}
-        env.update(PORT=str(self.console_port),HOST='127.0.0.1',CONSOLE_SERVICE_URL=world.h.base,
+        env.update(PORT=str(self.console_port),HOST='127.0.0.1',CONSOLE_SERVICE_URL=getattr(world,"console_service_base",world.h.base),
                    CONSOLE_SERVICE_TOKEN=world.console_token, CONSOLE_LOGIN_TOKEN=world.login_token,
                    CONSOLE_ORIGIN=self.origin, CONSOLE_PUBLIC_API_URL=self.origin,
                    CONSOLE_OIDC_ISSUER=self.identity.issuer, CONSOLE_OIDC_CLIENT_ID=self.identity.client_id,

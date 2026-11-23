@@ -39,7 +39,7 @@ fn main() -> ExitCode {
     if args.len() == 1 && args[0] == "--check-grants" {
         return check_grants(std::io::stdin().lock());
     }
-    let operator_command = matches!(args.as_slice(), [cmd] if cmd == "--create-executor-token")
+    let operator_command = matches!(args.as_slice(), [cmd] if cmd == "--create-executor-token" || cmd == "--list-executor-tokens")
         || matches!(args.as_slice(), [cmd,_] if cmd == "--revoke-executor-token" || cmd == "--set-model-provider");
     if !args.is_empty() && !operator_command {
         eprintln!(r#"{{"schemaVersion":1,"valid":false,"code":"command.invalid"}}"#);
@@ -82,6 +82,9 @@ fn main() -> ExitCode {
                     &input.api_key,
                 )
                 .await?;
+            } else if args[0] == "--list-executor-tokens" {
+                let credentials = acclimate_service::executor::list_credentials(&pool).await?;
+                println!("{}", serde_json::Value::Array(credentials));
             } else if let Some(id) = args.get(1) {
                 acclimate_service::executor::revoke_credential(
                     &pool,

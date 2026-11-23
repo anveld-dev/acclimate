@@ -139,6 +139,7 @@ async fn claim(s: &Service, hash: &str, executor: &Value) -> ApiResult<Option<Va
         .execute(&mut *tx)
         .await
         .map_err(db)?;
+    crate::learning::trial_work::dispatch(&mut tx, executor).await?;
     let row = sqlx::query("SELECT l.id,l.input,l.grader,t.kind,v.project_id,convert_from(v.payload,'UTF8')::jsonb AS bundle,p.base_url,p.encrypted_key,coalesce(r.runtime,t.runtime) AS runtime
         FROM learning_rollouts l LEFT JOIN learning_evaluations e ON e.id=l.evaluation_id LEFT JOIN learning_rounds r ON r.id=e.round_id
         LEFT JOIN learning_trials t ON t.id=l.trial_id JOIN versions v ON v.id=coalesce(e.version_id,t.version_id)
@@ -224,7 +225,7 @@ async fn audit(
     .await
 }
 async fn lock_active_lease(tx: &mut Tx<'_>, id: Uuid, headers: &HeaderMap) -> ApiResult<PgRow> {
-    sqlx::query("SELECT t.kind,l.input,l.status,l.grader,l.stop,l.lease_owner,coalesce(r.project_id,t.project_id) AS project,coalesce(r.runtime,t.runtime) AS runtime FROM learning_rollouts l LEFT JOIN learning_evaluations e ON e.id=l.evaluation_id LEFT JOIN learning_rounds r ON r.id=e.round_id LEFT JOIN learning_trials t ON t.id=l.trial_id WHERE lease_id=$1 AND lease_token_hash=$2 AND lease_expires_at>clock_timestamp() AND l.status IN ('running','grading') FOR UPDATE OF l")
+    sqlx::query("SELECT t.kind,l.trial_id,l.input,l.status,l.grader,l.stop,l.lease_owner,coalesce(r.project_id,t.project_id) AS project,coalesce(r.runtime,t.runtime) AS runtime FROM learning_rollouts l LEFT JOIN learning_evaluations e ON e.id=l.evaluation_id LEFT JOIN learning_rounds r ON r.id=e.round_id LEFT JOIN learning_trials t ON t.id=l.trial_id WHERE lease_id=$1 AND lease_token_hash=$2 AND lease_expires_at>clock_timestamp() AND l.status IN ('running','grading') FOR UPDATE OF l")
         .bind(id)
         .bind(token(headers)?)
         .fetch_optional(&mut **tx)
@@ -368,6 +369,13 @@ async fn result(
 ) -> ApiResult<StatusCode> {
     let mut tx = s.pool.begin().await.map_err(db)?;
     let row = lock_active_lease(&mut tx, id, &headers).await?;
+    if let Some(trial) = row.get::<Option<Uuid>, _>("trial_id") {
+        sqlx::query("SELECT id FROM learning_trials WHERE id=$1 FOR UPDATE")
+            .bind(trial)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+    }
     match req {
         ResultBody::Error { error } => {
             if !matches!(
@@ -397,6 +405,8 @@ async fn result(
             if !trials::valid_conversion(&row.get::<Value, _>("input"), &cards, &set_aside) {
                 return Err(invalid());
             }
+            crate::learning::trial_work::convert(&mut tx, row.get("trial_id"), &cards, &set_aside)
+                .await?;
             sqlx::query("UPDATE learning_rollouts SET status='converted',conversion_result=$2,judge_log=$3,tokens=$4,lease_token_hash=NULL WHERE lease_id=$1")
                 .bind(id).bind(json!({"cards":cards,"setAside":set_aside})).bind(json!(judge_log)).bind(json!(tokens)).execute(&mut *tx).await.map_err(db)?;
         }
@@ -439,6 +449,9 @@ async fn result(
         .await
         .map_err(db)?;
         }
+    }
+    if row.get::<Option<String>, _>("kind").as_deref() == Some("admission") {
+        crate::learning::trial_work::apply(&mut tx, row.get("trial_id")).await?;
     }
     audit(
         &mut tx,

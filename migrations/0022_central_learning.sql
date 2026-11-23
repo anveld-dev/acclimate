@@ -230,3 +230,15 @@ CREATE TRIGGER learning_evolve_admission_revision BEFORE UPDATE OF admission ON 
 CREATE TRIGGER learning_held_out_admission_revision BEFORE UPDATE OF admission ON learning_held_out_tasks
     FOR EACH ROW WHEN (OLD.admission IS DISTINCT FROM NEW.admission AND
         (OLD.admission='admitted' OR NEW.admission='admitted')) EXECUTE FUNCTION learning_stamp_admission();
+
+-- Admission and conversion are dispatched from their durable source rows.
+ALTER TABLE learning_loops ADD COLUMN IF NOT EXISTS task_model text,
+                           ADD COLUMN IF NOT EXISTS judge_model text;
+ALTER TABLE learning_tasks ADD COLUMN admission_trial uuid REFERENCES learning_trials(id);
+ALTER TABLE learning_held_out_tasks ADD COLUMN admission_trial uuid REFERENCES learning_trials(id);
+ALTER TABLE learning_task_imports ADD COLUMN conversion_trial uuid REFERENCES learning_trials(id);
+ALTER TABLE learning_trials ADD COLUMN held_out boolean NOT NULL DEFAULT true;
+
+CREATE INDEX learning_tasks_admission_trial ON learning_tasks(admission_trial) WHERE admission_trial IS NOT NULL;
+CREATE INDEX learning_held_out_tasks_admission_trial ON learning_held_out_tasks(admission_trial) WHERE admission_trial IS NOT NULL;
+CREATE INDEX learning_imports_conversion_trial ON learning_task_imports(conversion_trial) WHERE conversion_trial IS NOT NULL;

@@ -11,7 +11,7 @@ A task is one thing the agent is asked to do, plus how to judge the result. Task
   "taskId": "refunds-oct-14",
   "input": { "messages": [{ "role": "user", "content": "My order arrived nine days late. Can I get a refund?" }] },
   "grader": {
-    "kind": "criteria",
+    "type": "criteria",
     "reference": "Yes. Orders more than seven days late qualify for a full refund.",
     "criteria": [
       "Confirms the customer qualifies for a refund",
@@ -30,8 +30,9 @@ A task is one thing the agent is asked to do, plus how to judge the result. Task
 | --- | --- |
 | `taskId` | Today's `case_id` format and values carry over, so memory attempts that name a case stay valid. |
 | `input` | JSON, at most 64 KiB, the limit `job.expect()` and evolve cases use today. The `chat` harness accepts a string or a `{messages}` list ending with a user turn. Any other JSON is sent as one user message holding the JSON text, which is what the `openai()` adapter does today. |
-| `grader.kind` | `exact` or `criteria`. A `check` script comes with the `codex` harness. |
-| `grader.reference` | The expected answer. Required for `exact`. Optional for `criteria`. |
+| `grader.type` | `exact` or `criteria`. A `check` script comes with the `codex` harness. |
+| `grader.expected` | The expected JSON answer for `exact`. |
+| `grader.reference` | Optional reference answer for `criteria`. |
 | `grader.criteria` | One to ten plain-language statements, one behavior each. Required for `criteria`. |
 | `source` | `import`, `console` or `outcome`. Set by the service, never by the caller's payload. The source file, row, author or reporting principal is stored beside it. |
 | `group` | Set by the service. Tasks that share a source share a group. |

@@ -22,11 +22,18 @@ All paths below are relative to `/v1/workspaces/{workspaceId}/bundles/{bundleId}
 | `GET /tasks` | Read | Live task cards, next cursor and held-out count |
 | `POST /tasks` | Write | New pending task, with held-out details restricted to console sessions |
 | `PATCH /tasks/{id}`, `DELETE /tasks/{id}` | Write | Edit or retire a task revision |
+| `POST /tasks/{id}/try` | Write | Queue one trial at the channel head and return its ID |
+| `GET /trials/{id}` | Read | Try status, gateway log, output and verdict. Held-out trials require a console session. |
+| `GET /tasks/imports/{id}` | Read | Import status and counts of converted, pending and set-aside rows |
 | `POST /tasks/import` | Write | Import ID, row counts and, for console sessions, drafted cards |
 | `GET /held-out-tasks/export` | Console session with read access | All live held-out cards |
 | `GET /work` | App principal | `{bundleId, status, items}` |
 | `POST /evaluations/{evaluationId}/start` | App principal | `{evaluation, cases, heldOut, reportedCaseIds}` |
 | `POST /evaluations/{evaluationId}/report` | App principal | `LearningEvaluation` |
+
+New task revisions and unconverted import rows wait for an executor poll. Dispatch requires a channel head and distinct task and judge models allowed by the workspace provider. The service pins the version, models, endpoint and executor identity for each trial. Try pins the version and models when requested and the executor on dispatch.
+
+The result transaction applies admission only to the checked live revision. A successful held-out check requires human evidence before admission. After both lease attempts fail, the source remains pending. An executor poll can start a fresh trial one minute after the failed lease's expiry. Conversion retries include only source rows still pending.
 
 Workspace administrators and machine principals with `promote` administer a loop. Its app principal must be a static grant or active workspace machine token with `evaluate` authority. A signed-in console user cannot act as the evaluator.
 

@@ -296,9 +296,10 @@ async fn combined_gate_fixture() {
         .fetch_one(&f.state.db)
         .await
         .unwrap();
+    let browser = session(&f, "admin").await;
     std::fs::write(
         path,
-        json!({"schema":schema,"evaluation":id,"workspace":f.project,"bundle":f.bundle,"version":f.version}).to_string(),
+        json!({"session":browser,"schema":schema,"evaluation":id,"workspace":f.project,"bundle":f.bundle,"version":f.version}).to_string(),
     )
     .unwrap();
 }
@@ -356,6 +357,12 @@ async fn trial_leases_resolve_admission_and_validate_material() {
         .unwrap();
     assert_eq!(result["output"], "answer");
     assert_eq!(result["verdict"]["passed"], true);
+    f.enroll().await;
+    let browser = format!("console/{}", session(&f, "admin").await);
+    sqlx::query("UPDATE learning_loops SET task_model='task',judge_model='judge'")
+        .execute(pool)
+        .await
+        .unwrap();
     for outcome in [
         "admitted",
         "empty-passed",
@@ -364,11 +371,15 @@ async fn trial_leases_resolve_admission_and_validate_material() {
         "pending",
     ] {
         let grader = json!({"type":"criteria","criteria":["Meets requirement"],"reference":"ref"});
-        let mut tx = pool.begin().await.unwrap();
-        let id = run_admission(&mut tx, &target, &json!("input"), &grader)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
+        let card = f
+            .ok(
+                "POST",
+                "/tasks",
+                &browser,
+                None,
+                json!({"input":outcome,"grader":grader}),
+            )
+            .await;
         for _ in 0..if outcome == "pending" { 4 } else { 2 } {
             let (status, lease) = post(&app, "", &token, json!({"executor":identity})).await;
             assert_eq!(status, 200, "{lease}");
@@ -390,12 +401,18 @@ async fn trial_leases_resolve_admission_and_validate_material() {
             };
             assert_eq!(act(&app, &lease, "result", report).await.0, 204);
         }
-        let result = read_trial(pool, &f.project, f.bundle, id).await.unwrap();
+        let page = f.ok("GET", "/tasks", &browser, None, Value::Null).await;
+        let checked = page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["taskId"] == card["taskId"])
+            .unwrap();
         if matches!(outcome, "admitted" | "pending") {
-            assert_eq!(result["status"], outcome)
+            assert_eq!(checked["admission"], outcome);
         } else {
-            assert_eq!(result["reason"], outcome);
-            assert_eq!(result["status"], "set-aside")
+            assert_eq!(checked["admissionReason"], outcome);
+            assert_eq!(checked["admission"], "set-aside");
         }
     }
     let mut tx = pool.begin().await.unwrap();
@@ -413,4 +430,66 @@ async fn trial_leases_resolve_admission_and_validate_material() {
         read_trial(pool, &f.project, f.bundle, id).await.unwrap()["cards"],
         report["cards"]
     );
+    let receipt = f
+        .ok(
+            "POST",
+            "/tasks/import?filename=materials.jsonl",
+            "writer",
+            None,
+            json!({"question":"Hi","answer":"x"}),
+        )
+        .await;
+    assert_eq!(receipt["pending"], 1);
+    let path = format!("/tasks/imports/{}", receipt["importId"].as_str().unwrap());
+    let lease = post(&app, "", &token, json!({"executor":identity})).await.1;
+    let row = &lease["material"]["rows"][0];
+    assert_eq!(row["material"]["answer"], "x");
+    report["cards"][0]["row"] = row["row"].clone();
+    report["cards"][0]["group"] = row["source"].clone();
+    assert_eq!(act(&app, &lease, "result", report).await.0, 204);
+    let status = f.ok("GET", &path, "reader", None, Value::Null).await;
+    assert_eq!(
+        (status["status"].as_str(), status["converted"].as_i64()),
+        (Some("completed"), Some(1))
+    );
+    for _ in 0..2 {
+        let lease = post(&app, "", &token, json!({"executor":identity})).await.1;
+        assert_eq!(lease["kind"], "grade");
+        let pass = lease["output"] == "x";
+        assert_eq!(act(&app,&lease,"result",json!({"verdict":{"passed":pass,"score":u8::from(pass),"reasons":[]},"judgeLog":[],"tokens":{"task":counts,"judge":counts}})).await.0,204);
+    }
+    let cards = f
+        .ok("GET", "/tasks?source=import", &browser, None, Value::Null)
+        .await;
+    assert_eq!(cards["items"][0]["admission"], "admitted");
+
+    // A terminal infrastructure failure has no verdict. Once its cooldown expires,
+    // the next poll creates a fresh admission trial for the same live revision.
+    sqlx::query("UPDATE learning_rollouts SET lease_expires_at=now()-interval '2 minutes' WHERE status='failed'")
+        .execute(pool).await.unwrap();
+    for _ in 0..2 {
+        let lease = post(&app, "", &token, json!({"executor":identity})).await.1;
+        assert_eq!(lease["kind"], "grade");
+        let pass = lease["output"] == "ref";
+        let verdict = json!({"passed":pass,"score":u8::from(pass),"votes":[pass,pass,pass],"reasons":["Reason"]});
+        assert_eq!(
+            act(
+                &app,
+                &lease,
+                "result",
+                json!({"verdict":verdict,"judgeLog":[],"tokens":{"task":counts,"judge":counts}})
+            )
+            .await
+            .0,
+            204
+        );
+    }
+    let page = f.ok("GET", "/tasks", &browser, None, Value::Null).await;
+    let retried = page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|card| card["input"] == "pending")
+        .unwrap();
+    assert_eq!(retried["admission"], "admitted");
 }

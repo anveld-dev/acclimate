@@ -18,12 +18,14 @@ spec.loader.exec_module(container)
 
 class DeploymentTests(unittest.TestCase):
     def resolve(self, directory, missing=None, **overrides):
-        for filename in ('service.env','console.env','password','empty.env'):
+        for filename in ('service.env','console.env','password','empty.env','executor-token'):
             container.private_write(directory/filename, '')
         environment = dict(PATH=os.environ['PATH'],
             ACCLIMATE_SERVICE_ENV=str(directory/'service.env'),
             ACCLIMATE_CONSOLE_ENV=str(directory/'console.env'),
             ACCLIMATE_POSTGRES_PASSWORD_FILE=str(directory/'password'),
+            # Empty, as before the executor credential is created.
+            ACCLIMATE_EXECUTOR_TOKEN_FILE=str(directory/'executor-token'),
             CONSOLE_HOST='console.fixture.invalid', API_HOST='api.fixture.invalid', ACME_EMAIL='fixture@example.invalid')
         environment.update(overrides)
         if missing:
@@ -46,10 +48,14 @@ class DeploymentTests(unittest.TestCase):
         self.assertFalse(runner.get('ports'))
         for name, service in services.items():
             self.assertEqual(service['restart'],'unless-stopped')
+            self.assertIn('healthcheck', service)
             if name != 'acclimate-executor':
                 self.assertEqual(service['stop_grace_period'],'1m30s')
-                self.assertIn('healthcheck', service)
             if name != 'proxy': self.assertFalse(service.get('ports'))
+        # The executor drains leased rollouts, and reports health from its own service contact.
+        self.assertEqual(services['acclimate-executor']['stop_grace_period'],'1h0m0s')
+        self.assertEqual(services['acclimate-executor']['healthcheck']['test'],
+                         ['CMD','acclimate-executor','--health'])
         self.assertEqual({port['target'] for port in services['proxy']['ports']}, {80,443})
         self.assertEqual(services['service']['build']['dockerfile'],'deploy/Dockerfile')
         self.assertEqual(services['console']['build']['dockerfile'],'deploy/console.Dockerfile')
@@ -58,6 +64,8 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(services['postgres']['environment']['POSTGRES_PASSWORD_FILE'],'/run/secrets/postgres_password')
         self.assertNotIn('POSTGRES_PASSWORD',services['postgres']['environment'])
         self.assertIn('/ready', ' '.join(services['service']['healthcheck']['test']))
+        # The executor credential lives where the operator says, never in the checkout.
+        self.assertNotIn(str(ROOT), config['secrets']['executor_token']['file'])
 
     def test_executor_listener_uses_only_the_executor_network(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -83,24 +91,48 @@ class DeploymentTests(unittest.TestCase):
         # Compose may validate services in any order. Remove one required input
         # at a time so a public-hostname error cannot mask the config-file gate.
         for missing in ('ACCLIMATE_SERVICE_ENV', 'ACCLIMATE_CONSOLE_ENV',
-                        'ACCLIMATE_POSTGRES_PASSWORD_FILE'):
+                        'ACCLIMATE_POSTGRES_PASSWORD_FILE', 'ACCLIMATE_EXECUTOR_TOKEN_FILE'):
             with self.subTest(missing=missing), tempfile.TemporaryDirectory() as temporary:
                 with self.assertRaises(subprocess.CalledProcessError) as failure:
                     self.resolve(Path(temporary), missing=missing)
                 self.assertIn(missing.encode(), failure.exception.stderr)
 
     def test_manifest_supports_a_shared_release_version_and_individual_image_overrides(self):
-        for overrides, service, console in (
-            ({'ACCLIMATE_VERSION': '0.1.0'}, 'ghcr.io/anveld-dev/acclimate-service:0.1.0',
-             'ghcr.io/anveld-dev/acclimate-console:0.1.0'),
+        published = 'ghcr.io/anveld-dev/acclimate-{}:{}'
+        for overrides, expected in (
+            ({}, {name: published.format(name, 'latest')
+                  for name in ('service', 'console', 'executor', 'runner')}),
+            ({'ACCLIMATE_VERSION': '0.1.0'}, {name: published.format(name, '0.1.0')
+                                              for name in ('service', 'console', 'executor', 'runner')}),
             ({'ACCLIMATE_VERSION': '0.1.0', 'ACCLIMATE_SERVICE_IMAGE': 'local/acclimate-service:test',
-              'ACCLIMATE_CONSOLE_IMAGE': 'local/acclimate-console:test'},
-             'local/acclimate-service:test', 'local/acclimate-console:test'),
+              'ACCLIMATE_CONSOLE_IMAGE': 'local/acclimate-console:test',
+              'ACCLIMATE_EXECUTOR_IMAGE': 'local/acclimate-executor:test',
+              'ACCLIMATE_RUNNER_IMAGE': 'local/acclimate-runner:test'},
+             {name: f'local/acclimate-{name}:test' for name in ('service', 'console', 'executor', 'runner')}),
         ):
             with self.subTest(overrides=overrides), tempfile.TemporaryDirectory() as temporary:
                 services = self.resolve(Path(temporary), **overrides)['services']
-                self.assertEqual(services['service']['image'], service)
-                self.assertEqual(services['console']['image'], console)
+                self.assertEqual(services['service']['image'], expected['service'])
+                self.assertEqual(services['console']['image'], expected['console'])
+                self.assertEqual(services['acclimate-executor']['image'], expected['executor'])
+                self.assertEqual(services['acclimate-runner']['image'], expected['runner'])
+                # The executor inspects the runner by the name the runner service is pulled or built as.
+                self.assertEqual(services['acclimate-executor']['environment']['ACCLIMATE_RUNNER_IMAGE'],
+                                 expected['runner'])
+                # A checkout can still build every application image.
+                self.assertEqual(services['acclimate-executor']['build']['dockerfile'], 'executor/Dockerfile')
+                self.assertEqual(Path(services['acclimate-runner']['build']['context']), ROOT/'executor/runner')
+
+    def test_release_publishes_every_compose_application_image(self):
+        workflow = (ROOT/'.github/workflows/release.yaml').read_text()
+        # Each image has a build entry naming its Dockerfile.
+        for name, dockerfile in (('acclimate-service', 'deploy/Dockerfile'),
+                                 ('acclimate-console', 'deploy/console.Dockerfile'),
+                                 ('acclimate-executor', 'executor/Dockerfile'),
+                                 ('acclimate-runner', 'executor/runner/Dockerfile')):
+            self.assertRegex(workflow, rf'- image: {name}\n +context: \S+\n +dockerfile: {dockerfile}\n')
+        self.assertEqual(workflow.count(
+            'image: [acclimate-service, acclimate-console, acclimate-executor, acclimate-runner]'), 2)
 
     def test_qualification_uses_project_local_builds_and_private_ports(self):
         with tempfile.TemporaryDirectory() as temporary:

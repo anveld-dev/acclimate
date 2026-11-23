@@ -132,6 +132,7 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
             "project_memberships",
             "projects",
             "promotions",
+            "provider_key_check",
             "users",
             "versions",
             "workspace_adoptions",

@@ -84,6 +84,8 @@ def qualify():
         private_write(directory / 'console.env', ''.join(k+'='+v+'\n' for k,v in console.items()))
         private_write(directory / 'password', password)
         private_write(directory / 'empty.env', '')
+        # The executor is not started here. Compose still requires its credential file.
+        private_write(directory / 'executor-token', '')
         # Fixture-only TLS certificate. Production Caddyfile always uses real public TLS.
         private_write(directory / 'Caddyfile', '''{
   auto_https off
@@ -105,6 +107,7 @@ https://127.0.0.1 {
         environment.update(ACCLIMATE_SERVICE_ENV=str(directory/'service.env'),
                            ACCLIMATE_CONSOLE_ENV=str(directory/'console.env'),
                            ACCLIMATE_POSTGRES_PASSWORD_FILE=str(directory/'password'),
+                           ACCLIMATE_EXECUTOR_TOKEN_FILE=str(directory/'executor-token'),
                            CONSOLE_HOST='localhost', API_HOST='127.0.0.1', ACME_EMAIL='fixture@example.invalid')
         base_command = ['docker', 'compose', '--env-file', str(directory/'empty.env'), '-p', project]
         def execute(command, timeout=900):

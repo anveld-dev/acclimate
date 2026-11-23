@@ -3,6 +3,8 @@ mod common;
 mod executor_tests;
 #[path = "learning_loop/imports.rs"]
 mod imports;
+#[path = "learning_loop/operations.rs"]
+mod operations;
 #[path = "learning_loop/optimizer.rs"]
 mod optimizer;
 #[path = "learning_loop/task_review.rs"]

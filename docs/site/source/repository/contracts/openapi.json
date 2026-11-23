@@ -3219,7 +3219,7 @@
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/memory": {
       "get": {
         "operationId": "getLearningMemory",
-        "description": "Read improvement memory at the current or requested revision. Requires workspace read access and excludes the loop app principal.",
+        "description": "Read improvement memory at the current or requested revision. Requires workspace read access.",
         "parameters": [
           {
             "name": "workspaceId",
@@ -3280,7 +3280,7 @@
             }
           },
           "403": {
-            "description": "Workspace read access is required and the loop app principal is excluded.",
+            "description": "Workspace read access is required.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3329,10 +3329,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "enum": [
-                "evolve",
-                "held-out"
-              ]
+              "enum": ["evolve", "held-out"]
             }
           },
           {
@@ -3340,11 +3337,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "enum": [
-                "console",
-                "outcome",
-                "import"
-              ]
+              "enum": ["console", "outcome", "import"]
             }
           },
           {
@@ -3352,11 +3345,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "enum": [
-                "pending",
-                "admitted",
-                "set-aside"
-              ]
+              "enum": ["pending", "admitted", "set-aside"]
             }
           },
           {
@@ -3398,20 +3387,13 @@
                       }
                     },
                     "next": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "heldOutCount": {
                       "type": "integer"
                     }
                   },
-                  "required": [
-                    "items",
-                    "next",
-                    "heldOutCount"
-                  ]
+                  "required": ["items", "next", "heldOutCount"]
                 }
               }
             }
@@ -3493,10 +3475,7 @@
                     },
                     "split": {
                       "type": "string",
-                      "enum": [
-                        "evolve",
-                        "held-out"
-                      ]
+                      "enum": ["evolve", "held-out"]
                     },
                     "addedRevision": {
                       "type": "integer"
@@ -3566,25 +3545,18 @@
                         "properties": {
                           "type": {
                             "type": "string",
-                            "enum": [
-                              "exact"
-                            ]
+                            "enum": ["exact"]
                           },
                           "expected": {}
                         },
-                        "required": [
-                          "type",
-                          "expected"
-                        ]
+                        "required": ["type", "expected"]
                       },
                       {
                         "type": "object",
                         "properties": {
                           "type": {
                             "type": "string",
-                            "enum": [
-                              "criteria"
-                            ]
+                            "enum": ["criteria"]
                           },
                           "criteria": {
                             "type": "array",
@@ -3596,18 +3568,12 @@
                           },
                           "reference": {}
                         },
-                        "required": [
-                          "type",
-                          "criteria"
-                        ]
+                        "required": ["type", "criteria"]
                       }
                     ]
                   }
                 },
-                "required": [
-                  "input",
-                  "grader"
-                ]
+                "required": ["input", "grader"]
               }
             }
           }
@@ -3721,25 +3687,18 @@
                         "properties": {
                           "type": {
                             "type": "string",
-                            "enum": [
-                              "exact"
-                            ]
+                            "enum": ["exact"]
                           },
                           "expected": {}
                         },
-                        "required": [
-                          "type",
-                          "expected"
-                        ]
+                        "required": ["type", "expected"]
                       },
                       {
                         "type": "object",
                         "properties": {
                           "type": {
                             "type": "string",
-                            "enum": [
-                              "criteria"
-                            ]
+                            "enum": ["criteria"]
                           },
                           "criteria": {
                             "type": "array",
@@ -3751,10 +3710,7 @@
                           },
                           "reference": {}
                         },
-                        "required": [
-                          "type",
-                          "criteria"
-                        ]
+                        "required": ["type", "criteria"]
                       }
                     ]
                   },
@@ -3899,20 +3855,13 @@
                       }
                     },
                     "next": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "heldOutCount": {
                       "type": "integer"
                     }
                   },
-                  "required": [
-                    "items",
-                    "next",
-                    "heldOutCount"
-                  ]
+                  "required": ["items", "next", "heldOutCount"]
                 }
               }
             }
@@ -4277,219 +4226,6 @@
         }
       }
     },
-    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/evolve-cases": {
-      "get": {
-        "operationId": "listLearningEvolveCases",
-        "description": "List live evolve cases in ascending ASCII case ID order. Requires the loop app principal or a signed-in member with read access. Each page reflects its returned evolve revision.",
-        "parameters": [
-          {
-            "name": "workspaceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "description": "Exclusive case ID cursor. Omit or leave empty for the first page.",
-            "schema": {
-              "type": "string",
-              "pattern": "^[A-Za-z0-9._:-]{0,128}$"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LearningEvolveCasesPage"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid learning request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required or expired.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller lacks authority for this operation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The requested learning resource was not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "addLearningEvolveCases",
-        "description": "Add or retire evolve cases. Requires the loop app principal or a signed-in workspace member with write access.",
-        "parameters": [
-          {
-            "name": "workspaceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LearningEvolveCasesRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LearningEvolveCasesReceipt"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid learning request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required or expired.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller lacks authority for this operation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The requested learning resource was not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Learning state or idempotency conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "The request exceeds 2 MiB.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/outcomes": {
       "post": {
         "operationId": "reportLearningOutcome",
@@ -4595,371 +4331,6 @@
           },
           "413": {
             "description": "The request exceeds 2 MiB.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/work": {
-      "get": {
-        "operationId": "getLearningWork",
-        "parameters": [
-          {
-            "name": "workspaceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LearningWork"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required or expired.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller lacks authority for this operation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The requested learning resource was not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/evaluations/{evaluationId}/start": {
-      "post": {
-        "operationId": "startLearningEvaluation",
-        "parameters": [
-          {
-            "name": "workspaceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "evaluationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LearningEvaluationStart"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LearningEvaluationAssignment"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid learning request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required or expired.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller lacks authority for this operation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The requested learning resource was not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Learning state or idempotency conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "The request exceeds 2 MiB.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/evaluations/{evaluationId}/report": {
-      "post": {
-        "operationId": "reportLearningEvaluation",
-        "parameters": [
-          {
-            "name": "workspaceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "evaluationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LearningEvaluationReportRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LearningEvaluation"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid learning request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required or expired.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller lacks authority for this operation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The requested learning resource was not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Learning state or idempotency conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "The request exceeds 2 MiB.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/workspaces/{workspaceId}/principal": {
-      "get": {
-        "operationId": "getPrincipal",
-        "description": "The caller's own identity in this workspace and the rights it holds there. A CLI holding an opaque machine token uses it to enroll a learning loop as its own app principal.",
-        "parameters": [
-          {
-            "name": "workspaceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Principal"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "No access to the workspace.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5896,7 +5267,7 @@
       },
       "MachineTokenRight": {
         "type": "string",
-        "enum": ["read", "evaluate", "write", "promote"]
+        "enum": ["read", "write", "promote"]
       },
       "MachineToken": {
         "type": "object",
@@ -6039,8 +5410,8 @@
             },
             "minItems": 1,
             "uniqueItems": true,
-            "default": ["evaluate"],
-            "maxItems": 4
+            "default": ["read"],
+            "maxItems": 3
           },
           "expiresInDays": {
             "type": "integer",
@@ -6199,35 +5570,14 @@
           }
         }
       },
-      "LearningHeldOut": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["digest", "cases"],
-        "properties": {
-          "digest": {
-            "type": "string",
-            "pattern": "^sha256:[0-9a-f]{64}$"
-          },
-          "cases": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
-      },
       "LearningLoopRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["channel", "setting"],
+        "required": ["channel", "setting", "taskModel", "judgeModel"],
         "properties": {
           "channel": {
             "type": "string",
             "minLength": 1
-          },
-          "appPrincipalId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1024
           },
           "setting": {
             "type": "object",
@@ -6254,9 +5604,6 @@
               }
             }
           },
-          "heldOut": {
-            "$ref": "#/components/schemas/LearningHeldOut"
-          },
           "taskModel": {
             "type": "string"
           },
@@ -6267,18 +5614,6 @@
             "type": "integer",
             "minimum": 1
           }
-        },
-        "anyOf": [
-          {
-            "required": ["taskModel", "judgeModel"]
-          },
-          {
-            "required": ["heldOut", "appPrincipalId"]
-          }
-        ],
-        "dependentRequired": {
-          "taskModel": ["judgeModel"],
-          "judgeModel": ["taskModel"]
         }
       },
       "LearningRoundSummary": {
@@ -6343,6 +5678,7 @@
               "no-evaluated-candidates",
               "channel-moved",
               "incumbent-evaluation-failed",
+              "candidate-evaluation-failed",
               "optimizer-unavailable",
               "optimizer-context-too-large",
               "selector-unavailable",
@@ -6472,15 +5808,11 @@
         "additionalProperties": false,
         "required": [
           "channel",
-          "appPrincipalId",
           "setting",
-          "heldOut",
           "workspaceId",
           "bundleId",
           "status",
           "pauseReason",
-          "evolveRevision",
-          "liveCases",
           "memoryRevision",
           "nextRound",
           "failedRounds",
@@ -6503,22 +5835,8 @@
             "type": "string",
             "minLength": 1
           },
-          "appPrincipalId": {
-            "type": "string"
-          },
           "setting": {
             "$ref": "#/components/schemas/LearningSetting"
-          },
-          "heldOut": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LearningHeldOut"
-              },
-              {
-                "type": "object",
-                "maxProperties": 0
-              }
-            ]
           },
           "workspaceId": {
             "type": "string"
@@ -6540,14 +5858,6 @@
               null,
               "tasks-required"
             ]
-          },
-          "evolveRevision": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "liveCases": {
-            "type": "integer",
-            "minimum": 0
           },
           "memoryRevision": {
             "type": "integer",
@@ -6667,7 +5977,6 @@
           "memoryDigest",
           "historyDigest",
           "setting",
-          "heldOut",
           "optimizerModel",
           "optimizerReasoningEffort",
           "selection",
@@ -6718,6 +6027,7 @@
               "no-evaluated-candidates",
               "channel-moved",
               "incumbent-evaluation-failed",
+              "candidate-evaluation-failed",
               "optimizer-unavailable",
               "optimizer-context-too-large",
               "selector-unavailable",
@@ -6841,17 +6151,6 @@
           },
           "setting": {
             "$ref": "#/components/schemas/LearningSetting"
-          },
-          "heldOut": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LearningHeldOut"
-              },
-              {
-                "type": "object",
-                "maxProperties": 0
-              }
-            ]
           },
           "optimizerReasoningEffort": {
             "type": ["string", "null"],
@@ -7359,7 +6658,6 @@
                     "policyModel",
                     "round",
                     "evolveRevision",
-                    "heldOutDigest",
                     "optimizerModel"
                   ],
                   "properties": {
@@ -7502,117 +6800,6 @@
           }
         }
       },
-      "LearningWorkItem": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "evaluationId",
-          "roundNumber",
-          "roundId",
-          "role",
-          "sample",
-          "split",
-          "versionId",
-          "digest",
-          "evolveRevision",
-          "deadlineAt",
-          "heldOut",
-          "status"
-        ],
-        "properties": {
-          "evaluationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "roundNumber": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "roundId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "role": {
-            "type": "string",
-            "enum": ["incumbent", "candidate", "retained"]
-          },
-          "sample": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 5
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "split": {
-            "type": "string",
-            "enum": ["evolve", "heldOut"]
-          },
-          "versionId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "digest": {
-            "type": "string",
-            "pattern": "^sha256:[0-9a-f]{64}$"
-          },
-          "evolveRevision": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 0
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "deadlineAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "heldOut": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LearningHeldOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "status": {
-            "type": "string",
-            "enum": ["queued", "running"]
-          }
-        }
-      },
-      "LearningWork": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["bundleId", "status", "items"],
-        "properties": {
-          "bundleId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "status": {
-            "type": "string",
-            "enum": ["running", "paused", "stopped"]
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LearningWorkItem"
-            },
-            "maxItems": 100
-          }
-        }
-      },
       "LearningEvaluation": {
         "type": "object",
         "additionalProperties": false,
@@ -7625,7 +6812,6 @@
           "versionId",
           "digest",
           "evolveRevision",
-          "deadlineAt",
           "status",
           "score",
           "cases",
@@ -7681,10 +6867,6 @@
                 "type": "null"
               }
             ]
-          },
-          "deadlineAt": {
-            "type": "string",
-            "format": "date-time"
           },
           "status": {
             "type": "string",
@@ -7791,21 +6973,6 @@
           }
         ]
       },
-      "LearningHeldOutRollout": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["score", "passed"],
-        "properties": {
-          "score": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "passed": {
-            "type": "boolean"
-          }
-        }
-      },
       "LearningRollout": {
         "type": "object",
         "additionalProperties": false,
@@ -7838,6 +7005,18 @@
                 "type": "null"
               }
             ]
+          },
+          "gatewayLog": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -7870,237 +7049,12 @@
           }
         }
       },
-      "LearningEvaluationStart": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["attemptId"],
-        "properties": {
-          "attemptId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "description": "At most 128 UTF-8 bytes."
-          }
-        }
-      },
-      "LearningEvaluationReportRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["attemptId"],
-        "properties": {
-          "attemptId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "description": "At most 128 UTF-8 bytes."
-          },
-          "cases": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["caseId", "rollouts"],
-              "properties": {
-                "caseId": {
-                  "type": "string",
-                  "pattern": "^[A-Za-z0-9._:-]{1,128}$"
-                },
-                "rollouts": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/LearningRollout"
-                  },
-                  "minItems": 5,
-                  "maxItems": 5
-                }
-              }
-            },
-            "minItems": 1
-          },
-          "error": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1024
-          }
-        },
-        "oneOf": [
-          {
-            "required": ["cases"]
-          },
-          {
-            "required": ["error"]
-          }
-        ],
-        "description": "Report whole cases or a terminal evaluation error. For a heldOut assignment, every rollout must satisfy LearningHeldOutRollout."
-      },
-      "LearningEvaluationAssignment": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["evaluation", "cases", "heldOut", "reportedCaseIds"],
-        "properties": {
-          "evaluation": {
-            "$ref": "#/components/schemas/LearningEvaluation"
-          },
-          "cases": {
-            "anyOf": [
-              {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/LearningEvolveCase"
-                }
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "heldOut": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LearningHeldOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "reportedCaseIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^[A-Za-z0-9._:-]{1,128}$"
-            }
-          }
-        }
-      },
-      "LearningEvolveCase": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["caseId", "input", "expected"],
-        "properties": {
-          "caseId": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
-          },
-          "input": {
-            "description": "Any JSON value encoded in at most 64 KiB."
-          },
-          "expected": {
-            "description": "Any JSON value encoded in at most 64 KiB."
-          }
-        }
-      },
-      "LearningLiveEvolveCase": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["caseId", "input", "expected", "addedRevision"],
-        "properties": {
-          "caseId": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
-          },
-          "input": {
-            "description": "Any JSON value encoded in at most 64 KiB."
-          },
-          "expected": {
-            "description": "Any JSON value encoded in at most 64 KiB."
-          },
-          "addedRevision": {
-            "type": "integer",
-            "minimum": 1
-          }
-        }
-      },
-      "LearningEvolveCasesPage": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["items", "next", "evolveRevision"],
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LearningLiveEvolveCase"
-            },
-            "maxItems": 100
-          },
-          "next": {
-            "description": "Exclusive cursor for the next page, or null on the last page.",
-            "type": ["string", "null"],
-            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
-          },
-          "evolveRevision": {
-            "type": "integer",
-            "minimum": 0
-          }
-        }
-      },
-      "LearningEvolveCasesRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [],
-        "properties": {
-          "cases": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LearningEvolveCase"
-            },
-            "maxItems": 100
-          },
-          "retire": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^[A-Za-z0-9._:-]{1,128}$"
-            },
-            "maxItems": 100
-          }
-        },
-        "anyOf": [
-          {
-            "required": ["cases"],
-            "properties": {
-              "cases": {
-                "minItems": 1
-              }
-            }
-          },
-          {
-            "required": ["retire"],
-            "properties": {
-              "retire": {
-                "minItems": 1
-              }
-            }
-          }
-        ]
-      },
-      "LearningEvolveCasesReceipt": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["evolveRevision", "added", "retired", "liveCases"],
-        "properties": {
-          "evolveRevision": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "added": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "retired": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "liveCases": {
-            "type": "integer",
-            "minimum": 0
-          }
-        }
-      },
       "LearningTask": {
         "type": "object",
         "properties": {
-          "flagReason": {"enum": ["rollout-error", "split-rollouts", "persistent-failure"]},
+          "flagReason": {
+            "enum": ["rollout-error", "judge-disagreement", "split-rollouts", "persistent-failure"]
+          },
           "input": {},
           "grader": {
             "oneOf": [
@@ -8220,42 +7174,22 @@
       "LearningOutcomeReceipt": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["outcomeId", "evolveRevision"],
+        "required": ["outcomeId", "taskRevision"],
         "properties": {
           "outcomeId": {
             "type": "string",
             "format": "uuid"
           },
-          "heldOutCount": {"type": "integer"},
-          "caseId": {
+          "heldOutCount": {
+            "type": "integer"
+          },
+          "taskId": {
             "type": "string",
             "pattern": "^[A-Za-z0-9._:-]{1,128}$"
           },
-          "evolveRevision": {
+          "taskRevision": {
             "type": "integer",
             "minimum": 0
-          }
-        }
-      },
-      "Principal": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["principalId", "kind", "rights"],
-        "properties": {
-          "principalId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "kind": {
-            "type": "string",
-            "enum": ["machine", "user"]
-          },
-          "rights": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": ["read", "evaluate", "write", "promote"]
-            }
           }
         }
       }

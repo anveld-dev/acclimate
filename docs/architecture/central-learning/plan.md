@@ -30,6 +30,8 @@ On 23 November 2026 the loop ran on the local Compose stack against Codex models
 | Admission | All 56 tasks were admitted, 31 evolve and 25 held-out. The judge's three votes agreed on every check. |
 | Round 1 | 1,180 rollouts, none failed and none retried. The starting bundle scored 0 of 155 on evolve. All five candidates scored 70 of 155, and the selector adopted the shortest and released it. |
 | Regression check | The adopted version scored 0.56 on held-out and its parent 0.00, measured in the same round. No alert was raised. |
+| Round 2 | The incumbent's evolve score was reused. All five candidates scored 155 of 155, and the selector adopted the one that changed only the greeting rule, citing the round 1 entry in improvement memory. Held-out rose to 1.00. |
+| Usage | 2,194 rollouts in the two rounds: about 0.9 million task tokens, 1.4 million judge tokens and 1.6 million optimizer tokens. No rollout failed or was retried. |
 
 What the run changed:
 
@@ -39,7 +41,7 @@ What the run changed:
 
 What it left open:
 
-- **Judged tasks give no partial credit.** Every candidate met three of the four criteria on the judged replies and failed the fourth, so all 85 judged rollouts still scored 0 and the score shows no progress on them. The paper and RRSI score Harvey LAB by the fraction of criteria met. Changing a judged rollout's score to that fraction, while a pass still needs every criterion, is a decision for the maintainer.
+- **Judged tasks give no partial credit.** In round 1 every candidate met three of the four criteria on the judged replies and failed the fourth, so all 85 judged rollouts still scored 0 and the score showed no progress on them. The loop was not stuck: the selector read the judge's reasons, named the failing criterion, and round 2 fixed it. The paper and RRSI score Harvey LAB by the fraction of criteria met, which would have shown the round 1 progress as a number. Changing a judged rollout's score to that fraction, while a pass still needs every criterion, is a decision for the maintainer.
 - **Held-out regression.** No adoption regressed, so the revert was not exercised with real models. The behavior scenarios cover it with a scripted provider, including the alert email through Mailpit.
 
 ## After the first release

@@ -216,9 +216,14 @@ pub(super) async fn read(
         return Err(missing("Trial not found"));
     }
     tx.commit().await.map_err(db)?;
-    Ok(Json(
-        trials::read_trial(&s.db, &p, b, id).await.map_err(db)?,
-    ))
+    let mut doc = trials::read_trial(&s.db, &p, b, id).await.map_err(db)?;
+    if doc["status"] == "failed" {
+        // A cancelled rollout has no error code: the executor or provider changed under it.
+        let code: Option<String> = sqlx::query_scalar("SELECT coalesce(error_code,'cancelled') FROM learning_rollouts WHERE trial_id=$1 AND status IN ('failed','cancelled') ORDER BY status='cancelled',created_at LIMIT 1")
+            .bind(id).fetch_optional(&s.db).await.map_err(db)?;
+        doc["error"] = json!({ "code": code });
+    }
+    Ok(Json(doc))
 }
 pub(super) async fn import_status(
     State(s): State<AppState>,

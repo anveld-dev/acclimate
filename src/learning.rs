@@ -50,6 +50,12 @@ pub(crate) fn routes() -> Router<AppState> {
             &format!("{PREFIX}/tasks/{{id}}"),
             axum::routing::patch(tasks::edit).delete(tasks::retire),
         )
+        .route(&format!("{PREFIX}/tasks/confirm"), post(tasks::confirm))
+        .route(&format!("{PREFIX}/tasks/recheck"), post(tasks::recheck_all))
+        .route(
+            &format!("{PREFIX}/tasks/{{id}}/recheck"),
+            post(tasks::recheck),
+        )
         .route(
             &format!("{PREFIX}/tasks/{{id}}/try"),
             post(trial_work::try_task),

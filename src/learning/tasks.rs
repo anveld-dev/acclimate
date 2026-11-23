@@ -169,6 +169,7 @@ pub(super) struct Filter {
     source: Option<String>,
     admission: Option<String>,
     flagged: Option<bool>,
+    confirmed: Option<bool>,
     after: Option<String>,
     limit: Option<i64>,
 }
@@ -233,6 +234,13 @@ async fn read(s: AppState, p: String, b: Uuid, h: HeaderMap, f: Filter, export: 
             "FROM {} WHERE (project_id,bundle_id)=($1,$2) AND retired_revision IS NULL AND ($3::text IS NULL OR source=$3) AND ($4::text IS NULL OR admission=$4)",
             split.table()
         );
+        if let Some(confirmed) = f.confirmed {
+            from.push_str(if confirmed {
+                " AND confirmed_by IS NOT NULL"
+            } else {
+                " AND confirmed_by IS NULL"
+            });
+        }
         if let Some(flagged) = f.flagged {
             if split == Split::HeldOut && flagged {
                 continue;
@@ -355,6 +363,150 @@ async fn change(
         return Ok(Json(json!({"taskId":id,"revision":rev})));
     }
     Err(missing("Task not found"))
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TaskIds {
+    task_ids: Vec<String>,
+}
+fn task_ids(value: &Value, required: bool) -> ApiResult<Option<Vec<String>>> {
+    if !required && value.as_object().is_some_and(|o| o.is_empty()) {
+        return Ok(None);
+    }
+    let TaskIds { task_ids } = parse(value)?;
+    if task_ids.is_empty() || task_ids.len() > 100 {
+        return Err(invalid("Send between 1 and 100 task ids"));
+    }
+    let mut unique = Vec::with_capacity(task_ids.len());
+    for id in task_ids {
+        if !unique.contains(&id) {
+            unique.push(id);
+        }
+    }
+    Ok(Some(unique))
+}
+/// Confirms several held-out tasks as one change, with the rules of `PATCH {"confirm":true}`.
+/// Only unconfirmed held-out tasks get a new revision, so evolve and already confirmed
+/// tasks keep their admission.
+pub(super) async fn confirm(
+    State(s): State<AppState>,
+    Path((p, b)): Path<(String, String)>,
+    h: HeaderMap,
+    raw: Body,
+) -> Reply {
+    let b = path(&b)?;
+    let ids = task_ids(&body(raw)?, true)?.unwrap_or_default();
+    let (mut tx, a) = actor_tx(&s, &h, &p, "write").await?;
+    if a.user_id.is_none() {
+        return Err(denied());
+    }
+    require_loop(&mut tx, &p, b, true).await?;
+    let mut rev = None;
+    let mut results = Vec::with_capacity(ids.len());
+    for id in ids {
+        let mut result = "not-found";
+        for split in [Split::Evolve, Split::HeldOut] {
+            let table = split.table();
+            let confirmed: Option<bool> = sqlx::query_scalar(&format!("SELECT confirmed_by IS NOT NULL FROM {table} WHERE (project_id,bundle_id,task_id)=($1,$2,$3) AND retired_revision IS NULL FOR UPDATE"))
+                .bind(&p).bind(b).bind(&id).fetch_optional(&mut *tx).await.map_err(db)?;
+            let Some(confirmed) = confirmed else {
+                continue;
+            };
+            result = if split == Split::Evolve {
+                "not-held-out"
+            } else if confirmed {
+                "already-confirmed"
+            } else {
+                let rev = match rev {
+                    Some(rev) => rev,
+                    None => *rev.insert(revision(&mut tx, &p, b).await?),
+                };
+                let mut t: Task = sqlx::query_as(&format!("UPDATE {table} SET retired_revision=$4 WHERE (project_id,bundle_id,task_id)=($1,$2,$3) AND retired_revision IS NULL RETURNING *"))
+                    .bind(&p).bind(b).bind(&id).bind(rev).fetch_one(&mut *tx).await.map_err(db)?;
+                t.confirmed_by = Some(a.principal.clone());
+                insert(&mut tx, &p, b, split, &t, rev).await?;
+                "confirmed"
+            };
+            break;
+        }
+        results.push(json!({"taskId":id,"result":result}));
+    }
+    audit(&mut tx, &a, &p, b, "/tasks/confirm", None).await?;
+    tx.commit().await.map_err(db)?;
+    Ok(Json(json!({"revision":rev,"results":results})))
+}
+/// Queues the admission check again for tasks whose check could not run. The content is
+/// unchanged, so the task keeps its revision: the check reruns on the same row, and a
+/// stale result cannot land because the old trial is unlinked.
+async fn requeue(
+    tx: &mut Tx<'_>,
+    a: &auth::Actor,
+    p: &str,
+    b: Uuid,
+    ids: Option<&[String]>,
+) -> ApiResult<Vec<String>> {
+    let mut queued = Vec::new();
+    for split in [Split::Evolve, Split::HeldOut] {
+        if split == Split::HeldOut && a.user_id.is_none() {
+            continue;
+        }
+        let ids: Vec<String> = sqlx::query_scalar(&format!("UPDATE {} SET admission='pending',admission_reason=NULL,admission_trial=NULL WHERE (project_id,bundle_id)=($1,$2) AND retired_revision IS NULL AND admission='set-aside' AND admission_reason='check-failed' AND ($3::text[] IS NULL OR task_id=ANY($3)) RETURNING task_id", split.table()))
+            .bind(p).bind(b).bind(ids).fetch_all(&mut **tx).await.map_err(db)?;
+        queued.extend(ids);
+    }
+    queued.sort();
+    Ok(queued)
+}
+pub(super) async fn recheck(
+    State(s): State<AppState>,
+    Path((p, b, id)): TaskPath,
+    h: HeaderMap,
+) -> Reply {
+    let b = path(&b)?;
+    let (mut tx, a) = actor_tx(&s, &h, &p, "write").await?;
+    require_loop(&mut tx, &p, b, true).await?;
+    if requeue(&mut tx, &a, &p, b, Some(std::slice::from_ref(&id)))
+        .await?
+        .is_empty()
+    {
+        for split in [Split::Evolve, Split::HeldOut] {
+            if split == Split::HeldOut && a.user_id.is_none() {
+                continue;
+            }
+            let exists: bool = sqlx::query_scalar(&format!("SELECT EXISTS(SELECT FROM {} WHERE (project_id,bundle_id,task_id)=($1,$2,$3) AND retired_revision IS NULL)", split.table()))
+                .bind(&p).bind(b).bind(&id).fetch_one(&mut *tx).await.map_err(db)?;
+            if exists {
+                return Err(conflict(
+                    "Only a task whose check could not run can be checked again. Edit and save the task to change it",
+                ));
+            }
+        }
+        return Err(missing("Task not found"));
+    }
+    audit(&mut tx, &a, &p, b, &format!("/tasks/{id}/recheck"), None).await?;
+    tx.commit().await.map_err(db)?;
+    Ok(Json(json!({"taskId":id,"admission":"pending"})))
+}
+pub(super) async fn recheck_all(
+    State(s): State<AppState>,
+    Path((p, b)): Path<(String, String)>,
+    h: HeaderMap,
+    raw: axum::body::Bytes,
+) -> Reply {
+    let b = path(&b)?;
+    let ids = if raw.is_empty() {
+        None
+    } else {
+        let value = serde_json::from_slice(&raw)
+            .map_err(|_| invalid("Expected a valid JSON request body"))?;
+        task_ids(&value, false)?
+    };
+    let (mut tx, a) = actor_tx(&s, &h, &p, "write").await?;
+    require_loop(&mut tx, &p, b, true).await?;
+    let queued = requeue(&mut tx, &a, &p, b, ids.as_deref()).await?;
+    audit(&mut tx, &a, &p, b, "/tasks/recheck", None).await?;
+    tx.commit().await.map_err(db)?;
+    Ok(Json(json!({"taskIds":queued})))
 }
 /// Compare the checked revision so a stale grade cannot admit edited material.
 #[allow(clippy::too_many_arguments)]

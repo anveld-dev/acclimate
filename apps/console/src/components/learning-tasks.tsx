@@ -4,7 +4,7 @@ import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { NativeSelect } from './ui/native-select';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { LearningScope } from '../lib/learning';
 import {
   mediaTypes,
@@ -18,6 +18,29 @@ import {
   type ImportStatus,
 } from '../lib/central-learning';
 import { learningRequest } from '../server/central-actions';
+import { taskReviewRequest } from '../server/task-review-actions';
+import {
+  checkFailed,
+  confirmAllDescription,
+  confirmationSummary,
+  describeTrialError,
+  emptyListText,
+  filterCards,
+  linkedTask,
+  needsConfirmation as awaitsConfirmation,
+  pageSize,
+  pasteHelp,
+  pasteLabel,
+  recheckQueued,
+  recheckSummary,
+  scoreText,
+  shortTaskId,
+  taskElementId,
+  type Confirmation,
+  type SplitFilter,
+  type TaskReviewCommand,
+} from '../lib/task-review';
+import { LearningImports, TaskId } from './task-review';
 import { LearningEvidence } from './learning-evidence';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -27,19 +50,26 @@ export function TaskEditor({
   card,
   edit,
   run,
+  recheck,
   trial,
+  focused,
 }: {
   trial?: CardTrial;
   card: TaskCard;
   edit: boolean;
   run: (data: CentralCommand) => void;
+  recheck?: (id: string) => void;
+  focused?: boolean;
 }) {
   const [error, setError] = useState('');
-  // No admission check is queued for a held-out task until a person confirms it.
-  const needsConfirmation =
-    card.split === 'held-out' && !card.confirmedBy && card.admission === 'pending';
+  const needsConfirmation = awaitsConfirmation(card);
   return (
-    <article className="space-y-2 rounded-md border p-4">
+    <article
+      id={taskElementId(card.taskId)}
+      tabIndex={-1}
+      className={'space-y-2 rounded-md border p-4' + (focused ? ' ring-2 ring-primary' : '')}
+    >
+      <TaskId id={card.taskId} />
       <p className="text-sm">
         {card.source === 'outcome'
           ? 'Production outcome'
@@ -79,6 +109,11 @@ export function TaskEditor({
             <Button variant="outline" onClick={() => run({ action: 'try', id: card.taskId })}>
               Try task
             </Button>
+            {recheck && checkFailed(card) && (
+              <Button variant="outline" onClick={() => recheck(card.taskId)}>
+                Run check again
+              </Button>
+            )}
             {card.split === 'held-out' && !card.confirmedBy && (
               <Button
                 onClick={() => run({ action: 'edit', id: card.taskId, body: { confirm: true } })}
@@ -171,9 +206,20 @@ export function TaskEditor({
                 ? 'Waiting for executor'
                 : 'Completed'}
           </h3>
+          {trial.status === 'failed' && (
+            <p>
+              {describeTrialError(trial.error?.code)}
+              {trial.error?.code && <> Error code: {trial.error.code}.</>}
+            </p>
+          )}
           {trial.verdict && (
             <>
-              <p>{trial.verdict.passed ? 'Passed' : 'Failed'} · Judge reasoning</p>
+              <p>
+                {trial.verdict.passed ? 'Passed' : 'Failed'}
+                {typeof trial.verdict.score === 'number' &&
+                  ' · ' + scoreText(trial.verdict.score)}{' '}
+                · Judge reasoning
+              </p>
               <pre className="whitespace-pre-wrap break-words">{pretty(trial.verdict.reasons)}</pre>
               <p>Output</p>
               <pre className="whitespace-pre-wrap break-words">{fieldText(trial.output)}</pre>
@@ -221,17 +267,23 @@ export function LearningTasks({
   const [graderType, setGraderType] = useState('criteria');
   const [interval, setIntervalMs] = useState(3000);
   const [source, setSource] = useState('');
+  const [split, setSplit] = useState<SplitFilter>('');
+  const [confirming, setConfirming] = useState(false);
+  const [notice, setNotice] = useState('');
   const [page, setPage] = useState(0);
-  const visible =
-    cards?.filter(
-      (c) =>
-        (!admission || c.admission === admission) &&
-        (!flagged || c.flagReason) &&
-        (!source || source === c.source),
-    ) ?? [];
-  const lastPage = Math.max(0, Math.ceil(visible.length / 10) - 1);
+  const [focus, setFocus] = useState<string>();
+  const filters = { split, admission, source, flagged, needsConfirmation: confirming };
+  const visible = cards ? filterCards(cards, filters) : [];
+  const lastPage = Math.max(0, Math.ceil(visible.length / pageSize) - 1);
   const currentPage = Math.min(lastPage, page);
+  const shown = visible.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+  const toConfirm = shown.filter(awaitsConfirmation).map((c) => c.taskId);
+  const failedChecks = cards?.filter(checkFailed).length ?? 0;
   const [revision, reload] = useState(0);
+  const load = useCallback(
+    <T,>(data: Parameters<typeof taskReviewRequest>[0]) => taskReviewRequest<T>(data),
+    [],
+  );
   useEffect(() => {
     let active = true;
     const target = { workspaceId, bundleId };
@@ -253,6 +305,50 @@ export function LearningTasks({
       active = false;
     };
   }, [workspaceId, bundleId, revision]);
+  // Follow `#task-<id>` and `?task=<id>` links once the cards are loaded.
+  const loaded = cards !== undefined;
+  const scrolled = useRef<string>(undefined);
+  useEffect(() => {
+    if (!loaded) return;
+    const follow = () => {
+      scrolled.current = undefined;
+      setFocus(linkedTask(window.location));
+    };
+    follow();
+    window.addEventListener('hashchange', follow);
+    return () => window.removeEventListener('hashchange', follow);
+  }, [loaded]);
+  useEffect(() => {
+    if (!focus || !cards) return;
+    let index = visible.findIndex((c) => c.taskId === focus);
+    if (index < 0 && cards.some((c) => c.taskId === focus)) {
+      // The linked task is hidden by a filter: clear the filters so it can be shown.
+      setSplit('');
+      setAdmission('');
+      setSource('');
+      setFlagged(false);
+      setConfirming(false);
+      index = cards.findIndex((c) => c.taskId === focus);
+    }
+    if (index < 0) {
+      setNotice(
+        `Task ${shortTaskId(focus)} was not found. It may have been deleted. Check the task ID in the link.`,
+      );
+      setFocus(undefined);
+      return;
+    }
+    setPage(Math.floor(index / pageSize));
+    // Place the linked task once per link, so polling does not move the page again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus, loaded]);
+  const focusShown = Boolean(focus) && shown.some((c) => c.taskId === focus);
+  useEffect(() => {
+    if (!focus || !focusShown || scrolled.current === focus) return;
+    scrolled.current = focus;
+    const element = document.getElementById(taskElementId(focus));
+    element?.scrollIntoView({ block: 'start' });
+    element?.focus({ preventScroll: true });
+  }, [focus, focusShown]);
   const { trialId, importId, enabled } = pendingTaskReads(trial, job, cards);
   useBackgroundRefresh(
     async () => {
@@ -312,6 +408,30 @@ export function LearningTasks({
       setBusy(false);
     }
   }
+  async function review(data: TaskReviewCommand) {
+    setBusy(true);
+    report('');
+    setNotice('');
+    try {
+      const request = { workspaceId, bundleId, ...data };
+      if (data.action === 'confirm') {
+        setNotice(confirmationSummary(await taskReviewRequest<Confirmation>(request)));
+      } else if (data.action === 'recheck') {
+        await taskReviewRequest(request);
+        setNotice(recheckQueued);
+      } else if (data.action === 'recheckAll') {
+        const result = await taskReviewRequest<{ taskIds: string[] }>(request);
+        setNotice(recheckSummary(result.taskIds.length));
+      }
+      setIntervalMs(3000);
+      reload((n) => n + 1);
+      await refresh();
+    } catch (e) {
+      report(e instanceof Error ? e.message : 'Request failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <fieldset disabled={busy} className="min-w-0 space-y-5">
       {error && (
@@ -335,7 +455,7 @@ export function LearningTasks({
                 return;
               }
               if (Boolean(file?.size) === Boolean(paste)) {
-                report('Choose a file or paste one conversation, not both.');
+                report('Choose a file or paste conversations, not both.');
                 return;
               }
               const format = file?.size
@@ -378,11 +498,11 @@ export function LearningTasks({
               <Input id="learning-file" name="file" type="file" accept=".xlsx,.csv,.jsonl,.txt" />
             </Label>
             <Label>
-              Paste one conversation
+              {pasteLabel}
               <Textarea name="paste" className={field} aria-describedby="learning-paste-help" />
             </Label>
             <p id="learning-paste-help" className="text-sm text-muted-foreground">
-              A paste becomes one task. To import several conversations, use a file.
+              {pasteHelp}
             </p>
             <Button>Import tasks</Button>
           </form>
@@ -406,6 +526,11 @@ export function LearningTasks({
           )}
         </section>
       )}
+      <LearningImports
+        scope={{ workspaceId, bundleId }}
+        revision={`${revision}:${job?.importId}:${job?.status}:${job?.pending}`}
+        load={load}
+      />
       <section className="workspace-panel space-y-3 p-5">
         <h2 className="font-semibold">Tasks</h2>
         {edit && (
@@ -469,6 +594,30 @@ export function LearningTasks({
         )}
         <div className="flex flex-wrap items-center gap-3">
           <Label>
+            Split
+            <NativeSelect
+              value={split}
+              onChange={(e) => {
+                setSplit(e.target.value as SplitFilter);
+                setPage(0);
+              }}
+            >
+              <option value="">All splits</option>
+              <option value="evolve">Evolve</option>
+              <option value="held-out">Held-out</option>
+            </NativeSelect>
+          </Label>
+          <Label>
+            <Checkbox
+              checked={confirming}
+              onCheckedChange={(checked) => {
+                setConfirming(checked === true);
+                setPage(0);
+              }}
+            />{' '}
+            Needs confirmation
+          </Label>
+          <Label>
             <Checkbox
               checked={flagged}
               onCheckedChange={(checked) => {
@@ -525,22 +674,38 @@ export function LearningTasks({
             Refresh tasks
           </Button>
         </div>
+        {notice && <p role="status">{notice}</p>}
+        {edit && (toConfirm.length > 0 || failedChecks > 0) && (
+          <div className="flex flex-wrap items-center gap-3">
+            {toConfirm.length > 0 && (
+              <LearningConfirm
+                label="Confirm all shown"
+                description={confirmAllDescription(toConfirm.length)}
+                onConfirm={() => void review({ action: 'confirm', taskIds: toConfirm })}
+              />
+            )}
+            {failedChecks > 0 && (
+              <Button variant="outline" onClick={() => void review({ action: 'recheckAll' })}>
+                Run all failed checks again
+              </Button>
+            )}
+          </div>
+        )}
         {!cards ? (
           'Loading tasks…'
         ) : visible.length === 0 ? (
-          <p>
-            {flagged
-              ? 'No flagged tasks.'
-              : admission
-                ? 'No tasks match this admission filter.'
-                : source
-                  ? 'No tasks from this source.'
-                  : 'No tasks yet.'}
-          </p>
+          <p>{emptyListText(filters)}</p>
         ) : (
-          visible.slice(currentPage * 10, (currentPage + 1) * 10).map((card) => (
+          shown.map((card) => (
             <div key={card.taskId + ':' + card.addedRevision}>
-              <TaskEditor trial={trial} card={card} edit={edit} run={(data) => void run(data)} />
+              <TaskEditor
+                trial={trial}
+                card={card}
+                edit={edit}
+                focused={focus === card.taskId}
+                run={(data) => void run(data)}
+                recheck={(id) => void review({ action: 'recheck', id })}
+              />
               {card.flagReason && (
                 <LearningEvidence scope={scope} roundIds={rounds} taskId={card.taskId} />
               )}

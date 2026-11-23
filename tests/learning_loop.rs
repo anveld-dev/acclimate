@@ -1,6 +1,8 @@
 mod common;
 #[path = "learning_loop/executor.rs"]
 mod executor_tests;
+#[path = "learning_loop/imports.rs"]
+mod imports;
 #[path = "learning_loop/optimizer.rs"]
 mod optimizer;
 
@@ -948,10 +950,22 @@ async fn machine_import_of_known_held_out_input_returns_counts() {
         )
         .await;
     assert!(receipt["importId"].is_string());
+    // The row repeats a live task's input, so it is set aside. A machine caller sees only
+    // the count, never which split the matching task is in.
     assert_eq!(
         receipt,
-        json!({"importId":receipt["importId"],"rows":1,"converted":1,"pending":0,"setAsideCount":0})
+        json!({"importId":receipt["importId"],"rows":1,"converted":0,"pending":0,"setAsideCount":1})
     );
+    let status = f
+        .ok(
+            "GET",
+            &format!("/tasks/imports/{}", receipt["importId"].as_str().unwrap()),
+            "writer",
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status["setAside"], json!([]));
     let page = f.ok("GET", "/tasks", "writer", None, Value::Null).await;
     for card in page["items"].as_array().unwrap() {
         assert_ne!(card["input"], input);

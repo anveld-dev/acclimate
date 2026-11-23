@@ -6,7 +6,7 @@ import { AcclimateUsageError } from './errors.js';
 import { assertJson } from './json.js';
 import type { Json } from './json.js';
 import { createLearningOutcomeReporter, uuidPattern } from './outcomes.js';
-import type { Bundle, LearningOutcomeReceipt, LearningOutcomeRequest, VerifiedVersion } from './types.js';
+import type { Bundle, LearningGrading, LearningOutcomeReceipt, LearningOutcomeRequest, VerifiedVersion } from './types.js';
 
 export async function findBundle(client: Pick<AcclimateClient, 'listBundles'>, workspaceId: string, name: string) {
   let cursor: string | undefined;
@@ -40,7 +40,7 @@ export interface AcclimateJob {
   outcomeId: string;
   prepare<T>(nativePrepare: (version: VerifiedVersion) => T): T;
   prepare(destination: string, options?: PrepareOptions): ReturnType<typeof prepareFiles>;
-  expect(expected: Json, options?: { input?: Json; output?: Json }): Promise<LearningOutcomeReceipt>;
+  expect(expected: Json, options?: { input?: Json; output?: Json; grading?: LearningGrading }): Promise<LearningOutcomeReceipt>;
 }
 
 export function createAcclimate(options: AcclimateOptions = {}) {
@@ -78,18 +78,24 @@ export function createAcclimate(options: AcclimateOptions = {}) {
           ? destination(snapshot)
           : prepareFiles(snapshot, destination, options);
       }
-      let body: Pick<LearningOutcomeRequest, 'input' | 'expected' | 'output' | 'outcomeId'> | undefined;
+      let body: Pick<LearningOutcomeRequest, 'input' | 'expected' | 'output' | 'grading' | 'outcomeId'> | undefined;
       let pending: Promise<LearningOutcomeReceipt> | undefined;
       return {
         version,
         outcomeId,
         prepare,
-        async expect(expected, { input = originalInput, output } = {}) {
+        async expect(expected, { input = originalInput, output, grading } = {}) {
           if (!body) {
+            if (grading !== undefined && grading !== 'exact' && grading !== 'criteria')
+              throw new AcclimateUsageError('grading must be "exact" or "criteria"', 'grading');
             assertJson(input, 64 * 1024);
             assertJson(expected, 64 * 1024);
             if (output !== undefined) assertJson(output, 2 * 1024 * 1024);
-            body = structuredClone({ input, expected, outcomeId, ...(output === undefined ? {} : { output }) });
+            body = structuredClone({
+              input, expected, outcomeId,
+              ...(output === undefined ? {} : { output }),
+              ...(grading === undefined ? {} : { grading }),
+            });
           }
           if (!pending) {
             pending = report(verified, body).catch(error => {

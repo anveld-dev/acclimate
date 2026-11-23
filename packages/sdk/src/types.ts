@@ -320,10 +320,14 @@ export interface LearningRollout extends LearningHeldOutRollout {
 export interface LearningEvaluationReport {
   cases: { caseId: string; rollouts: LearningRollout[] }[];
 }
+export type LearningGrading = 'exact' | 'criteria';
 export interface LearningOutcomeRequest {
   input: Json;
   expected: Json;
   output?: Json;
+  /** How the expected answer is graded. By default a short single-line string or any non-string
+   * JSON value is compared exactly, and a longer answer is judged against drafted criteria. */
+  grading?: LearningGrading;
   outcomeId: string;
   versionId: string;
   digest: string;

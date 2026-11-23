@@ -486,8 +486,12 @@ class LearningRound(LearningRoundSummary):
     evaluations: list[LearningEvaluation]
 
 
+LearningGrading = Literal["exact", "criteria"]
+
+
 class LearningOutcomeRequest(TypedDict):
     output: NotRequired[LearningJson]
+    grading: NotRequired[LearningGrading]
     outcomeId: str
     versionId: str
     digest: str
@@ -716,6 +720,7 @@ __all__ = [
     "LearningEvaluationReport",
     "LearningEvaluation",
     "LearningRound",
+    "LearningGrading",
     "LearningOutcomeRequest",
     "LearningOutcomeReceipt",
     "LearningMemory",

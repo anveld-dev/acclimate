@@ -146,9 +146,11 @@ async fn forward(g: &Gateway, body: &mut Value) -> Result<Response, StatusCode> 
         r.input = r.input.saturating_add(input);
         r.output = r.output.saturating_add(output);
     }
+    // Rate limits and server errors may clear; any other refusal or unusable reply will not.
+    let transient = status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error();
     if secret {
         r.failure = Some("Upstream response contained a credential".into());
-        r.rejected = true;
+        r.rejected = !transient;
         return Err(StatusCode::BAD_GATEWAY);
     }
     if !status.is_success() {
@@ -157,8 +159,7 @@ async fn forward(g: &Gateway, body: &mut Value) -> Result<Response, StatusCode> 
                 Some("Provider rejected the request because it exceeded the context length");
         } else {
             r.failure = Some(format!("Upstream returned HTTP {status}"));
-            // Rate limits and server errors may clear; any other refusal will not.
-            r.rejected = !(status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error());
+            r.rejected = !transient;
         }
         return Ok((status, raw).into_response());
     }
@@ -651,7 +652,8 @@ mod tests {
             StatusCode::BAD_GATEWAY
         );
         let record = gateway.record.lock().unwrap();
-        assert!(record.failure.is_some());
+        // A successful reply that echoes the key is unusable, and waiting will not change it.
+        assert!(record.failure.is_some() && record.rejected);
         assert_eq!(record.log.len(), 1);
         assert!(
             !serde_json::to_string(&record.log)

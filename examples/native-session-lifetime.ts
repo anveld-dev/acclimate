@@ -1,4 +1,6 @@
-import { ExecutionUncertainError } from '@acclimate/sdk/evaluation';
+export class ExecutionUncertainError extends Error {
+  constructor() { super('Native execution may still be running.'); }
+}
 
 /**
  * Application-owned native work must settle successfully before its inputs are

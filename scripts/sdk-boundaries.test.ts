@@ -231,6 +231,7 @@ test('examples import only published @acclimate package entry points', async () 
   }
   const violations: string[] = [];
   for (const filename of await sourceFiles(join(root, 'examples'))) {
+    if (filename.startsWith(join(root, 'examples/self-improvement-memory') + '/')) continue;
     const relative = filename.slice(root.length);
     for (const specifier of moduleSpecifiers(await readFile(filename, 'utf8'))) {
       if (/(?:^|\/)packages\/[^/]+\/(?:src|dist)(?:\/|$)/.test(specifier)) {

@@ -53,7 +53,7 @@ class StackTests(unittest.TestCase):
             service = env_file(state / 'service.env')
             console = env_file(state / 'console.env')
             keycloak = env_file(state / 'keycloak.env')
-            evaluator = json.loads((state / 'evaluator.json').read_bytes())
+            runtime = json.loads((state / 'pull.json').read_bytes())
             self.assertEqual(service['ACCLIMATE_OIDC_ISSUER'], console['CONSOLE_OIDC_ISSUER'])
             self.assertEqual(console['CONSOLE_ORIGIN'], keycloak['ACCLIMATE_CONSOLE_ORIGIN'])
             self.assertEqual(console['CONSOLE_OIDC_CLIENT_SECRET'], keycloak['ACCLIMATE_OIDC_CLIENT_SECRET'])
@@ -65,10 +65,10 @@ class StackTests(unittest.TestCase):
             self.assertEqual(json.loads(service['ACCLIMATE_OPERATORS']),
                              [{'issuer': stack.ISSUER, 'subject': SUBJECT}])
             self.assertEqual(json.loads(service['ACCLIMATE_AUTH']), [
-                {'token': evaluator['evaluatorToken'], 'principalId': evaluator['evaluatorPrincipalId'],
-                 'workspaceId': evaluator['workspaceId'], 'rights': ['read', 'write']},
+                {'token': runtime['token'], 'principalId': runtime['scope'],
+                 'workspaceId': runtime['workspaceId'], 'rights': ['read', 'write']},
             ])
-            self.assertEqual(console['CONSOLE_PUBLIC_API_URL'], evaluator['serviceUrl'])
+            self.assertEqual(console['CONSOLE_PUBLIC_API_URL'], runtime['serviceUrl'])
             self.assertEqual((state / 'postgres-password').read_text().strip(), values['postgres'])
             self.assertEqual((state / 'keycloak-postgres-password').read_text().strip(),
                              keycloak['KC_DB_PASSWORD'])
@@ -176,7 +176,7 @@ class StackTests(unittest.TestCase):
                              'https://localhost:6443')
             self.assertEqual(console['CONSOLE_PUBLIC_API_URL'], 'https://127.0.0.1:6444')
             self.assertEqual(service['ACCLIMATE_OIDC_ISSUER'], 'https://127.0.0.1:6445/realms/acclimate')
-            self.assertEqual(json.loads((state / 'evaluator.json').read_bytes())['serviceUrl'],
+            self.assertEqual(json.loads((state / 'pull.json').read_bytes())['serviceUrl'],
                              'https://127.0.0.1:6444')
 
     def test_saved_ports_cannot_change_without_reset_and_are_validated(self):
@@ -344,7 +344,7 @@ class StackTests(unittest.TestCase):
             self.assertTrue(merged.startswith(system.read_bytes()) and merged.endswith(local))
             self.assertEqual(stat.S_IMODE((state / 'env.sh').stat().st_mode), 0o600)
             self.assertEqual((state / 'env.sh').read_text(), text)
-            self.assertIn(f"export EVALUATOR_CONFIG='{state / 'evaluator.json'}'", text)
+            self.assertIn(f"export ACCLIMATE_PULL_CONFIG='{state / 'pull.json'}'", text)
             self.assertIn(f"export NODE_EXTRA_CA_CERTS='{state / 'root.crt'}'", text)
             self.assertIn(f"export SSL_CERT_FILE='{state / 'ca-bundle.pem'}'", text)
             self.assertIn("export BUNDLE_ID='bundle-1'", text)

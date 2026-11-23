@@ -13,7 +13,6 @@ Every workspace route starts with `/v1/workspaces/{workspaceId}`.
 
 | Operation | Method and path relative to the workspace prefix |
 | --- | --- |
-| Read the caller’s identity and effective rights | `GET /principal` returns `{principalId, kind, rights}`. Requires workspace read access. `kind` is `machine` or `user`. |
 | List or create bundles | `GET` or `POST /bundles` |
 | Create a bundle, its first version and its first release | `POST /bundle-setups` |
 | Create a version | `POST /bundles/{bundleId}/versions` |
@@ -58,29 +57,31 @@ For content writes that require an idempotency key, provide an `Idempotency-Key`
 
 Release writes take `versionId`, `expectedRevision` as a string (use `"0"` for a new channel), and a nonblank `unevaluatedReason`. On a revision conflict, re-read the channel before submitting a new release.
 
-## Learning loop
+## Learning
 
-Paths below are relative to `/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning`.
+All bundle routes sit under `/v1/workspaces/{ws}/bundles/{b}/learning`.
 
-| Method and suffix | Caller | Request and response |
+| Route | Purpose | Right |
 | --- | --- | --- |
-| `PUT` | Administrator | Send `channel`, `appPrincipalId`, `setting: {domain, benchmark, policyModel}` and `heldOut: {digest, cases}`. Returns `LearningLoop`. |
-| `GET` | Reader | Returns `LearningLoop`. An unenrolled bundle returns 404. |
-| `POST /pause`, `/resume`, `/stop` | Administrator | No body. Returns `LearningLoop`. |
-| `GET /rounds` | Reader | Optional `before` round cursor and `limit` (default 20, max 100). Returns `{items, next}` with round summaries. |
-| `GET /rounds/{roundId}` | Reader | Returns `LearningRound`, including summary fields, pinned settings, candidates, selection and evaluations. Optional `evaluation` ID includes the full report for one evolve evaluation. |
-| `GET /memory` | Reader other than the app principal | Returns `LearningMemory` with the rendered document and full attempt provenance. Optional `revision` selects a historical revision, including revision 0. |
-| `GET /evolve-cases` | App principal or signed-in workspace member with read access | Lists live cases in ascending ASCII case ID order. Each item contains `caseId`, `input`, `expected` and `addedRevision`. Use the exclusive `after` cursor and `limit` (1–100, default 20). Returns `{items, next, evolveRevision}`. Pass `next` as `after` until it is null. Restart pagination if the revision changes. |
-| `POST /evolve-cases` | App principal or signed-in workspace member with write access | Send `cases: [{caseId, input, expected}]` and/or `retire: [caseId]`. Send at most 100 IDs per list and at least one addition or retirement in total. Returns `{evolveRevision, added, retired, liveCases}`. |
-| `POST /outcomes` | App principal | Send `outcomeId`, `versionId`, `digest`, `input` and `expected`. Returns `{outcomeId, caseId, evolveRevision}`. |
-| `GET /work` | App principal | Returns `{bundleId, status, items}` with queued or running evaluations. |
-| `POST /evaluations/{evaluationId}/start` | App principal | Send `attemptId`. Returns `{evaluation, cases, heldOut, reportedCaseIds}`. |
-| `POST /evaluations/{evaluationId}/report` | App principal | Send `attemptId` with `cases: [{caseId, rollouts}]` or an `error`. Returns `LearningEvaluation`. |
+| `PUT` (root) | Turn learning on or change its settings: channel, `domain` and `benchmark`, task model, judge model, `maxRoundsPerDay` | promote |
+| `GET` (root) | Loop status, `waiting` reason, pause reason, split counts, active round, alert state | read |
+| `POST /start` | Start learning. Refused with `tasks-required` below the Start floor. | promote |
+| `POST /pause`, `/resume`, `/stop` | Unchanged | promote |
+| `GET /tasks` | List tasks, paged. Filters: `split`, `source`, `admission`, `flagged` | read |
+| `POST /tasks` | Create one task | write |
+| `PATCH /tasks/{id}` | Edit a task. Bumps the task revision and re-runs admission. | write |
+| `DELETE /tasks/{id}` | Retire a task. Rows are kept. | write |
+| `POST /tasks/import` | Streamed upload of a spreadsheet, CSV, JSONL or pasted text. Returns an import with counts, and the drafted task cards for a console session. | write |
+| `GET /tasks/imports/{id}` | Import status and counts of converted, pending and set-aside source rows | read |
+| `POST /tasks/{id}/try` | Run one task on the executor against the channel head. Returns a trial ID. | write |
+| `GET /trials/{id}` | A trial's status, gateway log, output and verdict | read |
+| `GET /held-out-tasks/export` | Download the held-out tasks | console session only |
+| `GET /rounds`, `GET /rounds/{id}` | Round timeline, and one round with its candidates, diffs, diagnoses and evolve results | read |
+| `POST /rollback` | Move the channel back to the version a named round replaced | promote |
+| `GET /usage` | Rounds, rollouts and tokens per day | read |
+| `POST /outcomes` | A production outcome from `job.expect()` | write |
+| `GET /memory` | Improvement memory at a revision | read |
 
-Administrators are signed-in workspace admins or machine principals with `promote`. The enrolled app principal must be a machine identity with `evaluate` access. A machine principal with both `promote` and `evaluate` may enroll itself. The service returns 409 if enrollment changes the channel, principal or held-out commitment while a round is active. Pause and wait for the round to end before changing those fields.
+One workspace route is added: `GET` and `PUT /v1/workspaces/{ws}/model-provider`. It holds the base URL, the key and the allowed models. `PUT` needs a signed-in administrator. The key is write-only: `GET` returns whether one is set and never its value.
 
-Start and report require `Idempotency-Key`. Keep the same attempt ID on restart and skip the assignment's `reportedCaseIds`. A case report contains exactly five rollouts with `score` (0–1) and `passed` (boolean). Evolve rollouts can carry optional `trace` and `error` strings. Held-out rollouts carry only `score` and `passed`. Each completed evaluation's score is the mean of its case means.
-
-Each round records candidates with their diagnoses, predicted evolve cases, changes, scanner findings, screen verdicts and evolve scores as they become available. The selection records the decision to adopt or keep and its reason. An adoption immediately releases the selected version and writes a memory attempt. Held-out results are for monitoring only.
-
-Enrollment, controls and evolve writes accept optional idempotency keys. An outcome is keyed by its durable `outcomeId`. See [enrollment and evaluator setup](/docs/guides/learning-loop).
+As today, a signed-in caller needs the administrator role wherever a machine token needs `promote`.

@@ -125,6 +125,9 @@ jobs:
       - name: Test built console entrypoints
         run: npx --no-install tsx --tsconfig apps/console/tsconfig.json --test apps/console/tests/console-entrypoints.integration.ts
       - run: npm run pack:verify -- --skip-build --console-runtime
+      - run: cargo test --locked -p acclimate-executor
+      - run: docker info && python executor/tests/sandbox.py -v
+      - run: PG_BIN=/usr/lib/postgresql/16/bin python executor/tests/central_learning.py -v
       - run: python scripts/productization/rust_tests.py --pg-bin /usr/lib/postgresql/16/bin
       - run: npm run test:e2e -- --skip-build --pg-bin /usr/lib/postgresql/16/bin
       - run: python -m unittest discover -s scripts/productization -p 'test_external.py' -v

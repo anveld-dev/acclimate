@@ -5,7 +5,6 @@ import { join } from 'node:path';
 const roots = [
   'packages/sdk/src', 'packages/codex-plugin/src', 'packages/claude-plugin/src',
   'packages/pi-plugin/src', 'packages/cursor-plugin/src', 'python/acclimate',
-  'examples/evaluation-starter', 'examples/python-evaluation-starter',
   'examples/native-repository',
   'scripts/packaging', 'src', 'migrations',
 ];
@@ -18,7 +17,6 @@ const manifests = [
   'packages/claude-plugin/package.json', 'packages/pi-plugin/package.json',
   'packages/cursor-plugin/package.json', 'python/pyproject.toml', 'Cargo.toml', 'Cargo.lock',
   'packages/cursor-plugin/README.md', 'python/README.md',
-  'tests/conformance/evaluation-manifest-v1.json',
   'scripts/build-packages.mjs', 'scripts/check-python-package.py',
   'scripts/productization/qualify.py', 'scripts/testing/production.py',
 ];

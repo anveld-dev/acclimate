@@ -6,10 +6,9 @@ import type {
   CreateConnectionRequest, CreateReleaseRequest, CreateVersionRequest, DeliveryReceipt,
   DeliveryReceiptRequest, ListOptions, Operation, Page, Release, ReleasePage,
   VersionMetadata, Workspace,
-  WorkspacePrincipal, LearningLoopRequest, LearningLoop, LearningRoundSummary, LearningRound, LearningMemory,
-  LearningEvolveCasesRequest, LearningEvolveCasesReceipt, LearningEvolveCasesPage, LearningOutcomeRequest,
-  LearningOutcomeReceipt, LearningWork, LearningEvaluationStart, LearningEvaluationAssignment,
-  LearningEvaluationReportRequest, LearningEvaluation,
+  LearningLoopRequest, LearningLoop, LearningRoundSummary, LearningRound, LearningMemory,
+  LearningTaskRequest, LearningTaskEdit, LearningTaskPage, LearningTaskReceipt, LearningTaskRevision, LearningTrialReceipt, LearningTrial, LearningImport, LearningUsage, LearningRollback, ModelProvider, ModelProviderRequest,
+  LearningOutcomeRequest, LearningOutcomeReceipt,
 } from './types.js';
 
 /** Error codes the Acclimate service returns, plus codes the client assigns to HTTP failures. */
@@ -256,7 +255,7 @@ export class AcclimateClient {
   private async request<T>(
     method: string,
     path: string,
-    body?: string,
+    body?: string | ArrayBuffer,
     idempotencyKey?: string,
     headers: Record<string, string> = {},
     raw = false,
@@ -420,7 +419,7 @@ export class AcclimateClient {
   private loopPath(workspaceId: string, bundleId: string): string {
     return this.path(workspaceId, `/bundles/${this.part(bundleId)}/learning`);
   }
-  private learningQuery(options: Record<string, string | number | undefined>): string {
+  private learningQuery(options: Record<string, string | number | boolean | undefined>): string {
     const query = new URLSearchParams();
     for (const [name, value] of Object.entries(options))
       if (value !== undefined) query.set(name, String(value));
@@ -450,23 +449,50 @@ export class AcclimateClient {
   getLearningMemory(workspaceId: string, bundleId: string, options: { revision?: number } = {}): Promise<LearningMemory> {
     return this.request('GET', this.loopPath(workspaceId, bundleId) + '/memory' + this.learningQuery(options));
   }
-  listLearningEvolveCases(workspaceId: string, bundleId: string, options: { after?: string; limit?: number } = {}): Promise<LearningEvolveCasesPage> {
-    return this.request('GET', this.loopPath(workspaceId, bundleId) + '/evolve-cases' + this.learningQuery(options));
+  startLearningLoop(workspaceId: string, bundleId: string): Promise<LearningLoop> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + `/start`, undefined, undefined, {}, false, false, true);
   }
-  addLearningEvolveCases(workspaceId: string, bundleId: string, body: LearningEvolveCasesRequest, key?: string): Promise<LearningEvolveCasesReceipt> {
-    return this.request('POST', this.loopPath(workspaceId, bundleId) + '/evolve-cases', JSON.stringify(body), key, {}, false, false, true);
+  listLearningTasks(workspaceId: string, bundleId: string, options: { after?: string; limit?: number; split?: string; source?: string; admission?: string; flagged?: boolean } = {}): Promise<LearningTaskPage> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + `/tasks` + this.learningQuery(options));
+  }
+  createLearningTask(workspaceId: string, bundleId: string, body: LearningTaskRequest): Promise<LearningTaskReceipt> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + `/tasks`, JSON.stringify(body), undefined, {}, false, false, true);
+  }
+  editLearningTask(workspaceId: string, bundleId: string, id: string, body: LearningTaskEdit): Promise<LearningTaskRevision> {
+    return this.request('PATCH', this.loopPath(workspaceId, bundleId) + `/tasks/${this.part(id)}`, JSON.stringify(body), undefined, {}, false, false, true);
+  }
+  retireLearningTask(workspaceId: string, bundleId: string, id: string): Promise<LearningTaskRevision> {
+    return this.request('DELETE', this.loopPath(workspaceId, bundleId) + `/tasks/${this.part(id)}`, undefined, undefined, {}, false, false, true);
+  }
+  exportHeldOutTasks(workspaceId: string, bundleId: string): Promise<LearningTaskPage> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + '/held-out-tasks/export');
+  }
+  tryLearningTask(workspaceId: string, bundleId: string, id: string): Promise<LearningTrialReceipt> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + `/tasks/${this.part(id)}/try`, undefined, undefined, {}, false, false, true);
+  }
+  getLearningTrial(workspaceId: string, bundleId: string, id: string): Promise<LearningTrial> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + `/trials/${this.part(id)}`);
+  }
+  getLearningImport(workspaceId: string, bundleId: string, id: string): Promise<LearningImport> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + `/tasks/imports/${this.part(id)}`);
+  }
+  importLearningTasks(workspaceId: string, bundleId: string, data: ArrayBuffer, contentType: string, filename?: string): Promise<LearningImport> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + `/tasks/import` + this.learningQuery({filename}), data, undefined, {'Content-Type': contentType}, false, false, true);
+  }
+  getLearningUsage(workspaceId: string, bundleId: string): Promise<LearningUsage> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + `/usage`);
+  }
+  rollbackLearningRound(workspaceId: string, bundleId: string, body: LearningRollback): Promise<LearningLoop> {
+    return this.request('POST', this.loopPath(workspaceId, bundleId) + `/rollback`, JSON.stringify(body), undefined, {}, false, false, true);
+  }
+  getModelProvider(workspaceId: string): Promise<ModelProvider> {
+    return this.request('GET', this.path(workspaceId, '/model-provider'));
+  }
+  setModelProvider(workspaceId: string, body: ModelProviderRequest): Promise<ModelProvider> {
+    return this.request('PUT', this.path(workspaceId, '/model-provider'), JSON.stringify(body), undefined, {}, false, false, true);
   }
   reportLearningOutcome(workspaceId: string, bundleId: string, body: LearningOutcomeRequest, key = body.outcomeId): Promise<LearningOutcomeReceipt> {
     return this.request('POST', this.loopPath(workspaceId, bundleId) + '/outcomes', JSON.stringify(body), key);
-  }
-  getLearningWork(workspaceId: string, bundleId: string): Promise<LearningWork> {
-    return this.request('GET', this.loopPath(workspaceId, bundleId) + '/work');
-  }
-  startLearningEvaluation(workspaceId: string, bundleId: string, evaluationId: string, body: LearningEvaluationStart, key = body.attemptId): Promise<LearningEvaluationAssignment> {
-    return this.request('POST', this.loopPath(workspaceId, bundleId) + `/evaluations/${this.part(evaluationId)}/start`, JSON.stringify(body), key);
-  }
-  reportLearningEvaluation(workspaceId: string, bundleId: string, evaluationId: string, body: LearningEvaluationReportRequest, key: string): Promise<LearningEvaluation> {
-    return this.request('POST', this.loopPath(workspaceId, bundleId) + `/evaluations/${this.part(evaluationId)}/report`, JSON.stringify(body), key);
   }
   private listing(options: ListOptions = {}): string {
     const query = new URLSearchParams();
@@ -476,9 +502,6 @@ export class AcclimateClient {
   }
   listWorkspaces(options: ListOptions = {}): Promise<Page<Workspace>> {
     return this.request('GET', `/v1/workspaces${this.listing(options)}`);
-  }
-  getPrincipal(workspaceId: string): Promise<WorkspacePrincipal> {
-    return this.request('GET', this.path(workspaceId, '/principal'));
   }
   listBundles(workspaceId: string, options: ListOptions = {}): Promise<Page<Bundle>> {
     return this.request('GET', this.path(workspaceId, `/bundles${this.listing(options)}`));

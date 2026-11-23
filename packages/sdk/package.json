@@ -30,32 +30,10 @@
     "./native-files": {
       "types": "./dist/native-files.d.ts",
       "import": "./dist/native-files.js"
-    },
-    "./evaluation": {
-      "types": "./dist/evaluation/index.d.ts",
-      "import": "./dist/evaluation/index.js"
-    },
-    "./evaluation/cli": {
-      "types": "./dist/evaluation/cli.d.ts",
-      "import": "./dist/evaluation/cli.js"
-    },
-    "./evaluation/manifest": {
-      "types": "./dist/evaluation/manifest.d.ts",
-      "import": "./dist/evaluation/manifest.js"
-    },
-    "./evaluation/app-cli": {
-      "types": "./dist/evaluation/app-cli.d.ts",
-      "import": "./dist/evaluation/app-cli.js"
-    },
-    "./learning": {
-      "types": "./dist/learning/index.d.ts",
-      "import": "./dist/learning/index.js"
     }
   },
   "bin": {
-    "acclimate": "./dist/learning/learn-cli.js",
-    "acclimate-eval": "./dist/evaluation/bin.js",
-    "acclimate-learning": "./dist/learning/serve-cli.js"
+    "acclimate": "./dist/pull-bin.js"
   },
   "files": [
     "dist",

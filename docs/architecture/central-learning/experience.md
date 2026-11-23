@@ -1,6 +1,6 @@
 # Experience
 
-**Status: proposed design. Not built yet.** The shipped loop is described in the [learning contract](../../../contracts/learning.md).
+**Status: built.** Follow-up work is listed in the [release plan](plan.md#after-the-first-release).
 
 This page walks the path a person takes to set up learning and live with it. Everything happens in the console. The API mirrors every step, so anything done here can be scripted, but no CLI, repository layout or MCP surface is needed. Routes are listed in [API and data](api-and-data.md).
 
@@ -16,7 +16,7 @@ Steps 1 to 5 are the whole setup. The person acts in steps 1, 2, 3 and 5.
 
 **You do:** paste both, once per workspace.
 
-**Automatic:** the gateway makes one cheap call to prove the provider answers. The service stores the key encrypted. Only the [gateway](executor.md) uses it, and it never appears in a task, a log or a sandbox. The provider's allowed models are listed here.
+**Automatic:** the service validates the endpoint and stores the key encrypted. Only the [gateway](executor.md) uses it, and it never appears in a task, a log or a sandbox. The provider's allowed models are listed here.
 
 ### 2. Turn on learning for a bundle
 
@@ -80,7 +80,7 @@ No one needs to be present after Start.
 
 **Screen:** the Tasks page shows where each task came from: imported, written in the console, or reported from production.
 
-**You do, once:** call `job.expect(expected)` in your app when you know the correct answer for a real job. This call exists today. It needs a machine token with the `write` right.
+**You do, once:** call `job.expect(expected)` in your app when you know the correct answer for a real job. It needs a machine token with the `write` right.
 
 **Automatic:** each outcome goes through the same admission check, is assigned to a split by its group and joins the task set. An outcome can land in held-out. New tasks are the evidence that triggers the next round. The delivered agent never writes tasks, criteria or references. An outcome is stored with its provenance.
 
@@ -88,7 +88,7 @@ No one needs to be present after Start.
 
 | Step | Person | Service |
 | --- | --- | --- |
-| 1. Provider | Pastes URL and key | Checks the provider, stores the key |
+| 1. Provider | Enters the URL, key and allowed models | Validates the configuration and encrypts the key |
 | 2. Turn on | Picks the channel, accepts or changes the models | Chooses the harness |
 | 3. Material | Uploads or pastes | Converts rows to task cards |
 | 4. Admission | — | Checks every task, sets failures aside |

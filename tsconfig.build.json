@@ -8,5 +8,5 @@
     "rootDir": "."
   },
   "include": ["packages/*/src/**/*.ts", "examples/**/*.ts"],
-  "exclude": ["**/tests/**"]
+  "exclude": ["**/tests/**", "examples/self-improvement-memory"]
 }

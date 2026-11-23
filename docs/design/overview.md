@@ -8,4 +8,4 @@ Publish content in a workspace and grant read access through a connection. New j
 
 ## Self-improvement
 
-The [self-improvement design](improvement.md) describes the always-on learning loop and its application-run evaluations.
+The [self-improvement design](improvement.md) describes the service-managed learning loop and its executor.

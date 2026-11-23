@@ -176,7 +176,7 @@ Caddy obtains certificates for all three public names. Open your console URL, si
 
 ## Enable learning
 
-Set the optimizer options in the private service environment file and recreate the service container to load them. Configure the evaluator separately with its own endpoint and workspace token. [Optimizer settings](/docs/reference/configuration#learning) · [Learning setup](/docs/guides/learning-loop)
+Set the optimizer options in the private service environment file and recreate the service container to load them. Run the `acclimate-executor` container with a provisioned `ACCLIMATE_EXECUTOR_TOKEN` and access to the Docker socket. Build the chat runner image and configure gVisor (`runsc`) in production. Set `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` on the service to a 64-character hex key so workspace provider credentials can be encrypted at rest. [Optimizer settings](/docs/reference/configuration#learning) · [Learning setup](/docs/guides/learning-loop)
 
 ## Deliver a bundle
 

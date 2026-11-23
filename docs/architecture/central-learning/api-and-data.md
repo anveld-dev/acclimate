@@ -1,8 +1,8 @@
 # API and data
 
-> **Status: proposed, not built.** The [learning contract](../../../contracts/learning.md) describes what ships today. This design replaces it at cutover.
+**Status: built.** Follow-up work is listed in the [release plan](plan.md#after-the-first-release).
 
-This file lists the proposed routes, rights and schema changes for central learning. It is the reference for names: the other files in this folder use the route, table, column and enum names given here.
+This file lists the routes, rights and schema for central learning. It is the reference for names: the other files in this folder use the route, table, column and enum names given here.
 
 ## Routes
 
@@ -12,7 +12,7 @@ All bundle routes sit under `/v1/workspaces/{ws}/bundles/{b}/learning`.
 | --- | --- | --- |
 | `PUT` (root) | Turn learning on or change its settings: channel, `domain` and `benchmark`, task model, judge model, `maxRoundsPerDay` | promote |
 | `GET` (root) | Loop status, `waiting` reason, pause reason, split counts, active round, alert state | read |
-| `POST /start` | Start learning. Refused with `tasks-required` below the Start floor. | promote |
+| `POST /start` | Start learning. Start and resume both require 20 admitted tasks per split. | promote |
 | `POST /pause`, `/resume`, `/stop` | Unchanged | promote |
 | `GET /tasks` | List tasks, paged. Filters: `split`, `source`, `admission`, `flagged` | read |
 | `POST /tasks` | Create one task | write |
@@ -33,18 +33,9 @@ One workspace route is added: `GET` and `PUT /v1/workspaces/{ws}/model-provider`
 
 As today, a signed-in caller needs the administrator role wherever a machine token needs `promote`.
 
-**Removed routes**
-
-| Route | Replaced by |
-| --- | --- |
-| `GET /work` | The internal executor listener |
-| `POST /evaluations/{id}/start`, `/report` | Rollout leases and results |
-| `GET` and `POST /evolve-cases` | `/tasks` |
-| `GET /v1/workspaces/{ws}/principal` | Nothing. It exists so the learn CLI can find its own principal. |
-
 **Request limits.** The service applies a 2 MiB body limit to every route today (`DefaultBodyLimit` in `src/lib.rs`). `/tasks/import` is mounted outside that limit, reads the body as a stream, and has its own cap (64 MiB, with the same limit set in the proxy). Every other route keeps 2 MiB.
 
-**Changing settings mid-round.** Today a change to the channel, app principal or held-out commitment is refused with 409 while a round is active. A setting change is accepted. After cutover only a channel change is refused. Task edits and imports are never refused: a round pins its task revision at start, so edits apply to the next round.
+A round pins its task revision at start. Edits apply to the next round.
 
 ### Internal executor listener
 
@@ -124,12 +115,7 @@ Every card names a source row, and the service rejects a card whose `row` was no
 
 ## Rights
 
-Machine rights become `read`, `write` and `promote`. `evaluate` is removed.
-
-- **Today:** `RIGHTS` in `src/auth.rs` is `read`, `evaluate`, `write`, `promote`. `evaluate` implies `read`, and `write` implies `evaluate`. Newly minted machine tokens default to `evaluate`.
-- **`/outcomes` needs `evaluate` today** and requires the caller to be the loop's app principal. It moves to `write`, and the app-principal check goes away with the column.
-- **Existing tokens:** see [migration `0023`](#migration-0023_central_learning_cutoversql).
-- **`write` already publishes versions.** If that is too broad for an app that only reports outcomes, a narrow `report` right is the fix.
+Machine tokens may have `read`, `write` and `promote`. Submitting a production outcome requires `write`.
 
 **What each caller can read of held-out**
 
@@ -146,7 +132,7 @@ The rule is applied by caller type, not by right. `GET /tasks`, `GET /trials/{id
 
 ## Schema
 
-The latest migration is `0021`. Central learning adds two. `0022` is additive and ships with the tasks phase, while the current evaluator path keeps working. `0023` is destructive and ships at cutover. [Plan](plan.md)
+The task schema and cutover migration preserve version and memory history.
 
 ### Migration `0022_central_learning.sql`
 
@@ -197,31 +183,12 @@ Rollout rows are inserted in the same transaction that queues their evaluation. 
 | `learning_rounds` | Add `task_model`, `judge_model`, `runtime` (the [runtime identity](executor.md)), `trigger`, `incumbent_reused`. |
 | `learning_candidates` | Add `blocked-version` to the `drop_reason` check, which allows four values today. |
 
-**Copying existing cases.** Each live row of `learning_evolve_cases` is copied to `learning_tasks` with the same ID, `admission = 'pending'`, and source `import` for `setup` cases or `outcome` for outcome cases. Nothing is copied to held-out: today the service stores only a digest and a count.
+### Cutover
 
-### Migration `0023_central_learning_cutover.sql`
+Migration 0023 cancels active round work, pauses running loops and copies any remaining live cases into the task tables. The service preserves round history and memory. It removes the application principal, held-out commitment, evaluation attempt ID and evaluation deadline. Rollout leases govern retries. Multiple candidate evaluations may be open in a round.
 
-Runs in one transaction at cutover.
-
-1. Stop every active round as `stopped`, and cancel its open evaluations and optimizer calls.
-2. Pause every running loop with `tasks-required`. A person adds held-out material in the console and starts the loop again. History, memory and round numbers carry over.
-3. Drop `learning_evolve_cases`. Rename `learning_loops.evolve_revision` to `task_revision`.
-4. Drop `learning_loops.app_principal` and `learning_loops.held_out`, and the pinned `held_out` commitment on `learning_rounds`.
-5. Remove `evaluate` from every machine token's rights: take it out of the array, remove duplicates, and add `read` only if the array would be empty. Replace `machine_tokens_rights_check` so it allows only `read`, `write` and `promote`. A token that reported outcomes needs `write` added by an administrator. Static grants in configuration that name `evaluate` are rejected at startup with a clear message.
-
-**`learning_evaluations` changes**, also in `0023`:
-
-- Drop `attempt_id` and the check that requires it for `running` and `scored`.
-- Replace the one-open-evaluation-per-round index so candidates can run in parallel.
-- Relax `UNIQUE NULLS NOT DISTINCT (round_id, role, sample)` so a round can hold a second held-out scoring for the [automatic revert](loop.md) check, and add columns for the re-score result next to the single `held_out_score` on the round.
-- The checks `(role = 'retained') = (split = 'held_out')` and `(split = 'evolve') = (evolve_revision IS NOT NULL)` stay. The column keeps its `held_out` spelling.
-- Allow a copied evaluation row for a [reused incumbent score](loop.md). `worker.rs` reads the incumbent and retained evaluations by round and role, and `memory.rs` and `history.rs` read the incumbent evaluation from the same round, so the copy keeps those call sites working.
-- Replace the two deadlines with ones derived from rollout leases: the run deadline (`ACCLIMATE_LEARNING_EVALUATION_SECONDS`, default 86400) and the seven-day queue deadline that fills the `NOT NULL` `deadline_at`.
-
-The memory and optimizer-call tables from `0020` are unchanged. Stored memory provenance keeps the old `heldOutDigest` on existing attempts, because memory is append-only. New attempts omit it.
+The migration removes the Evaluate right from stored machine grants. A token with no other right receives read access. Set explicit write access on tokens that report outcomes and update static grants before restarting.
 
 ## SDK
 
-`job.expect(expected, { input, output })` gains an optional `output`, the agent's own answer. The outcome wire type gains `output` and the service uses the job ID as the task's group. Today's `Outcome` struct in `src/learning/evolve.rs` denies unknown fields, so this is a wire change. The service rejects an outcome whose `expected` equals its `output`. Outcomes post with `write`.
-
-The typed clients gain the task, trial, start, rollback, usage and model-provider calls and lose the evaluator calls. [Removal](removal.md)
+Use the TypeScript or Python client for loop controls, tasks, trials, provider settings and usage. Production applications can report the expected answer and optional actual output for a pinned job with `job.expect()`.

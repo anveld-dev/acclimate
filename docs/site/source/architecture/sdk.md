@@ -4,4 +4,4 @@ The [TypeScript and Python clients](../getting-started.md) resolve channels, fet
 
 The native plugins translate a verified version into inputs for Codex, the Claude Agent SDK, Pi and Cursor. The application calls the native SDK. Provider-dependent helpers live behind native entry points. Delivery receipts report which version the app observed at job start.
 
-Local evaluator tools validate application adapters. Use `defineLoop` in TypeScript or `define_loop` in Python to configure cases and run the learning evaluator. The [learning contract](../../contracts/learning.md) covers evolve and held-out scoring.
+An application with workspace write access can call `job.expect(expected, { input, output })` after a production job. The SDK sends the pinned version and digest. The service assigns the task’s split and runs admission.

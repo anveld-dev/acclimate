@@ -53,14 +53,13 @@ The Python client uses snake_case equivalents of the shared TypeScript client me
 
 | Area | Methods |
 | --- | --- |
-| Workspaces and bundles | `list_workspaces`, `get_principal`, `list_bundles`, `create_bundle`, `create_bundle_setup` |
+| Workspaces and bundles | `list_workspaces`, `list_bundles`, `create_bundle`, `create_bundle_setup` |
 | Versions | `create_version`, `get_version`, `get_payload` |
 | Channels and releases | `list_channels`, `resolve_channel`, `inspect_source`, `list_releases`, `create_release` |
 | Connections and receipts | `create_connection`, `list_connections`, `create_connection_credential`, `revoke_connection`, `revoke_connection_credential`, `report_delivery_receipt`, `list_delivery_receipts`, `list_connection_observations` |
 | Retained operations | `get_operation`, `close_operation` |
 | Other | `health`, `prepare` |
 
-For the local evaluator and payload tools in the Python SDK, see the [evaluator CLI reference](/docs/reference/evaluator-cli).
 
 Differences from the TypeScript client:
 
@@ -76,9 +75,6 @@ Differences from the TypeScript client:
 | `acclimate.ApiError` | The service returns an error. It has `status`, `code`, `request_id` and optional `details`. Quote `request_id` when you report a problem. |
 | `acclimate.TransportError` | The request fails before a response arrives. |
 | `acclimate.DeliveryError` | Delivery finds a malformed response, cache entry or payload. It has a `code`. |
-| `acclimate.evaluation.EvaluationError` | An evaluation step fails. It has `code`, `phase`, `next_action`, `execution_state` and a printable `diagnostic` dictionary. See [error codes](/docs/reference/error-codes) for diagnostics and exit statuses. |
-| `acclimate.evaluation.DefinitionError` | `define_evaluation` rejects an argument. `field` names it, such as `cases[1].case_id`. Code `definition.invalid`. |
-| `acclimate.evaluation.OutputValidationError` | A callback returned a value that is not plain JSON, or unknown `usage` keys. Code `output.invalid`. |
 
 ## Reporters
 
@@ -86,95 +82,8 @@ Differences from the TypeScript client:
 
 ## Learning
 
-Create `acclimate_loop.py` next to a JSON or JSONL file of examples. Each example has
-`input` and `expected`, and may supply a stable `caseId`.
+Use `job.expect(expected, input=task, output=response)` with a write token to submit a production outcome.
 
-```python
-import json
-from acclimate.learning import define_loop, exact, openai
+The client exposes `enroll_learning_loop`, `get_learning_loop`, `pause_learning_loop`, `resume_learning_loop`, `stop_learning_loop`, `list_learning_rounds`, `get_learning_round`, `get_learning_memory`, `start_learning_loop`, `list_learning_tasks`, `create_learning_task`, `edit_learning_task`, `retire_learning_task`, `export_held_out_tasks`, `try_learning_task`, `get_learning_trial`, `get_learning_import`, `import_learning_tasks`, `get_learning_usage`, `rollback_learning_round`, `get_model_provider`, `set_model_provider`, `report_learning_outcome`.
 
-loop = define_loop(
-    bundle="support-agent",
-    channel="stable",
-    agent=openai("gpt-6.2-sol", parse=json.loads),
-    cases="cases.jsonl",
-    grade=exact("action"),
-)
-```
-
-Set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE`, and `ACCLIMATE_TOKEN` for the
-evaluator. The token needs `evaluate` access and must belong to the enrolled
-app principal. The CLI reads the principal ID from the service. You can also
-set `ACCLIMATE_APP_PRINCIPAL` explicitly (for a machine token,
-`machine:<name>`). Enrollment requires `promote` access. To enroll with a separate principal, set `ACCLIMATE_ENROLL_TOKEN`
-to a separate token with `promote` access. The channel needs an existing release.
-
-```sh
-python -m acclimate learn
-python -m acclimate learn --config ./acclimate_loop.py --once
-```
-
-The command resolves the bundle by name, reconciles enrollment, syncs evolve
-cases, and prints round progress. `--once` exits after a completed round.
-Case paths are relative to the loop file. The setting defaults to the bundle
-name as `domain`, the case filename as `benchmark`, and the agent model as
-`policyModel`. Pass `policy_model`, `domain` or `benchmark` to override those
-defaults.
-
-The default split assigns a case to held-out when the unsigned big-endian
-SHA-256 digest of its UTF-8 case ID is below `2**255`. A missing case ID
-defaults to the SHA-256 hex of the canonical JSON input. Use `split` to set a fraction strictly between zero and one. Provide at least one evolve case and 1–10,000 held-out cases. The command uploads evolve cases and keeps held-out inputs and
-expectations local. Sync retires existing setup cases missing from the file, including cases added in the console. Give edited examples
-a new case ID because the service treats case content as immutable. Production
-outcomes survive file sync.
-
-`openai(model, base_url=None, api_key=None, effort=None, parse=None, render=None)` returns an `OpenAIAgent` and uses an OpenAI-compatible Chat Completions endpoint. It reads `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) and `OPENAI_API_KEY` when the corresponding options are omitted. `render(version)` receives the verified version and returns system text. `parse(text)` transforms the assistant text before grading. Both callbacks are synchronous. HTTP failures raise `OpenAIHttpError` with `.status` and a key-redacted `.trace`. [CLIProxyAPI setup](/docs/guides/learning-loop#use-codex-through-cliproxyapi)
-
-For custom execution, pass `policy_model` and implement `execute(version, input, rollout)` as a synchronous function that
-returns output or `(output, trace)`. Rollout indexes run from zero through four.
-Use `exact()` for whole-output JSON equality or `exact("action")` to test the top-level `action` field against the expected value. Use `tests(command, cwd=None)`
-to run a shell command against `output.json` in a temporary directory, with an
-optional copy of the fixture directory at `cwd`. Exit status zero scores 1 and
-any other exit status scores 0. A custom `grade(output, expected)` can return
-a score between 0 and 1, or a dict containing `score` and `passed`.
-
-### Record production outcomes
-
-```python
-from acclimate import Acclimate
-
-acclimate = Acclimate.from_env()
-job = acclimate.job("support-agent", channel="stable", input=ticket)
-with job.prepare() as prepared:
-    run_my_production_agent(prepared)
-receipt = job.expect("refund")
-```
-
-`Acclimate(url, workspace, token, cache_dir=...)` accepts explicit connection
-settings. `job(bundle, *, channel="stable", input=...)` requires the original input. Use the enrolled app principal’s credential to report outcomes. The outcome expectation uses the same shape as the case file, such
-as `"refund"` with `exact("action")` or `{"action": "refund"}` with `exact()`.
-`job.version` exposes the verified version pinned when the job was
-created. `job.prepare(destination=None)` stages that same version using the
-delivery context manager. Use `job.expect(expected, input=...)` with a non-None value to override
-the job input. Retry the same outcome on the same job to reuse `job.outcome_id`
-and its server-side receipt.
-
-### Learning client reference
-
-Import wire types such as `LearningLoopRequest`, `LearningLoop`, `LearningRoundSummary`, `LearningRound`, `LearningCandidate`, `LearningSelection`, `LearningMemory`, `LearningEvaluation` and `LearningWork` from `acclimate.types`. The client methods take the workspace ID and bundle ID first. JSON keys follow the [HTTP contract](/docs/reference/http-api#learning-loop). For evolve cases, call `list_learning_evolve_cases(workspace_id, bundle_id, after=..., limit=...)`. For rounds use `before=` and `limit=`. Both return a `next` cursor.
-
-| Task | Client methods |
-| --- | --- |
-| Enroll and control | `enroll_learning_loop`, `pause_learning_loop`, `resume_learning_loop`, `stop_learning_loop` |
-| Inspect | `get_learning_loop`, `list_learning_rounds`, `get_learning_round`, `get_learning_memory` |
-| Manage evolve cases and report outcomes | `list_learning_evolve_cases`, `add_learning_evolve_cases`, `report_learning_outcome` |
-| Serve evaluation work | `get_learning_work`, `start_learning_evaluation`, `report_learning_evaluation` |
-
-`acclimate.learning.held_out_digest(cases)` computes the enrollment digest
-from the evaluator's private cases. To run evaluations directly, call
-`acclimate.learning.serve_learning_loop(client, workspace_id, bundle_id, execute=..., grade=..., held_out=...)`.
-The runner keeps a private local journal so restarts can reuse completed
-rollouts and skip cases the service already accepted. Supply `journal_dir`
-to override the default at `~/.local/state/acclimate/python-learning`.
-
-`get_learning_round` returns candidates and the selector decision. `get_learning_memory` returns the latest improvement memory or a specific revision when you supply `revision`. Read memory as a workspace reader other than the app principal.
+Use `acclimate pull --config /absolute/path/pull.json --bundle ID --channel stable --out payload.json` to save a released payload. Use a new output path. The config is an owner-only JSON file inside an owner-only directory with `schemaVersion` set to 1, `serviceUrl`, `workspaceId`, `scope` and an absolute `cacheDir`. Supply the read credential through `ACCLIMATE_TOKEN` or the private config’s `token` field.

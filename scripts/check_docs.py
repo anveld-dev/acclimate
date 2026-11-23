@@ -100,7 +100,7 @@ def main():
     expected = {str(p.resolve()) for p in (ROOT / 'docs/design').rglob('*.md')}
     expected |= {str(p.resolve()) for p in (ROOT / 'docs/architecture').rglob('*.md')}
     expected |= {str((ROOT / name).resolve()) for name in (
-        'CONTEXT.md', 'docs/development.md', 'docs/evaluator-operations.md',
+        'CONTEXT.md', 'docs/development.md',
         'docs/getting-started.md', 'docs/releasing.md', 'apps/console/README.md',
         'deploy/README.md', 'deploy/sign-in.md', 'deploy/keycloak/README.md',
     )}

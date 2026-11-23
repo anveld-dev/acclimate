@@ -1,19 +1,6 @@
 {
-  "evaluation": [
-    "README.md",
-    "acclimate-eval.d.mts",
-    "acclimate-eval.mjs",
-    "acclimate_eval.py",
-    "package.json"
-  ],
-  "python-evaluation": [
-    "README.md",
-    "acclimate_eval.py",
-    "application.example.py"
-  ],
   "native-repository": [
     "README.md",
-    "application.mjs",
     "container-grader.mjs",
     "fixture/package.json",
     "fixture/replay.json",
@@ -21,7 +8,6 @@
     "fixture/tests/retry.test.mjs",
     "harness-child.mjs",
     "harness-process.mjs",
-    "harness-template.mjs",
     "harnesses.mjs",
     "native.mjs",
     "native.replay.json",

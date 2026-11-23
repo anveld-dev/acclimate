@@ -82,7 +82,7 @@ ADMIN = 'bootstrap-admin'
 OPERATOR = 'operator@acclimate.invalid'
 CLIENT = 'acclimate-console'
 PROJECT = 'local-demo'
-PRINCIPAL = 'local-evaluator'
+PRINCIPAL = 'local-runtime'
 ADOPTION_REASON = 'local stack bootstrap'
 EXAMPLE_BUNDLE = 'Example agent'
 EXAMPLE_CHANNEL = 'stable'
@@ -95,7 +95,7 @@ RELEASE_IMAGES = dict(service='ghcr.io/anveld-dev/acclimate-service',
                       console='ghcr.io/anveld-dev/acclimate-console')
 SECRET_NAMES = (
     'postgres', 'keycloak_postgres', 'keycloak_admin', 'operator',
-    'oidc_client', 'login', 'console', 'evaluator',
+    'oidc_client', 'login', 'console', 'runtime',
 )
 
 
@@ -160,6 +160,10 @@ def credentials(state):
         values = {name: secrets.token_hex(32) for name in SECRET_NAMES}
     else:
         values = json.loads(saved)
+    # Preserve the runtime credential in existing local installations.
+    if isinstance(values, dict) and 'evaluator' in values and 'runtime' not in values:
+        values['runtime'] = values.pop('evaluator')
+        saved = None
     if (not isinstance(values, dict) or set(values) != set(SECRET_NAMES)
             or any(not isinstance(value, str) or not re.fullmatch(r'[0-9a-f]{64}', value)
                    for value in values.values())
@@ -302,7 +306,7 @@ def write_application(state, values, subject, ports=DEFAULT):
         ACCLIMATE_LOGIN_TOKEN=values['login'],
         ACCLIMATE_CONSOLE_TOKEN=values['console'],
         ACCLIMATE_OPERATORS=json.dumps([dict(issuer=ports.issuer, subject=str(UUID(subject)))]),
-        ACCLIMATE_AUTH=json.dumps([dict(token=values['evaluator'], principalId=PRINCIPAL,
+        ACCLIMATE_AUTH=json.dumps([dict(token=values['runtime'], principalId=PRINCIPAL,
                                         workspaceId=PROJECT, rights=['read', 'write'])]),
         ACCLIMATE_CONSOLE_ORIGIN=ports.console,
         ACCLIMATE_SMTP_HOST='mailpit',
@@ -322,9 +326,9 @@ def write_application(state, values, subject, ports=DEFAULT):
         CONSOLE_ALLOW_EDITS='true',
     ))
     config = dict(schemaVersion=1, serviceUrl=ports.api, workspaceId=PROJECT,
-                  evaluatorPrincipalId=PRINCIPAL, evaluatorToken=values['evaluator'],
-                  journalRoot=str(state / 'evaluator-journal'))
-    write_file(state / 'evaluator.json', (json.dumps(config, indent=2) + '\n').encode())
+                  scope=PRINCIPAL, token=values['runtime'],
+                  cacheDir=str(state / 'pull-cache'))
+    write_file(state / 'pull.json', (json.dumps(config, indent=2) + '\n').encode())
 
 
 def release_version(root):
@@ -557,7 +561,7 @@ def write_client_files(state, ports, certificate, bundle):
     merged = system.rstrip(b'\n') + b'\n' + certificate if system else certificate
     write_file(state / 'ca-bundle.pem', merged, mode=0o644)
     lines = {
-        'EVALUATOR_CONFIG': state / 'evaluator.json',
+        'ACCLIMATE_PULL_CONFIG': state / 'pull.json',
         'NODE_EXTRA_CA_CERTS': state / 'root.crt',
         'SSL_CERT_FILE': state / 'ca-bundle.pem',
         'ACCLIMATE_API': ports.api,
@@ -629,7 +633,7 @@ def up(root, state, requested_source=None):
     env, ca_source = write_client_files(state, ports, certificate, workspace.get('bundle'))
 
     print(f'\nConsole       {ports.console}\nLogin         {OPERATOR}\nAPI           {ports.api}')
-    print(f'Mailpit       {ports.mailpit}\nEvaluator     {state / "evaluator.json"}\n'
+    print(f'Mailpit       {ports.mailpit}\nPull config   {state / "pull.json"}\n'
           f'Local CA      {ca}')
     if workspace['adopted']:
         print(f'Workspace     {PROJECT}, adopted for {OPERATOR} ("{ADOPTION_REASON}")')

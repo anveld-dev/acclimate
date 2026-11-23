@@ -3,9 +3,9 @@ import { AcclimateClient, type ClientOptions } from './client.js';
 import { resolveAndCache } from './cache.js';
 import { defaultCacheDir, prepareFiles, type PrepareOptions } from './prepare.js';
 import { AcclimateUsageError } from './errors.js';
-import { assertJson } from './evaluation/definition.js';
-import type { Json } from './evaluation/types.js';
-import { createLearningOutcomeReporter, uuidPattern } from './learning/outcomes.js';
+import { assertJson } from './json.js';
+import type { Json } from './json.js';
+import { createLearningOutcomeReporter, uuidPattern } from './outcomes.js';
 import type { Bundle, LearningOutcomeReceipt, LearningOutcomeRequest, VerifiedVersion } from './types.js';
 
 export async function findBundle(client: Pick<AcclimateClient, 'listBundles'>, workspaceId: string, name: string) {

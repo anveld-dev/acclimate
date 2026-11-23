@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withNativeSessionInputs } from '../examples/native-session-lifetime.js';
-import { ExecutionUncertainError } from '../packages/sdk/src/evaluation/index.js';
+import { ExecutionUncertainError } from '../examples/native-session-lifetime.js';
 
 test('native session inputs survive an unconfirmed SDK failure and expose only a safe uncertainty', async () => {
   let cleaned = 0;

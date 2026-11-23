@@ -4,9 +4,24 @@ import time
 import ssl
 from urllib.request import urlopen
 from urllib.parse import quote, urlencode
-from playwright.sync_api import sync_playwright, expect
+from playwright.sync_api import Error as PlaywrightError, sync_playwright, expect
 from scripts.productization.qualify import ROOT, port
 from scripts.testing.identity import TLSProxy
+
+
+def goto(page, url):
+    """Navigate, retrying when the host's network interfaces change mid-navigation.
+
+    Docker adds an interface when a scenario starts a container, and Chromium aborts
+    navigations in flight with ERR_NETWORK_CHANGED. That says nothing about the console.
+    """
+    for attempt in range(3):
+        try:
+            return page.goto(url)
+        except PlaywrightError as error:
+            if 'ERR_NETWORK_CHANGED' not in str(error) or attempt == 2:
+                raise
+            time.sleep(1)
 
 
 class BrowserFixture:
@@ -74,7 +89,7 @@ class BrowserFixture:
         context = context or self.context
         page = context.new_page()
         page.set_default_timeout(15000)
-        response = page.goto(self.base + '/auth/login')
+        response = goto(page, self.base + '/auth/login')
         assert response and response.status == 200, 'OIDC fixture authorization did not load'
         page.get_by_label('Fixture subject').fill(subject)
         with page.expect_response(lambda response: response.url.startswith(self.base + '/auth/callback?')):
@@ -109,7 +124,7 @@ class BrowserFixture:
     def visit(self, path, *, page=None):
         page = page or self.page
         path = self.canonical(path)
-        response = page.goto(self.base + path)
+        response = goto(page, self.base + path)
         assert response and response.status == 200, 'Console route did not load: ' + path
         # The rail exposes its expansion state only once React has hydrated.
         page.locator('#desktop-workspace-rail[data-rail-expanded]').wait_for(state='attached')

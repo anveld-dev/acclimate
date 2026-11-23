@@ -1,6 +1,6 @@
 mod probe;
 mod provider;
-pub use provider::ProviderKey;
+pub use provider::{KeyMismatch, ProviderKey, reset_provider_keys};
 mod queue;
 pub mod trials;
 pub use queue::queue_evaluation;
@@ -61,15 +61,16 @@ pub async fn create_credential(pool: &PgPool) -> Result<(Uuid, String), sqlx::Er
             .await?;
     Ok((id, token))
 }
+type CredentialRow = (
+    Uuid,
+    DateTime<Utc>,
+    Option<DateTime<Utc>>,
+    Option<Value>,
+    Option<DateTime<Utc>>,
+);
 /// Every executor credential, oldest first, without its token or token hash.
 pub async fn list_credentials(pool: &PgPool) -> Result<Vec<Value>, sqlx::Error> {
-    let rows: Vec<(
-        Uuid,
-        DateTime<Utc>,
-        Option<DateTime<Utc>>,
-        Option<Value>,
-        Option<DateTime<Utc>>,
-    )> = sqlx::query_as(
+    let rows: Vec<CredentialRow> = sqlx::query_as(
         "SELECT id,created_at,last_seen_at,runtime,revoked_at FROM executor_credentials ORDER BY created_at,id",
     )
     .fetch_all(pool)
@@ -105,6 +106,18 @@ pub async fn revoke_credential(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Erro
     sqlx::query("UPDATE learning_rollouts SET status=CASE WHEN attempts=2 THEN 'failed' ELSE 'queued' END,error_code=CASE WHEN attempts=2 THEN 'executor' END,lease_token_hash=NULL WHERE lease_owner=$1 AND status IN ('running','grading')").bind(id).execute(&mut *tx).await?;
     sqlx::query("UPDATE workspace_model_providers SET probe_expires=now(),probe_token=NULL WHERE probe_owner=$1").bind(id).execute(&mut *tx).await?;
     tx.commit().await
+}
+/// Say on the service why a workspace's provider now shows "Provider key unavailable".
+fn unusable_key(project: &str, configured: bool) {
+    if configured {
+        eprintln!(
+            "The stored provider key for workspace {project} could not be decrypted with ACCLIMATE_PROVIDER_ENCRYPTION_KEY. Its provider now shows \"Provider key unavailable\" and its rounds cannot run. Restore the encryption key it was stored with, or have a workspace administrator enter the provider key again."
+        );
+    } else {
+        eprintln!(
+            "ACCLIMATE_PROVIDER_ENCRYPTION_KEY is not set, so the stored provider key for workspace {project} cannot be used. Its provider now shows \"Provider key unavailable\". Set the key the provider keys were stored with and restart the service."
+        );
+    }
 }
 fn unauthorized() -> crate::ApiErr {
     err(
@@ -233,6 +246,7 @@ async fn claim(s: &Service, hash: &str, executor: &Value) -> ApiResult<Option<Va
         )
     });
     let Some(key) = key else {
+        unusable_key(&project, s.key.is_some());
         sqlx::query("UPDATE workspace_model_providers SET verification=jsonb_build_object('status','failed','checkedAt',now(),'models',(SELECT jsonb_agg(jsonb_build_object('model',m,'ok',false,'usage',false,'message','Provider key unavailable')) FROM unnest(allowed_models) m)) WHERE project_id=$1 AND encrypted_key=$2").bind(&project).bind(row.get::<Vec<u8>,_>("encrypted_key")).execute(&mut *tx).await.map_err(db)?;
         tx.commit().await.map_err(db)?;
         return Ok(None);
@@ -653,7 +667,14 @@ mod tests {
         fields.sort();
         assert_eq!(
             fields,
-            ["createdAt", "id", "lastSeenAt", "revoked", "revokedAt", "runtime"]
+            [
+                "createdAt",
+                "id",
+                "lastSeenAt",
+                "revoked",
+                "revokedAt",
+                "runtime"
+            ]
         );
     }
 

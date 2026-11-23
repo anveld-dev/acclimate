@@ -4615,7 +4615,7 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["baseUrl", "allowedModels", "apiKey"],
+                "required": ["baseUrl", "allowedModels"],
                 "properties": {
                   "baseUrl": {
                     "type": "string"
@@ -4628,7 +4628,8 @@
                   },
                   "apiKey": {
                     "type": "string",
-                    "writeOnly": true
+                    "writeOnly": true,
+                    "description": "Required for a new base URL. Omit to keep the existing key when the URL is unchanged."
                   }
                 }
               }
@@ -4753,6 +4754,16 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
           }
         ],
         "responses": {
@@ -4807,7 +4818,7 @@
             }
           },
           "409": {
-            "description": "Learning state or idempotency conflict.",
+            "description": "The named adoption is no longer the channel head (round-not-at-head), or the idempotency key conflicts.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4947,6 +4958,179 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/blocked-versions": {
+      "get": {
+        "operationId": "listBlockedLearningVersions",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["digest", "removedBy", "note", "createdAt"],
+                    "properties": {
+                      "digest": {
+                        "type": "string"
+                      },
+                      "removedBy": {
+                        "type": "string"
+                      },
+                      "note": {
+                        "type": ["string", "null"]
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid learning request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks authority for this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested learning resource was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/blocked-versions/{digest}": {
+      "delete": {
+        "operationId": "unblockLearningVersion",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "digest",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid learning request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks authority for this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested learning resource was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Digest unblocked."
           }
         }
       }
@@ -5734,7 +5918,11 @@
           "incumbentReused",
           "diff",
           "diagnosis",
-          "evolveScore"
+          "evolveScore",
+          "reverted",
+          "confirmedParentScore",
+          "confirmedAdoptionScore",
+          "progress"
         ],
         "properties": {
           "id": {
@@ -5777,7 +5965,8 @@
               "optimizer-context-too-large",
               "selector-unavailable",
               "stopped",
-              null
+              null,
+              "no-matching-executor"
             ]
           },
           "parentVersionId": {
@@ -5894,6 +6083,30 @@
           },
           "evolveScore": {
             "type": ["number", "null"]
+          },
+          "reverted": {
+            "type": "boolean"
+          },
+          "confirmedParentScore": {
+            "type": ["number", "null"]
+          },
+          "confirmedAdoptionScore": {
+            "type": ["number", "null"]
+          },
+          "progress": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["scored", "total"],
+            "properties": {
+              "scored": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
           }
         }
       },
@@ -6016,7 +6229,7 @@
             "minimum": 0
           },
           "waiting": {
-            "enum": [null, "daily-cap", "no-new-evidence"]
+            "enum": [null, "daily-cap", "no-new-evidence", "no-executor", "models-not-allowed"]
           },
           "alert": {
             "anyOf": [
@@ -6026,7 +6239,7 @@
               {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["roundId", "previousScore", "score", "flippedTasks"],
+                "required": ["roundId", "previousScore", "score", "flippedTasks", "reverted"],
                 "properties": {
                   "roundId": {
                     "type": "string"
@@ -6040,6 +6253,9 @@
                   "flippedTasks": {
                     "type": "integer",
                     "minimum": 0
+                  },
+                  "reverted": {
+                    "type": "boolean"
                   }
                 }
               }
@@ -6083,7 +6299,11 @@
           "incumbentReused",
           "diff",
           "diagnosis",
-          "evolveScore"
+          "evolveScore",
+          "reverted",
+          "confirmedParentScore",
+          "confirmedAdoptionScore",
+          "progress"
         ],
         "properties": {
           "id": {
@@ -6126,7 +6346,8 @@
               "optimizer-context-too-large",
               "selector-unavailable",
               "stopped",
-              null
+              null,
+              "no-matching-executor"
             ]
           },
           "parentVersionId": {
@@ -6320,6 +6541,30 @@
           },
           "evolveScore": {
             "type": ["number", "null"]
+          },
+          "reverted": {
+            "type": "boolean"
+          },
+          "confirmedParentScore": {
+            "type": ["number", "null"]
+          },
+          "confirmedAdoptionScore": {
+            "type": ["number", "null"]
+          },
+          "progress": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["scored", "total"],
+            "properties": {
+              "scored": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
           }
         }
       },

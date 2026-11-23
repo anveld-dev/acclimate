@@ -16,10 +16,10 @@ def docker(*args):
     return subprocess.check_output(["docker", *args], text=True).strip()
 
 
-def build_test_image(suite, *args):
+def build_test_image(cleanup, *args):
     tag = "acclimate-executor-test:" + uuid.uuid4().hex
     image = docker("build", "-q", "-t", tag, *args)
-    suite.addClassCleanup(docker, "image", "rm", tag)
+    cleanup(docker, "image", "rm", tag)
     return image
 
 
@@ -44,8 +44,8 @@ requires_docker = unittest.skipUnless(docker_available(), "Docker daemon unavail
 class SandboxGate(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.runner = build_test_image(cls, "executor/runner")
-        cls.executor = build_test_image(cls, "-f", "executor/Dockerfile", ".")
+        cls.runner = build_test_image(cls.addClassCleanup, "executor/runner")
+        cls.executor = build_test_image(cls.addClassCleanup, "-f", "executor/Dockerfile", ".")
 
     def exercise(self, runtime, case):
         expected = uuid.uuid4().hex

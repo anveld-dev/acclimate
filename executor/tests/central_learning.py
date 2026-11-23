@@ -22,6 +22,7 @@ from sandbox import build_test_image, docker, requires_docker
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/productization"))
 from qualify import Harness, port
+from executor.tests.worker import start_worker
 
 
 @requires_docker
@@ -45,8 +46,8 @@ class CentralLearning(unittest.TestCase):
                 "Private PostgreSQL cluster unavailable: " + error.stderr
             ) from error
         subprocess.run(["cargo", "build", "--bin", "acclimate-service"], check=True)
-        cls.runner = build_test_image(cls, "executor/runner")
-        cls.image = build_test_image(cls,
+        cls.runner = build_test_image(cls.addClassCleanup, "executor/runner")
+        cls.image = build_test_image(cls.addClassCleanup,
             "-f",
             "executor/Dockerfile",
             "--build-arg",
@@ -602,16 +603,7 @@ class CentralLearning(unittest.TestCase):
             h.call("POST", base + "/outcomes", dict(outcomeId=job, versionId=version["id"],
                 digest=version["digest"], input=f"{split}-sentinel-{counts[split]}", expected="checked",
                 output="unchecked"))
-        volume = docker("volume", "create")
-        self.addCleanup(docker, "volume", "rm", volume)
-        worker = docker("run", "-d", "--add-host", "host.docker.internal:host-gateway",
-            "-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", volume + ":/var/lib/acclimate-executor",
-            "-e", "ACCLIMATE_PROVIDER_HTTP_HOSTS=host.docker.internal", "-e", "ACCLIMATE_SANDBOX_VOLUME=" + volume, "-e", "ACCLIMATE_EXECUTOR_TOKEN=" + token,
-            "-e", f"ACCLIMATE_EXECUTOR_SERVICE=http://host.docker.internal:{internal}",
-            "-e", "ACCLIMATE_SANDBOX_RUNTIME=" + os.environ.get("ACCLIMATE_SANDBOX_RUNTIME", "docker"),
-            "-e", "ACCLIMATE_EXECUTOR_CONCURRENCY=4",
-            "-e", "ACCLIMATE_RUNNER_IMAGE=" + self.runner, self.image)
-        self.addCleanup(docker, "rm", "-f", worker)
+        start_worker(self.addCleanup, self.runner, self.image, token, internal)
         deadline = time.monotonic() + 1200
         while True:
             state = h.call("GET", base)
@@ -644,7 +636,9 @@ class CentralLearning(unittest.TestCase):
         self.assertEqual(adopted["adoptedVersionId"], kept["parentVersionId"])
         self.assertTrue(kept["incumbentReused"])
         self.assertEqual(h.call("GET", base + "/memory")["currentRevision"], 1)
-        self.assertEqual(h.sql("SELECT count(*) FROM learning_rollouts WHERE evaluation_id IS NOT NULL"), "300")
+        # Round one scores the incumbent, candidate and retained held-out split.
+        # Round two reuses the incumbent score and measures held-out again.
+        self.assertEqual(h.sql("SELECT count(*) FROM learning_rollouts WHERE evaluation_id IS NOT NULL"), "400")
         attempts = int(h.sql("SELECT sum(attempts) FROM learning_rollouts"))
         days = h.call("GET", base + "/usage")["items"]
         self.assertEqual(sum(day["rollouts"] for day in days), attempts)

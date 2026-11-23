@@ -371,7 +371,7 @@ async fn trial_leases_resolve_admission_and_validate_material() {
                 json!({"error":{"code":"executor","message":"malformed"}})
             } else {
                 let counts = json!({"input":0,"output":0});
-                json!({"verdict":{"passed":passed,"score":u8::from(passed),"reasons":["Reason"],"votes":[passed,passed,passed && outcome!="judge-unstable"]},"judgeLog":[],"tokens":{"task":counts,"judge":counts}})
+                json!({"verdict":{"passed":passed,"score":if !passed {0.0} else if outcome=="judge-unstable" {2.0/3.0} else {1.0},"reasons":["Reason"],"votes":[passed,passed,passed && outcome!="judge-unstable"]},"judgeLog":[],"tokens":{"task":counts,"judge":counts}})
             };
             assert_eq!(act(&app, &lease, "result", report).await.0, 204);
         }

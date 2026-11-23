@@ -39,9 +39,10 @@ What the run changed:
 - **Provider errors.** The provider answers an overloaded model with HTTP 502 and a Retry-After of about five minutes, and CLIProxyAPI then refuses that model with HTTP 503 for as long. The gateway now asks again every 30 seconds for up to seven minutes, and the [operator guide](../../../deploy/README.md) says how to turn the proxy's cooldown off.
 - **Feedback for exact-match tasks.** A first run on a build that withheld the expected answer adopted nothing: every candidate scored 0, because the optimizer was told that an extraction failed and not what it should have been. With the expected answer in the feedback, every candidate fixed all 14 extraction tasks.
 
+- **Partial credit for judged tasks.** In round 1 every candidate met three of the four criteria on the judged replies and failed the fourth. A judged rollout then scored 1 or 0, so all 85 scored 0 and the score showed no progress. The loop was not stuck: the selector read the judge's reasons and round 2 fixed the fourth. A judged rollout now scores the share of its criteria met, as the paper and RRSI score Harvey LAB, while a pass still needs every criterion. The run above predates this change. Scored again with it, the starting bundle got 0.16 on evolve where it had 0: its judged replies met one or two of the four criteria.
+
 What it left open:
 
-- **Judged tasks give no partial credit.** In round 1 every candidate met three of the four criteria on the judged replies and failed the fourth, so all 85 judged rollouts still scored 0 and the score showed no progress on them. The loop was not stuck: the selector read the judge's reasons, named the failing criterion, and round 2 fixed it. The paper and RRSI score Harvey LAB by the fraction of criteria met, which would have shown the round 1 progress as a number. Changing a judged rollout's score to that fraction, while a pass still needs every criterion, is a decision for the maintainer.
 - **Held-out regression.** No adoption regressed, so the revert was not exercised with real models. The behavior scenarios cover it with a scripted provider, including the alert email through Mailpit.
 
 ## After the first release

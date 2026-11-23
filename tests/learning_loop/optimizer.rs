@@ -155,7 +155,9 @@ pub(super) async fn evaluate(f: &Fixture, item: &Value, cases: &[Value]) {
             verdict["reasons"] = json!(["private-judge-reason"]);
         }
         if grader["grader"]["type"] == "criteria" {
+            // One criterion, and the middle judgment dissents: two thirds or one third.
             verdict["votes"] = json!([passed, !passed, passed]);
+            verdict["score"] = json!(if passed { 2.0 } else { 1.0 } / 3.0);
             verdict["reasons"] = json!(["Evidence is incomplete."]);
         }
         assert_eq!(

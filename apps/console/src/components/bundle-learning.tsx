@@ -397,8 +397,8 @@ export function BundleLearning({
       <Panel title="Scores by round">
         <ScoreCurves rounds={state.rounds} />
         <p className="text-sm text-muted-foreground">
-          Small held-out sets make scores noisy. With 20 tasks, one changed verdict moves the pass
-          rate by five percentage points. Compare rounds using the same task set.
+          Small held-out sets make scores noisy. With 20 tasks, one task that changes from pass to
+          fail can move the score by five percentage points. Compare rounds using the same task set.
         </p>
       </Panel>
       <Panel title="Rounds">

@@ -48,7 +48,7 @@ Import the raw file body with an optional `filename` query parameter. Supported 
 
 Post `{outcomeId, versionId, digest, input, expected, output?}` with write authority. The version and digest must match the bundle, and a supplied output must differ from the expected value. The service assigns the split using the outcome ID as the group.
 
-An executor leases five rollouts for each admitted task at the pinned revision. The evaluation score is the mean of the per-task means. Three passing rollouts count as a task pass. Infrastructure failures retry once, after which the evaluation fails. Only evolve feedback reaches the optimizer.
+An executor leases five rollouts for each admitted task at the pinned revision. The evaluation score is the mean of the per-task means. An exact-match rollout scores 1 or 0, and a judged rollout scores the share of its criteria met. Three passing rollouts count as a task pass. Infrastructure failures retry once, after which the evaluation fails. Only evolve feedback reaches the optimizer.
 
 ## Round history and delivery
 

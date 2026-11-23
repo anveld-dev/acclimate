@@ -353,6 +353,15 @@ async fn output(
         json!({"grader":row.get::<Value,_>("grader"),"judgeModel":row.get::<Value,_>("runtime")["judgeModel"],"judgeRuns":judge_runs(&row.get::<Value,_>("grader"))}),
     ))
 }
+/// A judged score is the share of criteria met, averaged over the judgments. A judgment that
+/// passed met every criterion, and one that failed missed at least one, which bounds the score.
+fn judged_score_fits(score: f64, votes: &[bool], criteria: usize) -> bool {
+    let passing = votes.iter().filter(|v| **v).count() as f64;
+    let failing = votes.len() as f64 - passing;
+    let runs = votes.len() as f64;
+    let most = (passing + failing * (criteria as f64 - 1.0) / criteria as f64) / runs;
+    criteria > 0 && score >= passing / runs - 1e-9 && score <= most + 1e-9
+}
 fn judge_runs(grader: &Value) -> usize {
     if grader["type"] == "criteria" { 3 } else { 0 }
 }
@@ -521,17 +530,19 @@ async fn result(
             let grader = row.get::<Value, _>("grader");
             if completed && grader["type"] == "criteria" {
                 let votes = verdict.votes.as_ref().ok_or_else(invalid)?;
+                let criteria = grader["criteria"].as_array().map(Vec::len);
                 if votes.len() != 3
                     || (votes.iter().filter(|v| **v).count() >= 2) != verdict.passed
-                    || grader["criteria"].as_array().map(Vec::len) != Some(verdict.reasons.len())
+                    || criteria != Some(verdict.reasons.len())
                     || verdict.reasons.iter().any(|r| r.trim().is_empty())
+                    || !judged_score_fits(verdict.score, votes, verdict.reasons.len())
                 {
                     return Err(invalid());
                 }
-            } else if verdict.votes.is_some() {
+            } else if verdict.votes.is_some() || verdict.score != f64::from(verdict.passed) {
                 return Err(invalid());
             }
-            if verdict.score != f64::from(verdict.passed) || (!completed && verdict.passed) {
+            if !completed && verdict.passed {
                 return Err(invalid());
             }
             sqlx::query("UPDATE learning_rollouts SET status='scored',score=$2,passed=$3,reasons=$4,judge_log=$5,tokens=$6,votes=$7,lease_token_hash=NULL WHERE lease_id=$1")
@@ -571,4 +582,29 @@ async fn reject_conversion(
     sqlx::query("UPDATE learning_rollouts SET status='failed',error_code='invalid-conversion',tokens=$2,lease_token_hash=NULL WHERE lease_id=$1").bind(lease).bind(tokens).execute(&mut **tx).await.map_err(db)?;
     sqlx::query("UPDATE learning_task_imports SET failure='Executor returned invalid conversion material' WHERE conversion_trial=$1").bind(trial).execute(&mut **tx).await.map_err(db)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::judged_score_fits;
+
+    #[test]
+    fn judged_score_must_agree_with_the_votes() {
+        // Four criteria, three judgments.
+        assert!(judged_score_fits(1.0, &[true, true, true], 4));
+        assert!(!judged_score_fits(0.99, &[true, true, true], 4));
+        // Two passing judgments give at least two thirds. The third missed a criterion.
+        assert!(judged_score_fits(11.0 / 12.0, &[true, true, false], 4));
+        assert!(judged_score_fits(2.0 / 3.0, &[true, true, false], 4));
+        assert!(!judged_score_fits(1.0, &[true, true, false], 4));
+        assert!(!judged_score_fits(0.5, &[true, true, false], 4));
+        // Three failing judgments can still meet most criteria, never all.
+        assert!(judged_score_fits(0.75, &[false, false, false], 4));
+        assert!(judged_score_fits(0.0, &[false, false, false], 4));
+        assert!(!judged_score_fits(1.0, &[false, false, false], 4));
+        assert!(!judged_score_fits(f64::NAN, &[false, false, false], 4));
+        // A single criterion leaves no room: the score is the share of passing judgments.
+        assert!(judged_score_fits(1.0 / 3.0, &[true, false, false], 1));
+        assert!(!judged_score_fits(0.5, &[true, false, false], 1));
+    }
 }

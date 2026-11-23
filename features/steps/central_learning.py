@@ -156,7 +156,8 @@ def configure_ui(context):
     for name, content, summary in [("answers.csv", MATERIAL, "43 converted"), ("conversations.csv", CONVERSION, "1 set aside")]:
         page.get_by_label("Spreadsheet, CSV or JSONL").set_input_files(dict(name=name, mimeType="text/csv", buffer=content))
         page.get_by_role("button", name="Import tasks").click()
-        expect(page.get_by_text(summary, exact=False).first).to_be_visible(timeout=60000)
+        # Conversion waits its turn behind the admission checks, as in the API scenario.
+        expect(page.get_by_text(summary, exact=False).first).to_be_visible(timeout=180000)
     expect(page.get_by_label("Set-aside rows")).to_contain_text("No usable reference answer", timeout=60000)
 
 
@@ -204,6 +205,9 @@ def finished(context):
     # the address from its claims, so record it after the console's own sign-in.
     w.call("POST", "/v1/auth/sessions", dict(issuer=w.issuer, subject="operator", email=ALERT_RECIPIENT,
                                                emailVerified=True), actor="login-authority")
+    # Scenarios in one run share the inbox file, so start this one from an empty inbox.
+    with urlopen(Request(w.mailpit.base + "/api/v1/messages", method="DELETE"), timeout=5):
+        pass
 
     def rounds():
         if w.errors:

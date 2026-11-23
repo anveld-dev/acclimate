@@ -367,9 +367,10 @@ class CentralLearning(unittest.TestCase):
                     ("failed", "gateway-upstream", None),
                 )
                 continue
-            self.assertEqual(
-                (row["status"], row["score"]), ("scored", int(row["task_id"] == "a"))
-            )
+            # One criterion, and the middle judgment dissents: two thirds or one third.
+            self.assertEqual(row["status"], "scored")
+            self.assertAlmostEqual(row["score"], 2 / 3 if row["task_id"] == "a" else 1 / 3)
+            self.assertEqual(row["passed"], row["task_id"] == "a")
             body, status, reply = entries[-1]
             (log,) = row["gateway_log"]
             self.assertEqual(

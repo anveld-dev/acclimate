@@ -14,7 +14,10 @@ struct Finding {
     reason: String,
 }
 
-fn parse(reply: &str, count: usize) -> Option<(bool, Vec<String>)> {
+/// One judgment: whether each criterion passed, and the reason given for each.
+type Judged = (Vec<bool>, Vec<String>);
+
+fn parse(reply: &str, count: usize) -> Option<Judged> {
     let judgment: Judgment = serde_json::from_str(reply).ok()?;
     let items = judgment.criteria;
     if !(1..=10).contains(&count)
@@ -24,15 +27,29 @@ fn parse(reply: &str, count: usize) -> Option<(bool, Vec<String>)> {
         return None;
     }
     Some((
-        items.iter().all(|i| i.passed),
+        items.iter().map(|i| i.passed).collect(),
         items.into_iter().map(|i| i.reason).collect(),
     ))
 }
-fn majority(runs: &[(bool, Vec<String>)]) -> Value {
-    let votes: Vec<_> = runs.iter().map(|r| r.0).collect();
+/// A rollout passes when most judgments pass every criterion. Its score is the share of
+/// criteria met, averaged over the judgments, so a reply that meets three of four criteria
+/// scores above one that meets none.
+fn majority(runs: &[Judged]) -> Value {
+    let votes: Vec<_> = runs.iter().map(|r| r.0.iter().all(|c| *c)).collect();
     let passed = votes.iter().filter(|v| **v).count() > votes.len() / 2;
-    let reasons = &runs.iter().find(|r| r.0 == passed).unwrap().1;
-    json!({"passed":passed,"score":u8::from(passed),"votes":votes,"reasons":reasons})
+    let reasons = &runs
+        .iter()
+        .zip(&votes)
+        .find(|(_, vote)| **vote == passed)
+        .unwrap()
+        .0
+        .1;
+    let met: usize = runs
+        .iter()
+        .map(|r| r.0.iter().filter(|c| **c).count())
+        .sum();
+    let judged: usize = runs.iter().map(|r| r.0.len()).sum();
+    json!({"passed":passed,"score":met as f64 / judged as f64,"votes":votes,"reasons":reasons})
 }
 
 fn exact_output(expected: &Value, output: &Value) -> bool {
@@ -363,7 +380,7 @@ mod tests {
         let good =
             r#"{"criteria":[{"passed":true,"reason":"one"},{"passed":false,"reason":"two"}]}"#;
         let first = parse(good, 2).unwrap();
-        assert!(!first.0);
+        assert_eq!(first.0, [true, false]);
         for bad in [
             good.replace("true", "1"),
             good.replace("one", " "),
@@ -373,14 +390,25 @@ mod tests {
             assert!(parse(&bad, 2).is_none())
         }
         assert!(parse(good, 1).is_none());
+        // One judgment meets both criteria, one meets the first, one meets neither: three of six.
         let result = majority(&[
-            (true, vec!["other".into()]),
-            first,
-            (false, vec!["later".into()]),
+            (vec![true, true], vec!["other".into(), "other".into()]),
+            first.clone(),
+            (vec![false, false], vec!["later".into(), "later".into()]),
         ]);
         assert_eq!(
             result,
-            json!({"passed":false,"score":0,"votes":[true,false,false],"reasons":["one","two"]})
+            json!({"passed":false,"score":0.5,"votes":[true,false,false],"reasons":["one","two"]})
+        );
+        // The majority passes, and the dissenting judgment still lowers the score.
+        let all = (vec![true, true], vec!["yes".into(), "yes".into()]);
+        let result = majority(&[all.clone(), first, all.clone()]);
+        assert_eq!(result["passed"], true);
+        assert_eq!(result["votes"], json!([true, false, true]));
+        assert_eq!(result["score"], json!(5.0 / 6.0));
+        assert_eq!(
+            majority(&[all.clone(), all.clone(), all])["score"],
+            json!(1.0)
         );
     }
     #[tokio::test]

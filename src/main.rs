@@ -204,9 +204,8 @@ async fn run() -> RunResult {
         .unwrap_or_else(|_| "127.0.0.1:3000".into())
         .parse()
         .map_err(|_| std::io::Error::other("ACCLIMATE_BIND must be a socket address"))?;
-    let internal_bind: SocketAddr = env::var("ACCLIMATE_INTERNAL_BIND")
-        .unwrap_or_else(|_| "127.0.0.1:3001".into())
-        .parse()?;
+    let internal_bind =
+        env::var("ACCLIMATE_INTERNAL_BIND").unwrap_or_else(|_| "127.0.0.1:3001".into());
     let key = env::var("ACCLIMATE_PROVIDER_ENCRYPTION_KEY")
         .ok()
         .map(|value| acclimate_service::executor::ProviderKey::from_hex(&value))

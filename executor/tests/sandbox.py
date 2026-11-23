@@ -16,11 +16,14 @@ def docker(*args):
     return subprocess.check_output(["docker", *args], text=True).strip()
 
 
-@unittest.skipUnless(
+requires_docker = unittest.skipUnless(
     shutil.which("docker")
     and subprocess.run(["docker", "info"], capture_output=True).returncode == 0,
     "Docker daemon unavailable",
 )
+
+
+@requires_docker
 class SandboxGate(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

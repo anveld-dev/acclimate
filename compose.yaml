@@ -24,12 +24,16 @@ services:
     env_file:
       - ${ACCLIMATE_SERVICE_ENV:?Set ACCLIMATE_SERVICE_ENV to a private production service.env file}
     environment:
-      ACCLIMATE_INTERNAL_BIND: 0.0.0.0:3001
+      ACCLIMATE_INTERNAL_BIND: executor-listener:3001
       ACCLIMATE_BIND: 0.0.0.0:3000
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [executor, backend, outbound]
+    networks:
+      executor:
+        aliases: [executor-listener]
+      backend: {}
+      outbound: {}
     restart: unless-stopped
     stop_grace_period: 90s
     healthcheck:
@@ -52,7 +56,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - executor-data:/var/lib/acclimate-executor
-    networks: [executor]
+    networks: [executor, executor-egress]
     restart: unless-stopped
   console:
     image: ${ACCLIMATE_CONSOLE_IMAGE:-ghcr.io/anveld-dev/acclimate-console:${ACCLIMATE_VERSION:-latest}}
@@ -103,6 +107,7 @@ services:
       timeout: 3s
       retries: 6
 networks:
+  executor-egress: {}
   executor:
     internal: true
   # PostgreSQL has no outbound route. Applications use a separate outbound

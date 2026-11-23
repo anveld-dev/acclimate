@@ -193,3 +193,56 @@ async fn evaluation_assembly_uses_all_five_scores_per_task() {
         json!({"taskId":"b","passed":false,"score":0.4})
     );
 }
+
+/// Fixture bridge for the real-process Docker gate. Runs in its disposable cluster.
+#[tokio::test]
+#[ignore = "run python3 executor/tests/central_learning.py"]
+async fn combined_gate_fixture() {
+    let Ok(path) = std::env::var("ACCLIMATE_GATE_FIXTURE") else {
+        return;
+    };
+    if let Ok(id) = std::env::var("ACCLIMATE_GATE_EVALUATION") {
+        let pool = sqlx::PgPool::connect(&common::database_url())
+            .await
+            .unwrap();
+        let result = executor::assemble(&pool, id.parse().unwrap())
+            .await
+            .unwrap();
+        std::fs::write(path, result.to_string()).unwrap();
+        return;
+    }
+    let mut f = Fixture::new().await;
+    f.enroll().await;
+    let answer = std::env::var("ACCLIMATE_GATE_ANSWER").unwrap();
+    f.ok(
+        "POST",
+        "/evolve-cases",
+        "app",
+        None,
+        json!({"cases":[
+            {"caseId":"a","input":"a","expected":answer},
+            {"caseId":"b","input":"b","expected":answer}
+        ]}),
+    )
+    .await;
+    f.spawn_worker();
+    let item = f.item("evolve", 1).await;
+    f.crash_worker().await;
+    let id: Uuid = item["evaluationId"].as_str().unwrap().parse().unwrap();
+    let runtime: Value =
+        serde_json::from_str(&std::env::var("ACCLIMATE_GATE_RUNTIME").unwrap()).unwrap();
+    let mut tx = f.state.db.begin().await.unwrap();
+    sqlx::query("UPDATE learning_rounds SET runtime=$1 WHERE id=(SELECT round_id FROM learning_evaluations WHERE id=$2)")
+        .bind(runtime).bind(id).execute(&mut *tx).await.unwrap();
+    assert_eq!(executor::queue_evaluation(&mut tx, id).await.unwrap(), 10);
+    tx.commit().await.unwrap();
+    let schema: String = sqlx::query_scalar("SELECT current_schema()")
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap();
+    std::fs::write(
+        path,
+        json!({"schema":schema,"evaluation":id,"workspace":f.project}).to_string(),
+    )
+    .unwrap();
+}

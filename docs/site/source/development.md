@@ -81,6 +81,7 @@ python3 scripts/check-python-package.py
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 python3 scripts/productization/rust_tests.py --pg-bin /path/to/postgresql/bin
+PG_BIN=/path/to/postgresql/bin python3 executor/tests/central_learning.py -v
 cargo build
 npm run test:e2e -- --pg-bin /path/to/postgresql/bin
 npm run test:learning-e2e -- --pg-bin /path/to/postgresql/bin
@@ -88,6 +89,8 @@ npm run test:learn-cli -- --pg-bin /path/to/postgresql/bin
 ```
 
 Plain `cargo test` reports tests that need PostgreSQL as ignored. The Rust test runner above provisions an isolated database and executes the full suite, including those tests.
+
+The central learning gate starts a private PostgreSQL cluster, the service, an executor container, and a scripted model endpoint. It kills and restarts the executor during a live sandbox run and waits for lease expiry. Set `ACCLIMATE_SANDBOX_RUNTIME=runsc` to exercise gVisor on a configured Linux host. Docker Desktop uses plain Docker by default.
 
 For the model-free experiment checks, install the grader dependencies and run the simulation as shown in the [experiment README](../examples/self-improvement-memory/README.md#prepare-and-check-the-fixtures). The learning integration runners use scripted optimizers and require no provider credentials.
 

@@ -28,7 +28,7 @@ services:
       - path: ./.local/stack/service.env
         required: false
     environment:
-      ACCLIMATE_INTERNAL_BIND: 0.0.0.0:3001
+      ACCLIMATE_INTERNAL_BIND: executor-listener:3001
       ACCLIMATE_BIND: 127.0.0.1:3000
       SSL_CERT_FILE: /run/acclimate-local/root.crt
     volumes:
@@ -66,7 +66,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - executor-data:/var/lib/acclimate-executor
-    networks: [executor]
+    networks: [executor, executor-egress]
     restart: unless-stopped
   console:
     image: ${ACCLIMATE_LOCAL_CONSOLE_IMAGE:-acclimate-local-console:source}
@@ -161,7 +161,7 @@ services:
     ports:
       - "127.0.0.1:${ACCLIMATE_LOCAL_MAIL_PORT:-8025}:8025"
     volumes: [mailpit-data:/data]
-    networks: [executor, backend, edge]
+    networks: [backend, edge]
     healthcheck:
       test: ["CMD", "/mailpit", "readyz"]
       interval: 5s
@@ -182,7 +182,11 @@ services:
       - "127.0.0.1:${ACCLIMATE_LOCAL_CONSOLE_PORT:-3443}:${ACCLIMATE_LOCAL_CONSOLE_PORT:-3443}"
       - "127.0.0.1:${ACCLIMATE_LOCAL_API_PORT:-3444}:${ACCLIMATE_LOCAL_API_PORT:-3444}"
       - "127.0.0.1:${ACCLIMATE_LOCAL_KEYCLOAK_PORT:-3445}:${ACCLIMATE_LOCAL_KEYCLOAK_PORT:-3445}"
-    networks: [executor, backend, edge]
+    networks:
+      executor:
+        aliases: [executor-listener]
+      backend: {}
+      edge: {}
     depends_on:
       keycloak:
         condition: service_healthy
@@ -193,6 +197,7 @@ services:
       retries: 12
 
 networks:
+  executor-egress: {}
   executor:
     internal: true
   backend:

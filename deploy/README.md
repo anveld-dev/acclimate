@@ -167,8 +167,10 @@ Build the runner before starting Compose with
 `docker build -t acclimate-chat:1 executor/runner`. The executor resolves
 this tag once at startup and launches each sandbox by immutable image ID.
 Set `ACCLIMATE_EXECUTOR_TOKEN` to a provisioned executor credential and
-configure the service's internal listener on port 3001. Attach the workspace
-model proxy to the private executor network so the gateway can reach it.
+set the service's `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` to 64 hex characters.
+Compose binds port 3001 to the service address on the private executor network.
+The executor reaches the workspace model endpoint over `executor-egress`.
+Attach a containerized model proxy to that network when using its Compose hostname.
 Configure the production Docker daemon's `runsc` runtime with
 `--host-uds=open` in its `runtimeArgs` so the runner can connect to the
 mounted gateway socket. Run `ACCLIMATE_SANDBOX_RUNTIME=runsc python3

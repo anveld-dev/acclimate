@@ -37,13 +37,14 @@ class DeploymentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             config = self.resolve(Path(temporary))
         services = config['services']
-        self.assertEqual(set(services), {'postgres','service','console','proxy'})
+        self.assertEqual(set(services), {'postgres','service','console','proxy','acclimate-executor'})
         self.assertEqual(services['postgres']['image'],'postgres:16-alpine')
         self.assertIn('postgres-data', config['volumes'])
         for name, service in services.items():
             self.assertEqual(service['restart'],'unless-stopped')
-            self.assertEqual(service['stop_grace_period'],'1m30s')
-            self.assertIn('healthcheck', service)
+            if name != 'acclimate-executor':
+                self.assertEqual(service['stop_grace_period'],'1m30s')
+                self.assertIn('healthcheck', service)
             if name != 'proxy': self.assertFalse(service.get('ports'))
         self.assertEqual({port['target'] for port in services['proxy']['ports']}, {80,443})
         self.assertEqual(services['service']['build']['dockerfile'],'deploy/Dockerfile')
@@ -53,6 +54,26 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(services['postgres']['environment']['POSTGRES_PASSWORD_FILE'],'/run/secrets/postgres_password')
         self.assertNotIn('POSTGRES_PASSWORD',services['postgres']['environment'])
         self.assertIn('/ready', ' '.join(services['service']['healthcheck']['test']))
+
+    def test_executor_listener_uses_only_the_executor_network(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            production = self.resolve(Path(temporary))
+            local = json.loads(subprocess.check_output([
+                'docker', 'compose', '--env-file', os.devnull, '-f', str(ROOT/'compose.local.yaml'),
+                'config', '--no-env-resolution', '--format', 'json',
+            ]))
+        for config, owner in ((production, 'service'), (local, 'proxy')):
+            services = config['services']
+            hostname, port = services['service']['environment']['ACCLIMATE_INTERNAL_BIND'].split(':')
+            self.assertIn(hostname, services[owner]['networks']['executor']['aliases'])
+            self.assertEqual({name for name, s in services.items() if 'executor' in s.get('networks', {})},
+                             {owner, 'acclimate-executor'})
+            self.assertTrue(config['networks']['executor']['internal'])
+            worker = services['acclimate-executor']
+            self.assertEqual(worker['environment']['ACCLIMATE_EXECUTOR_SERVICE'], f'http://{owner}:{port}')
+            for service in services.values():
+                self.assertNotIn(int(port), [p['target'] for p in service.get('ports', [])])
+        self.assertEqual(local['services']['service']['network_mode'], 'service:proxy')
 
     def test_manifest_missing_config_is_error_without_reading_dotenv(self):
         # Compose may validate services in any order. Remove one required input

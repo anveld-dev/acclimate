@@ -43,7 +43,7 @@ services:
       retries: 12
       start_period: 30s
   acclimate-runner:
-    image: ${ACCLIMATE_RUNNER_IMAGE:-acclimate-chat:1}
+    image: ${ACCLIMATE_RUNNER_IMAGE:-ghcr.io/anveld-dev/acclimate-runner:${ACCLIMATE_VERSION:-latest}}
     build: executor/runner
     entrypoint: ["node", "-e", ""]
     network_mode: none
@@ -54,6 +54,7 @@ services:
       acclimate-runner:
         condition: service_completed_successfully
     secrets: [executor_token]
+    image: ${ACCLIMATE_EXECUTOR_IMAGE:-ghcr.io/anveld-dev/acclimate-executor:${ACCLIMATE_VERSION:-latest}}
     build:
       context: .
       dockerfile: executor/Dockerfile
@@ -63,7 +64,8 @@ services:
       ACCLIMATE_EXECUTOR_TOKEN_FILE: /run/secrets/executor_token
       ACCLIMATE_EXECUTOR_CONCURRENCY: ${ACCLIMATE_EXECUTOR_CONCURRENCY:-1}
       ACCLIMATE_SANDBOX_RUNTIME: ${ACCLIMATE_SANDBOX_RUNTIME:-runsc}
-      ACCLIMATE_RUNNER_IMAGE: ${ACCLIMATE_RUNNER_IMAGE:-acclimate-chat:1}
+      # The same name as the runner service image, which the executor inspects at startup.
+      ACCLIMATE_RUNNER_IMAGE: ${ACCLIMATE_RUNNER_IMAGE:-ghcr.io/anveld-dev/acclimate-runner:${ACCLIMATE_VERSION:-latest}}
       ACCLIMATE_SANDBOX_VOLUME: ${COMPOSE_PROJECT_NAME}_executor-data
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

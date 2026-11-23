@@ -98,17 +98,41 @@ class DeploymentTests(unittest.TestCase):
                 self.assertIn(missing.encode(), failure.exception.stderr)
 
     def test_manifest_supports_a_shared_release_version_and_individual_image_overrides(self):
-        for overrides, service, console in (
-            ({'ACCLIMATE_VERSION': '0.1.0'}, 'ghcr.io/anveld-dev/acclimate-service:0.1.0',
-             'ghcr.io/anveld-dev/acclimate-console:0.1.0'),
+        published = 'ghcr.io/anveld-dev/acclimate-{}:{}'
+        for overrides, expected in (
+            ({}, {name: published.format(name, 'latest')
+                  for name in ('service', 'console', 'executor', 'runner')}),
+            ({'ACCLIMATE_VERSION': '0.1.0'}, {name: published.format(name, '0.1.0')
+                                              for name in ('service', 'console', 'executor', 'runner')}),
             ({'ACCLIMATE_VERSION': '0.1.0', 'ACCLIMATE_SERVICE_IMAGE': 'local/acclimate-service:test',
-              'ACCLIMATE_CONSOLE_IMAGE': 'local/acclimate-console:test'},
-             'local/acclimate-service:test', 'local/acclimate-console:test'),
+              'ACCLIMATE_CONSOLE_IMAGE': 'local/acclimate-console:test',
+              'ACCLIMATE_EXECUTOR_IMAGE': 'local/acclimate-executor:test',
+              'ACCLIMATE_RUNNER_IMAGE': 'local/acclimate-runner:test'},
+             {name: f'local/acclimate-{name}:test' for name in ('service', 'console', 'executor', 'runner')}),
         ):
             with self.subTest(overrides=overrides), tempfile.TemporaryDirectory() as temporary:
                 services = self.resolve(Path(temporary), **overrides)['services']
-                self.assertEqual(services['service']['image'], service)
-                self.assertEqual(services['console']['image'], console)
+                self.assertEqual(services['service']['image'], expected['service'])
+                self.assertEqual(services['console']['image'], expected['console'])
+                self.assertEqual(services['acclimate-executor']['image'], expected['executor'])
+                self.assertEqual(services['acclimate-runner']['image'], expected['runner'])
+                # The executor inspects the runner by the name the runner service is pulled or built as.
+                self.assertEqual(services['acclimate-executor']['environment']['ACCLIMATE_RUNNER_IMAGE'],
+                                 expected['runner'])
+                # A checkout can still build every application image.
+                self.assertEqual(services['acclimate-executor']['build']['dockerfile'], 'executor/Dockerfile')
+                self.assertEqual(Path(services['acclimate-runner']['build']['context']), ROOT/'executor/runner')
+
+    def test_release_publishes_every_compose_application_image(self):
+        workflow = (ROOT/'.github/workflows/release.yaml').read_text()
+        # Each image has a build entry naming its Dockerfile.
+        for name, dockerfile in (('acclimate-service', 'deploy/Dockerfile'),
+                                 ('acclimate-console', 'deploy/console.Dockerfile'),
+                                 ('acclimate-executor', 'executor/Dockerfile'),
+                                 ('acclimate-runner', 'executor/runner/Dockerfile')):
+            self.assertRegex(workflow, rf'- image: {name}\n +context: \S+\n +dockerfile: {dockerfile}\n')
+        self.assertEqual(workflow.count(
+            'image: [acclimate-service, acclimate-console, acclimate-executor, acclimate-runner]'), 2)
 
     def test_qualification_uses_project_local_builds_and_private_ports(self):
         with tempfile.TemporaryDirectory() as temporary:

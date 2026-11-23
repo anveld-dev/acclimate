@@ -278,9 +278,10 @@ class SandboxGate(unittest.TestCase):
                 return
             (result,) = results
             if case in ("upstream", "timeout", "invalid-reply"):
+                # A reply the gateway cannot use will not clear by waiting.
                 self.assertEqual(
                     result["error"]["code"],
-                    "gateway-upstream",
+                    "provider-rejected" if case == "invalid-reply" else "gateway-upstream",
                     result["error"]["message"],
                 )
                 self.assertNotEqual(result["error"]["message"], result["error"]["code"])

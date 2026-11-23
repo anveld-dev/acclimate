@@ -335,6 +335,10 @@ impl Worker {
         }
         let lease: Lease = response.json().await?;
         let name = format!("acclimate-{}", Uuid::new_v4());
+        let rollout = matches!(lease.job, Job::Rollout { .. });
+        if rollout {
+            SANDBOXES.lock().unwrap().insert(name.clone());
+        }
         let (created, ready) = tokio::sync::oneshot::channel();
         let result = tokio::select! {
             _=async {
@@ -343,8 +347,10 @@ impl Worker {
             }=>None,
             result=self.rollout(&lease,&name,created)=>Some(result),
         };
-        let cleanup = if matches!(lease.job, Job::Rollout { .. }) {
-            remove(&name).await
+        let cleanup = if rollout {
+            let removed = remove(&name).await;
+            SANDBOXES.lock().unwrap().remove(&name);
+            removed
         } else {
             Ok(())
         };
@@ -617,6 +623,15 @@ fn checked_size(body: &Value) -> Result<(), Failure> {
     Ok(())
 }
 type CommandResult = Result<std::io::Result<std::process::Output>, tokio::time::error::Elapsed>;
+/// A provider failure that may clear by waiting (rate limit, server error, transport error or
+/// timeout) is `gateway-upstream`; one that will not is `provider-rejected`.
+fn provider_failure_code(r: &Record) -> &'static str {
+    if r.rejected {
+        "provider-rejected"
+    } else {
+        "gateway-upstream"
+    }
+}
 fn upstream_deadline() -> Failure {
     Failure {
         code: "gateway-upstream",
@@ -630,7 +645,7 @@ fn classify_runner(
     let (mut stop, mut output) = ("completed", Value::Null);
     if let Some(message) = &r.failure {
         return Err(Failure {
-            code: "gateway-upstream",
+            code: provider_failure_code(r),
             message: message.clone(),
         });
     }
@@ -651,7 +666,7 @@ fn classify_runner(
         _ if r.capped => stop = "token-limit",
         Ok(Ok(ref p)) if p.status.code() == Some(65) => {
             return Err(Failure {
-                code: "gateway-upstream",
+                code: "provider-rejected",
                 message: "Provider reply did not contain text".into(),
             });
         }
@@ -682,6 +697,24 @@ fn classify_runner(
 }
 async fn bounded_command(command: &mut Command, limit: Duration) -> CommandResult {
     timeout(limit, command.kill_on_drop(true).output()).await
+}
+/// The sandbox containers this executor's workers have started and not yet removed. A worker
+/// that is aborted leaves its name here, so the executor can remove the container on exit.
+static SANDBOXES: Mutex<std::collections::BTreeSet<String>> =
+    Mutex::new(std::collections::BTreeSet::new());
+/// Remove every sandbox left by an aborted worker. Each removal is bounded, and they run
+/// together, so this cannot hold up the exit for long.
+async fn remove_sandboxes() {
+    let names = std::mem::take(&mut *SANDBOXES.lock().unwrap());
+    let mut removals = tokio::task::JoinSet::new();
+    for name in names {
+        removals.spawn(async move {
+            if let Err(failure) = remove(&name).await {
+                eprintln!("Could not remove sandbox {name}: {}", failure.message);
+            }
+        });
+    }
+    let _ = timeout(Duration::from_secs(20), removals.join_all()).await;
 }
 async fn remove(name: &str) -> Result<(), Failure> {
     timeout(Duration::from_secs(15), async {
@@ -846,10 +879,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
-/// Stop the other workers, and so their sandboxes, before exiting.
+/// Stop the other workers and remove the sandboxes they started before exiting. Aborting a
+/// worker stops its own work, but a sandbox container keeps running until it is removed.
 async fn refused(message: String, workers: &mut tokio::task::JoinSet<Result<(), String>>) -> ! {
     workers.abort_all();
     while workers.join_next().await.is_some() {}
+    remove_sandboxes().await;
     fatal(message)
 }
 #[cfg(test)]
@@ -885,6 +920,14 @@ mod tests {
             classify_runner(timed_out(), &pending).unwrap_err().code,
             "gateway-upstream"
         );
+    }
+    #[tokio::test]
+    async fn exit_removes_the_sandboxes_aborted_workers_left() {
+        let name = format!("acclimate-{}", Uuid::new_v4());
+        SANDBOXES.lock().unwrap().insert(name.clone());
+        // Removing a container that does not exist succeeds, and a missing Docker is logged.
+        remove_sandboxes().await;
+        assert!(!SANDBOXES.lock().unwrap().contains(&name));
     }
     #[test]
     fn only_a_refused_credential_stops_the_executor() {

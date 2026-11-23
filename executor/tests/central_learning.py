@@ -372,7 +372,7 @@ class CentralLearning(unittest.TestCase):
             if failure and index < 2:
                 self.assertEqual(
                     (row["status"], row["error_code"], row["score"]),
-                    ("failed", "gateway-upstream", None),
+                    ("failed", "gateway-upstream" if index == 0 else "provider-rejected", None),
                 )
                 continue
             # One criterion, and the middle judgment dissents: two thirds or one third.

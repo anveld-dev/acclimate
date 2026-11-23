@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -221,4 +221,14 @@ test('exact uses deep equality and tests grades a temporary output.json by proce
   } finally {
     await rm(fixture, { recursive: true, force: true });
   }
+});
+
+test('service task group vectors match defineLoop', async () => {
+  const vectors = JSON.parse(await readFile('contracts/fixtures/learning-task-split.json', 'utf8')) as Record<string,string>;
+  const loop = await loadLoop(defineLoop({
+    bundle: 'support', channel: 'stable', cases: Object.keys(vectors).map(caseId => ({caseId, input: caseId, expected: caseId})),
+    execute: ({input}) => ({output: input}), grade: exact(),
+  }), '.');
+  for (const task of loop.evolve) assert.equal(vectors[task.caseId], 'evolve');
+  for (const task of loop.app.heldOut) assert.equal(vectors[task.caseId], 'held-out');
 });

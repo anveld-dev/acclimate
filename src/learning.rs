@@ -17,14 +17,18 @@ use uuid::Uuid;
 mod evaluations;
 mod evolve;
 mod history;
+pub(crate) mod imports;
 mod memory;
 pub(super) mod optimizer;
+pub(crate) mod tasks;
 pub(crate) mod worker;
 
 type Tx<'a> = Transaction<'a, Postgres>;
 type Body = Result<Json<Value>, JsonRejection>;
 type Reply = ApiResult<Json<Value>>;
 const PREFIX: &str = "/v1/workspaces/{project}/bundles/{bundle}/learning";
+pub(super) const IMPORT_ROUTE: &str =
+    "/v1/workspaces/{project}/bundles/{bundle}/learning/tasks/import";
 const ACTIVE_ROUND_STATES: &[&str] = &[
     "scoring_incumbent",
     "proposing",
@@ -36,6 +40,19 @@ const ACTIVE_ROUND_STATES: &[&str] = &[
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
+        .route(
+            &format!("{PREFIX}/tasks"),
+            get(tasks::list).post(tasks::create),
+        )
+        .route(
+            &format!("{PREFIX}/tasks/{{id}}"),
+            axum::routing::patch(tasks::edit).delete(tasks::retire),
+        )
+        .route(IMPORT_ROUTE, post(imports::upload))
+        .route(
+            &format!("{PREFIX}/held-out-tasks/export"),
+            get(tasks::export),
+        )
         .route(PREFIX, get(inspect).put(enroll))
         .route(&format!("{PREFIX}/pause"), post(pause))
         .route(&format!("{PREFIX}/resume"), post(resume))

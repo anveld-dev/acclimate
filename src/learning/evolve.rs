@@ -79,11 +79,18 @@ pub(super) async fn list_cases(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Outcome {
+    #[serde(default, deserialize_with = "present_json")]
+    output: Option<Value>,
     outcome_id: Uuid,
     version_id: Uuid,
     digest: String,
     input: Value,
     expected: Value,
+}
+
+// Preserve an explicitly reported JSON null as a delivered output.
+fn present_json<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(d).map(Some)
 }
 
 pub(super) fn valid_case_id(id: &str) -> bool {
@@ -265,6 +272,17 @@ pub(super) async fn submit_outcome(
     let request = body(raw)?;
     let outcome: Outcome = parse(&request)?;
     validate_example(&outcome.input, &outcome.expected)?;
+    if let Some(output) = &outcome.output {
+        let equal: bool = sqlx::query_scalar("SELECT $1::jsonb=$2::jsonb")
+            .bind(output)
+            .bind(&outcome.expected)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(db)?;
+        if equal {
+            return Err(invalid("Expected answer must differ from reported output"));
+        }
+    }
     let command = DurableCommand::new(
         &project,
         bundle,
@@ -289,12 +307,33 @@ pub(super) async fn submit_outcome(
     }
     let case_id = format!("outcome:{}", outcome.outcome_id);
     let revision = row.evolve_revision + 1;
-    sqlx::query("INSERT INTO learning_evolve_cases(project_id,bundle_id,case_id,input,expected,source,outcome_id,version_id,added_revision)
+    let group = outcome.outcome_id.to_string();
+    let split = tasks::Split::of(&group);
+    let mut task = tasks::Task::pending(
+        outcome.input.clone(),
+        json!({"type":"exact","expected":outcome.expected}),
+        group,
+        "outcome",
+        &actor.principal,
+    );
+    task.task_id = case_id.clone();
+    task.outcome_id = Some(outcome.outcome_id);
+    task.version_id = Some(outcome.version_id);
+    task.output = outcome.output;
+    task.confirmed_by = Some(actor.principal.clone());
+    let rev = tasks::revision(&mut tx, &project, bundle).await?;
+    tasks::insert(&mut tx, &project, bundle, split, &task, rev).await?;
+    let receipt = if split == tasks::Split::Evolve {
+        sqlx::query("INSERT INTO learning_evolve_cases(project_id,bundle_id,case_id,input,expected,source,outcome_id,version_id,added_revision)
                  VALUES($1,$2,$3,$4,$5,'outcome',$6,$7,$8)")
         .bind(&project).bind(bundle).bind(&case_id).bind(&outcome.input).bind(&outcome.expected)
         .bind(outcome.outcome_id).bind(outcome.version_id).bind(revision)
         .execute(&mut *tx).await.map_err(db)?;
-    bump(&mut tx, &row).await?;
+        bump(&mut tx, &row).await?;
+        json!({"outcomeId":outcome.outcome_id,"caseId":case_id,"evolveRevision":revision})
+    } else {
+        json!({"outcomeId":outcome.outcome_id,"evolveRevision":row.evolve_revision,"heldOutCount":1})
+    };
     audit(
         &mut tx,
         &actor,
@@ -304,10 +343,5 @@ pub(super) async fn submit_outcome(
         Some(&outcome.outcome_id.to_string()),
     )
     .await?;
-    command
-        .finish(
-            tx,
-            json!({"outcomeId":outcome.outcome_id,"caseId":case_id,"evolveRevision":revision}),
-        )
-        .await
+    command.finish(tx, receipt).await
 }

@@ -24,6 +24,10 @@ https://localhost:{$ACCLIMATE_LOCAL_CONSOLE_PORT} {
 }
 
 https://127.0.0.1:{$ACCLIMATE_LOCAL_API_PORT} {
+	@task_import path /v1/workspaces/*/bundles/*/learning/tasks/import
+	request_body @task_import {
+		max_size 67108864
+	}
 	import local_proxy 127.0.0.1:3000 127.0.0.1 {$ACCLIMATE_LOCAL_API_PORT}
 }
 

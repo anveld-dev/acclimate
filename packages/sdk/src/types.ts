@@ -350,13 +350,15 @@ export interface LearningEvolveCasesReceipt {
   liveCases: number;
 }
 export interface LearningOutcomeRequest extends Pick<LearningEvolveCase, 'input' | 'expected'> {
+  output?: LearningEvolveCase['input'];
   outcomeId: string;
   versionId: string;
   digest: string;
 }
 export interface LearningOutcomeReceipt {
   outcomeId: string;
-  caseId: string;
+  caseId?: string;
+  heldOutCount?: number;
   evolveRevision: number;
 }
 export interface LearningMemory {

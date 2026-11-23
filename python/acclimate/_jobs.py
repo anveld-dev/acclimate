@@ -4,12 +4,13 @@ from copy import deepcopy
 import hashlib
 import os
 from pathlib import Path
+from enum import Enum
 from uuid import uuid4
 
 from .client import AcclimateClient
 from .delivery import PreparedDelivery, _stage_delivery, resolve_and_cache
 from .errors import UsageError
-from .types import LearningJson, LearningOutcomeReceipt, VerifiedVersion
+from .types import LearningJson, LearningOutcomeRequest, LearningOutcomeReceipt, VerifiedVersion
 
 
 def _setting(value: str | None, name: str) -> str:
@@ -59,6 +60,10 @@ class Acclimate:
         return Job(self.client, self.workspace, version, input)
 
 
+class _Missing(Enum):
+    VALUE = 0
+
+
 class Job:
     def __init__(
         self, client: AcclimateClient, workspace: str, version: VerifiedVersion, input: LearningJson
@@ -81,13 +86,17 @@ class Job:
         """Stage the pinned payload using the SDK's delivery context manager."""
         return _stage_delivery(self.version, destination)
 
-    def expect(self, expected: LearningJson, input: LearningJson = None) -> LearningOutcomeReceipt:
+    def expect(self, expected: LearningJson, input: LearningJson = None, *,
+               output: LearningJson | _Missing = _Missing.VALUE) -> LearningOutcomeReceipt:
         """Record one correction. Repeat the same call to retry its durable outcome."""
         version = self._version["version"]
-        return self._client.report_learning_outcome(self._workspace, version["bundleId"], {
+        body: LearningOutcomeRequest = {
             "outcomeId": self.outcome_id,
             "versionId": version["id"],
             "digest": version["digest"],
             "input": self._input if input is None else input,
             "expected": expected,
-        })
+        }
+        if not isinstance(output, _Missing):
+            body["output"] = output
+        return self._client.report_learning_outcome(self._workspace, version["bundleId"], body)

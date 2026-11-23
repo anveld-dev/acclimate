@@ -18,7 +18,12 @@ All paths below are relative to `/v1/workspaces/{workspaceId}/bundles/{bundleId}
 | `GET /memory?revision=` | Reader, excluding the app principal | `LearningMemory` |
 | `GET /evolve-cases?after=&limit=` | App principal or signed-in workspace member with `read` | `{items: [{caseId, input, expected, addedRevision}], next, evolveRevision}` |
 | `POST /evolve-cases` | App principal or signed-in workspace member with `write` | `{evolveRevision, added, retired, liveCases}` |
-| `POST /outcomes` | App principal | `{outcomeId, caseId, evolveRevision}` |
+| `POST /outcomes` | App principal | Outcome receipt with evolve revision and either case ID or held-out count |
+| `GET /tasks` | Read | Live task cards, next cursor and held-out count |
+| `POST /tasks` | Write | New pending task, with held-out details restricted to console sessions |
+| `PATCH /tasks/{id}`, `DELETE /tasks/{id}` | Write | Edit or retire a task revision |
+| `POST /tasks/import` | Write | Import ID, row counts and, for console sessions, drafted cards |
+| `GET /held-out-tasks/export` | Console session with read access | All live held-out cards |
 | `GET /work` | App principal | `{bundleId, status, items}` |
 | `POST /evaluations/{evaluationId}/start` | App principal | `{evaluation, cases, heldOut, reportedCaseIds}` |
 | `POST /evaluations/{evaluationId}/report` | App principal | `LearningEvaluation` |
@@ -41,11 +46,19 @@ A new loop is `running` with evolve and memory revisions at zero. While a round 
 
 Use `PUT` to start a stopped loop again. Its split and round numbering continue. An operator pause records `operator`. A running loop pauses with `failed-rounds` after consecutive failed rounds reach `ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS` (default 3). A completed round clears the count.
 
+## Service-owned tasks
+
+Create a task with `{input, grader}`. The grader is `{type: "exact", expected}` or `{type: "criteria", criteria, reference?}`. The service assigns the ID, source and group and hashes the group with SHA-256. Groups whose digest starts with a zero high bit are held-out. Edits take `input`, `grader` or `confirm: true`, retain the original group and split, and start a pending revision. A signed-in person can confirm held-out criteria. Historical revisions survive retirement.
+
+List with `split`, `source`, `admission`, `flagged`, `after` and `limit`. The default page has 20 cards and the maximum is 100. Machine credentials can read evolve cards and aggregate held-out counts. Only console sessions can read or change individual held-out tasks.
+
+Import the raw file body with an optional `filename` query parameter. Supported media types are `text/csv`, `application/x-ndjson`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` and `text/plain`. Rows with both input and expected fields become pending exact tasks. Remaining material retains its source and row number for conversion. Spreadsheet row numbers start at one and advance by 1,048,576 for each subsequent worksheet. Imports group matching source conversations together. Inputs that match after case and whitespace normalization share a group. An import that would join two previously assigned groups returns a conflict. CSV fields are strings and JSONL fields retain their JSON types.
+
 ## Evolve cases and outcomes
 
 Send `{cases: [{caseId, input, expected}], retire: [caseId]}` with at least one entry, no duplicate IDs and at most 100 entries per list. Setup case IDs match `^[A-Za-z0-9._:-]{1,128}$` and reserve the `outcome:` prefix. Input and expected are required JSON values of at most 64 KiB each as encoded. A case ID is immutable. Identically re-adding a live case or re-retiring a retired case is a no-op. Retiring an unknown ID is invalid. A changing request advances the revision exactly once. A round uses its pinned revision throughout.
 
-An outcome sends `{outcomeId, versionId, digest, input, expected}`. The version and digest must identify a version of this bundle. The outcome ID is a UUID and the resulting evolve case ID is `outcome:<outcomeId>` with a lowercase UUID. A correction becomes available in the next round and never triggers a round by itself.
+An outcome sends `{outcomeId, versionId, digest, input, expected, output?}`. The pinned version and digest must belong to the bundle. An explicitly supplied output must differ from the expected JSON value. The job's outcome UUID is the group. Evolve outcomes also enter the current evaluator as `outcome:<outcomeId>`. Held-out outcomes stay in service custody and return a count. Repeated reports replay their original receipts.
 
 List live evolve cases in ascending ASCII case ID order. Use `next` as the exclusive `after` cursor for the next page. Omit `after` or leave it empty for the first page. The page size defaults to 20 and accepts 1–100. The final page returns `next: null`. The response reports the evolve revision used for that page. Restart listing if the revision changes while collecting a snapshot. The listing excludes retired and held-out cases and returns 404 if no loop is enrolled.
 

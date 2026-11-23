@@ -14,6 +14,10 @@
 }
 
 {$API_HOST} {
+	@task_import path /v1/workspaces/*/bundles/*/learning/tasks/import
+	request_body @task_import {
+		max_size 67108864
+	}
 	reverse_proxy service:3000 {
 		header_up Host {$API_HOST}
 		header_up -Forwarded

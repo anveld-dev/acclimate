@@ -336,10 +336,10 @@ class ProtocolTest(unittest.TestCase):
         input["text"] = "modified"
         with job.prepare() as prepared:
             self.assertEqual(prepared.version["version"]["id"], original_version)
-        self.assertEqual(job.expect(1), job.expect(1))
+        self.assertEqual(job.expect(1, output=None), job.expect(1, output=None))
         self.assertEqual(self.service.outcomes, [(job.outcome_id, {
             "outcomeId": job.outcome_id, "versionId": original_version, "digest": job.version["version"]["digest"],
-            "input": {"text": "original"}, "expected": 1,
+            "input": {"text": "original"}, "output": None, "expected": 1,
         })] * 2)
         UUID(job.outcome_id)
 

@@ -66,6 +66,7 @@ impl Fixture {
                     ("app", &["evaluate", "promote"][..]),
                     ("other", &["evaluate"][..]),
                     ("reader", &["read"][..]),
+                    ("writer", &["read", "write"][..]),
                 ]
                 .into_iter()
                 .map(|(principal, rights)| Grant {
@@ -515,7 +516,7 @@ async fn evolve_revisions_and_outcome_replay() {
             400
         );
     }
-    let outcome_id = Uuid::new_v4();
+    let outcome_id = Uuid::from_u128(2);
     let mut outcome = json!({"outcomeId":outcome_id,"versionId":f.version,"digest":DIGEST,"input":null,"expected":{"action":"refund"}});
     let send = |body| f.req("POST", "/outcomes", "app", None, body);
     for (key, value) in [
@@ -608,7 +609,7 @@ async fn round_pins_recovery_monitoring_and_pagination() {
         json!({"retire":["a"],"cases":[case("c")]}),
     )
     .await;
-    let outcome_id = Uuid::new_v4();
+    let outcome_id = Uuid::from_u128(2);
     let correction = f.ok("POST","/outcomes","app",None,json!({
         "outcomeId":outcome_id,"versionId":f.version,"digest":DIGEST,"input":"new","expected":"correct"
     })).await;
@@ -1115,4 +1116,172 @@ async fn queue_and_run_deadlines_count_toward_auto_pause() {
     let resumed = f.ok("POST", "/resume", "admin", None, Value::Null).await;
     assert_eq!(resumed["failedRounds"], 0);
     f.item("evolve", 4).await;
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn task_custody_revisions_confirmation_and_outcomes() {
+    let f = Fixture::new().await;
+    f.enroll().await;
+    let person = format!("console/{}", session(&f, "editor").await);
+    let mut index = 0;
+    let input = loop {
+        let input = json!(format!("secret {index}"));
+        let group = format!("console:{}", hex::encode(Sha256::digest(input.to_string())));
+        if Sha256::digest(group)[0] < 128 {
+            break input;
+        }
+        index += 1;
+    };
+    let new = json!({"input":input,"grader":{"type":"exact","expected":"secret answer"}});
+    assert_eq!(
+        f.ok("POST", "/tasks", "writer", None, new).await,
+        json!({"heldOutCount":1})
+    );
+    assert_eq!(
+        f.req("GET", "/held-out-tasks/export", "writer", None, Value::Null)
+            .await
+            .0,
+        403
+    );
+    let page = f.ok("GET", "/tasks", "writer", None, Value::Null).await;
+    assert_eq!(page, json!({"heldOutCount":1,"items":[],"next":null}));
+    let export = f
+        .ok("GET", "/held-out-tasks/export", &person, None, Value::Null)
+        .await;
+    let old = &export["items"][0];
+    assert_eq!(old["input"], input);
+    let route = format!("/tasks/{}", old["taskId"].as_str().unwrap());
+    assert!(
+        sqlx::query("UPDATE learning_held_out_tasks SET admission='admitted'")
+            .execute(&f.state.db)
+            .await
+            .is_err()
+    );
+    for method in ["DELETE", "PATCH"] {
+        assert_eq!(
+            f.req(method, &route, "writer", None, json!({"input":0}))
+                .await
+                .0,
+            404
+        );
+    }
+    f.ok(
+        "PATCH",
+        &route,
+        &person,
+        None,
+        json!({"input":"edited","confirm":true}),
+    )
+    .await;
+    let page = f
+        .ok(
+            "GET",
+            "/tasks?split=held-out&source=console&admission=pending",
+            &person,
+            None,
+            Value::Null,
+        )
+        .await;
+    let new = &page["items"][0];
+    for key in ["taskId", "group", "split"] {
+        assert_eq!(old[key], new[key]);
+    }
+    assert_ne!(old["addedRevision"], new["addedRevision"]);
+    assert!(new["confirmedBy"].is_string());
+    f.ok("DELETE", &route, &person, None, Value::Null).await;
+    let n: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM learning_held_out_tasks WHERE retired_revision IS NOT NULL",
+    )
+    .fetch_one(&f.state.db)
+    .await
+    .unwrap();
+    assert_eq!(n, 2);
+
+    let job = (0..100)
+        .map(Uuid::from_u128)
+        .find(|id| Sha256::digest(id.to_string())[0] < 128)
+        .unwrap();
+    let mut outcome = json!({"outcomeId":job,"versionId":f.version,"digest":DIGEST,"input":input,"expected":null,"output":null});
+    assert_eq!(
+        f.req("POST", "/outcomes", "app", None, outcome.clone())
+            .await
+            .0,
+        400
+    );
+    outcome["output"] = json!("wrong");
+    let receipt = f.ok("POST", "/outcomes", "app", None, outcome).await;
+    assert!(receipt.get("caseId").is_none());
+    let export = f
+        .ok("GET", "/held-out-tasks/export", &person, None, Value::Null)
+        .await;
+    assert_eq!(export["items"][0]["group"], job.to_string());
+    assert_eq!(export["items"][0]["output"], "wrong");
+    assert_eq!(
+        f.ok("GET", "/evolve-cases", "app", None, Value::Null).await["items"],
+        json!([])
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn streamed_import_preserves_rows_and_returns_cards_only_to_people() {
+    let f = Fixture::new().await;
+    f.enroll().await;
+    let person = format!("console/{}", session(&f, "editor").await);
+    for who in ["writer", &person] {
+        let material = json!({"input":null,"expected":{"answer":42}});
+        let reply = f
+            .ok(
+                "POST",
+                "/tasks/import?filename=tickets.jsonl",
+                who,
+                None,
+                material,
+            )
+            .await;
+        assert_eq!(reply["rows"], 1);
+        assert_eq!(reply["converted"], 1);
+        assert_eq!(reply["pending"], 0);
+        if who == "writer" {
+            assert!(reply.get("cards").is_none());
+        } else {
+            let card = &reply["cards"][0];
+            assert_eq!(card["sourceFile"], "tickets.jsonl");
+            assert_eq!(card["sourceRow"], 1);
+            assert_eq!(
+                card["grader"],
+                json!({"type":"exact","expected":{"answer":42}})
+            );
+        }
+    }
+    let long = "x".repeat(2 * 1024 * 1024 + 1);
+    let reply = f
+        .ok("POST", "/tasks/import", "writer", None, json!(long))
+        .await;
+    assert_eq!(reply["pending"], 1);
+    assert_eq!(
+        f.req("POST", "/tasks", "writer", None, json!({"input":long}))
+            .await
+            .0,
+        413
+    );
+    // Reuse one chunk so the test exercises the streaming limit without a 65 MiB allocation.
+    let chunk = axum::body::Bytes::from(vec![b'x'; 1024 * 1024]);
+    let stream =
+        futures_util::stream::iter((0..65).map(move |_| Ok::<_, std::io::Error>(chunk.clone())));
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/v1/workspaces/{}/bundles/{}/learning/tasks/import",
+            f.project, f.bundle
+        ))
+        .header("authorization", "Bearer writer")
+        .header("content-type", "text/plain")
+        .body(Body::from_stream(stream))
+        .unwrap();
+    let res = f.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    let body = to_bytes(res.into_body(), 4096).await.unwrap();
+    assert!(std::str::from_utf8(&body).unwrap().contains("64 MiB"));
 }

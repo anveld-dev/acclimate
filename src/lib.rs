@@ -107,11 +107,21 @@ async fn request_limits(request: axum::extract::Request, next: axum::middleware:
         )
         .into_response();
     };
-    match tokio::time::timeout(std::time::Duration::from_secs(30), next.run(request)).await {
+    let import = request.method() == axum::http::Method::POST
+        && request
+            .extensions()
+            .get::<axum::extract::MatchedPath>()
+            .is_some_and(|path| path.as_str() == learning::IMPORT_ROUTE);
+    let deadline = std::time::Duration::from_secs(if import { 600 } else { 30 });
+    match tokio::time::timeout(deadline, next.run(request)).await {
         Ok(response) if response.status() == StatusCode::PAYLOAD_TOO_LARGE => err(
             StatusCode::PAYLOAD_TOO_LARGE,
             "payload_too_large",
-            "Request exceeds 2MiB",
+            if import {
+                "Import exceeds 64 MiB"
+            } else {
+                "Request exceeds 2MiB"
+            },
         )
         .into_response(),
         Ok(response) => response,

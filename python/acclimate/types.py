@@ -507,6 +507,7 @@ class LearningEvolveCasesReceipt(TypedDict):
 
 
 class LearningOutcomeRequest(TypedDict):
+    output: NotRequired[LearningJson]
     outcomeId: str
     versionId: str
     digest: str
@@ -516,7 +517,8 @@ class LearningOutcomeRequest(TypedDict):
 
 class LearningOutcomeReceipt(TypedDict):
     outcomeId: str
-    caseId: str
+    caseId: NotRequired[str]
+    heldOutCount: NotRequired[int]
     evolveRevision: int
 
 

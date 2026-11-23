@@ -173,6 +173,8 @@ async fn adoption_releases_only_selected_sample_and_merges_memory_across_rounds(
     .await;
     let empty = {
         f.enroll().await;
+        sqlx::query(r#"INSERT INTO learning_held_out_tasks(project_id,bundle_id,task_id,"group",input,grader,source,added_revision) VALUES($1,$2,'held-out-sentinel','test','"held-out-sentinel"','{}','console',1)"#)
+            .bind(&f.project).bind(f.bundle).execute(&f.state.db).await.unwrap();
         f.ok("GET", "/memory", "reader", None, Value::Null).await
     };
     assert_eq!(

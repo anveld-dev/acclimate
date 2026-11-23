@@ -40,13 +40,13 @@ test('job pins the verified version and retries one outcome body and idempotency
     assert.equal(job.prepare(verified => verified.payload.files[0].text), 'Do the job.');
     input.ticket = 2;
     const expected = { action: 'refund' };
-    await assert.rejects(job.expect(expected), /try again/);
+    await assert.rejects(job.expect(expected, { output: null }), /try again/);
     expected.action = 'ignore';
     const [left, right] = await Promise.all([job.expect(expected), job.expect(expected)]);
     assert.equal(left, right);
     assert.deepEqual(attempts, Array(2).fill({
       key: job.outcomeId,
-      body: { outcomeId: job.outcomeId, input: { ticket: 1 }, expected: { action: 'refund' }, versionId: version.id, digest: version.digest },
+      body: { outcomeId: job.outcomeId, input: { ticket: 1 }, output: null, expected: { action: 'refund' }, versionId: version.id, digest: version.digest },
     }));
   } finally {
     await rm(cacheDir, { recursive: true, force: true });

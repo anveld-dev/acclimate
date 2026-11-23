@@ -40,7 +40,7 @@ export interface AcclimateJob {
   outcomeId: string;
   prepare<T>(nativePrepare: (version: VerifiedVersion) => T): T;
   prepare(destination: string, options?: PrepareOptions): ReturnType<typeof prepareFiles>;
-  expect(expected: Json, options?: { input?: Json }): Promise<LearningOutcomeReceipt>;
+  expect(expected: Json, options?: { input?: Json; output?: Json }): Promise<LearningOutcomeReceipt>;
 }
 
 export function createAcclimate(options: AcclimateOptions = {}) {
@@ -78,17 +78,18 @@ export function createAcclimate(options: AcclimateOptions = {}) {
           ? destination(snapshot)
           : prepareFiles(snapshot, destination, options);
       }
-      let body: Pick<LearningOutcomeRequest, 'input' | 'expected' | 'outcomeId'> | undefined;
+      let body: Pick<LearningOutcomeRequest, 'input' | 'expected' | 'output' | 'outcomeId'> | undefined;
       let pending: Promise<LearningOutcomeReceipt> | undefined;
       return {
         version,
         outcomeId,
         prepare,
-        async expect(expected, { input = originalInput } = {}) {
+        async expect(expected, { input = originalInput, output } = {}) {
           if (!body) {
             assertJson(input, 64 * 1024);
             assertJson(expected, 64 * 1024);
-            body = structuredClone({ input, expected, outcomeId });
+            if (output !== undefined) assertJson(output, 2 * 1024 * 1024);
+            body = structuredClone({ input, expected, outcomeId, ...(output === undefined ? {} : { output }) });
           }
           if (!pending) {
             pending = report(verified, body).catch(error => {

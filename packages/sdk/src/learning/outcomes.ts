@@ -22,7 +22,7 @@ export function createLearningOutcomeReporter({
 }: LearningTarget & { client: AcclimateClient }) {
   return async (
     version: VerifiedVersion,
-    body: Pick<LearningOutcomeRequest, 'outcomeId' | 'input' | 'expected'>,
+    body: Pick<LearningOutcomeRequest, 'outcomeId' | 'input' | 'expected' | 'output'>,
   ) => {
     if (!uuidPattern.test(body.outcomeId))
       throw new AcclimateUsageError('outcomeId must be a UUID', 'outcomeId');
@@ -36,6 +36,7 @@ export function createLearningOutcomeReporter({
       outcomeId,
       input,
       expected,
+      ...(body.output === undefined ? {} : { output: body.output }),
       versionId: version.version.id,
       digest: version.version.digest,
     });

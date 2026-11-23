@@ -677,7 +677,7 @@ async fn openapi_operations_are_registered_in_the_router() {
             .join("/");
         for method in operations.as_object().unwrap().keys() {
             let method = method.to_uppercase();
-            if !matches!(method.as_str(), "GET" | "POST" | "PUT" | "DELETE") {
+            if !matches!(method.as_str(), "GET" | "POST" | "PUT" | "PATCH" | "DELETE") {
                 continue;
             }
             let (status, body, _) = h

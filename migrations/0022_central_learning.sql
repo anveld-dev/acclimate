@@ -57,3 +57,59 @@ CREATE TABLE learning_rollouts (
 );
 CREATE INDEX learning_rollouts_queue ON learning_rollouts ((trial_id IS NULL),created_at,id) WHERE status='queued';
 CREATE INDEX learning_rollouts_expiry ON learning_rollouts (lease_expires_at) WHERE status IN ('running','grading');
+
+-- Service-owned tasks. The revision participates in the key so pinned content survives edits.
+ALTER TABLE learning_loops ADD COLUMN task_revision bigint NOT NULL DEFAULT 0;
+UPDATE learning_loops SET task_revision = evolve_revision;
+CREATE TABLE learning_tasks (
+    project_id text NOT NULL,
+    bundle_id uuid NOT NULL,
+    task_id text NOT NULL CHECK (task_id ~ '^[A-Za-z0-9._:-]{1,128}$'),
+    "group" text NOT NULL,
+    input jsonb NOT NULL,
+    grader jsonb NOT NULL,
+    source text NOT NULL CHECK (source IN ('import','console','outcome')),
+    author text,
+    source_file text,
+    source_row bigint,
+    outcome_id uuid,
+    version_id uuid,
+    output jsonb,
+    confirmed_by text,
+    admission text NOT NULL DEFAULT 'pending' CHECK (admission IN ('pending','admitted','set-aside')),
+    admission_reason text,
+    added_revision bigint NOT NULL,
+    retired_revision bigint CHECK (retired_revision > added_revision),
+    CHECK ((admission = 'set-aside') = (admission_reason IS NOT NULL)),
+    PRIMARY KEY (project_id,bundle_id,task_id,added_revision),
+    FOREIGN KEY (project_id,bundle_id) REFERENCES learning_loops(project_id,bundle_id)
+);
+CREATE UNIQUE INDEX learning_tasks_live ON learning_tasks(project_id,bundle_id,task_id) WHERE retired_revision IS NULL;
+CREATE TABLE learning_held_out_tasks (LIKE learning_tasks INCLUDING ALL,
+    FOREIGN KEY (project_id,bundle_id) REFERENCES learning_loops(project_id,bundle_id),
+    CHECK (admission <> 'admitted' OR confirmed_by IS NOT NULL)
+);
+INSERT INTO learning_tasks(project_id,bundle_id,task_id,"group",input,grader,source,outcome_id,version_id,added_revision)
+SELECT project_id,bundle_id,case_id,coalesce(outcome_id::text,case_id),input,jsonb_build_object('type','exact','expected',expected),
+       CASE source WHEN 'setup' THEN 'import' ELSE 'outcome' END,outcome_id,version_id,added_revision
+FROM learning_evolve_cases WHERE retired_revision IS NULL;
+CREATE VIEW learning_round_tasks AS SELECT * FROM learning_tasks WHERE admission='admitted' AND retired_revision IS NULL;
+CREATE VIEW learning_round_held_out_tasks AS SELECT * FROM learning_held_out_tasks WHERE admission='admitted' AND retired_revision IS NULL;
+
+CREATE TABLE learning_task_imports (
+    id uuid PRIMARY KEY, project_id text NOT NULL, bundle_id uuid NOT NULL, source text NOT NULL,
+    digest text NOT NULL, author text NOT NULL, format text NOT NULL, row_count bigint NOT NULL,
+    converted_rows bigint NOT NULL DEFAULT 0, set_aside_rows bigint NOT NULL DEFAULT 0,
+    FOREIGN KEY(project_id,bundle_id) REFERENCES learning_loops(project_id,bundle_id)
+);
+CREATE TABLE learning_task_import_rows (
+    import_id uuid NOT NULL REFERENCES learning_task_imports(id), row_number bigint NOT NULL,
+    material jsonb NOT NULL, status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','converted','set-aside')),
+    reason text, PRIMARY KEY(import_id,row_number)
+);
+-- Remember import source groups and normalized inputs across uploads of the same material.
+CREATE TABLE learning_task_groups (
+    project_id text NOT NULL, bundle_id uuid NOT NULL, alias text NOT NULL, "group" text NOT NULL,
+    PRIMARY KEY(project_id,bundle_id,alias),
+    FOREIGN KEY(project_id,bundle_id) REFERENCES learning_loops(project_id,bundle_id)
+);

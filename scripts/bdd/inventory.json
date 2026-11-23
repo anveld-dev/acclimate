@@ -732,5 +732,17 @@
     "source": "features/ux_refinement.feature",
     "cases": 1,
     "lane": "browser"
+  },
+  "LEARNING-01": {
+    "name": "Configure and operate a bundle learning loop through the API",
+    "source": "features/central_learning.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "UI-LEARNING-01": {
+    "name": "Configure and operate a bundle learning loop in the console",
+    "source": "features/central_learning.feature",
+    "cases": 1,
+    "lane": "browser"
   }
 }

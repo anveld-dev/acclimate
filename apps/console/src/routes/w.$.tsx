@@ -18,6 +18,7 @@ import { readWorkspaceAccess } from '../server/access-actions';
 import { BundleLibrary } from '../components/bundle-library';
 import { BundleContent } from '../components/bundle-content';
 import { SdkSetup, UseInAnApp } from '../components/sdk-setup';
+import { ModelProvider } from '../components/model-provider';
 import { BundleLearning } from '../components/bundle-learning';
 import { readLearningLoop } from '../server/learning-loop';
 import { BundleReleases } from '../components/bundle-releases';
@@ -206,6 +207,7 @@ function ScopedPage() {
           workspaceId={data.location.workspaceId}
           initial={data.result}
         />
+        <ModelProvider key={workspaceKey + '-provider'} workspaceId={data.location.workspaceId} />
         <WorkspaceMachineTokens
           key={`tokens-${workspaceKey}`}
           workspaceId={data.location.workspaceId}

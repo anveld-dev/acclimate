@@ -1,4 +1,5 @@
 import type { LearningCandidate, LearningMemory } from '@acclimate/sdk';
+import { LearningEvidence } from './learning-evidence';
 import type { ReactNode } from 'react';
 import type { LearningScope } from '../lib/learning';
 import { bundleHref, releaseRevision } from '../navigation';
@@ -181,6 +182,13 @@ export function LearningRoundDetail({
                 </Detail>
               )}
             </dl>
+            {candidate.evaluationId && (
+              <LearningEvidence
+                scope={scope}
+                roundIds={[round.id]}
+                evaluation={candidate.evaluationId}
+              />
+            )}
           </article>
         );
       })}

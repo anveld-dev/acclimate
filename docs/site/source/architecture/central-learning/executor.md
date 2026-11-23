@@ -66,11 +66,11 @@ The gateway is the only path from a rollout to a model. It runs inside the execu
 - **Pass-through.** It forwards request and response bodies unchanged apart from the rules below. It does not translate between APIs. Inspect's proxy translates, and that is where its message-corruption bugs came from.
 - **Routes.** The first release allows `POST /chat/completions` only. Anthropic Messages and OpenAI Responses are added later as more pass-through routes.
 - **Model list.** A request must name the task model or judge model the round pinned. Anything else is refused.
-- **Provider errors.** The gateway retries HTTP 429 and 5xx responses twice with backoff. A 400 with `error.code` or `error.type` equal to `context_length_exceeded`, or a reply with null message content, yields a failing verdict.
+- **Provider errors.** The gateway makes up to four attempts on transport errors, HTTP 429 and HTTP 5xx. Delays start at one second and double with jitter. Retry-After is honored up to 30 seconds. A context overflow or missing or null reply content yields a failing task verdict.
 - **Token caps.** It counts tokens per rollout and refuses requests past the cap. A capped rollout is scored as a fail.
 - **No hosted tools.** It refuses provider-hosted tools such as web search and code execution, because they run outside the sandbox. Function tools are allowed.
 - **No server-side state.** It forces `store: false` and refuses references to stored responses or conversations.
-- **Gateway log.** It writes every request and response. The judge reads the final request and response, and the optimizer reads it for evolve rollouts only. Neither reads a transcript the agent wrote.
+- **Gateway log.** It writes every request and response. The judge reads the non-system messages from the final request and the final reply, and the optimizer reads it for evolve rollouts only. Neither reads a transcript the agent wrote.
 
 Inside the sandbox the gateway appears as a base URL on `localhost`, forwarded to a Unix socket the executor owns. Harnesses and agent CLIs expect a base URL, and the socket is the only way out of the sandbox.
 
@@ -125,3 +125,5 @@ What was considered and is not planned is listed in [plan](plan.md).
 Saving provider settings queues a probe lease. The executor sends one minimal, non-streaming chat completion per model through the gateway transport and reports whether the provider answered and supplied prompt and completion token counts. Probes run outside the sandbox and use the same lease heartbeat as rollouts.
 
 For each upstream attempt the executor checks the endpoint and every resolved address, pins the approved addresses for the connection and disables redirects. An address refusal is reported per model for probes and as a gateway failure for rollout, grade and conversion leases. Failed attempts report the task and judge tokens already recorded.
+
+HTTP 400 or 413 errors indicate context overflow when the error code, type or message contains “context length”, “maximum context”, “context window”, “too many tokens” or “prompt is too long” (case-insensitive, underscores treated as spaces).

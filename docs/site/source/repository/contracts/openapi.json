@@ -6239,6 +6239,16 @@
               {
                 "type": "object",
                 "additionalProperties": false,
+                "required": ["kind", "roundId", "versionId"],
+                "properties": {
+                  "kind": { "const": "regression-check-incomplete" },
+                  "roundId": { "type": "string" },
+                  "versionId": { "type": "string" }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
                 "required": ["roundId", "previousScore", "score", "flippedTasks", "reverted"],
                 "properties": {
                   "roundId": {

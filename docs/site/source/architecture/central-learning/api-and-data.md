@@ -101,7 +101,7 @@ The optional `limits.judgeMaxTokens` sets an independent judge budget and defaul
 {"error": {"code": "gateway-upstream", "message": "…"}}
 ```
 
-Error codes are `gateway-upstream`, `sandbox-start` and `executor`. An error result may include the same `tokens: {task, judge}` counts as a scored result when a failed attempt consumed tokens. An error result is accepted from `running` or `grading`. A rollout that stopped on a limit still posts its output and then a failing verdict.
+Each judge run receives its own `judgeMaxTokens` allowance. Error codes are `judge-budget` (judge token or context limit), `judge-invalid-reply` (missing judge text), `gateway-upstream`, `sandbox-start` and `executor`. An error result may include the same `tokens: {task, judge}` counts as a scored result when a failed attempt consumed tokens. An error result is accepted from `running` or `grading`. A rollout that stopped on a limit still posts its output and then a failing verdict.
 
 **Judge votes.** A `criteria` verdict also carries `votes`, the pass or fail of each judge run in order, and `reasons` holds the judge's written reason per criterion from the majority run. `passed` is the majority of `votes`.
 

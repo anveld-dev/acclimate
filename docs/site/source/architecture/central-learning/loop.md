@@ -23,7 +23,7 @@ A candidate carries a rationale, its edits, and a diagnosis written before any e
 
 Adoption releases in the same transaction. `adopt` takes the loop lock, the promotion lock and the channel row lock, checks that the channel has not moved, promotes the candidate's version, appends memory and queues held-out scoring. If the channel moved, the round records `kept` / `channel-moved` and scores the channel's actual head. There is no approval step.
 
-**Scores.** As today, a task's score is the mean of its five rollout scores, and an evaluation's score is the mean over its tasks. Separately, a task counts as passed when at least three of its five rollouts pass. Pass counts feed the predicted, fixed and missed bookkeeping in memory. An evaluation scores only when every rollout of every task has a score. An executor or judge error is never a score: it is retried once as an infrastructure failure, then fails the evaluation. A failed incumbent evaluation fails the round. A failed candidate evaluation skips that candidate. A failed initial held-out evaluation completes the round with an error. Failed baseline and confirmation measurements are retried.
+**Scores.** As today, a task's score is the mean of its five rollout scores, and an evaluation's score is the mean over its tasks. Separately, a task counts as passed when at least three of its five rollouts pass. Pass counts feed the predicted, fixed and missed bookkeeping in memory. An evaluation scores only when every rollout of every task has a score. An executor or judge error is never a score: it is retried once as an infrastructure failure, then fails the evaluation. A failed incumbent evaluation fails the round. A failed candidate evaluation skips that candidate. A failed initial held-out evaluation completes the round with an error. Failed baseline and confirmation measurements receive up to two retries. If a measurement still fails, the round completes with a held-out error. An incomplete regression check on an adoption raises a console alert and queues email to verified workspace administrators.
 
 ## Optimizer
 
@@ -94,7 +94,7 @@ A running loop with no active round starts one when any of these holds:
 | Task set changed | Admitted evolve tasks added, edited or retired since the last round's pinned revision number at least 5, or 10% of the live evolve set if that is larger |
 | One retry | The previous round adopted nothing and the one before it was not also a non-adopting round on the same task revision. |
 
-A change to held-out tasks alone does not start a round. It re-scores held-out for the channel head.
+A change to held-out tasks alone does not start a round. An adoption that lacks a matching parent score measures the parent in the same round.
 
 **Idle.** After two consecutive rounds that adopt nothing, with no task change between them, the loop idles. Its status stays `running` and its `waiting` field reads `no-new-evidence`. It wakes without any action on the next task-set trigger.
 

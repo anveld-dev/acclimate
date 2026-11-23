@@ -63,7 +63,7 @@ Converted cards record the file, the row and the conversation they came from. Th
 Rules for the judge:
 
 - Each loop stores a `judge_model`, chosen from the workspace provider's allowed models. It must differ from the loop's task model, and the optimizer is configured separately for the deployment. The judge is pinned on the round.
-- The judge reads the final request and response in the rollout's [gateway log](executor.md), the criteria and the reference. Candidate instructions inside this evidence can still influence a model judge despite the separate system instruction.
+- The judge reads the non-system task messages and the agent’s final reply, the criteria and the reference. Candidate instructions inside this evidence can still influence a model judge despite the separate system instruction.
 - Each rollout is judged three times and the majority verdict counts. A task whose verdicts split often is flagged in the console.
 - For evolve tasks, the judge's written reasons become the feedback the optimizer reads.
 

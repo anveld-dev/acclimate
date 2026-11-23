@@ -239,6 +239,7 @@ test('each unconfirmed held-out card has a confirm action, and another card’s 
 test('failure causes, new codes and short task IDs read plainly', () => {
   for (const [code, advice] of [
     ['gateway-upstream', 'check the provider and its rate limits'],
+    ['provider-rejected', 'Check the provider settings'],
     ['sandbox-start', "check the executor's sandbox runtime"],
     ['executor', "check the executor's logs"],
     ['judge-budget', 'Check the judge model'],

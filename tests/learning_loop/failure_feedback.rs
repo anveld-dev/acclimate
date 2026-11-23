@@ -109,62 +109,143 @@ async fn held_out_failure_reports_its_code_only() {
     }
 }
 
+async fn round_count(f: &Fixture) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM learning_rounds")
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap()
+}
+
+/// Fails round `number` with `code`, and returns the round once it has failed.
+async fn fail_round(f: &Fixture, number: i32, code: &str) -> Value {
+    let item = f.item("evolve", number).await;
+    fail_rollout(f, code, "provider failed after retries").await;
+    f.wait_for(&round_route(&item), "reader", |r| r["state"] == "failed")
+        .await
+}
+
+/// Checks that the loop waits out the provider for `minutes` after `round`, starting no round
+/// in the meantime, then moves the round's end back past the wait.
+async fn wait_out(f: &Fixture, round: &Value, minutes: i64) {
+    assert_eq!(round["reason"], "provider-unavailable");
+    let state = f
+        .wait_for("", "reader", |r| r["waiting"] == "provider-unavailable")
+        .await;
+    assert_eq!(
+        (&state["status"], &state["pauseReason"]),
+        (&json!("running"), &Value::Null)
+    );
+    assert_eq!(
+        timestamp(&state["nextRoundAt"]),
+        timestamp(&round["endedAt"]) + chrono::Duration::minutes(minutes)
+    );
+    // The worker ticks every 500 ms, so this covers several ticks without a new round.
+    let rounds = round_count(f).await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert_eq!(round_count(f).await, rounds);
+    sqlx::query(
+        "UPDATE learning_rounds SET ended_at=ended_at-make_interval(mins=>$2) WHERE number=$1",
+    )
+    .bind(round["number"].as_i64().unwrap() as i32)
+    .bind(minutes as i32 + 1)
+    .execute(&f.state.db)
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL"]
-async fn provider_outage_waits_ten_minutes_without_counting_toward_the_pause() {
+async fn provider_outage_backs_off_without_counting_toward_the_pause_or_the_cap() {
+    let mut f = Fixture::new().await;
+    f.provider().await;
+    // Two rounds a day: the outage rounds below would fill that cap if they counted.
+    let mut input = enrollment();
+    input["maxRoundsPerDay"] = json!(2);
+    f.ok("PUT", "", "admin", None, input).await;
+    f.seed().await;
+    sqlx::query("UPDATE learning_loops SET failed_rounds=1")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    f.spawn_worker();
+    // Each consecutive outage doubles the wait.
+    for (number, minutes) in [(1, 10), (2, 20), (3, 40)] {
+        let round = fail_round(&f, number, "gateway-upstream").await;
+        assert_eq!(round["failureCause"]["code"], "gateway-upstream");
+        assert_eq!(failed_rounds(&f).await, 1);
+        wait_out(&f, &round, minutes).await;
+    }
+    let round = fail_round(&f, 4, "gateway-upstream").await;
+    assert_eq!(round["trigger"], "retry");
+    let waiting = f
+        .wait_for("", "reader", |r| r["waiting"] == "provider-unavailable")
+        .await;
+    assert_eq!(
+        timestamp(&waiting["nextRoundAt"]),
+        timestamp(&round["endedAt"]) + chrono::Duration::minutes(80)
+    );
+    // Start during the wait asks for a round now, and resets the backoff.
+    let started = f.ok("POST", "/start", "admin", None, Value::Null).await;
+    assert_eq!(started["waiting"], Value::Null);
+    let round = fail_round(&f, 5, "gateway-upstream").await;
+    assert_eq!(round["trigger"], "resume");
+    wait_out(&f, &round, 10).await;
+    let round = fail_round(&f, 6, "gateway-upstream").await;
+    wait_out(&f, &round, 20).await;
+    // A round that fails otherwise counts, and resets the backoff.
+    let round = fail_round(&f, 7, "sandbox-start").await;
+    assert_eq!(round["reason"], "incumbent-evaluation-failed");
+    assert_eq!(failed_rounds(&f).await, 2);
+    let round = fail_round(&f, 8, "gateway-upstream").await;
+    assert_eq!(round["trigger"], "retry");
+    wait_out(&f, &round, 10).await;
+    assert_eq!(failed_rounds(&f).await, 2);
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn a_rejected_provider_request_counts_toward_the_pause() {
     let mut f = Fixture::new().await;
     f.enroll().await;
     f.seed().await;
-    // Two failures already: one more counted failure would pause the loop.
     sqlx::query("UPDATE learning_loops SET failed_rounds=2")
         .execute(&f.state.db)
         .await
         .unwrap();
     f.spawn_worker();
-    for number in 1..=2 {
-        let item = f.item("evolve", number).await;
-        fail_rollout(
-            &f,
-            "gateway-upstream",
-            "provider answered 429 after retries",
-        )
+    let round = fail_round(&f, 1, "provider-rejected").await;
+    assert_eq!(round["reason"], "incumbent-evaluation-failed");
+    assert_eq!(round["failureCause"]["code"], "provider-rejected");
+    let state = f.wait_for("", "reader", |r| r["status"] == "paused").await;
+    assert_eq!(state["pauseReason"], "failed-rounds");
+    assert_eq!(failed_rounds(&f).await, 3);
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn a_round_with_mixed_failure_codes_is_not_an_outage() {
+    let mut f = Fixture::new().await;
+    f.enroll().await;
+    f.seed().await;
+    f.spawn_worker();
+    let item = f.item("evolve", 1).await;
+    // Fail two rollouts before the worker sees either failure.
+    f.crash_worker().await;
+    fail_rollout(&f, "gateway-upstream", "provider answered 503").await;
+    fail_rollout(&f, "sandbox-start", "sandbox runtime refused").await;
+    let failed: Vec<String> = sqlx::query_scalar(
+        "SELECT error_code FROM learning_rollouts WHERE status='failed' ORDER BY error_code",
+    )
+    .fetch_all(&f.state.db)
+    .await
+    .unwrap();
+    assert_eq!(failed, ["gateway-upstream", "sandbox-start"]);
+    f.spawn_worker();
+    let round = f
+        .wait_for(&round_route(&item), "reader", |r| r["state"] == "failed")
         .await;
-        let round = f
-            .wait_for(&round_route(&item), "reader", |r| r["state"] == "failed")
-            .await;
-        assert_eq!(round["reason"], "provider-unavailable");
-        assert_eq!(round["failureCause"]["code"], "gateway-upstream");
-        let state = f
-            .wait_for("", "reader", |r| r["waiting"] == "provider-unavailable")
-            .await;
-        assert_eq!(state["status"], "running");
-        assert_eq!(state["pauseReason"], Value::Null);
-        assert_eq!(failed_rounds(&f).await, 2);
-        let ended = timestamp(&round["endedAt"]);
-        assert_eq!(
-            timestamp(&state["nextRoundAt"]),
-            ended + chrono::Duration::minutes(10)
-        );
-        // The worker ticks every 500 ms, so this covers several ticks without a new round.
-        tokio::time::sleep(Duration::from_millis(1500)).await;
-        let rounds: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_rounds")
-            .fetch_one(&f.state.db)
-            .await
-            .unwrap();
-        assert_eq!(rounds, i64::from(number));
-        sqlx::query(
-            "UPDATE learning_rounds SET ended_at=now()-interval '11 minutes' WHERE number=$1",
-        )
-        .bind(number)
-        .execute(&f.state.db)
-        .await
-        .unwrap();
-    }
-    let next = f
-        .wait_for("", "reader", |r| r["activeRound"]["number"] == 3)
-        .await;
-    assert_eq!(next["activeRound"]["trigger"], "retry");
-    assert_eq!(next["waiting"], Value::Null);
+    assert_eq!(round["reason"], "incumbent-evaluation-failed");
+    assert_eq!(failed_rounds(&f).await, 1);
 }
 
 #[tokio::test]

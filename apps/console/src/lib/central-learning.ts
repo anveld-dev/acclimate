@@ -100,7 +100,7 @@ const descriptions: Record<string, string> = {
   'incumbent-evaluation-failed': 'Evaluation of the current version failed.',
   'candidate-evaluation-failed': 'Evaluation of a candidate version failed.',
   'provider-unavailable':
-    'The model provider was unavailable or rate limited. Learning tries again ten minutes after the failed round. If this keeps happening, check the provider and its rate limits.',
+    'The model provider was unavailable or rate limited. Learning tries again ten minutes after the failed round, and waits twice as long after each further outage, up to six hours. Press Start to try again now. If this keeps happening, check the provider and its rate limits.',
   'optimizer-required':
     'The service has no optimizer model. An operator must set ACCLIMATE_MODEL_ENDPOINT, ACCLIMATE_MODEL_TOKEN and ACCLIMATE_MODEL on the service. On the local stack, export them and run npm run local:up again.',
   'held-out-evaluation-failed': 'The regression check on held-out tasks could not run.',
@@ -154,6 +154,8 @@ export function describeLearning(code: string) {
 const failureCauses: Record<string, string> = {
   'gateway-upstream':
     'The model provider was unavailable, rate limited or overloaded. Check the provider and its rate limits.',
+  'provider-rejected':
+    'The model provider rejected the request, for example because the key was revoked or the model is not available. Check the provider settings.',
   'sandbox-start':
     "The executor could not start a sandbox for the run. Ask the operator to check the executor's sandbox runtime.",
   executor:

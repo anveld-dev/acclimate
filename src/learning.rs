@@ -451,6 +451,17 @@ async fn change_status(
         sqlx::query("UPDATE learning_loops SET status=$3,pause_reason=$4,updated_at=now(),waiting=NULL,resumed_at=CASE WHEN $3='running' THEN now() ELSE resumed_at END,
                       failed_rounds=CASE WHEN $3='running' THEN 0 ELSE failed_rounds END WHERE (project_id,bundle_id)=($1,$2)")
             .bind(project).bind(bundle).bind(status).bind(reason).execute(&mut *tx).await.map_err(db)?;
+    } else if matches!(operation, "start" | "resume")
+        && status == "running"
+        && controls::provider_wait_until(&mut tx, &row)
+            .await
+            .map_err(db)?
+            .is_some_and(|until| until > chrono::Utc::now())
+    {
+        // A person who presses Start or Resume during the provider wait asks for a round now.
+        // The round it starts is a resume round, which also resets the backoff.
+        sqlx::query("UPDATE learning_loops SET waiting=NULL,resumed_at=now(),updated_at=now() WHERE (project_id,bundle_id)=($1,$2)")
+            .bind(project).bind(bundle).execute(&mut *tx).await.map_err(db)?;
     }
     let row = require_loop(&mut tx, project, bundle, false).await?;
     let result = loop_document(&mut tx, row, s.optimizer.is_some()).await?;

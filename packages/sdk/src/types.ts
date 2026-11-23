@@ -245,7 +245,7 @@ export interface LearningRoundSummary {
   endedAt: string | null;
 }
 export interface LearningFailureCause {
-  code: 'gateway-upstream' | 'sandbox-start' | 'executor' | 'judge-budget' | 'judge-invalid-reply' | (string & {});
+  code: 'gateway-upstream' | 'provider-rejected' | 'sandbox-start' | 'executor' | 'judge-budget' | 'judge-invalid-reply' | (string & {});
   message: string | null;
 }
 export interface LearningRound extends LearningRoundSummary {

@@ -48,8 +48,50 @@ async fn task_changes(
 }
 
 /// After a round fails because the model provider was unavailable, the loop waits this long
-/// before it tries again.
-pub(super) const PROVIDER_WAIT_MINUTES: i32 = 10;
+/// before it tries again. Each further consecutive outage round doubles the wait, up to
+/// `PROVIDER_WAIT_MAX_MINUTES`.
+const PROVIDER_WAIT_MINUTES: i64 = 10;
+const PROVIDER_WAIT_MAX_MINUTES: i64 = 360;
+/// A round that counts toward the daily cap. An outage round does not.
+const COUNTS_TOWARD_CAP: &str =
+    "(state<>'failed' OR reason IS DISTINCT FROM 'provider-unavailable')";
+
+fn provider_wait(outages: u32) -> chrono::Duration {
+    let doublings = outages.saturating_sub(1).min(6);
+    chrono::Duration::minutes((PROVIDER_WAIT_MINUTES << doublings).min(PROVIDER_WAIT_MAX_MINUTES))
+}
+
+/// When the provider wait after the latest round ends, if that round failed with
+/// `provider-unavailable`. The outages counted for the backoff are the consecutive outage rounds
+/// back to, and including, one a person started with Start or Resume, so a round that succeeded
+/// or failed otherwise, or a person asking for a round, resets the backoff.
+pub(super) async fn provider_wait_until(
+    tx: &mut Tx<'_>,
+    row: &LoopRow,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, sqlx::Error> {
+    let recent: Vec<(bool, bool, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
+        "SELECT state='failed' AND reason IS NOT DISTINCT FROM 'provider-unavailable',trigger IN ('start','resume'),ended_at
+        FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) ORDER BY number DESC LIMIT 8",
+    )
+    .bind(&row.project_id)
+    .bind(row.bundle_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    let Some(&(true, _, Some(ended))) = recent.first() else {
+        return Ok(None);
+    };
+    let mut outages = 0;
+    for &(outage, asked, _) in &recent {
+        if !outage {
+            break;
+        }
+        outages += 1;
+        if asked {
+            break;
+        }
+    }
+    Ok(Some(ended + provider_wait(outages)))
+}
 
 pub(super) async fn schedule(
     tx: &mut Tx<'_>,
@@ -62,13 +104,18 @@ pub(super) async fn schedule(
         trigger: String,
         task_revision: i64,
         created_at: chrono::DateTime<chrono::Utc>,
-        provider_wait: bool,
     }
-    let previous:Option<PreviousRound>=sqlx::query_as("SELECT state,decision,trigger,task_revision,created_at,
-            coalesce(state='failed' AND reason='provider-unavailable' AND ended_at>now()-make_interval(mins=>$3),false) AS provider_wait
-        FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) ORDER BY number DESC LIMIT 1")
-        .bind(&row.project_id).bind(row.bundle_id).bind(PROVIDER_WAIT_MINUTES).fetch_optional(&mut **tx).await?;
-    let provider_wait = previous.as_ref().is_some_and(|p| p.provider_wait);
+    let previous: Option<PreviousRound> = sqlx::query_as(
+        "SELECT state,decision,trigger,task_revision,created_at
+        FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) ORDER BY number DESC LIMIT 1",
+    )
+    .bind(&row.project_id)
+    .bind(row.bundle_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let provider_wait = provider_wait_until(tx, row)
+        .await?
+        .is_some_and(|until| until > chrono::Utc::now());
     let trigger = if let Some(previous) = previous {
         if row.started_at.is_some_and(|t| {
             t > previous.created_at && row.resumed_at.is_none_or(|resumed| resumed <= t)
@@ -91,7 +138,7 @@ pub(super) async fn schedule(
     } else {
         Some("start")
     };
-    let capped:bool=sqlx::query_scalar("SELECT count(*) >= $3::integer FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) AND created_at>now()-interval '24 hours'").bind(&row.project_id).bind(row.bundle_id).bind(row.max_rounds_per_day).fetch_one(&mut **tx).await?;
+    let capped:bool=sqlx::query_scalar(&format!("SELECT count(*) >= $3::integer FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) AND created_at>now()-interval '24 hours' AND {COUNTS_TOWARD_CAP}")).bind(&row.project_id).bind(row.bundle_id).bind(row.max_rounds_per_day).fetch_one(&mut **tx).await?;
     // A person who starts or resumes the loop asks for a round now.
     let waiting = if trigger.is_none() {
         Some("no-new-evidence")
@@ -118,21 +165,18 @@ pub(super) async fn next_round_at(
     tx: &mut Tx<'_>,
     row: &LoopRow,
 ) -> Result<Option<chrono::DateTime<chrono::Utc>>, sqlx::Error> {
-    let (query, value) = match row.waiting.as_deref() {
+    match row.waiting.as_deref() {
         // The window allows another round once the round that filled it is 24 hours old.
-        Some("daily-cap") => ("SELECT created_at+interval '24 hours' FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2)
-            AND created_at>now()-interval '24 hours' ORDER BY created_at DESC OFFSET greatest($3-1,0) LIMIT 1", row.max_rounds_per_day),
-        Some("provider-unavailable") => ("SELECT ended_at+make_interval(mins=>$3) FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2)
-            ORDER BY number DESC LIMIT 1", PROVIDER_WAIT_MINUTES),
-        _ => return Ok(None),
-    };
-    Ok(sqlx::query_scalar(query)
-        .bind(&row.project_id)
-        .bind(row.bundle_id)
-        .bind(value)
-        .fetch_optional(&mut **tx)
-        .await?
-        .flatten())
+        Some("daily-cap") => Ok(sqlx::query_scalar(&format!("SELECT created_at+interval '24 hours' FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2)
+            AND created_at>now()-interval '24 hours' AND {COUNTS_TOWARD_CAP} ORDER BY created_at DESC OFFSET greatest($3-1,0) LIMIT 1"))
+            .bind(&row.project_id)
+            .bind(row.bundle_id)
+            .bind(row.max_rounds_per_day)
+            .fetch_optional(&mut **tx)
+            .await?),
+        Some("provider-unavailable") => provider_wait_until(tx, row).await,
+        _ => Ok(None),
+    }
 }
 
 /// For a loop waiting for new evidence, how many more evolve tasks must be added or changed.
@@ -531,6 +575,12 @@ pub(super) async fn unblock(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn provider_wait_doubles_up_to_six_hours() {
+        let minutes: Vec<_> = (1..=8).map(|n| provider_wait(n).num_minutes()).collect();
+        assert_eq!(minutes, [10, 20, 40, 80, 160, 320, 360, 360]);
+    }
+
     #[test]
     fn task_change_requires_both_thresholds() {
         assert!(!enough_changes(4, 20));

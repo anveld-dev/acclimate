@@ -146,6 +146,8 @@ class SandboxGate(unittest.TestCase):
                             ),
                             "none",
                         )
+                        if runtime == "runsc":
+                            test.assertEqual(docker("inspect", "-f", "{{.HostConfig.Runtime}}", container), runtime)
                         test.assertNotEqual(docker("exec", container, "id", "-u"), "0")
                         test.assertEqual(
                             docker(

@@ -37,9 +37,13 @@ class DeploymentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             config = self.resolve(Path(temporary))
         services = config['services']
-        self.assertEqual(set(services), {'postgres','service','console','proxy','acclimate-executor'})
+        self.assertEqual(set(services), {'postgres','service','console','proxy','acclimate-executor','acclimate-runner'})
         self.assertEqual(services['postgres']['image'],'postgres:16-alpine')
         self.assertIn('postgres-data', config['volumes'])
+        # The runner service only builds the sandbox image; it exits at once and has no network.
+        runner = services.pop('acclimate-runner')
+        self.assertEqual(runner['network_mode'],'none')
+        self.assertFalse(runner.get('ports'))
         for name, service in services.items():
             self.assertEqual(service['restart'],'unless-stopped')
             if name != 'acclimate-executor':

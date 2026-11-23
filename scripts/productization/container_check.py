@@ -29,9 +29,9 @@ def private_write(path, text):
 def full_stack_definition(definition, directory, public_port, issuer):
     """Use project-local application builds and disposable routing/trust inputs."""
     services = definition['services']
-    if set(services) != {'postgres', 'service', 'console', 'proxy', 'acclimate-executor'}:
+    if set(services) != {'postgres', 'service', 'console', 'proxy', 'acclimate-executor', 'acclimate-runner'}:
         raise ValueError('Canonical complete deployment changed; review container qualification')
-    for name in ('postgres', 'service', 'console', 'acclimate-executor'):
+    for name in ('postgres', 'service', 'console', 'acclimate-executor', 'acclimate-runner'):
         if services[name].get('ports'):
             raise ValueError('Backend host ports are forbidden')
     for name in ('service', 'console'):

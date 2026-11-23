@@ -1,29 +1,23 @@
+import { LearningConfirm } from './learning-confirm';
+import { NativeSelect } from './ui/native-select';
+import { Label } from './ui/label';
+import { describeLearning, selectedModels } from '../lib/central-learning';
 import { useModelProvider } from './use-model-provider';
-import type { LearningRoundSummary } from '@acclimate/sdk';
+import { useBackgroundRefresh } from './use-background-refresh';
+import type { LearningRound, LearningLoop, LearningRoundSummary } from '@acclimate/sdk';
 import { useEffect, useState, type ReactNode } from 'react';
 import { bundleHref } from '../navigation';
 import { ImprovementMemory, LearningRoundDetail } from './learning-details';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { learningRequest } from '../server/central-actions';
-import { splitDeficit, type CentralRequest } from '../lib/central-learning';
+import { splitDeficit, type CentralCommand } from '../lib/central-learning';
 import { LearningTasks } from './learning-tasks';
 import { workspaceHref } from '../navigation';
 import type { LearningState } from '../server/learning-core';
 import { activeRoundStates } from '../lib/learning';
 import type { LearningScope } from '../lib/learning';
 
-const stateLabels: Record<LearningRoundSummary['state'], string> = {
-  scoring_incumbent: 'Scoring incumbent',
-  proposing: 'Proposing',
-  screening: 'Screening',
-  evaluating: 'Evaluating',
-  selecting: 'Selecting',
-  scoring_held_out: 'Scoring held-out split',
-  completed: 'Completed',
-  failed: 'Failed',
-  stopped: 'Stopped',
-};
 const score = (value: number | null) => (value === null ? '—' : String(value));
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -156,9 +150,13 @@ function RoundList({
   rounds,
   href,
   rollback,
+  history,
+  head,
 }: {
   rounds: LearningRoundSummary[];
   href: (id: string) => string;
+  history: Extract<LearningState, { ok: true }>['history'];
+  head: string | null;
   rollback?: (id: string) => void;
 }) {
   const [before, setBefore] = useState<number>();
@@ -193,10 +191,10 @@ function RoundList({
                     {round.number}
                   </a>
                 </th>
-                <td>{round.trigger ?? '—'}</td>
-                <td>{stateLabels[round.state]}</td>
+                <td>{round.trigger ? describeLearning(round.trigger) : '—'}</td>
+                <td>{describeLearning('round.' + round.state)}</td>
                 <td className="capitalize">{round.decision ?? '—'}</td>
-                <td>{round.reason ?? '—'}</td>
+                <td>{round.reason ? describeLearning(round.reason) : '—'}</td>
                 <td>{score(round.incumbentScore)}</td>
                 <td>
                   {round.adoptedSample ?? '—'}
@@ -204,20 +202,20 @@ function RoundList({
                     <>
                       {' '}
                       / <code>{round.adoptedVersionId}</code>
-                      {rollback && (
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                'Re-release the previous version and block this version?',
-                              )
-                            )
-                              rollback(round.id);
-                          }}
-                        >
-                          Roll back
-                        </Button>
+                      {history
+                        ?.filter((entry) => entry.roundId === round.id)
+                        .map((entry) => (
+                          <p key={entry.time}>
+                            Previous version restored by {entry.actor} on{' '}
+                            <time dateTime={entry.time}>{entry.time}</time>.
+                          </p>
+                        ))}
+                      {rollback && round.adoptedVersionId === head && (
+                        <LearningConfirm
+                          label="Roll back"
+                          description="Release this round’s previous version and block the removed version from future adoption."
+                          onConfirm={() => rollback(round.id)}
+                        />
                       )}
                     </>
                   )}
@@ -262,26 +260,76 @@ export function BundleLearning({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const { provider, error: providerError } = useModelProvider(scope.workspaceId);
-  const [task, setTask] = useState('');
-  const [judge, setJudge] = useState('');
+  const [selectedTask, setTask] = useState('');
+  const [selectedJudge, setJudge] = useState('');
   const loop = state.ok ? state.loop : null;
-  const ws = scope.workspaceId;
-  const defaultTask = loop?.taskModel || provider?.allowedModels[0] || '';
-  const defaultJudge = loop?.judgeModel || provider?.allowedModels[1] || '';
+  const [liveProgress, setLiveProgress] = useState<{
+    round: string;
+    scored: number;
+    total: number;
+  }>();
+  const [delay, setDelay] = useState(3000);
+  const roundId = loop?.activeRound?.id;
   useEffect(() => {
-    setTask(defaultTask);
-    setJudge(defaultJudge);
-  }, [defaultTask, defaultJudge]);
+    setDelay(3000);
+    setLiveProgress(undefined);
+  }, [roundId, loop?.status]);
+  useBackgroundRefresh(
+    async () => {
+      try {
+        if (roundId) {
+          const round = await learningRequest<LearningRound>({
+            ...scope,
+            action: 'evidence',
+            id: roundId,
+          });
+          if (round.progress) setLiveProgress({ round: roundId, ...round.progress });
+          if (round.state !== loop?.activeRound?.state) await refresh();
+        } else {
+          const latest = await learningRequest<LearningLoop>({ ...scope, action: 'loop' });
+          if (
+            latest.activeRound ||
+            latest.status !== loop?.status ||
+            latest.waiting !== loop?.waiting ||
+            latest.nextRound !== loop?.nextRound
+          )
+            await refresh();
+        }
+      } finally {
+        setDelay((n) => Math.min(30000, n * 2));
+      }
+    },
+    {
+      enabled: Boolean(
+        roundId || (loop?.status === 'running' && loop.waiting !== 'no-new-evidence'),
+      ),
+      interval: delay,
+      allowScroll: true,
+      allowButtonFocus: true,
+    },
+  );
+  const progress =
+    liveProgress && liveProgress.round === roundId
+      ? liveProgress
+      : state.ok
+        ? state.progress
+        : null;
+  const ws = scope.workspaceId;
+  const { task, judge } = selectedModels(
+    provider?.allowedModels ?? [],
+    selectedTask || loop?.taskModel,
+    selectedJudge || loop?.judgeModel,
+  );
   const evolve = loop?.admittedEvolve ?? 0,
     held = loop?.admittedHeldOut ?? 0;
-  async function submit(command: Pick<CentralRequest, 'action' | 'payload'>) {
+  async function submit(command: CentralCommand) {
     setBusy(true);
     setError('');
     setNotice('');
     try {
-      await learningRequest({ ...scope, ...command });
+      const result = await learningRequest<{ message?: string }>({ ...scope, ...command });
       await refresh();
-      if (command.action === 'rollback') setNotice('Previous version restored.');
+      if (command.action === 'rollback') setNotice(result.message ?? 'Rollback request completed.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save learning settings.');
     } finally {
@@ -294,6 +342,155 @@ export function BundleLearning({
       '#round-detail'
     );
   }
+  const started = loop?.status === 'running' || (state.ok && state.rounds.length > 0);
+  const monitoring = state.ok && loop && (
+    <>
+      {loop.status === 'running' || state.rounds.length > 0 ? (
+        <p>
+          {describeLearning(loop.status)} {loop.waiting && describeLearning(loop.waiting)}{' '}
+          {loop.pauseReason && describeLearning(loop.pauseReason)}
+        </p>
+      ) : null}
+      <Panel title="Active round">
+        {loop.activeRound ? (
+          <>
+            <p>
+              <a className="underline" href={roundHref(loop.activeRound.id)}>
+                Round {loop.activeRound.number}
+              </a>
+            </p>
+            <ol className="list-decimal space-y-1 pl-5 text-sm">
+              {activeRoundStates.map((roundState) => (
+                <li
+                  key={roundState}
+                  aria-current={loop.activeRound?.state === roundState ? 'step' : undefined}
+                >
+                  {describeLearning('round.' + roundState)}
+                  {loop.activeRound?.state === roundState && ' (current)'}
+                </li>
+              ))}
+            </ol>
+            {progress && (
+              <p>
+                {progress.scored} of {progress.total} rollouts scored
+              </p>
+            )}
+            {!progress && state.activeEvaluation && (
+              <p className="text-sm">
+                <span className="capitalize">{state.activeEvaluation.role}</span>
+                {state.activeEvaluation.sample !== null &&
+                  ` sample ${state.activeEvaluation.sample}`}
+                {' · '}
+                {state.activeEvaluation.split === 'heldOut' ? 'Held-out monitoring' : 'Evolve'}
+                {' · '}
+                {describeLearning('evaluation.' + state.activeEvaluation.status)}
+                {' · '}
+                {state.activeEvaluation.reportedCases} of {state.activeEvaluation.cases} cases
+                reported
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">No active round.</p>
+        )}
+      </Panel>
+      <Panel title="Scores by round">
+        <ScoreCurves rounds={state.rounds} />
+        <p className="text-sm text-muted-foreground">
+          Small held-out sets make scores noisy. With 20 tasks, one changed verdict moves the pass
+          rate by five percentage points. Compare rounds using the same task set.
+        </p>
+      </Panel>
+      <Panel title="Rounds">
+        <RoundList
+          history={state.history}
+          head={state.channelHead}
+          rounds={state.rounds}
+          href={roundHref}
+          rollback={
+            state.canManage && !busy
+              ? (roundId) => void submit({ action: 'rollback', body: { roundId } })
+              : undefined
+          }
+        />
+        {state.history === null && <p>Rollback history could not be loaded.</p>}
+        {state.blocked === null && <p>Blocked versions could not be loaded.</p>}
+        {Boolean(state.blocked?.length) && (
+          <section>
+            <h3>Blocked versions</h3>
+            <ul>
+              {state.blocked?.map((v) => (
+                <li key={v.digest} className="break-words">
+                  <code>{v.digest}</code> · Removed by {v.removedBy} on {v.createdAt} {v.note}
+                  {state.canManage && (
+                    <LearningConfirm
+                      label="Unblock version"
+                      description="Future rounds may adopt this version again."
+                      disabled={busy}
+                      onConfirm={() => void submit({ action: 'unblock', id: v.digest })}
+                    />
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        {state.detail && (
+          <div id="round-detail">
+            {state.detail.ok ? (
+              <LearningRoundDetail scope={scope} detail={state.detail} />
+            ) : (
+              <p role="alert">{state.detail.message}</p>
+            )}
+          </div>
+        )}
+      </Panel>
+      <div id="improvement-memory">
+        <Panel title="Memory">
+          <p>Improvement memory: what the optimizer sees. Never delivered to jobs.</p>
+          <a
+            className="text-sm underline"
+            href={
+              bundleHref({ ...scope, channel: loop.channel }, 'learning', {
+                memory: 'latest',
+              }) + '#improvement-memory'
+            }
+          >
+            {state.memory ? 'Latest memory revision' : 'View improvement memory'}
+          </a>
+          {state.memory && (
+            <>
+              {state.memory.ok ? (
+                <ImprovementMemory memory={state.memory.memory} />
+              ) : (
+                <p role="alert">{state.memory.message}</p>
+              )}
+              <form
+                action="#improvement-memory"
+                method="get"
+                className="flex flex-wrap items-end gap-3"
+              >
+                <Label htmlFor="learning-memory-revision" className="grid gap-1 text-sm">
+                  Memory revision
+                  <Input
+                    id="learning-memory-revision"
+                    name="memory"
+                    type="number"
+                    min={0}
+                    max={state.memory.ok ? state.memory.memory.currentRevision : undefined}
+                    required
+                  />
+                </Label>
+                <Button type="submit" variant="outline">
+                  View revision
+                </Button>
+              </form>
+            </>
+          )}
+        </Panel>
+      </div>
+    </>
+  );
   return (
     <div className="space-y-5">
       <div className="flex justify-end">
@@ -324,14 +521,18 @@ export function BundleLearning({
           {loop?.alert && (
             <p role="alert" className="workspace-panel p-5">
               Held-out score dropped from {loop.alert.previousScore} to {loop.alert.score} ·{' '}
-              {loop.alert.flippedTasks} tasks flipped.{' '}
+              {loop.alert.flippedTasks} tasks changed verdict.{' '}
+              {loop.alert.reverted
+                ? 'The service restored the previous version.'
+                : 'The service has not reported an automatic restore.'}{' '}
               <a className="underline" href={roundHref(loop.alert.roundId)}>
                 Inspect round
               </a>
             </p>
           )}
+          {started && monitoring}
           <Panel title="Learning setup">
-            <p>Chat harness · {loop?.channel ?? 'Choose a published channel'}</p>
+            <p>{loop?.channel ?? 'Choose a published channel'}</p>
             {!state.canManage &&
               (loop ? (
                 <p>
@@ -349,22 +550,22 @@ export function BundleLearning({
                   const data = new FormData(e.currentTarget);
                   void submit({
                     action: 'configure',
-                    payload: JSON.stringify({
-                      channel: data.get('channel'),
+                    body: {
+                      channel: String(data.get('channel')),
                       setting: {
-                        domain: loop?.setting.domain ?? 'Chat',
-                        benchmark: loop?.setting.benchmark ?? 'Service tasks',
+                        domain: String(data.get('domain')),
+                        benchmark: String(data.get('benchmark')),
                       },
                       taskModel: task,
                       judgeModel: judge,
                       maxRoundsPerDay: Number(data.get('cap')),
-                    }),
+                    },
                   });
                 }}
               >
-                <label>
+                <Label>
                   Learning channel
-                  <select
+                  <NativeSelect
                     className="block w-full rounded border p-2"
                     name="channel"
                     defaultValue={loop?.channel}
@@ -372,28 +573,45 @@ export function BundleLearning({
                     {state.channels.map((c) => (
                       <option key={c}>{c}</option>
                     ))}
-                  </select>
-                </label>
+                  </NativeSelect>
+                </Label>
                 {(
                   [
                     ['Task model', task, setTask],
                     ['Judge model', judge, setJudge],
                   ] as const
                 ).map(([label, value, change]) => (
-                  <label key={label}>
+                  <Label key={label}>
                     {label}
-                    <select
+                    <NativeSelect
                       className="block w-full rounded border p-2"
                       value={value}
+                      required
                       onChange={(e) => change(e.target.value)}
                     >
                       {provider?.allowedModels.map((m) => (
                         <option key={m}>{m}</option>
                       ))}
-                    </select>
-                  </label>
+                    </NativeSelect>
+                  </Label>
                 ))}
-                <label htmlFor="learning-cap">
+                <Label>
+                  Task domain
+                  <Input
+                    required
+                    name="domain"
+                    defaultValue={loop?.setting.domain ?? state.bundleName}
+                  />
+                </Label>
+                <Label>
+                  Benchmark name
+                  <Input
+                    required
+                    name="benchmark"
+                    defaultValue={loop?.setting.benchmark ?? 'Learning tasks'}
+                  />
+                </Label>
+                <Label htmlFor="learning-cap">
                   Maximum rounds per day
                   <Input
                     id="learning-cap"
@@ -403,7 +621,7 @@ export function BundleLearning({
                     name="cap"
                     defaultValue={loop?.maxRoundsPerDay ?? 4}
                   />
-                </label>
+                </Label>
                 {!state.channels.length && <p>Release a version on a channel first.</p>}
                 {!provider ? (
                   <p>{providerError ? 'Model provider unavailable.' : 'Loading provider…'}</p>
@@ -415,7 +633,13 @@ export function BundleLearning({
                   task === judge && <p>Choose different task and judge models.</p>
                 )}
                 <Button
-                  disabled={busy || !state.channels.length || !task || !judge || task === judge}
+                  disabled={
+                    busy ||
+                    !state.channels.length ||
+                    !provider?.allowedModels.includes(task) ||
+                    !provider.allowedModels.includes(judge) ||
+                    task === judge
+                  }
                 >
                   Save learning settings
                 </Button>
@@ -424,12 +648,28 @@ export function BundleLearning({
             {loop && (
               <>
                 <p>
-                  {loop.status} {loop.pauseReason?.replaceAll('-', ' ')}{' '}
-                  {loop.waiting && '· Waiting: ' + loop.waiting.replaceAll('-', ' ')}
+                  {describeLearning(loop.status)}{' '}
+                  {loop.pauseReason && describeLearning(loop.pauseReason)}{' '}
+                  {loop.waiting && describeLearning(loop.waiting)}
                 </p>
                 <p>
-                  {evolve} admitted evolve · {held} admitted held-out
+                  {evolve} admitted evolve tasks guide changes. {held} admitted held-out tasks check
+                  the result independently.
                 </p>
+                {state.canManage && loop.status !== 'stopped' && (
+                  <LearningConfirm
+                    label="Stop learning"
+                    disabled={busy}
+                    description="Cancel work in progress and stop scheduling rounds for this bundle."
+                    onConfirm={() => void submit({ action: 'stop' })}
+                  />
+                )}
+                {state.canManage && loop.status !== 'running' && (
+                  <p>
+                    Starting learning lets the service release adopted changes to this channel
+                    automatically, without approval. You can roll back the current release.
+                  </p>
+                )}
                 {state.canManage &&
                   (loop.status === 'running' ? (
                     <Button disabled={busy} onClick={() => void submit({ action: 'pause' })}>
@@ -475,127 +715,14 @@ export function BundleLearning({
             )}
           </Panel>
           {loop && (
-            <>
-              <LearningTasks
-                rounds={state.rounds.map((r) => r.id)}
-                scope={scope}
-                edit={state.canEditCases}
-                refresh={refresh}
-              />
-              <Panel title="Active round">
-                {loop.activeRound ? (
-                  <>
-                    <p>
-                      <a className="underline" href={roundHref(loop.activeRound.id)}>
-                        Round {loop.activeRound.number}
-                      </a>
-                    </p>
-                    <ol className="list-decimal space-y-1 pl-5 text-sm">
-                      {activeRoundStates.map((roundState) => (
-                        <li
-                          key={roundState}
-                          aria-current={loop.activeRound?.state === roundState ? 'step' : undefined}
-                        >
-                          {stateLabels[roundState]}
-                          {loop.activeRound?.state === roundState && ' (current)'}
-                        </li>
-                      ))}
-                    </ol>
-                    {state.activeEvaluation && (
-                      <p className="text-sm">
-                        <span className="capitalize">{state.activeEvaluation.role}</span>
-                        {state.activeEvaluation.sample !== null &&
-                          ` sample ${state.activeEvaluation.sample}`}
-                        {' · '}
-                        {state.activeEvaluation.split === 'heldOut'
-                          ? 'Held-out monitoring'
-                          : 'Evolve'}
-                        {' · '}
-                        {state.activeEvaluation.status}
-                        {' · '}
-                        {state.activeEvaluation.reportedCases} of {state.activeEvaluation.cases}{' '}
-                        cases reported
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No active round.</p>
-                )}
-              </Panel>
-              <Panel title="Scores by round">
-                <ScoreCurves rounds={state.rounds} />
-                <p className="text-sm text-muted-foreground">
-                  Small held-out sets make scores noisy. With 20 tasks, one changed verdict moves
-                  the pass rate by five percentage points. Compare rounds using the same task set.
-                </p>
-              </Panel>
-              <Panel title="Rounds">
-                <RoundList
-                  rounds={state.rounds}
-                  href={roundHref}
-                  rollback={
-                    state.canManage && !busy
-                      ? (roundId) =>
-                          void submit({ action: 'rollback', payload: JSON.stringify({ roundId }) })
-                      : undefined
-                  }
-                />
-                {state.detail && (
-                  <div id="round-detail">
-                    {state.detail.ok ? (
-                      <LearningRoundDetail scope={scope} detail={state.detail} />
-                    ) : (
-                      <p role="alert">{state.detail.message}</p>
-                    )}
-                  </div>
-                )}
-              </Panel>
-              <div id="improvement-memory">
-                <Panel title="Memory">
-                  <p>Improvement memory: what the optimizer sees. Never delivered to jobs.</p>
-                  <a
-                    className="text-sm underline"
-                    href={
-                      bundleHref({ ...scope, channel: loop.channel }, 'learning', {
-                        memory: 'latest',
-                      }) + '#improvement-memory'
-                    }
-                  >
-                    {state.memory ? 'Latest memory revision' : 'View improvement memory'}
-                  </a>
-                  {state.memory && (
-                    <>
-                      {state.memory.ok ? (
-                        <ImprovementMemory memory={state.memory.memory} />
-                      ) : (
-                        <p role="alert">{state.memory.message}</p>
-                      )}
-                      <form
-                        action="#improvement-memory"
-                        method="get"
-                        className="flex flex-wrap items-end gap-3"
-                      >
-                        <label htmlFor="learning-memory-revision" className="grid gap-1 text-sm">
-                          Memory revision
-                          <Input
-                            id="learning-memory-revision"
-                            name="memory"
-                            type="number"
-                            min={0}
-                            max={state.memory.ok ? state.memory.memory.currentRevision : undefined}
-                            required
-                          />
-                        </label>
-                        <Button type="submit" variant="outline">
-                          View revision
-                        </Button>
-                      </form>
-                    </>
-                  )}
-                </Panel>
-              </div>
-            </>
+            <LearningTasks
+              rounds={state.rounds.map((r) => r.id)}
+              scope={scope}
+              edit={state.canEditCases}
+              refresh={refresh}
+            />
           )}
+          {!started && monitoring}
         </>
       )}
     </div>

@@ -20,11 +20,11 @@ Steps 1 to 5 are the whole setup. The person acts in steps 1, 2, 3 and 5.
 
 ### 2. Turn on learning for a bundle
 
-**Screen:** Bundle, Learning, Set up. It shows the bundle, the channel that will receive releases, the harness, the task model and the judge model.
+**Screen:** Bundle, Learning, Set up. It shows the bundle, the channel that will receive releases, the task model and the judge model.
 
 **You do:** pick the channel. The task model and judge model have defaults from the provider's allowed models, and you can change them. They must differ.
 
-**Automatic:** the harness follows from where the bundle is delivered, so the screen states it and does not ask.
+**Automatic:** the executor uses the chat harness for this release.
 
 ### 3. Give it material
 
@@ -46,7 +46,7 @@ Steps 1 to 5 are the whole setup. The person acts in steps 1, 2, 3 and 5.
 
 **Screen:** the task cards, the split count and two buttons.
 
-- **Cards.** Each shows the input, the expected answer or criteria, its source and its split. You can edit or delete any card. A held-out card whose criteria were only drafted by conversion waits for you to confirm them before it is admitted.
+- **Cards.** Each shows the input, the expected answer or criteria, its source and its split. You can edit or delete any card. An unconfirmed held-out card waits for you to confirm them before it is admitted.
 - **Split.** The service assigns each task to evolve or held-out. It keeps tasks from the same source conversation or file on the same side. The screen states the count, for example "22 evolve, 22 held-out" (illustrative).
 - **Try.** Runs one task as a trial on the executor against the current release. The panel shows the gateway log, the verdict and the judge's reasoning. A trial never counts toward learning. An infrastructure error is shown as an error, never as a failed task.
 - **Start.** Enabled once the provider is verified and there are 20 admitted evolve tasks and 20 admitted held-out tasks. Below that, the button says how many more each side needs.
@@ -67,12 +67,12 @@ No one needs to be present after Start.
 
 ### 7. Watch, fix, roll back
 
-**Screen:** the same Learning page. The held-out chart sits above the round list, with usage (tokens and rounds per bundle) beside it.
+**Screen:** the same Learning page. The held-out chart sits above the round list, with daily usage below the task cards.
 
 - **Each release explains itself.** It names the round that produced it and shows the diff with the diagnosis in plain language. This replaces an approval step.
 - **Flagged tasks.** The service flags tasks that drag scores: ones that fail for every candidate round after round, ones whose repeated rollouts disagree, and ones that error. A flagged task opens to its last gateway log and reasoning, and you can edit it inline, try it and save.
-- **Held-out drop.** Any drop after a release raises a banner and emails workspace admins, linking the round. On a [clear drop](loop.md) the service also reverts the release on its own, and the loop continues from the restored version.
-- **Roll back.** Every release has a Roll back button that re-releases the previous version. A version that was rolled back or reverted is blocked and cannot be adopted again.
+- **Held-out drop.** A drop after a release raises a banner, linking the round. On a [clear drop](loop.md) the service also reverts the release on its own, and the loop continues from the restored version.
+- **Roll back.** The round whose adopted version is still live has a Roll back button that re-releases the previous version. A version that was rolled back or reverted is blocked and cannot be adopted again.
 
 **You do:** nothing in a normal week. You act when a task is flagged or an alert arrives.
 
@@ -101,10 +101,16 @@ No one needs to be present after Start.
 
 **A bad task is dragging scores.** The Tasks page shows it flagged, with the reason. Whoever notices opens it, reads the last gateway log and the judge's reasoning, edits the criteria, clicks Try and saves. Saving creates a new revision of the task, and the admission check runs again. The score chart marks the point where the task set changed, because scores on either side are not directly comparable. Retiring the task is one click.
 
-**An auto-released change made things worse.** The held-out chart shows the drop and admins have an email linking the round. If the drop was clear, the service has already reverted the release. Otherwise a person opens the round, reads the diff and the diagnosis, and clicks Roll back. Either way the change is blocked from being adopted again, and the loop continues from the restored version. People signed in to the console can open held-out tasks and gateway logs to see what broke. The optimizer and machine tokens cannot. If the person decides to turn a held-out failure into a new evolve task, that task is retired from held-out.
+**An auto-released change made things worse.** The held-out chart shows the drop and admins have an email linking the round. If the drop was clear, the service has already reverted the release. Otherwise a person opens the round, reads the diff and the diagnosis, and clicks Roll back. Either way the change is blocked from being adopted again, and the loop continues from the restored version. The round shows aggregate held-out scores.
 
-**A teammate asks what changed and why.** The round timeline is the answer. Each release links to its round, and the round shows the diagnosis, the diff, the tasks it was predicted to fix and the tasks it did fix. Rollbacks and task edits appear on the same timeline with who made them.
+**A teammate asks what changed and why.** The round timeline is the answer. Each release links to its round, and the round shows the diagnosis, the diff, the tasks it was predicted to fix and the tasks it did fix. Rollback entries name the person or service that restored the version.
 
-## Later: a coding bundle
+## Later
+
+- Task edits on the round timeline, with editor attribution.
+- Held-out gateway logs in the round view for signed-in people.
+- Retiring a held-out failure and turning it into a new evolve task.
+
+### A coding bundle
 
 Not in the first release. The path is the same, with an environment added after step 2 and check-script grading as a third way to judge a task. The details are in [executor](executor.md#later-the-codex-harness-and-environments) and [plan](plan.md).

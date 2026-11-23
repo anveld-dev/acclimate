@@ -38,7 +38,7 @@ export function LearningEvidence({
               e.split === 'evolve' &&
               (evaluation
                 ? e.id === evaluation
-                : e.role === 'candidate' && e.caseSummaries?.some((c) => c.caseId === taskId)),
+                : e.caseSummaries?.some((c) => c.caseId === taskId)),
           );
         if (!match) continue;
         const report = evaluation
@@ -76,18 +76,29 @@ export function LearningEvidence({
             {c.caseId} · {c.rollouts.filter((r) => r.passed).length} of {c.rollouts.length} passed
           </summary>
           {c.rollouts.map((r, i) => (
-            <div className="rounded border p-2" key={i}>
-              <p>
-                Rollout {i + 1} · {r.error ? 'Error' : r.passed ? 'Passed' : 'Failed'} · score{' '}
-                {r.score}
-              </p>
-              <pre className="whitespace-pre-wrap break-words">
-                {r.error ?? r.trace ?? 'No trace recorded.'}
-              </pre>
-            </div>
+            <RolloutEvidence key={i} r={r} i={i} />
           ))}
         </details>
       ))}
+    </div>
+  );
+}
+
+export function RolloutEvidence({ r, i }: { r: LearningRollout; i: number }) {
+  return (
+    <div className="rounded border p-2">
+      <p>
+        Rollout {i + 1} · {r.error ? 'Error' : r.passed ? 'Passed' : 'Failed'} · score {r.score}
+      </p>
+      <pre className="whitespace-pre-wrap break-words">
+        {r.error ?? r.reasons?.join('\n') ?? r.trace ?? 'No judge reasoning recorded.'}
+      </pre>
+      <details>
+        <summary>Gateway log</summary>
+        <pre className="whitespace-pre-wrap break-words">
+          {JSON.stringify(r.gatewayLog ?? [], null, 2)}
+        </pre>
+      </details>
     </div>
   );
 }

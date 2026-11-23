@@ -193,7 +193,7 @@ export interface LearningLoop extends Omit<LearningLoopRequest, 'taskModel' | 'j
   maxRoundsPerDay: number;
   admittedEvolve: number;
   admittedHeldOut: number;
-  alert: { roundId: string; score: number; previousScore: number; flippedTasks: number } | null;
+  alert: { reverted?: boolean; roundId: string; score: number; previousScore: number; flippedTasks: number } | null;
   setting: LearningSetting;
   waiting: string | null;
   taskRevision: number;
@@ -225,7 +225,7 @@ export interface LearningRoundSummary {
     | 'scoring_held_out' | 'completed' | 'failed' | 'stopped';
   decision: 'adopted' | 'kept' | null;
   reason: 'selector-kept' | 'no-candidates' | 'no-survivors' | 'no-evaluated-candidates'
-    | 'channel-moved' | 'incumbent-evaluation-failed' | 'optimizer-unavailable'
+    | 'no-matching-executor' | 'channel-moved' | 'incumbent-evaluation-failed' | 'optimizer-unavailable'
     | 'optimizer-context-too-large' | 'selector-unavailable' | 'stopped' | null;
   parentVersionId: string;
   adoptedSample: number | null;
@@ -238,6 +238,10 @@ export interface LearningRoundSummary {
 }
 export interface LearningRound extends LearningRoundSummary {
   channel: string;
+  progress?: {scored:number; total:number};
+  reverted?: boolean;
+  confirmedParentScore?: number|null;
+  confirmedAdoptionScore?: number|null;
   channelRevision: string;
   evolveRevision: number;
   memoryRevision: number;
@@ -306,6 +310,8 @@ export interface LearningHeldOutRollout {
   passed: boolean;
 }
 export interface LearningRollout extends LearningHeldOutRollout {
+  gatewayLog?: Json[];
+  reasons?: string[];
   trace?: string | null;
   error?: string | null;
 }
@@ -382,7 +388,13 @@ export interface LearningTaskEdit {
 export interface LearningTask {
   taskId: string;
   input: Json;
-  grader: Json;
+  grader: {type:'exact';expected:Json} | {type:'criteria';criteria:string[];reference?:Json};
+  source: string;
+  sourceFile?: string|null;
+  sourceRow?: number|null;
+  admissionReason?:string|null;
+  flagReason?:string|null;
+  confirmedBy?:string|null;
   split: string;
   admission: string;
   addedRevision: number;
@@ -416,7 +428,7 @@ export interface LearningTrial {
   status: string;
   output?: Json;
   gatewayLog?: Json;
-  verdict?: Json;
+  verdict?: {passed:boolean; score?:number; votes?:boolean[]|null; reasons?:string[]|null};
 }
 
 export interface LearningImport {
@@ -463,5 +475,5 @@ export interface ModelProvider {
 export interface ModelProviderRequest {
   baseUrl: string;
   allowedModels: string[];
-  apiKey: string;
+  apiKey?: string;
 }

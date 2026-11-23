@@ -1,4 +1,5 @@
 import type { LearningCandidate, LearningMemory } from '@acclimate/sdk';
+import { describeLearning } from '../lib/central-learning';
 import { LearningEvidence } from './learning-evidence';
 import type { ReactNode } from 'react';
 import type { LearningScope } from '../lib/learning';
@@ -136,8 +137,8 @@ export function LearningRoundDetail({
               ))}
             <dl className="space-y-2">
               <Detail label="Status">
-                {status.replaceAll('_', ' ')}
-                {dropReason && ` · ${dropReason}`}
+                {describeLearning(status)}
+                {dropReason && ` · ${describeLearning(dropReason)}`}
               </Detail>
               {diagnosis && (
                 <>
@@ -205,7 +206,16 @@ export function LearningRoundDetail({
           <p>Selector chose sample {selection.sample}.</p>
         )}
         {selection && <p>{selection.reason}</p>}
-        {round.reason && round.reason !== selection?.reason && <p>{round.reason}</p>}
+        {round.reverted && <p>The service restored the previous version.</p>}
+        {round.confirmedParentScore != null && round.confirmedAdoptionScore != null && (
+          <p>
+            Confirmed held-out scores · previous version {round.confirmedParentScore}, adopted
+            version {round.confirmedAdoptionScore}.
+          </p>
+        )}
+        {round.reason && round.reason !== selection?.reason && (
+          <p>{describeLearning(round.reason)}</p>
+        )}
       </div>
     </div>
   );

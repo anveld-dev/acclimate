@@ -260,3 +260,83 @@ for (const kind of ['built', 'dev'] as const) {
     },
   );
 }
+
+test(
+  'built console forwards a large import before the browser finishes sending it',
+  { timeout: 20000 },
+  async () => {
+    const { createServer: serve } = await import('node:http');
+    let first!: () => void;
+    const received = new Promise<void>((resolve) => {
+      first = resolve;
+    });
+    let bytes = 0;
+    const service = serve((req, res) => {
+      req.on('data', (chunk: Buffer) => {
+        bytes += chunk.length;
+        first();
+      });
+      req.on('end', () => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ bytes }));
+      });
+    });
+    service.listen(0, '127.0.0.1');
+    await once(service, 'listening');
+    const upstream = service.address() as { port: number };
+    const runtime = await start('built', {
+      CONSOLE_SERVICE_URL: 'http://127.0.0.1:' + upstream.port,
+      CONSOLE_ALLOW_EDITS: 'true',
+    });
+    try {
+      for (let i = 0; i < 100; i++) {
+        if (
+          await fetch('http://127.0.0.1:' + runtime.port + '/health').then(
+            (r) => r.ok,
+            () => false,
+          )
+        )
+          break;
+        await delay(50);
+      }
+      const req = httpRequest({
+        port: runtime.port,
+        hostname: '127.0.0.1',
+        method: 'POST',
+        path: '/learning-import?workspaceId=example&bundleId=bundle',
+        headers: {
+          host: 'console.example',
+          origin: consoleEnvironment.CONSOLE_ORIGIN,
+          cookie: 'acclimate_session=signed-in',
+          'content-type': 'text/plain',
+        },
+      });
+      const reply = once(req, 'response');
+      try {
+        req.write(Buffer.alloc(65536, 65));
+        await Promise.race([
+          received,
+          reply.then(() => {
+            throw Error('Upload rejected before streaming');
+          }),
+          delay(4000).then(() => {
+            throw Error('Upload was buffered');
+          }),
+        ]);
+        for (let i = 0; i < 160; i++)
+          if (!req.write(Buffer.alloc(65536, 66))) await once(req, 'drain');
+        req.end();
+        const [response] = await reply;
+        response.resume();
+        assert.equal(response.statusCode, 200, runtime.output());
+        assert.equal(bytes, 161 * 65536);
+      } finally {
+        req.destroy();
+      }
+    } finally {
+      await stop(runtime.child);
+      service.closeAllConnections();
+      await new Promise<void>((resolve) => service.close(() => resolve()));
+    }
+  },
+);

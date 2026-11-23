@@ -1,14 +1,47 @@
 ---
 title: Run a learning loop
-description: Enroll a released bundle, sync cases and serve evaluations with one TypeScript config.
+description: Connect a provider, prepare tasks, start automatic releases, and inspect or roll back a round.
 ---
 
-1. In workspace settings, configure an OpenAI-compatible model provider, its key and allowed models.
-2. Open the released bundle’s **Learning** tab. Choose its channel, task model and a different judge model.
-3. Import CSV, JSONL, a spreadsheet or pasted examples. Each task pairs an input with an expected answer or grading criteria. Review the task cards and confirm held-out material. Use **Try** to inspect an executor run before starting a round.
-4. Start learning once at least 20 evolve tasks and 20 held-out tasks pass admission. The same floor applies on resume.
+An Acclimate executor must be running and connected to the service. It uses the workspace provider to convert material, check tasks, and run trials and rounds. Ask the service operator to check the executor if work stays queued.
 
-The executor runs each rollout in a fresh sandbox. The service scores candidates on evolve tasks and automatically releases the selected version to the channel. Held-out scores monitor regressions. Inspect the round, usage and release history in the console or roll back an adopted round.
+## Set up a released bundle
+
+1. In workspace settings, save an OpenAI-compatible provider URL, an API key and at least two allowed models. Check each model’s verification result. Each must answer a chat request and report token usage.
+2. Open the bundle’s **Learning** tab. Choose the published channel to improve, a task model to answer tasks, a different judge model to grade answers, and a daily round limit. Save the settings.
+3. Import a spreadsheet, CSV, JSONL, or text file, paste conversations, or choose **Write a task**. Use an exact answer for a value that must match. For free text, write one criterion per line and optionally supply a reference answer.
+4. Review the cards and their source rows. Evolve tasks help the optimizer improve the bundle. Held-out tasks independently measure how the released bundle performs. Review and confirm unconfirmed held-out cards so they can be admitted.
+5. Choose **Try task** to run the current release on one card. Read the output, verdict, reasoning, and gateway log on that card. An executor error means the trial could not finish. Trials do not count toward round scores.
+
+## Admission and import results
+
+A pending card awaits confirmation or a check by the executor. An admitted card counts toward its group’s minimum. Edit a set-aside card to run its checks again.
+
+| Reason | What to do |
+| --- | --- |
+| No usable reference | Provide an example answer or explicit criteria for the source row. |
+| Row too large | Shorten the source example and import it again. |
+| Reference failed | Check that the reference answer meets every criterion. |
+| Empty answer passed | Tighten the expected answer or criteria so an empty answer fails. |
+| Judge unstable | Replace ambiguous criteria with observable requirements and try again. |
+| Check failed | Check executor and provider availability, then retry the task. |
+
+## Start and monitor
+
+Start requires a verified provider and at least **20 admitted evolve tasks and 20 admitted held-out tasks**. An adopted change is released to the chosen channel automatically, without an approval step. You can roll back the current release.
+
+The score chart follows each round. Use evolve scores to understand candidate selection and held-out scores to monitor regressions. Open a round to inspect its candidates, bundle changes, and evolve rollout evidence. Filter flagged cards to investigate repeated failures, executor errors, or inconsistent verdicts. Edit a card and try it again.
+
+| Waiting reason | What happens next |
+| --- | --- |
+| No new evidence | Add or revise tasks. The service wakes the loop when enough evidence changes. |
+| Daily cap | The next round starts when the rolling 24-hour window has room. |
+| No executor | Ask the operator to start a connected executor. |
+| Models no longer allowed | Choose two currently allowed models in learning setup. |
+
+A round can fail if no executor matches its pinned settings. Check the executor connection and provider configuration. If learning pauses after repeated failures, inspect recent rounds before starting again. If the optimizer runs out of context, ask the operator to check the optimizer model’s context limit. If the task count falls below the floor, restore the admitted count on both sides.
+
+**Pause** lets the active round finish. **Stop learning** cancels open work. A held-out drop raises an alert linked to the round. Check whether the service already restored the previous version and compare confirmed scores when available. To undo a current adoption, choose **Roll back** on its round and confirm. The removed version is blocked from future adoption. Review its digest and removal note before choosing **Unblock version**.
 
 ## Report a production outcome
 

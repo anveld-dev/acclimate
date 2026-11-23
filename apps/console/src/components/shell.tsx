@@ -247,6 +247,7 @@ export function Shell({ children }: { children: ReactNode }) {
     enabled:
       Boolean(nav?.workspaceId) &&
       view !== 'members' &&
+      view !== 'learning' &&
       !loading &&
       !hasPendingChanges,
   });

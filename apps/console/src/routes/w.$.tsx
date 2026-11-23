@@ -114,7 +114,7 @@ export const Route = createFileRoute('/w/$')({
         result: await readLearningLoop({
           data: {
             ...scope,
-            round: typeof deps.search.round === 'string' ? deps.search.round : undefined,
+            round: deps.search.round === undefined ? undefined : String(deps.search.round),
             memory: deps.search.memory === undefined ? undefined : String(deps.search.memory),
           },
         }),
@@ -226,7 +226,7 @@ function ScopedPage() {
           scope={scope}
           view="learning"
           search={search}
-          description="Evaluate the bundle in recurring learning rounds."
+          description="Teach this bundle with examples, review its scores, and track automatic releases."
         />
         <BundleLearning
           key={`${workspaceKey}:${scope.bundleId}`}
@@ -280,7 +280,7 @@ function ScopedPage() {
   const description = {
     content: 'The instructions, skills and memory your app receives.',
     releases: 'See what shipped or restore an earlier release.',
-    learning: 'Evaluate the bundle in recurring learning rounds.',
+    learning: 'Teach this bundle with examples, review its scores, and track automatic releases.',
     connect: 'Use this bundle in your agent app.',
   }[view];
   const identity = `${state.actorScope}:${scope.workspaceId}:${scope.bundleId}:${scope.channel}`;

@@ -1,3 +1,4 @@
+import { useBackgroundRefresh } from './use-background-refresh';
 import { useEffect, useState } from 'react';
 import { learningRequest } from '../server/central-actions';
 import type { Provider } from '../lib/central-learning';
@@ -5,32 +6,46 @@ import type { Provider } from '../lib/central-learning';
 export function useModelProvider(workspaceId: string) {
   const [provider, setProvider] = useState<Provider>();
   const [error, setError] = useState('');
-  const [generation, restart] = useState(0);
+  const [interval, setDelay] = useState(3000);
   useEffect(() => {
     let active = true;
-    let timer: ReturnType<typeof setTimeout>;
-    async function read() {
-      try {
-        const next = await learningRequest<Provider>({ workspaceId, action: 'provider' });
-        if (!active) return;
-        setProvider(next);
-        setError('');
-        if (!next.hasKey || (next.verification && next.verification.status !== 'pending')) return;
-      } catch {
-        if (!active) return;
-        setError('Could not load the workspace model provider.');
-      }
-      timer = setTimeout(() => void read(), 3000);
-    }
-    void read();
+    setProvider(undefined);
+    setError('');
+    void learningRequest<Provider>({ workspaceId, action: 'provider' }).then(
+      (next) => {
+        if (active) setProvider(next);
+      },
+      () => {
+        if (active) setError('Could not load the workspace model provider.');
+      },
+    );
     return () => {
       active = false;
-      clearTimeout(timer);
     };
-  }, [workspaceId, generation]);
+  }, [workspaceId]);
+  useBackgroundRefresh(
+    async () => {
+      try {
+        const next = await learningRequest<Provider>({ workspaceId, action: 'provider' });
+        setProvider(next);
+        setError('');
+      } finally {
+        setDelay((n) => Math.min(30000, n * 2));
+      }
+    },
+    {
+      enabled: provider?.verification?.status === 'pending',
+      interval,
+      allowScroll: true,
+      allowButtonFocus: true,
+    },
+  );
   function saved(next: Provider) {
-    setProvider({ ...next, verification: undefined });
-    restart((value) => value + 1);
+    setProvider({
+      ...next,
+      verification: next.verification ?? { status: 'pending', models: [], checkedAt: null },
+    });
+    setDelay(3000);
   }
   return { provider, error, saved };
 }

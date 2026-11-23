@@ -143,6 +143,6 @@ volumes:
   caddy-config:
 secrets:
   executor_token:
-    file: ${ACCLIMATE_EXECUTOR_TOKEN_FILE:-./.local/stack/executor-token}
+    file: ${ACCLIMATE_EXECUTOR_TOKEN_FILE:?Set ACCLIMATE_EXECUTOR_TOKEN_FILE to a private file outside the checkout for the executor credential}
   postgres_password:
     file: ${ACCLIMATE_POSTGRES_PASSWORD_FILE:?Set ACCLIMATE_POSTGRES_PASSWORD_FILE to a private password file}

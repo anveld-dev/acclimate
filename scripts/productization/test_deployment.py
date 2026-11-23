@@ -18,12 +18,14 @@ spec.loader.exec_module(container)
 
 class DeploymentTests(unittest.TestCase):
     def resolve(self, directory, missing=None, **overrides):
-        for filename in ('service.env','console.env','password','empty.env'):
+        for filename in ('service.env','console.env','password','empty.env','executor-token'):
             container.private_write(directory/filename, '')
         environment = dict(PATH=os.environ['PATH'],
             ACCLIMATE_SERVICE_ENV=str(directory/'service.env'),
             ACCLIMATE_CONSOLE_ENV=str(directory/'console.env'),
             ACCLIMATE_POSTGRES_PASSWORD_FILE=str(directory/'password'),
+            # Empty, as before the executor credential is created.
+            ACCLIMATE_EXECUTOR_TOKEN_FILE=str(directory/'executor-token'),
             CONSOLE_HOST='console.fixture.invalid', API_HOST='api.fixture.invalid', ACME_EMAIL='fixture@example.invalid')
         environment.update(overrides)
         if missing:
@@ -62,6 +64,8 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(services['postgres']['environment']['POSTGRES_PASSWORD_FILE'],'/run/secrets/postgres_password')
         self.assertNotIn('POSTGRES_PASSWORD',services['postgres']['environment'])
         self.assertIn('/ready', ' '.join(services['service']['healthcheck']['test']))
+        # The executor credential lives where the operator says, never in the checkout.
+        self.assertNotIn(str(ROOT), config['secrets']['executor_token']['file'])
 
     def test_executor_listener_uses_only_the_executor_network(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -87,7 +91,7 @@ class DeploymentTests(unittest.TestCase):
         # Compose may validate services in any order. Remove one required input
         # at a time so a public-hostname error cannot mask the config-file gate.
         for missing in ('ACCLIMATE_SERVICE_ENV', 'ACCLIMATE_CONSOLE_ENV',
-                        'ACCLIMATE_POSTGRES_PASSWORD_FILE'):
+                        'ACCLIMATE_POSTGRES_PASSWORD_FILE', 'ACCLIMATE_EXECUTOR_TOKEN_FILE'):
             with self.subTest(missing=missing), tempfile.TemporaryDirectory() as temporary:
                 with self.assertRaises(subprocess.CalledProcessError) as failure:
                     self.resolve(Path(temporary), missing=missing)

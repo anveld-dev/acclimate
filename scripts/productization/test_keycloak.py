@@ -59,7 +59,8 @@ class KeycloakDeployment(unittest.TestCase):
                 runpy.run_path(str(ROOT/'scripts/testing/fetch_keycloak.py'), run_name='__main__')
 
     def resolve(self, directory, missing=None):
-        for name in ('service.env', 'console.env', 'keycloak.env', 'password', 'kc-password', 'empty.env'):
+        for name in ('service.env', 'console.env', 'keycloak.env', 'password', 'kc-password', 'empty.env',
+                     'executor-token'):
             path = directory/name
             path.write_text('')
             path.chmod(0o600)
@@ -69,6 +70,7 @@ class KeycloakDeployment(unittest.TestCase):
                    ACCLIMATE_KEYCLOAK_ENV=str(directory/'keycloak.env'),
                    ACCLIMATE_POSTGRES_PASSWORD_FILE=str(directory/'password'),
                    ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE=str(directory/'kc-password'),
+                   ACCLIMATE_EXECUTOR_TOKEN_FILE=str(directory/'executor-token'),
                    CONSOLE_HOST='console.fixture.invalid', API_HOST='api.fixture.invalid',
                    KEYCLOAK_HOST='auth.fixture.invalid', ACME_EMAIL='fixture@example.invalid')
         if missing:

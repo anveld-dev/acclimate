@@ -1,5 +1,6 @@
 import { useModelProvider } from './use-model-provider';
 import { useState } from 'react';
+import { Label } from './ui/label';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { learningRequest } from '../server/central-actions';
@@ -24,26 +25,30 @@ export function ModelProvider({ workspaceId }: { workspaceId: string }) {
               const next = await learningRequest<Provider>({
                 workspaceId,
                 action: 'saveProvider',
-                payload: JSON.stringify({
-                  baseUrl: fields.get('baseUrl'),
-                  apiKey: fields.get('apiKey'),
+                body: {
+                  baseUrl: String(fields.get('baseUrl')),
+                  apiKey: String(fields.get('apiKey') || '') || undefined,
                   allowedModels: String(fields.get('allowedModels'))
                     .split(',')
                     .map((s) => s.trim())
                     .filter(Boolean),
-                }),
+                },
               });
               saved(next);
               form.querySelector<HTMLInputElement>('[name=apiKey]')!.value = '';
               report('Provider saved.');
-            } catch {
-              report('Could not save the workspace model provider.');
+            } catch (error) {
+              report(
+                error instanceof Error
+                  ? error.message
+                  : 'Could not save the workspace model provider.',
+              );
             } finally {
               setBusy(false);
             }
           }}
         >
-          <label htmlFor="learning-baseUrl">
+          <Label htmlFor="learning-baseUrl">
             OpenAI-compatible base URL
             <Input
               id="learning-baseUrl"
@@ -52,18 +57,18 @@ export function ModelProvider({ workspaceId }: { workspaceId: string }) {
               name="baseUrl"
               defaultValue={provider.baseUrl || ''}
             />
-          </label>
-          <label htmlFor="learning-apiKey">
+          </Label>
+          <Label htmlFor="learning-apiKey">
             API key {provider.hasKey && '(key stored)'}
             <Input
               id="learning-apiKey"
               autoComplete="new-password"
               type="password"
-              required
+              required={!provider.hasKey}
               name="apiKey"
             />
-          </label>
-          <label htmlFor="learning-allowedModels">
+          </Label>
+          <Label htmlFor="learning-allowedModels">
             Allowed models (comma-separated)
             <Input
               id="learning-allowedModels"
@@ -71,7 +76,7 @@ export function ModelProvider({ workspaceId }: { workspaceId: string }) {
               required
               defaultValue={provider.allowedModels.join(', ')}
             />
-          </label>
+          </Label>
           <Button disabled={busy}>Save provider</Button>
         </form>
       )}

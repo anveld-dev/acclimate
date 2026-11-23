@@ -277,7 +277,7 @@ class LearningRoundSummary(TypedDict):
                    "scoring_held_out", "completed", "failed", "stopped"]
     decision: Literal["adopted", "kept"] | None
     reason: Literal["selector-kept", "no-candidates", "no-survivors", "no-evaluated-candidates",
-                    "channel-moved", "incumbent-evaluation-failed", "optimizer-unavailable",
+                    "no-matching-executor", "channel-moved", "incumbent-evaluation-failed", "optimizer-unavailable",
                     "optimizer-context-too-large", "selector-unavailable", "stopped"] | None
     parentVersionId: str
     adoptedSample: int | None
@@ -290,6 +290,7 @@ class LearningRoundSummary(TypedDict):
 
 
 class _LearningAlert(TypedDict):
+    reverted: NotRequired[bool]
     roundId: str
     score: float
     previousScore: float
@@ -417,6 +418,8 @@ class LearningHeldOutRollout(TypedDict):
 
 
 class LearningRollout(LearningHeldOutRollout):
+    gatewayLog: NotRequired[list[LearningJson]]
+    reasons: NotRequired[list[str]]
     trace: NotRequired[str | None]
     error: NotRequired[str | None]
 
@@ -450,7 +453,16 @@ class LearningEvaluation(_LearningEvaluationIdentity):
     report: NotRequired[LearningEvaluationReport]
 
 
+class _LearningProgress(TypedDict):
+    scored: int
+    total: int
+
+
 class LearningRound(LearningRoundSummary):
+    progress: NotRequired[_LearningProgress]
+    reverted: NotRequired[bool]
+    confirmedParentScore: NotRequired[float | None]
+    confirmedAdoptionScore: NotRequired[float | None]
     channel: str
     channelRevision: str
     evolveRevision: int
@@ -656,7 +668,7 @@ class ModelProvider(TypedDict):
 class ModelProviderRequest(TypedDict):
     baseUrl: str
     allowedModels: list[str]
-    apiKey: str
+    apiKey: NotRequired[str]
 
 
 __all__ = [

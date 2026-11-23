@@ -108,6 +108,10 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
   const selected =
     matches.find((item) => item.revision === requestedRevision) ??
     (term || !requestedRevision ? matches[0] : undefined);
+  const learningRound =
+    selected?.reviewer === 'service:learning-loop'
+      ? /^Adopted in learning round (\d+), sample \d+$/.exec(selected.unevaluatedReason ?? '')?.[1]
+      : undefined;
   function chooseRevision(revision: string) {
     void router.navigate({
       ...consoleDestination(bundleHref(scope, 'releases') + '#revision-' + revision),
@@ -465,7 +469,12 @@ export function BundleReleases({ state }: { state: Extract<ConsoleState, { statu
               <section className="min-w-0 space-y-3 p-4" aria-label="Selected release">
                 <h3 className="font-semibold">Revision {selected.revision}</h3>
                 <p className="text-sm">
-                  {selected.unevaluatedReason || 'No release reason recorded.'}
+                  {selected.unevaluatedReason || 'No release reason recorded.'}{' '}
+                  {learningRound && (
+                    <a className="underline" href={bundleHref(scope, 'learning', { round: learningRound }) + '#round-detail'}>
+                      View learning round {learningRound}
+                    </a>
+                  )}
                 </p>
                 <div className="release-actions">
                   <div className="release-inspection-actions">

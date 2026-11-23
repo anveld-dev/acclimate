@@ -1,10 +1,19 @@
+import { LearningConfirm } from './learning-confirm';
+import { useBackgroundRefresh } from './use-background-refresh';
+import { Checkbox } from './ui/checkbox';
+import { Label } from './ui/label';
+import { Textarea } from './ui/textarea';
+import { NativeSelect } from './ui/native-select';
 import { useState, useEffect } from 'react';
 import type { LearningScope } from '../lib/learning';
 import {
   mediaTypes,
-  type CentralRequest,
+  describeLearning,
+  pendingTaskReads,
+  type CentralCommand,
   type TaskCard,
   type Trial,
+  type CardTrial,
   type Usage,
   type ImportStatus,
 } from '../lib/central-learning';
@@ -18,10 +27,12 @@ export function TaskEditor({
   card,
   edit,
   run,
+  trial,
 }: {
+  trial?: CardTrial;
   card: TaskCard;
   edit: boolean;
-  run: (data: Partial<CentralRequest> & Pick<CentralRequest, 'action'>) => void;
+  run: (data: CentralCommand) => void;
 }) {
   const [error, setError] = useState('');
   return (
@@ -33,41 +44,46 @@ export function TaskEditor({
             ? 'Imported'
             : 'Console'}{' '}
         {card.sourceFile} {card.sourceRow && '· row ' + card.sourceRow} · {card.split} ·{' '}
-        {card.admission}
+        {describeLearning(card.admission)}
       </p>
-      {card.flagReason && <p>Flagged · {card.flagReason}</p>}
-      {card.admissionReason && (
-        <p>{setAsideReasons[card.admissionReason] ?? card.admissionReason.replaceAll('-', ' ')}</p>
-      )}
+      {card.flagReason && <p>{describeLearning(card.flagReason)}</p>}
+      {card.admissionReason && <p>{describeLearning(card.admissionReason)}</p>}
       <h4>Input</h4>
-      <pre className="whitespace-pre-wrap break-words">{pretty(card.input)}</pre>
+      <pre className="whitespace-pre-wrap break-words">{fieldText(card.input)}</pre>
       <h4>{card.grader.type === 'exact' ? 'Expected answer' : 'Criteria'}</h4>
-      <pre className="whitespace-pre-wrap break-words">
-        {pretty(card.grader.type === 'exact' ? card.grader.expected : card.grader.criteria)}
-      </pre>
+      {card.grader.type === 'exact' ? (
+        <pre className="whitespace-pre-wrap break-words">{fieldText(card.grader.expected)}</pre>
+      ) : (
+        <ul className="list-disc pl-5">
+          {card.grader.criteria.map((criterion, i) => (
+            <li key={i}>{criterion}</li>
+          ))}
+        </ul>
+      )}
+      {card.grader.type === 'criteria' && card.grader.reference != null && (
+        <p>Reference answer: {fieldText(card.grader.reference)}</p>
+      )}
+      {card.split === 'held-out' && !card.confirmedBy && (
+        <p>Review and confirm this held-out task before it can count toward learning.</p>
+      )}
       {edit && (
         <>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => run({ action: 'try', id: card.taskId })}>
               Try task
             </Button>
-            {card.split === 'held-out' && card.grader.type === 'criteria' && !card.confirmedBy && (
+            {card.split === 'held-out' && !card.confirmedBy && (
               <Button
-                onClick={() =>
-                  run({ action: 'edit', id: card.taskId, payload: '{"confirm":true}' })
-                }
+                onClick={() => run({ action: 'edit', id: card.taskId, body: { confirm: true } })}
               >
-                Confirm criteria
+                {card.grader.type === 'criteria' ? 'Confirm criteria' : 'Confirm expected answer'}
               </Button>
             )}
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (window.confirm('Retire this task?')) run({ action: 'retire', id: card.taskId });
-              }}
-            >
-              Delete task
-            </Button>
+            <LearningConfirm
+              label="Delete task"
+              description="Retire this task from future rounds. Past rounds keep their original task revision."
+              onConfirm={() => run({ action: 'retire', id: card.taskId })}
+            />
           </div>
           <details>
             <summary>Edit task</summary>
@@ -77,80 +93,103 @@ export function TaskEditor({
                 e.preventDefault();
                 const data = new FormData(e.currentTarget);
                 try {
-                  const input = JSON.parse(String(data.get('input')));
-                  const value = JSON.parse(String(data.get('value')));
-                  const grader =
+                  const input = readField(data, 'input', card.input);
+                  const value = String(data.get('value'));
+                  const grader: TaskCard['grader'] =
                     card.grader.type === 'exact'
-                      ? { type: 'exact', expected: value }
-                      : { ...card.grader, criteria: value };
+                      ? { type: 'exact', expected: readField(data, 'value', card.grader.expected) }
+                      : {
+                          type: 'criteria',
+                          criteria: lines(value),
+                          ...(String(data.get('reference') ?? '').trim()
+                            ? { reference: readField(data, 'reference', card.grader.reference) }
+                            : {}),
+                        };
                   setError('');
                   run({
                     action: 'edit',
                     id: card.taskId,
-                    payload: JSON.stringify({ input, grader }),
+                    body: { input, grader },
                   });
                 } catch {
-                  setError('Enter valid JSON for both fields.');
+                  setError('Keep structured inputs and answers in valid JSON.');
                 }
               }}
             >
-              <label>
-                Input JSON
-                <textarea
+              <Label>
+                Task input
+                <Textarea
                   className={field}
                   name="input"
-                  defaultValue={pretty(card.input)}
+                  defaultValue={fieldText(card.input)}
                   required
                 />
-              </label>
-              <label>
-                {card.grader.type === 'exact' ? 'Expected answer JSON' : 'Criteria JSON array'}
-                <textarea
+              </Label>
+              <Label>
+                {card.grader.type === 'exact' ? 'Expected answer' : 'Criteria (one per line)'}
+                <Textarea
                   className={field}
                   name="value"
-                  defaultValue={pretty(
-                    card.grader.type === 'exact' ? card.grader.expected : card.grader.criteria,
-                  )}
+                  defaultValue={
+                    card.grader.type === 'exact'
+                      ? fieldText(card.grader.expected)
+                      : card.grader.criteria.join('\n')
+                  }
                   required
                 />
-              </label>
+              </Label>
+              {card.grader.type === 'criteria' && (
+                <Label>
+                  Reference answer (optional)
+                  <Textarea name="reference" defaultValue={fieldText(card.grader.reference)} />
+                </Label>
+              )}
               <Button>Save task</Button>
               {error && <p role="alert">{error}</p>}
             </form>
           </details>
         </>
       )}
+      {trial?.taskId === card.taskId && (
+        <section
+          aria-label="Trial result"
+          className="space-y-2 rounded-md border p-3"
+          role="status"
+        >
+          <h3>
+            Trial ·{' '}
+            {trial.status === 'failed'
+              ? 'Executor error'
+              : trial.status === 'pending'
+                ? 'Waiting for executor'
+                : 'Completed'}
+          </h3>
+          {trial.verdict && (
+            <>
+              <p>{trial.verdict.passed ? 'Passed' : 'Failed'} · Judge reasoning</p>
+              <pre className="whitespace-pre-wrap break-words">{pretty(trial.verdict.reasons)}</pre>
+              <p>Output</p>
+              <pre className="whitespace-pre-wrap break-words">{fieldText(trial.output)}</pre>
+              <details>
+                <summary>Gateway log</summary>
+                <pre className="whitespace-pre-wrap break-words">{pretty(trial.gatewayLog)}</pre>
+              </details>
+            </>
+          )}
+        </section>
+      )}
     </article>
   );
 }
-const setAsideReasons: Record<string, string> = {
-  'no-reference': 'No usable reference answer or grading criteria.',
-  'too-large': 'The row exceeds the size limit.',
-  'reference-failed': 'The reference answer failed grading.',
-  'empty-passed': 'An empty answer passed grading.',
-  'judge-unstable': 'The judge gave inconsistent results.',
-};
-async function readCards(scope: LearningScope) {
-  const cards: TaskCard[] = [];
-  let id: string | undefined;
-  do {
-    const page = await learningRequest<{ items: TaskCard[]; next: string | null }>({
-      ...scope,
-      action: 'tasks',
-      id,
-    });
-    cards.push(...page.items);
-    id = page.next ?? undefined;
-  } while (id);
-  return cards;
-}
-function encoded(file: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(Error('Could not read file.'));
-    reader.onload = () => resolve(String(reader.result).split(',')[1]);
-    reader.readAsDataURL(file);
-  });
+const lines = (value: string) =>
+  value
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+const fieldText = (value: unknown) => (typeof value === 'string' ? value : pretty(value));
+function readField(data: FormData, name: string, original: unknown) {
+  const value = String(data.get(name) ?? '');
+  return original === undefined || typeof original === 'string' ? value : JSON.parse(value);
 }
 export function LearningTasks({
   scope,
@@ -167,14 +206,22 @@ export function LearningTasks({
   const [cards, setCards] = useState<TaskCard[]>();
   const [usage, setUsage] = useState<Usage[]>();
   const [job, setJob] = useState<ImportStatus>();
-  const [trial, setTrial] = useState<Trial>();
+  const [trial, setTrial] = useState<CardTrial>();
   const [busy, setBusy] = useState(false);
   const [error, report] = useState('');
   const [flagged, setFlagged] = useState(false);
+  const [admission, setAdmission] = useState('');
+  const [graderType, setGraderType] = useState('criteria');
+  const [interval, setIntervalMs] = useState(3000);
   const [source, setSource] = useState('');
   const [page, setPage] = useState(0);
   const visible =
-    cards?.filter((c) => (!flagged || c.flagReason) && (!source || source === c.source)) ?? [];
+    cards?.filter(
+      (c) =>
+        (!admission || c.admission === admission) &&
+        (!flagged || c.flagReason) &&
+        (!source || source === c.source),
+    ) ?? [];
   const lastPage = Math.max(0, Math.ceil(visible.length / 10) - 1);
   const currentPage = Math.min(lastPage, page);
   const [revision, reload] = useState(0);
@@ -182,7 +229,7 @@ export function LearningTasks({
     let active = true;
     const target = { workspaceId, bundleId };
     void Promise.all([
-      readCards(target),
+      learningRequest<TaskCard[]>({ ...target, action: 'tasks' }),
       learningRequest<{ items: Usage[] }>({ ...target, action: 'usage' }),
     ]).then(
       ([tasks, days]) => {
@@ -199,48 +246,43 @@ export function LearningTasks({
       active = false;
     };
   }, [workspaceId, bundleId, revision]);
-  const trialId = trial?.status === 'pending' ? trial.trialId : undefined;
-  const importId = job?.pending && job.status !== 'failed' ? job.importId : undefined;
-  useEffect(() => {
-    const pending = trialId || importId || cards?.some((card) => card.admission === 'pending');
-    let active = true;
-    const timer = setTimeout(
-      async () => {
-        try {
-          const target = { workspaceId, bundleId };
-          const [t, j] = await Promise.all([
-            trialId ? learningRequest<Trial>({ ...target, action: 'trial', id: trialId }) : null,
-            importId
-              ? learningRequest<ImportStatus>({ ...target, action: 'progress', id: importId })
-              : null,
-          ]);
-          if (active) {
-            if (t) setTrial(t);
-            if (j) setJob(j);
-            reload((n) => n + 1);
-            await refresh();
-          }
-        } catch {
-          if (active) report('Could not refresh learning progress.');
+  const { trialId, importId, enabled } = pendingTaskReads(trial, job);
+  useBackgroundRefresh(
+    async () => {
+      try {
+        if (trialId) {
+          const next = await learningRequest<Trial>({ ...scope, action: 'trial', id: trialId });
+          setTrial((current) =>
+            current && current.trialId === trialId ? { ...next, taskId: current.taskId } : current,
+          );
         }
-      },
-      pending ? 3000 : 30000,
-    );
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [trialId, importId, cards, workspaceId, bundleId, refresh]);
-  async function run(data: Partial<CentralRequest> & Pick<CentralRequest, 'action'>) {
+        if (importId) {
+          const next = await learningRequest<ImportStatus>({
+            ...scope,
+            action: 'progress',
+            id: importId,
+          });
+          setJob((current) => (current?.importId === importId ? next : current));
+          if (job?.pending !== next.pending || job?.status !== next.status) {
+            setCards(await learningRequest<TaskCard[]>({ ...scope, action: 'tasks' }));
+          }
+        }
+      } finally {
+        setIntervalMs((n) => Math.min(30000, n * 2));
+      }
+    },
+    { enabled, interval, allowScroll: true, allowButtonFocus: true },
+  );
+  async function run(data: CentralCommand) {
     setBusy(true);
     report('');
     try {
       const request = { ...scope, ...data };
       if (data.action === 'try') {
         const result = await learningRequest<{ trialId: string }>(request);
-        setTrial({ trialId: result.trialId, status: 'pending' });
-      } else if (data.action === 'import') setJob(await learningRequest<ImportStatus>(request));
-      else if (data.action === 'export') {
+        setIntervalMs(3000);
+        setTrial({ taskId: data.id, trialId: result.trialId, status: 'pending' });
+      } else if (data.action === 'export') {
         const result = await learningRequest<unknown>(request);
         const url = URL.createObjectURL(new Blob([pretty(result)], { type: 'application/json' }));
         const a = document.createElement('a');
@@ -249,8 +291,10 @@ export function LearningTasks({
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       } else await learningRequest(request);
-      reload((n) => n + 1);
-      await refresh();
+      if (!['try', 'export'].includes(data.action)) {
+        reload((n) => n + 1);
+        await refresh();
+      }
       return true;
     } catch (e) {
       report(e instanceof Error ? e.message : 'Request failed.');
@@ -273,7 +317,8 @@ export function LearningTasks({
             className="grid gap-3"
             onSubmit={async (e) => {
               e.preventDefault();
-              const data = new FormData(e.currentTarget);
+              const form = e.currentTarget;
+              const data = new FormData(form);
               const file = data.get('file') as File;
               const paste = String(data.get('paste')).trim();
               if (file.size > 64 * 1024 * 1024) {
@@ -292,25 +337,41 @@ export function LearningTasks({
                 return;
               }
               try {
-                await run({
-                  action: 'import',
-                  mediaType: format,
-                  filename: file?.size ? file.name : 'conversations.txt',
-                  payload: await encoded(file?.size ? file : new Blob([paste])),
+                setBusy(true);
+                report('');
+                const params = new URLSearchParams({
+                  ...scope,
+                  filename: file.size ? file.name : 'conversations.txt',
                 });
-              } catch {
-                report('Could not read material.');
+                const response = await fetch('/learning-import?' + params, {
+                  method: 'POST',
+                  headers: { 'content-type': format },
+                  body: file.size ? file : paste,
+                });
+                if (!response.ok)
+                  throw Error(
+                    (await response.json().catch(() => null))?.error?.message || 'Import failed.',
+                  );
+                setJob(await response.json());
+                setIntervalMs(3000);
+                form.reset();
+                reload((n) => n + 1);
+                await refresh();
+              } catch (e) {
+                report(e instanceof Error ? e.message : 'Could not import material.');
+              } finally {
+                setBusy(false);
               }
             }}
           >
-            <label htmlFor="learning-file">
+            <Label htmlFor="learning-file">
               Spreadsheet, CSV or JSONL
               <Input id="learning-file" name="file" type="file" accept=".xlsx,.csv,.jsonl,.txt" />
-            </label>
-            <label>
+            </Label>
+            <Label>
               Paste conversations
-              <textarea name="paste" className={field} />
-            </label>
+              <Textarea name="paste" className={field} />
+            </Label>
             <Button>Import tasks</Button>
           </form>
           {job && (
@@ -326,7 +387,7 @@ export function LearningTasks({
             <ul aria-label="Set-aside rows">
               {job.setAside.map(({ row, source, reason }) => (
                 <li key={source + ':' + row}>
-                  {source} · Row {row}: {setAsideReasons[reason] ?? reason.replaceAll('-', ' ')}
+                  {source} · Row {row}: {describeLearning(reason)}
                 </li>
               ))}
             </ul>
@@ -346,22 +407,44 @@ export function LearningTasks({
                 const data = new FormData(form);
                 const ok = await run({
                   action: 'create',
-                  payload: JSON.stringify({
+                  body: {
                     input: String(data.get('input')),
-                    grader: { type: 'exact', expected: String(data.get('answer')) },
-                  }),
+                    grader:
+                      graderType === 'exact'
+                        ? { type: 'exact', expected: String(data.get('answer')) }
+                        : {
+                            type: 'criteria',
+                            criteria: lines(String(data.get('answer'))),
+                            ...(data.get('reference')
+                              ? { reference: String(data.get('reference')) }
+                              : {}),
+                          },
+                  },
                 });
                 if (ok) form.reset();
               }}
             >
-              <label>
+              <Label>
                 Task input
-                <textarea className={field} name="input" required />
-              </label>
-              <label>
-                Expected answer
-                <textarea className={field} name="answer" required />
-              </label>
+                <Textarea className={field} name="input" required />
+              </Label>
+              <Label>
+                Grading method
+                <NativeSelect value={graderType} onChange={(e) => setGraderType(e.target.value)}>
+                  <option value="criteria">Check criteria</option>
+                  <option value="exact">Match an expected answer</option>
+                </NativeSelect>
+              </Label>
+              <Label>
+                {graderType === 'exact' ? 'Expected answer' : 'Criteria (one per line)'}
+                <Textarea className={field} name="answer" required />
+              </Label>
+              {graderType === 'criteria' && (
+                <Label>
+                  Reference answer (optional)
+                  <Textarea name="reference" />
+                </Label>
+              )}
               <Button>Create task</Button>
             </form>
           </details>
@@ -373,20 +456,36 @@ export function LearningTasks({
           </p>
         )}
         <div className="flex flex-wrap items-center gap-3">
-          <label>
-            <input
-              type="checkbox"
+          <Label>
+            <Checkbox
               checked={flagged}
-              onChange={(e) => {
-                setFlagged(e.target.checked);
+              onCheckedChange={(checked) => {
+                setFlagged(checked === true);
                 setPage(0);
               }}
             />{' '}
             Flagged only
-          </label>
-          <label>
+          </Label>
+          <Label>
+            Admission
+            <NativeSelect
+              value={admission}
+              onChange={(e) => {
+                setAdmission(e.target.value);
+                setPage(0);
+              }}
+            >
+              <option value="">All tasks</option>
+              {['admitted', 'pending', 'set-aside'].map((a) => (
+                <option key={a} value={a}>
+                  {describeLearning(a)}
+                </option>
+              ))}
+            </NativeSelect>
+          </Label>
+          <Label>
             Task source
-            <select
+            <NativeSelect
               className="block rounded border p-2"
               value={source}
               onChange={(e) => {
@@ -398,8 +497,8 @@ export function LearningTasks({
               <option value="import">Imported</option>
               <option value="outcome">Production</option>
               <option value="console">Console</option>
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
           <Button variant="outline" onClick={() => void run({ action: 'export' })}>
             Export held-out tasks
           </Button>
@@ -408,46 +507,28 @@ export function LearningTasks({
             onClick={() => {
               report('');
               reload((n) => n + 1);
+              void refresh().catch(() => report('Could not refresh learning status.'));
             }}
           >
             Refresh tasks
           </Button>
         </div>
-        {trial && (
-          <section
-            aria-label="Trial result"
-            className="space-y-2 rounded-md border p-3"
-            role="status"
-          >
-            <h3>Trial · {trial.status === 'failed' ? 'Executor error' : trial.status}</h3>
-            {trial.verdict && (
-              <>
-                <p>{trial.verdict.passed ? 'Passed' : 'Failed'} · Judge reasoning</p>
-                <pre className="whitespace-pre-wrap">{pretty(trial.verdict.reasons)}</pre>
-                <p>Output</p>
-                <pre className="whitespace-pre-wrap">{trial.output}</pre>
-                <details>
-                  <summary>Gateway log</summary>
-                  <pre className="whitespace-pre-wrap">{pretty(trial.gatewayLog)}</pre>
-                </details>
-              </>
-            )}
-          </section>
-        )}
         {!cards ? (
           'Loading tasks…'
         ) : visible.length === 0 ? (
           <p>
             {flagged
               ? 'No flagged tasks.'
-              : source
-                ? 'No tasks from this source.'
-                : 'No tasks yet.'}
+              : admission
+                ? 'No tasks match this admission filter.'
+                : source
+                  ? 'No tasks from this source.'
+                  : 'No tasks yet.'}
           </p>
         ) : (
           visible.slice(currentPage * 10, (currentPage + 1) * 10).map((card) => (
             <div key={card.taskId + ':' + card.addedRevision}>
-              <TaskEditor card={card} edit={edit} run={(data) => void run(data)} />
+              <TaskEditor trial={trial} card={card} edit={edit} run={(data) => void run(data)} />
               {card.flagReason && (
                 <LearningEvidence scope={scope} roundIds={rounds} taskId={card.taskId} />
               )}

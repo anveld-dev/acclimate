@@ -1,3 +1,4 @@
+import { blockedVersions } from './blocked-learning-versions';
 import { ApiError, type AcclimateClient, type LearningRound } from '@acclimate/sdk';
 import { readVersion } from './release-history';
 import { consoleClient } from './console-client';
@@ -56,6 +57,9 @@ async function readRoundDetail(
       channel,
       channelRevision,
       parentVersionId,
+      reverted,
+      confirmedParentScore,
+      confirmedAdoptionScore,
       incumbentScore,
       candidates,
       decision,
@@ -86,6 +90,9 @@ async function readRoundDetail(
         number,
         channel,
         channelRevision,
+        reverted: reverted ?? false,
+        confirmedParentScore: confirmedParentScore ?? null,
+        confirmedAdoptionScore: confirmedAdoptionScore ?? null,
         incumbentScore,
         candidates,
         decision,
@@ -168,7 +175,10 @@ export async function readLearningState(
     const activeId = loop?.activeRound?.id;
     const loadRound = (id: string) => api.getLearningRound(workspaceId, bundleId, id);
     const activeRead = activeId ? loadRound(activeId) : null;
-    const detailId = options.round;
+    const detailId =
+      options.round && /^\d+$/.test(options.round)
+        ? (rounds.find((r) => String(r.number) === options.round)?.id ?? options.round)
+        : options.round;
     const [active, detail, memory] = await Promise.all([
       activeRead,
       loop && detailId
@@ -183,6 +193,31 @@ export async function readLearningState(
         : null,
       loop && options.memory ? readMemory(api, scope, options.memory) : null,
     ]);
+    const history =
+      loop && rounds.length
+        ? await allPages(async (beforeRevision) => {
+            const page = await api.listReleases(workspaceId, bundleId, loop.channel, {
+              beforeRevision,
+              limit: 100,
+            });
+            return { items: page.items, nextCursor: page.nextBeforeRevision };
+          })
+            .then((releases) =>
+              releases.flatMap((release) => {
+                const match = /^Restore parent of learning round ([a-f0-9-]{36})$/.exec(
+                  release.unevaluatedReason ?? '',
+                );
+                return match &&
+                  rounds.some((r) => r.id === match[1] && r.parentVersionId === release.version.id)
+                  ? [{ roundId: match[1], actor: release.reviewer, time: release.createdAt }]
+                  : [];
+              }),
+            )
+            .catch(() => null)
+        : [];
+    const blocked = loop
+      ? await blockedVersions(env, workspaceId, bundleId, fetcher).catch(() => null)
+      : [];
     const openEvaluation = active?.evaluations.find(
       ({ status }) => status === 'queued' || status === 'running',
     );
@@ -207,6 +242,10 @@ export async function readLearningState(
       channels: channels.map(({ name }) => name),
       rounds,
       activeEvaluation,
+      history,
+      blocked,
+      progress: active?.progress ?? null,
+      channelHead: channels.find((c) => c.name === loop?.channel)?.versionId ?? null,
     };
   } catch (error) {
     return failure(error);

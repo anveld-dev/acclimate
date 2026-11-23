@@ -79,6 +79,10 @@ const empty: Extract<LearningState, { ok: true }> = {
 
   rounds: [],
   activeEvaluation: null,
+  history: [],
+  blocked: [],
+  channelHead: null,
+  progress: null,
   canManage: true,
   canEditCases: true,
   detail: null,
@@ -390,7 +394,7 @@ test('round detail and historical memory load with the session and render for ed
       if (url.pathname === path + '/memory') return response(memory);
       return bundleFixture(url, 'editor') ?? response({}, 500);
     },
-    { round: round.id, memory: '1' },
+    { round: String(round.number), memory: '1' },
   );
   assert.ok(state.ok);
   assert.equal(state.canManage, false);
@@ -402,7 +406,7 @@ test('round detail and historical memory load with the session and render for ed
     'Sample 2 · Adopted',
     'Adopted sample 2',
     'Fixed the failures',
-    'scanner-rejected',
+    'The proposal failed the content scan.',
     'email · rationale',
     'Agent stops early',
     'Targets the diagnosis',
@@ -432,6 +436,9 @@ test('renders keep and empty candidate and memory states', () => {
       parentFiles: null,
       round: {
         ...detailRound,
+        reverted: false,
+        confirmedParentScore: null,
+        confirmedAdoptionScore: null,
         candidates: [],
         decision: 'kept',
         reason: 'no-survivors',
@@ -444,7 +451,7 @@ test('renders keep and empty candidate and memory states', () => {
     },
   });
   assert.match(html, /No candidates recorded/);
-  assert.match(html, /Kept incumbent.*no-survivors/);
+  assert.match(html, /Kept incumbent.*No candidate passed screening/);
   assert.match(html, /No problems recorded/);
 });
 
@@ -492,4 +499,51 @@ test('whole-file changes use verified incumbent content for replacements and del
   assert.match(html, /- Original instructions/);
   assert.match(html, /\+ Replacement instructions/);
   assert.match(html, /- Removed note/);
+});
+
+test('rollback is offered only on the live version and monitoring leads after start', () => {
+  const html = markup({
+    ...empty,
+    loop,
+    rounds: [round, { ...round, id: 'older', adoptedVersionId: 'old' }],
+    channelHead: round.adoptedVersionId,
+  });
+  assert.equal((html.match(/>Roll back</g) ?? []).length, 1);
+  assert.ok(html.indexOf('Scores by round') < html.indexOf('Learning setup'));
+  assert.doesNotMatch(
+    markup({ ...empty, loop, rounds: [round], channelHead: 'external' }),
+    />Roll back</,
+  );
+});
+
+test('running controls, waiting instructions, rollout progress and restores use service state', () => {
+  const active = {
+    ...loop,
+    activeRound: round,
+    waiting: 'no-executor',
+    alert: { roundId: round.id, score: 0.5, previousScore: 0.8, flippedTasks: 4, reverted: true },
+  };
+  const html = markup({
+    ...empty,
+    loop: active,
+    rounds: [round],
+    progress: { scored: 17, total: 100 },
+    history: [{ time: timestamp, actor: 'person@example', roundId: round.id }],
+    blocked: [
+      { digest: 'removed-digest', createdAt: timestamp, removedBy: 'operator', note: 'bad answer' },
+    ],
+  });
+  for (const message of [
+    'Stop learning',
+    'start an executor',
+    '17 of 100 rollouts scored',
+    'restored the previous version',
+    'person@example',
+    'removed-digest',
+    'Unblock version',
+  ])
+    assert.ok(html.includes(message), message);
+  const stopped = markup({ ...empty, loop: { ...loop, status: 'stopped', waiting: null } });
+  assert.doesNotMatch(stopped, />Stop learning</);
+  assert.match(stopped, /automatically, without approval/);
 });

@@ -33,7 +33,7 @@ One workspace route is added: `GET` and `PUT /v1/workspaces/{ws}/model-provider`
 
 As today, a signed-in caller needs the administrator role wherever a machine token needs `promote`.
 
-**Request limits.** The service applies a 2 MiB body limit to every route today (`DefaultBodyLimit` in `src/lib.rs`). `/tasks/import` is mounted outside that limit, reads the body as a stream, and has its own cap (64 MiB, with the same limit set in the proxy). Every other route keeps 2 MiB.
+**Request limits.** The service applies a 2 MiB body limit to every route today (`DefaultBodyLimit` in `src/lib.rs`). `/tasks/import` is mounted outside that limit, reads the body as a stream, and has its own cap (64 MiB, with the same limit set in the proxy). Public JSON routes keep 2 MiB. The internal listener must accept executor reports up to 16 MiB.
 
 A round pins its task revision at start. Edits apply to the next round.
 
@@ -79,7 +79,9 @@ Bodies are JSON with camelCase fields. The lease route takes the executor token 
 
 **Heartbeat.** The request is `{}` and the response is `{expiresAt}`. A lease the service has already expired answers 409, and the executor stops the rollout.
 
-**Output.** The request is `{output, stop, gatewayLog}`. `output` is the reply text or null. `stop` is `completed`, `token-limit` or `time-limit`. The response is `{grader, judgeModel, judgeRuns}`, where `grader` is the task's grader object.
+The optional `limits.judgeMaxTokens` sets an independent judge budget and defaults to `maxTokens`. Executor output and result reports are limited to 16 MiB.
+
+**Output.** The request is `{output, stop, gatewayLog}`. `output` is the reply text or null. `stop` is `completed`, `token-limit`, `time-limit` or `invalid-output` (an explicit provider context-length rejection or null reply content). The response is `{grader, judgeModel, judgeRuns}`, where `grader` is the task's grader object.
 
 **Result.** The request is one of:
 
@@ -150,7 +152,7 @@ The task schema and cutover migration preserve version and memory history.
 | `admission` | `pending`, `admitted` or `set-aside`, with `admission_reason` |
 | `added_revision`, `retired_revision` | The same revision scheme as today's evolve cases. An edit retires the old row's content at one revision and adds the new content at the next, under the same `task_id`. |
 
-**Input and expected values today are arbitrary JSON.** The `chat` harness sends a string input as the user message and a `{messages}` list as the conversation. Any other JSON is sent as its JSON text, which is what the `openai()` adapter does today. `exact` compares the output with `expected` by deep equality, as `exact()` does today. [Tasks and grading](tasks-and-grading.md)
+**Input and expected values today are arbitrary JSON.** The `chat` harness sends a string input as the user message and a `{messages}` list as the conversation. Any other JSON is sent as its JSON text, which is what the `openai()` adapter does today. String expectations match the output text exactly. For other expectations the executor parses the output text as JSON and compares the resulting values recursively. Invalid JSON fails. Admission serializes non-string outputs to JSON text before applying the same comparison. [Tasks and grading](tasks-and-grading.md)
 
 **`learning_rollouts`** is one row per rollout and is the unit the executor leases.
 

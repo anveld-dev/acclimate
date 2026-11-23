@@ -56,14 +56,14 @@ Converted cards record the file, the row and the conversation they came from. Th
 
 | Grader | How it scores | Where it runs |
 | --- | --- | --- |
-| `exact` | The output deep-equals the reference as JSON, as today's `exact()` does. A string must match exactly. | In the executor, with no model. |
+| `exact` | String expectations match the output text exactly. For other expectations the executor parses the output text as JSON and compares the resulting values recursively. Invalid JSON fails. Admission serializes non-string outputs to JSON text before applying the same comparison. | In the executor, with no model. |
 | `criteria` | The judge answers pass or fail for each criterion, with a written reason. The rollout passes only if every criterion passes. | In the executor, through the gateway. |
 | `check` (later) | A script exits 0 to pass. Its printed output is feedback. | In a separate grader sandbox. |
 
 Rules for the judge:
 
 - Each loop stores a `judge_model`, chosen from the workspace provider's allowed models. It must differ from the loop's task model, and the optimizer is configured separately for the deployment. The judge is pinned on the round.
-- The judge reads the rollout's [gateway log](executor.md), the criteria and the reference. It never reads the agent's own account of what it did.
+- The judge reads the final request and response in the rollout's [gateway log](executor.md), the criteria and the reference. Candidate instructions inside this evidence can still influence a model judge despite the separate system instruction.
 - Each rollout is judged three times and the majority verdict counts. A task whose verdicts split often is flagged in the console.
 - For evolve tasks, the judge's written reasons become the feedback the optimizer reads.
 

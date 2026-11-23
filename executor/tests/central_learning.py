@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from sandbox import docker, requires_docker
+from sandbox import build_test_image, docker, requires_docker
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/productization"))
@@ -45,10 +45,8 @@ class CentralLearning(unittest.TestCase):
                 "Private PostgreSQL cluster unavailable: " + error.stderr
             ) from error
         subprocess.run(["cargo", "build", "--bin", "acclimate-service"], check=True)
-        cls.runner = docker("build", "-q", "executor/runner")
-        cls.image = docker(
-            "build",
-            "-q",
+        cls.runner = build_test_image(cls, "executor/runner")
+        cls.image = build_test_image(cls,
             "-f",
             "executor/Dockerfile",
             "--build-arg",
@@ -89,18 +87,18 @@ class CentralLearning(unittest.TestCase):
                         data = json.loads(body["messages"][1]["content"])
                         if "criteria" in data:
                             criterion = data["criteria"][0]
-                            if data["gatewayLog"]:
-                                self.assertEqual(data["gatewayLog"][0]["model"], "task")
-                            counter = (criterion, data["output"])
+                            evidence = data["evidence"]
+                            output = evidence["response"]["choices"][0]["message"]["content"] if "response" in evidence else evidence["output"]
+                            counter = (criterion, output)
                             index = judge_calls[counter] % 3
                             judge_calls[counter] += 1
-                            passed = bool(data["output"])
+                            passed = bool(output)
                             if criterion == "reference-failed":
                                 passed = False
                             elif criterion == "empty-passed":
                                 passed = True
                             elif criterion == criterion_marker:
-                                passed = (data["output"] == answer) != (index == 1)
+                                passed = (output == answer) != (index == 1)
                             elif criterion in ("judge-unstable", "no-reference-split") and index == 1:
                                 passed = not passed
                             mapped = {"criteria": [{"passed": passed, "reason": f"vote {index}"}]}
@@ -109,6 +107,8 @@ class CentralLearning(unittest.TestCase):
                                 conversions.append(data["row"])
                                 mapped = ({"inputPath": "/material/question", "referencePath": "/material/answer"}
                                           if data["material"].get("answer") else {})
+                                if len(conversions) == 1:
+                                    mapped = {"inputPath": "/missing", "referencePath": "/absent"}
                             else:
                                 mapped = {"inputPath": "/question", "referencePath": "/answer"} if data["row"] == 1 else {}
                         reply = {"choices": [{"message": {"content": json.dumps(mapped)}}],
@@ -292,7 +292,7 @@ class CentralLearning(unittest.TestCase):
                 [
                     "docker",
                     "exec",
-                    "-i",
+                    "-u", "0", "-i",
                     sandbox,
                     "node",
                     "--input-type=module",
@@ -336,8 +336,8 @@ class CentralLearning(unittest.TestCase):
         for row in rows:
             entries = calls[row["id"]]
             index = list(calls).index(row["id"])
-            self.assertEqual(row["attempts"], 2 if index < 2 else 1)
-            self.assertEqual(len(entries), row["attempts"])
+            self.assertEqual(row["attempts"], 2 if index == 0 else 1)
+            self.assertEqual(len(entries), 2 if index < 2 else 1)
             if failure and index < 2:
                 self.assertEqual(
                     (row["status"], row["error_code"], row["score"]),
@@ -439,7 +439,7 @@ class CentralLearning(unittest.TestCase):
         receipt = poll(lambda: api("GET", "/tasks/imports/" + imported, machine=True),
                        lambda v: v["status"] == "completed")
         self.assertEqual((receipt["converted"], receipt["setAside"], receipt["pending"]), (1, 1, 0))
-        self.assertEqual(sorted(conversions), [2, 3])
+        self.assertEqual(sorted(conversions), [2, 2, 3])
         poll(cards, lambda rows: {r["input"] for r in rows if r["source"] == "import"
                               and r["admission"] == "admitted" and isinstance(r["input"], str)}
                               >= {"converted", "explicit"})

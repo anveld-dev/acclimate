@@ -39,7 +39,7 @@ Rules:
 
 - An expired lease returns to `queued`. A crash therefore requeues one rollout, not a round.
 - Only infrastructure failures are retried, once. They are gateway upstream failures, executor crashes and sandbox start failures.
-- An agent that hits its token or time limit is not an infrastructure failure. The rollout is `scored` as a fail.
+- An agent that hits its token or time limit is not an infrastructure failure. The rollout is `scored` as a fail. A deadline reached while a gateway request is awaiting the upstream is a `gateway-upstream` infrastructure failure.
 - **Errors are never scores.** A rollout that fails twice makes its evaluation fail, and a failed evaluation fails the round as it does today. A `failed` rollout is never counted as a failed task and never dropped from the count.
 
 Prior art behind these rules: Harbor deleted unfinished runs on resume, so a sleeping laptop lost hours of work. Inspect dropped errored samples from the denominator without saying so.
@@ -66,10 +66,11 @@ The gateway is the only path from a rollout to a model. It runs inside the execu
 - **Pass-through.** It forwards request and response bodies unchanged apart from the rules below. It does not translate between APIs. Inspect's proxy translates, and that is where its message-corruption bugs came from.
 - **Routes.** The first release allows `POST /chat/completions` only. Anthropic Messages and OpenAI Responses are added later as more pass-through routes.
 - **Model list.** A request must name the task model or judge model the round pinned. Anything else is refused.
+- **Provider errors.** The gateway retries HTTP 429 and 5xx responses twice with backoff. A 400 with `error.code` or `error.type` equal to `context_length_exceeded`, or a reply with null message content, yields a failing verdict.
 - **Token caps.** It counts tokens per rollout and refuses requests past the cap. A capped rollout is scored as a fail.
 - **No hosted tools.** It refuses provider-hosted tools such as web search and code execution, because they run outside the sandbox. Function tools are allowed.
 - **No server-side state.** It forces `store: false` and refuses references to stored responses or conversations.
-- **Gateway log.** It writes every request and response. The judge reads this log, and the optimizer reads it for evolve rollouts only. Neither reads a transcript the agent wrote.
+- **Gateway log.** It writes every request and response. The judge reads the final request and response, and the optimizer reads it for evolve rollouts only. Neither reads a transcript the agent wrote.
 
 Inside the sandbox the gateway appears as a base URL on `localhost`, forwarded to a Unix socket the executor owns. Harnesses and agent CLIs expect a base URL, and the socket is the only way out of the sandbox.
 

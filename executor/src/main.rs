@@ -6,6 +6,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
     env, fs,
+    os::unix::fs::PermissionsExt,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
@@ -24,30 +25,40 @@ struct Lease {
     lease_id: Uuid,
     lease_token: String,
     heartbeat_seconds: u64,
-    kind: String,
-    #[serde(default)]
-    harness: String,
-    #[serde(default)]
-    bundle: Value,
-    #[serde(default)]
-    input: Value,
-    #[serde(default)]
-    task_model: String,
-    judge_model: Option<String>,
-    judge_runs: Option<u64>,
-    #[serde(default)]
-    grader: Value,
-    #[serde(default)]
-    output: Value,
-    #[serde(default)]
-    material: Value,
+    #[serde(flatten)]
+    job: Job,
     limits: Limits,
     provider: Provider,
+}
+#[derive(Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
+enum Job {
+    Rollout {
+        harness: String,
+        bundle: Value,
+        input: Value,
+        task_model: String,
+    },
+    Grade {
+        grader: Value,
+        output: Value,
+        judge_model: Option<String>,
+        judge_runs: Option<u64>,
+    },
+    Conversion {
+        material: Value,
+        judge_model: String,
+    },
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Limits {
     max_tokens: u64,
+    judge_max_tokens: Option<u64>,
     timeout_seconds: u64,
 }
 #[derive(Deserialize)]
@@ -86,38 +97,62 @@ impl Worker {
             }
         }
     }
-    async fn rollout(&self, l: &Lease, name: &str) -> Result<Value, &'static str> {
-        if l.kind == "grade" {
-            return self
-                .grade(
-                    l,
-                    &l.grader,
-                    l.judge_model.as_deref(),
-                    l.judge_runs,
-                    &l.output,
-                    &[],
-                    (0, 0),
-                    "completed",
-                )
-                .await;
+    async fn rollout(
+        &self,
+        l: &Lease,
+        name: &str,
+        created: tokio::sync::oneshot::Sender<()>,
+    ) -> Result<Value, Failure> {
+        let (bundle, input, task_model) = match &l.job {
+            Job::Grade {
+                grader,
+                output,
+                judge_model,
+                judge_runs,
+            } => {
+                return self
+                    .grade(
+                        l,
+                        grader,
+                        judge_model.as_deref(),
+                        *judge_runs,
+                        output,
+                        &[],
+                        (0, 0),
+                        "completed",
+                        None,
+                    )
+                    .await;
+            }
+            Job::Conversion {
+                material,
+                judge_model,
+            } => {
+                return self.convert(l, material, judge_model).await;
+            }
+            Job::Rollout {
+                harness,
+                bundle,
+                input,
+                task_model,
+            } if harness == "chat" && !l.provider.api_key.is_empty() => (bundle, input, task_model),
+            _ => return Err("executor".into()),
+        };
+        let (dir, _lock) = lease_dir(&self.root).map_err(start_failure)?;
+        let payload = json!({"bundle":bundle,"input":input,"model":task_model,"timeoutSeconds":l.limits.timeout_seconds});
+        fs::write(dir.path().join("input"), payload.to_string()).map_err(start_failure)?;
+        let socket = UnixListener::bind(dir.path().join("gateway")).map_err(start_failure)?;
+        for (path, mode) in [
+            (dir.path().to_owned(), 0o711),
+            (dir.path().join("gateway"), 0o666),
+            (dir.path().join("input"), 0o444),
+        ] {
+            fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(start_failure)?;
         }
-        if l.kind == "conversion" {
-            return self.convert(l).await;
-        }
-        if l.harness != "chat" || l.kind != "rollout" || l.provider.api_key.is_empty() {
-            return Err("executor");
-        }
-        let dir = tempfile::Builder::new()
-            .prefix("lease-")
-            .tempdir_in(&self.root)
-            .map_err(|_| "sandbox-start")?;
-        let payload = json!({"bundle":l.bundle,"input":l.input,"model":l.task_model,"timeoutSeconds":l.limits.timeout_seconds});
-        fs::write(dir.path().join("input"), payload.to_string()).map_err(|_| "sandbox-start")?;
-        let socket = UnixListener::bind(dir.path().join("gateway")).map_err(|_| "sandbox-start")?;
         let record = Arc::new(Mutex::new(Record::default()));
         let (shutdown, closed) = watch::channel(());
         let gateway = Gateway {
-            model: l.task_model.clone(),
+            model: task_model.clone(),
             url: format!(
                 "{}/chat/completions",
                 l.provider.base_url.trim_end_matches('/')
@@ -147,9 +182,56 @@ impl Worker {
                 dir.path().display()
             ),
         };
+        self.create_sandbox(name, &mount).await?;
+        let _ = created.send(());
+        let run = bounded_command(
+            Command::new("docker").args(["start", "-a", name]),
+            Duration::from_secs(l.limits.timeout_seconds),
+        )
+        .await;
+        drop(shutdown);
+        let (stop, output, reason, log, input, completion) = {
+            let record = record.lock().unwrap();
+            let (stop, output, reason) = classify_runner(run, &record)?;
+            (
+                stop,
+                output,
+                reason,
+                record.log.clone(),
+                record.input,
+                record.output,
+            )
+        };
+        let report = json!({"output":output,"stop":stop,"gatewayLog":log});
+        checked_size(&report)?;
+        let grade: Value = self
+            .post(l, "output")
+            .json(&report)
+            .send()
+            .await
+            .map_err(executor_failure)?
+            .error_for_status()
+            .map_err(executor_failure)?
+            .json()
+            .await
+            .map_err(executor_failure)?;
+        self.grade(
+            l,
+            &grade["grader"],
+            grade["judgeModel"].as_str(),
+            grade["judgeRuns"].as_u64(),
+            &output,
+            &log,
+            (input, completion),
+            stop,
+            reason,
+        )
+        .await
+    }
+    async fn create_sandbox(&self, name: &str, mount: &str) -> Result<(), Failure> {
         let mut command = Command::new("docker");
-        command.kill_on_drop(true).args([
-            "run",
+        command.args([
+            "create",
             "--rm",
             "--pull=never",
             "--name",
@@ -169,106 +251,218 @@ impl Worker {
             "64",
             "--memory",
             "256m",
+            "--memory-swap",
+            "256m",
             "--cpus",
             "1",
             "--log-driver",
             "none",
             "--mount",
-            &mount,
+            mount,
             &self.image,
         ]);
-        let run = timeout(
-            Duration::from_secs(l.limits.timeout_seconds),
-            command.output(),
-        )
-        .await;
-        drop(shutdown);
-        let (mut stop, mut output) = ("completed", Value::Null);
-        let (log, input, completion) = {
-            let r = record.lock().unwrap();
-            if r.failed && run.is_ok() {
-                return Err("gateway-upstream");
-            }
-            match run {
-                Err(_) => stop = "time-limit",
-                Ok(Ok(ref p)) if p.status.code() == Some(124) => stop = "time-limit",
-                Ok(Ok(ref p)) if p.status.success() => {
-                    output = serde_json::from_slice(&p.stdout).map_err(|_| "executor")?;
-                    if r.capped {
-                        stop = "token-limit"
-                    }
-                }
-                _ if r.capped => stop = "token-limit",
-                Ok(Ok(ref p)) if p.status.code() == Some(65) => return Err("gateway-upstream"),
-                Ok(Ok(ref p)) if !matches!(p.status.code(), Some(125..=127)) => {
-                    return Err("executor");
-                }
-                _ => return Err("sandbox-start"),
-            }
-            (r.log.clone(), r.input, r.output)
-        };
-        if stop == "time-limit" {
-            remove(name).await?;
+        let result = bounded_command(&mut command, Duration::from_secs(30))
+            .await
+            .map_err(start_failure)?
+            .map_err(start_failure)?;
+        if !result.status.success() {
+            return Err(start_failure(String::from_utf8_lossy(&result.stderr)));
         }
-        let grade: Value = self
-            .post(l, "output")
-            .json(&json!({"output":output,"stop":stop,"gatewayLog":log}))
-            .send()
-            .await
-            .map_err(|_| "executor")?
-            .error_for_status()
-            .map_err(|_| "executor")?
-            .json()
-            .await
-            .map_err(|_| "executor")?;
-        self.grade(
-            l,
-            &grade["grader"],
-            grade["judgeModel"].as_str(),
-            grade["judgeRuns"].as_u64(),
-            &output,
-            &log,
-            (input, completion),
-            stop,
-        )
-        .await
+        Ok(())
     }
-    async fn once(&self) -> Result<(), ()> {
+    async fn once(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let response = self
             .client
             .post(&self.leases)
             .bearer_auth(&self.token)
-            .json(&json!({"executor":self.identity}))
+            .json(&json!({"executor":self.identity,"waitSeconds":25}))
             .send()
-            .await
-            .map_err(|_| ())?
-            .error_for_status()
-            .map_err(|_| ())?;
+            .await?
+            .error_for_status()?;
         if response.status() == 204 {
             return Ok(());
         }
-        let lease: Lease = response.json().await.map_err(|_| ())?;
+        let lease: Lease = response.json().await?;
         let name = format!("acclimate-{}", Uuid::new_v4());
-        tokio::select! {
-            _=self.expired(&lease)=>{if lease.kind == "rollout" {remove(&name).await.map_err(|_|())?;}}
-            result=async {
-                let body=self.rollout(&lease,&name).await.unwrap_or_else(|code|json!({"error":{"code":code,"message":code}}));
-                self.post(&lease,"result").json(&body).send().await?.error_for_status()
-            }=>{result.map_err(|_|())?;}
+        let (created, ready) = tokio::sync::oneshot::channel();
+        let result = tokio::select! {
+            _=async {
+                self.expired(&lease).await;
+                if matches!(lease.job,Job::Rollout{..}) {let _=ready.await;}
+            }=>None,
+            result=self.rollout(&lease,&name,created)=>Some(result),
+        };
+        let cleanup = if matches!(lease.job, Job::Rollout { .. }) {
+            remove(&name).await
+        } else {
+            Ok(())
+        };
+        if let Some(result) = result {
+            let body = cleanup
+                .and(result)
+                .and_then(|body| {
+                    checked_size(&body)?;
+                    Ok(body)
+                })
+                .unwrap_or_else(|err| self.error_report(&lease, err));
+            self.post(&lease, "result")
+                .json(&body)
+                .send()
+                .await?
+                .error_for_status()?;
+        } else if let Err(err) = cleanup {
+            self.error_report(&lease, err);
         }
         Ok(())
     }
+    fn error_report(&self, lease: &Lease, err: Failure) -> Value {
+        let mut message = err.message;
+        for secret in [&lease.provider.api_key, &lease.lease_token, &self.token] {
+            if !secret.is_empty() {
+                message = message.replace(secret, "[redacted]");
+            }
+        }
+        eprintln!("{}: {}", err.code, message);
+        json!({"error":{"code":err.code,"message":message}})
+    }
 }
-async fn remove(name: &str) -> Result<(), &'static str> {
-    let res = Command::new("docker")
-        .args(["rm", "-f", name])
-        .output()
-        .await
-        .map_err(|_| "executor")?;
+fn lease_dir(root: &std::path::Path) -> std::io::Result<(tempfile::TempDir, fs::File)> {
+    let guard = fs::File::open(root)?;
+    guard.lock()?;
+    let dir = tempfile::Builder::new().prefix("lease-").tempdir_in(root)?;
+    let lock = fs::File::open(dir.path())?;
+    lock.lock()?;
+    Ok((dir, lock))
+}
+fn cleanup_stale(root: &std::path::Path) -> std::io::Result<()> {
+    let guard = fs::File::open(root)?;
+    guard.lock()?;
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().starts_with("lease-") && entry.file_type()?.is_dir()
+        {
+            match fs::File::open(entry.path()) {
+                Ok(file) if file.try_lock().is_ok() => fs::remove_dir_all(entry.path())?,
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+                _ => (),
+            }
+        }
+    }
+    Ok(())
+}
+#[derive(Debug)]
+struct Failure {
+    code: &'static str,
+    message: String,
+}
+impl From<&'static str> for Failure {
+    fn from(code: &'static str) -> Self {
+        Self {
+            code,
+            message: code.into(),
+        }
+    }
+}
+fn executor_failure(error: impl std::fmt::Display) -> Failure {
+    Failure {
+        code: "executor",
+        message: error.to_string(),
+    }
+}
+fn start_failure(error: impl std::fmt::Display) -> Failure {
+    Failure {
+        code: "sandbox-start",
+        message: error.to_string(),
+    }
+}
+fn checked_size(body: &Value) -> Result<(), Failure> {
+    if serde_json::to_vec(body).unwrap().len() > 16 * 1024 * 1024 {
+        return Err(Failure {
+            code: "executor",
+            message: "Executor report exceeds 16 MiB".into(),
+        });
+    }
+    Ok(())
+}
+type CommandResult = Result<std::io::Result<std::process::Output>, tokio::time::error::Elapsed>;
+fn upstream_deadline() -> Failure {
+    Failure {
+        code: "gateway-upstream",
+        message: "Gateway call still pending at rollout deadline".into(),
+    }
+}
+fn classify_runner(
+    run: CommandResult,
+    r: &Record,
+) -> Result<(&'static str, Value, Option<&'static str>), Failure> {
+    let (mut stop, mut output) = ("completed", Value::Null);
+    if let Some(message) = &r.failure {
+        return Err(Failure {
+            code: "gateway-upstream",
+            message: message.clone(),
+        });
+    }
+    match run {
+        _ if r.invalid.is_some() => stop = "invalid-output",
+        Err(_) if r.pending => return Err(upstream_deadline()),
+        Ok(Ok(ref p)) if p.status.code() == Some(124) && r.pending => {
+            return Err(upstream_deadline());
+        }
+        Err(_) => stop = "time-limit",
+        Ok(Ok(ref p)) if p.status.code() == Some(124) => stop = "time-limit",
+        Ok(Ok(ref p)) if p.status.success() => {
+            output = serde_json::from_slice(&p.stdout).map_err(executor_failure)?;
+            if r.capped {
+                stop = "token-limit"
+            }
+        }
+        _ if r.capped => stop = "token-limit",
+        Ok(Ok(ref p)) if p.status.code() == Some(65) => {
+            return Err(Failure {
+                code: "gateway-upstream",
+                message: "Provider reply did not contain text".into(),
+            });
+        }
+        Ok(Ok(ref p))
+            if !matches!(p.status.code(), Some(125..=127))
+                && !p.stderr.starts_with(b"Error response from daemon:") =>
+        {
+            return Err(Failure {
+                code: "executor",
+                message: format!(
+                    "Runner exited with {}: {}",
+                    p.status,
+                    String::from_utf8_lossy(&p.stderr)
+                ),
+            });
+        }
+        Ok(Ok(p)) => return Err(start_failure(String::from_utf8_lossy(&p.stderr))),
+        Ok(Err(e)) => return Err(start_failure(e)),
+    }
+
+    Ok((
+        stop,
+        output,
+        r.invalid.or(r
+            .truncated
+            .then_some("Provider truncated the answer (finish_reason=length)")),
+    ))
+}
+async fn bounded_command(command: &mut Command, limit: Duration) -> CommandResult {
+    timeout(limit, command.kill_on_drop(true).output()).await
+}
+async fn remove(name: &str) -> Result<(), Failure> {
+    let res = bounded_command(
+        Command::new("docker").args(["rm", "-f", name]),
+        Duration::from_secs(15),
+    )
+    .await
+    .map_err(start_failure)?
+    .map_err(start_failure)?;
     if res.status.success() || String::from_utf8_lossy(&res.stderr).contains("No such container") {
         Ok(())
     } else {
-        Err("executor")
+        Err(start_failure(String::from_utf8_lossy(&res.stderr)))
     }
 }
 fn exact(a: &Value, b: &Value) -> bool {
@@ -294,12 +488,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => return Err("Unsupported sandbox runtime".into()),
     }
     let runner = env::var("ACCLIMATE_RUNNER_IMAGE").unwrap_or_else(|_| "acclimate-chat:1".into());
-    let inspect = Command::new("docker")
-        .args(["image", "inspect", "--format", "{{.Id}}", &runner])
-        .output()
-        .await?;
+    let inspect = bounded_command(
+        Command::new("docker").args(["image", "inspect", "--format", "{{.Id}}", &runner]),
+        Duration::from_secs(15),
+    )
+    .await??;
     if !inspect.status.success() {
-        return Err("Runner image must be installed before startup".into());
+        return Err(format!(
+            "Inspecting runner image failed: {}",
+            String::from_utf8_lossy(&inspect.stderr)
+        )
+        .into());
     }
     let image = String::from_utf8(inspect.stdout)?.trim().to_owned();
     let build = option_env!("ACCLIMATE_EXECUTOR_BUILD").unwrap_or(env!("CARGO_PKG_VERSION"));
@@ -308,6 +507,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         env::var("ACCLIMATE_SANDBOX_DIR").unwrap_or_else(|_| "/var/lib/acclimate-executor".into()),
     );
     fs::create_dir_all(&root)?;
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
+    cleanup_stale(&root)?;
     let worker = Arc::new(Worker {
         client: reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -317,7 +518,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "{}/internal/executor/leases",
             env::var("ACCLIMATE_EXECUTOR_SERVICE")?.trim_end_matches('/')
         ),
-        token: env::var("ACCLIMATE_EXECUTOR_TOKEN")?,
+        token: match env::var_os("ACCLIMATE_EXECUTOR_TOKEN_FILE") {
+            Some(path) => fs::read_to_string(path)?.trim().to_owned(),
+            None => env::var("ACCLIMATE_EXECUTOR_TOKEN")?,
+        },
         runtime,
         image,
         identity,
@@ -328,23 +532,86 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "1".into())
         .parse()?;
     let mut workers = tokio::task::JoinSet::new();
+    if worker.token.is_empty() {
+        return Err("Empty executor credential".into());
+    }
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let (drain, stop) = watch::channel(false);
     for _ in 0..count.get() {
         let w = worker.clone();
+        let stop = stop.clone();
         workers.spawn(async move {
-            loop {
-                if w.once().await.is_err() {
-                    eprintln!("Executor lease request or report failed")
+            while !*stop.borrow() {
+                if let Err(error) = w.once().await {
+                    eprintln!("Executor lease request or report failed: {error}");
+                    sleep(Duration::from_secs(1)).await;
                 }
-                sleep(Duration::from_secs(1)).await;
             }
         });
     }
-    workers.join_next().await;
-    Err("Executor worker stopped".into())
+    tokio::select! {_=terminate.recv()=>(),_=workers.join_next()=>return Err("Executor worker stopped".into())};
+    drain.send_replace(true);
+    while let Some(result) = workers.join_next().await {
+        result?;
+    }
+    Ok(())
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn runner_deadline_depends_on_pending_upstream() {
+        use std::os::unix::process::ExitStatusExt;
+        let timed_out = || {
+            Ok(Ok(std::process::Output {
+                status: std::process::ExitStatus::from_raw(124 << 8),
+                stdout: vec![],
+                stderr: vec![],
+            }))
+        };
+        assert_eq!(
+            classify_runner(timed_out(), &Record::default()).unwrap().0,
+            "time-limit"
+        );
+        let pending = Record {
+            pending: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            classify_runner(timed_out(), &pending).unwrap_err().code,
+            "gateway-upstream"
+        );
+    }
+    #[test]
+    fn report_body_limit() {
+        assert!(checked_size(&json!("x".repeat(16 * 1024 * 1024))).is_err());
+    }
+    #[tokio::test]
+    async fn hanging_command_times_out() {
+        assert!(
+            bounded_command(Command::new("sleep").arg("60"), Duration::from_millis(5))
+                .await
+                .is_err()
+        );
+    }
+    #[test]
+    fn removes_only_stale_lease_dirs() {
+        let root = tempfile::tempdir().unwrap();
+        let (live, _lock) = lease_dir(root.path()).unwrap();
+        let stale = root.path().join("lease-stale");
+        fs::create_dir(&stale).unwrap();
+        cleanup_stale(root.path()).unwrap();
+        assert!(live.path().is_dir() && !stale.exists());
+    }
+    #[test]
+    fn missing_bundle_rejected() {
+        assert!(
+            serde_json::from_value::<Job>(
+                json!({"kind":"rollout","harness":"chat","taskModel":"task","input":null})
+            )
+            .is_err()
+        );
+    }
     #[test]
     fn exact_json() {
         assert!(exact(

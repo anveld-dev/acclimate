@@ -1,4 +1,6 @@
 mod common;
+#[path = "learning_loop/executor.rs"]
+mod executor_tests;
 #[path = "learning_loop/optimizer.rs"]
 mod optimizer;
 

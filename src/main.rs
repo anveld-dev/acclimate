@@ -39,7 +39,9 @@ fn main() -> ExitCode {
     if args.len() == 1 && args[0] == "--check-grants" {
         return check_grants(std::io::stdin().lock());
     }
-    if !args.is_empty() {
+    let operator_command = matches!(args.as_slice(), [cmd] if cmd == "--create-executor-token")
+        || matches!(args.as_slice(), [cmd,_] if cmd == "--revoke-executor-token" || cmd == "--set-model-provider");
+    if !args.is_empty() && !operator_command {
         eprintln!(r#"{{"schemaVersion":1,"valid":false,"code":"command.invalid"}}"#);
         return ExitCode::FAILURE;
     }
@@ -53,7 +55,48 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    match runtime.block_on(run()) {
+    match runtime.block_on(async {
+        if operator_command {
+            let pool = sqlx::PgPool::connect(&required("DATABASE_URL")?)
+                .await
+                .map_err(|_| std::io::Error::other("database connection failed"))?;
+            if args[0] == "--set-model-provider" {
+                #[derive(serde::Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Provider {
+                    base_url: String,
+                    allowed_models: Vec<String>,
+                    api_key: String,
+                }
+                let input: Provider =
+                    serde_json::from_reader(std::io::stdin().lock().take(1024 * 1024))
+                        .map_err(|_| std::io::Error::other("invalid model provider document"))?;
+                let key = acclimate_service::executor::ProviderKey::from_hex(&required(
+                    "ACCLIMATE_PROVIDER_ENCRYPTION_KEY",
+                )?)?;
+                key.store(
+                    &pool,
+                    &args[1].to_string_lossy(),
+                    &input.base_url,
+                    &input.allowed_models,
+                    &input.api_key,
+                )
+                .await?;
+            } else if let Some(id) = args.get(1) {
+                acclimate_service::executor::revoke_credential(
+                    &pool,
+                    id.to_string_lossy().parse()?,
+                )
+                .await?;
+            } else {
+                let (id, token) = acclimate_service::executor::create_credential(&pool).await?;
+                println!("{}", serde_json::json!({"id":id,"token":token}));
+            }
+            Ok(())
+        } else {
+            run().await
+        }
+    }) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             // EX_TEMPFAIL identifies lost singleton ownership to the supervisor.
@@ -161,6 +204,13 @@ async fn run() -> RunResult {
         .unwrap_or_else(|_| "127.0.0.1:3000".into())
         .parse()
         .map_err(|_| std::io::Error::other("ACCLIMATE_BIND must be a socket address"))?;
+    let internal_bind: SocketAddr = env::var("ACCLIMATE_INTERNAL_BIND")
+        .unwrap_or_else(|_| "127.0.0.1:3001".into())
+        .parse()?;
+    let key = env::var("ACCLIMATE_PROVIDER_ENCRYPTION_KEY")
+        .ok()
+        .map(|value| acclimate_service::executor::ProviderKey::from_hex(&value))
+        .transpose()?;
     let db = PgPoolOptions::new()
         .max_connections(10)
         .acquire_timeout(Duration::from_secs(5))
@@ -193,6 +243,8 @@ async fn run() -> RunResult {
     };
     backfill_projects(&state).await?;
     recover_invitation_mail(&state).await?;
+    let internal_listener = tokio::net::TcpListener::bind(internal_bind).await?;
+    let internal_app = acclimate_service::executor::router(db.clone(), key, runtime.clone());
     let app = router(state.clone());
     let mut mail_worker = tokio::spawn(invitation_worker(state.clone()));
     let mut loop_worker = tokio::spawn(learning_worker(state));
@@ -214,13 +266,23 @@ async fn run() -> RunResult {
             return Err(error.into());
         }
     };
-    let (stop_http, stopped) = tokio::sync::oneshot::channel::<()>();
+    let (stop_http, stopped) = tokio::sync::watch::channel(false);
+    let mut internal_stop = stopped.clone();
+    let mut public_stop = stopped;
     let mut server = tokio::spawn(async move {
-        axum::serve(listener, app)
-            .with_graceful_shutdown(async {
-                let _ = stopped.await;
-            })
-            .await
+        tokio::try_join!(
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    let _ = public_stop.changed().await;
+                })
+                .into_future(),
+            axum::serve(internal_listener, internal_app)
+                .with_graceful_shutdown(async move {
+                    let _ = internal_stop.changed().await;
+                })
+                .into_future()
+        )
+        .map(|_| ())
     });
     let mut server_finished = false;
     let mut ownership_lost = false;
@@ -252,7 +314,7 @@ async fn run() -> RunResult {
         loop_worker.abort();
         mail_worker.abort();
     }
-    let _ = stop_http.send(());
+    let _ = stop_http.send(true);
     let drained = tokio::time::timeout(SHUTDOWN_GRACE, async {
         runtime.settle_claims().await;
         if !loop_finished {

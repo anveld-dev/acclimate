@@ -344,7 +344,7 @@ pub(crate) async fn audit_mutation(
     .await
 }
 
-async fn write_audit(
+pub(crate) async fn write_audit(
     tx: &mut Transaction<'_, Postgres>,
     project: &str,
     user: Option<uuid::Uuid>,

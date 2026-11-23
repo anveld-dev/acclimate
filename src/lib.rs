@@ -15,6 +15,7 @@ mod bundles;
 mod channels;
 mod commands;
 pub mod compatibility;
+pub mod executor;
 mod integrations;
 mod invitations;
 mod learning;

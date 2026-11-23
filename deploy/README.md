@@ -169,8 +169,11 @@ this tag once at startup and launches each sandbox by immutable image ID.
 Set `ACCLIMATE_EXECUTOR_TOKEN` to a provisioned executor credential and
 configure the service's internal listener on port 3001. Attach the workspace
 model proxy to the private executor network so the gateway can reach it.
-Production requires the Docker daemon's `runsc` runtime. Local Compose uses
-plain Docker. Use a Docker engine supporting volume subpath mounts (26+).
+Configure the production Docker daemon's `runsc` runtime with
+`--host-uds=open` in its `runtimeArgs` so the runner can connect to the
+mounted gateway socket. Run `ACCLIMATE_SANDBOX_RUNTIME=runsc python3
+executor/tests/sandbox.py -v` on the Linux host to verify isolation.
+Local Compose uses plain Docker. Use a Docker engine supporting volume subpath mounts (26+).
 
 The executor mounts the host Docker socket. This grants host administrator
 authority to the executor image. Only the executor receives this mount.

@@ -37,6 +37,7 @@ class SandboxGate(unittest.TestCase):
         errors = []
         results = []
         beats = []
+        expired_container = []
         test = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -68,6 +69,16 @@ class SandboxGate(unittest.TestCase):
                     test.assertEqual(token, "Bearer executor-token")
                     test.assertEqual(body["executor"]["runnerImage"], test.runner)
                     if offered.is_set():
+                        if case == "expired" and expired_container:
+                            test.assertFalse(
+                                docker(
+                                    "ps",
+                                    "-aq",
+                                    "--filter",
+                                    "id=" + expired_container[0],
+                                )
+                            )
+                            done.set()
                         return 204, {}
                     offered.set()
                     return 200, dict(
@@ -103,7 +114,7 @@ class SandboxGate(unittest.TestCase):
                             "--filter",
                             "ancestor=" + test.runner,
                             "--filter",
-                            "name=acclimate-",
+                            "volume=" + volume,
                         ).splitlines()
                         test.assertEqual(
                             docker(
@@ -139,6 +150,17 @@ class SandboxGate(unittest.TestCase):
                             check=True,
                         )
                         time.sleep(1.1)
+                    if case == "expired":
+                        (container,) = docker(
+                            "ps",
+                            "-q",
+                            "--filter",
+                            "volume=" + volume,
+                            "--filter",
+                            "ancestor=" + test.runner,
+                        ).splitlines()
+                        expired_container.append(container)
+                        done.wait(30)
                     if case == "timeout":
                         time.sleep(10)
                     if case == "upstream":
@@ -150,6 +172,8 @@ class SandboxGate(unittest.TestCase):
                 test.assertEqual(token, "Bearer lease-token")
                 if action == "heartbeat":
                     beats.append(1)
+                    if case == "expired" and expired_container:
+                        return 409, {}
                     return 200, {}
                 if action == "output":
                     test.assertEqual(
@@ -197,6 +221,9 @@ class SandboxGate(unittest.TestCase):
             self.assertTrue(done.wait(100), "Timed out waiting for result")
             if errors:
                 raise errors[0]
+            if case == "expired":
+                self.assertFalse(results)
+                return
             (result,) = results
             if case in ("runtime", "upstream"):
                 self.assertEqual(
@@ -220,7 +247,7 @@ class SandboxGate(unittest.TestCase):
 
     def test_rollouts(self):
         runtime = os.environ.get("ACCLIMATE_SANDBOX_RUNTIME", "docker")
-        for case in ("scored", "cap", "timeout", "upstream"):
+        for case in ("scored", "cap", "timeout", "upstream", "expired"):
             with self.subTest(case=case):
                 self.exercise(runtime, case)
         if "runsc" not in json.loads(docker("info", "--format", "{{json .Runtimes}}")):

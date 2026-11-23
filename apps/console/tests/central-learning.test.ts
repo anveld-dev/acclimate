@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { selectedModels, pendingTaskReads } from '../src/lib/central-learning';
+import {
+  describeFailureCause,
+  describeLearning,
+  selectedModels,
+  pendingTaskReads,
+  shortTaskId,
+} from '../src/lib/central-learning';
 import { TaskEditor } from '../src/components/learning-tasks';
 import { streamImport } from '../src/server/stream-import';
 import { RolloutEvidence } from '../src/components/learning-evidence';
@@ -228,4 +234,21 @@ test('each unconfirmed held-out card has a confirm action, and another card’s 
   assert.match(html, /never shown to the optimizer/);
   assert.doesNotMatch(html, /Waiting for admission checks/);
   assert.doesNotMatch(html, /Trial result/);
+});
+
+test('failure causes, new codes and short task IDs read plainly', () => {
+  for (const [code, advice] of [
+    ['gateway-upstream', 'check the provider and its rate limits'],
+    ['provider-rejected', 'Check the provider settings'],
+    ['sandbox-start', "check the executor's sandbox runtime"],
+    ['executor', "check the executor's logs"],
+    ['judge-budget', 'Check the judge model'],
+    ['judge-invalid-reply', 'Check the judge model'],
+  ])
+    assert.ok(describeFailureCause(code).toLowerCase().includes(advice.toLowerCase()), code);
+  assert.match(describeFailureCause('new-code'), /new-code/);
+  assert.equal(describeLearning('duplicate'), 'This row matches a task that already exists.');
+  assert.match(describeLearning('provider-unavailable'), /ten minutes/);
+  assert.equal(shortTaskId('case-a'), 'case-a');
+  assert.equal(shortTaskId('00000000-0000-4000-8000-000000000001'), '00000000…');
 });

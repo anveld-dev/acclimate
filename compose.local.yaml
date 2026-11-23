@@ -82,6 +82,14 @@ services:
     # A model proxy on the laptop is reached by this name on Linux as well as Docker Desktop.
     extra_hosts: ["host.docker.internal:host-gateway"]
     restart: unless-stopped
+    # Healthy while the service has answered a lease request or heartbeat in the last two minutes.
+    healthcheck:
+      test: ["CMD", "acclimate-executor", "--health"]
+      interval: 30s
+      timeout: 5s
+      retries: 2
+      start_period: 2m
+      start_interval: 2s
   console:
     image: ${ACCLIMATE_LOCAL_CONSOLE_IMAGE:-acclimate-local-console:source}
     pull_policy: ${ACCLIMATE_LOCAL_PULL_POLICY:-build}

@@ -41,6 +41,27 @@ Remove `ACCLIMATE_MODE` and `CONSOLE_MODE` from both the Rust and console enviro
 
 Run the `acclimate-executor` container with a provisioned executor credential and access to the Docker socket. Create the credential with the service binary's `--create-executor-token` command, which prints it as JSON, save the token in a private file, and point `ACCLIMATE_EXECUTOR_TOKEN_FILE` at that file. Build the chat runner image and configure gVisor (`runsc`) in production. Set `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` on the service to a 64-character hex key so workspace provider credentials can be encrypted at rest. [Enable learning](/docs/operate/self-host#enable-learning) lists the steps in order.
 
+The first time the service starts with a key, it stores a check value sealed with that key. A later start with a different key stops with an error, rather than failing every lease. Before a check value exists, a key that opens none of the stored provider keys is also refused. Without a key, the service starts and logs a warning: saving a provider fails with 503, and stored providers show "Provider key unavailable".
+
+| Service command | What it does |
+| --- | --- |
+| `acclimate-service --create-executor-token` | Creates an executor credential and prints `{id, token}`. |
+| `acclimate-service --list-executor-tokens` | Prints a JSON array with each credential's `id`, `createdAt`, `lastSeenAt`, declared `runtime`, `revoked` and `revokedAt`. It never prints a token. |
+| `acclimate-service --revoke-executor-token <id>` | Revokes a credential. |
+| `acclimate-service --reset-provider-keys --confirm` | Deletes every stored workspace provider, with its URL, models and API key, and the key check value, then prints `{"removedProviders": n}`. Use it only to start over with a new key. Each workspace administrator must then enter their provider again. Without `--confirm` it explains itself and exits. |
+
+Run each with the service's `DATABASE_URL`, for example through `docker compose exec -T service /usr/local/bin/acclimate-service`.
+
+| Executor setting | Purpose |
+| --- | --- |
+| `ACCLIMATE_EXECUTOR_TOKEN_FILE` | File that holds the executor credential. The executor exits at startup when the file is missing, unreadable or empty. `ACCLIMATE_EXECUTOR_TOKEN` is read only when the file setting is unset. |
+| `ACCLIMATE_SANDBOX_RUNTIME` | `runsc` (gVisor, the production Compose default) or `docker`. Any other value stops the executor at startup. |
+| `ACCLIMATE_RUNNER_IMAGE` | The chat runner image. It must exist when the executor starts. |
+| `ACCLIMATE_EXECUTOR_HEALTH_FILE` | File the executor touches after each successful lease request and heartbeat. Defaults to `/tmp/acclimate-executor-health`. `acclimate-executor --health` exits 0 when it is at most 120 seconds old. |
+| `ACCLIMATE_EXECUTOR_CONCURRENCY` | Rollouts run at once. Defaults to 1. |
+
+The executor exits with status 78 and a plain message when its configuration cannot work: the service refuses its credential with HTTP 401, the credential file is missing or empty, the runtime name is unsupported, the runner image is missing, or the startup sandbox preflight fails. The preflight runs one throwaway sandbox with the rollout's flags and checks that it can read its lease directory and reach the gateway socket.
+
 `ACCLIMATE_PROVIDER_HTTP_HOSTS` is a comma-separated list of exact hostnames or IP addresses, compared without case. It defaults to empty. Set it to the same value on the service and on the executor. The service checks a provider's base URL when it is saved, and the executor checks it again with the addresses the host resolves to.
 
 - The base URL must use HTTPS. Plain HTTP is allowed only for a listed host.
@@ -119,7 +140,8 @@ The console derives `CONSOLE_SESSION_TOKEN` from the request's session cookie. S
 | `ACCLIMATE_SERVICE_ENV`, `ACCLIMATE_CONSOLE_ENV` | Absolute paths to the private service and console runtime files. |
 | `ACCLIMATE_POSTGRES_PASSWORD_FILE` | Absolute path to the private raw PostgreSQL password file. Its password must match the encoded value in `DATABASE_URL`. |
 | `ACCLIMATE_KEYCLOAK_ENV`, `ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE` | Absolute paths to the private Keycloak runtime file and separate raw database password file for the overlay. |
-| `ACCLIMATE_VERSION` | Tag for the service and console images. Defaults to `latest`. Pin the exact release version without the Git tag's leading `v`, for example `0.1.0`. |
-| `ACCLIMATE_SERVICE_IMAGE`, `ACCLIMATE_CONSOLE_IMAGE` | Optional complete image references. An explicit reference overrides the corresponding default GHCR image and version tag. |
+| `ACCLIMATE_VERSION` | Tag for the service, console, executor and runner images. Defaults to `latest`. Pin the exact release version without the Git tag's leading `v`, for example `0.1.0`. |
+| `ACCLIMATE_EXECUTOR_TOKEN_FILE` | Required absolute path to the private executor credential file, outside the checkout. `docker compose` refuses to run without it. |
+| `ACCLIMATE_SERVICE_IMAGE`, `ACCLIMATE_CONSOLE_IMAGE`, `ACCLIMATE_EXECUTOR_IMAGE`, `ACCLIMATE_RUNNER_IMAGE` | Optional complete image references. An explicit reference overrides the corresponding default GHCR image and version tag. |
 
 In the Keycloak runtime file, set `KC_DB_PASSWORD` to the raw password from the identity database's password file. For the initial realm import, set `ACCLIMATE_CONSOLE_ORIGIN` and `ACCLIMATE_OIDC_CLIENT_SECRET` to the values of the console's `CONSOLE_ORIGIN` and `CONSOLE_OIDC_CLIENT_SECRET`. Set `KC_BOOTSTRAP_ADMIN_USERNAME` and `KC_BOOTSTRAP_ADMIN_PASSWORD` for the temporary administrator. See [Self-host Acclimate](/docs/operate/self-host) for the file setup and first sign-in.

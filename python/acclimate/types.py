@@ -278,7 +278,9 @@ class LearningRoundSummary(TypedDict):
     decision: Literal["adopted", "kept"] | None
     reason: Literal["selector-kept", "no-candidates", "no-survivors", "no-evaluated-candidates",
                     "no-matching-executor", "channel-moved", "incumbent-evaluation-failed", "optimizer-unavailable",
-                    "optimizer-context-too-large", "selector-unavailable", "stopped"] | None
+                    "optimizer-context-too-large", "selector-unavailable", "provider-unavailable",
+                    "stopped"] | None
+    failureCause: NotRequired["LearningFailureCause | None"]
     parentVersionId: str
     adoptedSample: int | None
     adoptedVersionId: str | None
@@ -287,6 +289,11 @@ class LearningRoundSummary(TypedDict):
     heldOutError: str | None
     createdAt: str
     endedAt: str | None
+
+
+class LearningFailureCause(TypedDict):
+    code: str
+    message: str | None
 
 
 class _IncompleteCheck(TypedDict):
@@ -313,6 +320,8 @@ class LearningLoop(TypedDict):
     maxRoundsPerDay: int
     taskRevision: int
     waiting: str | None
+    nextRoundAt: NotRequired[str | None]
+    evolveTasksNeeded: NotRequired[int | None]
     alert: _LearningAlert | _IncompleteCheck | None
     optimizerConfigured: NotRequired[bool]
     admittedEvolve: int
@@ -486,8 +495,12 @@ class LearningRound(LearningRoundSummary):
     evaluations: list[LearningEvaluation]
 
 
+LearningGrading = Literal["exact", "criteria"]
+
+
 class LearningOutcomeRequest(TypedDict):
     output: NotRequired[LearningJson]
+    grading: NotRequired[LearningGrading]
     outcomeId: str
     versionId: str
     digest: str
@@ -636,11 +649,33 @@ class LearningImport(TypedDict):
     setAside: NotRequired[list[_SetAsideRow]]
 
 
+class LearningImportSummary(LearningImport):
+    createdAt: str
+    source: str
+
+
+class _LearningTaskConfirmationResult(TypedDict):
+    taskId: str
+    result: Literal["confirmed", "already-confirmed", "not-held-out", "not-found"]
+
+
+class LearningTaskConfirmation(TypedDict):
+    revision: int | None
+    results: list[_LearningTaskConfirmationResult]
+
+
+class LearningTaskRecheck(TypedDict):
+    taskId: str
+    admission: Literal["pending"]
+
+
 class BlockedLearningVersion(TypedDict):
     digest: str
     removedBy: str
     note: str | None
     createdAt: str
+    roundId: NotRequired[str | None]
+    roundNumber: NotRequired[int | None]
 
 
 class LearningUsageDay(TypedDict):
@@ -692,9 +727,13 @@ __all__ = [
     "ModelProvider",
     "LearningRollback",
     "BlockedLearningVersion",
+    "LearningFailureCause",
     "LearningUsage",
     "LearningUsageDay",
     "LearningImport",
+    "LearningImportSummary",
+    "LearningTaskConfirmation",
+    "LearningTaskRecheck",
     "LearningTrial",
     "LearningTrialReceipt",
     "LearningTaskRevision",
@@ -716,6 +755,7 @@ __all__ = [
     "LearningEvaluationReport",
     "LearningEvaluation",
     "LearningRound",
+    "LearningGrading",
     "LearningOutcomeRequest",
     "LearningOutcomeReceipt",
     "LearningMemory",

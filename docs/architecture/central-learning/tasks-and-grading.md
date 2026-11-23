@@ -43,14 +43,16 @@ Edits and retirement are tracked by revision, the way evolve revisions work toda
 
 ## Turning material into tasks
 
-The console and API accept a spreadsheet, CSV, JSONL or pasted conversations, up to 64 MiB and 10,000 material rows. XLSX entries together can expand to 256 MiB. A row with both an `input` and an `expected` field becomes an `exact` task at once, with no model call. A row larger than 64 KiB is set aside with the reason `too-large`. Conversion of the other rows runs as an executor job that calls the bundle's judge model through the gateway. It turns each row or conversation into a task card. This is conversion, not invention:
+The console and API accept a spreadsheet, CSV, JSONL or pasted conversations, up to 64 MiB and 10,000 material rows. XLSX entries together can expand to 256 MiB. Pasted text and `.txt` files split into rows on lines that hold only three or more dashes, and each piece is its own row and group. A row with both an `input` and an `expected` field becomes an `exact` task at once, with no model call, when its answer is not a string or is a string of at most 80 characters on one line. A longer answer goes through conversion: the judge drafts criteria from it and keeps it as the reference. A row's `grading` field, `exact` or `criteria`, overrides that rule. A row larger than 64 KiB is set aside with the reason `too-large`. Conversion of the other rows runs as an executor job that calls the bundle's judge model through the gateway. It turns each row or conversation into a task card. This is conversion, not invention:
 
-- The input and the reference answer are copied from the material. The model chooses where a conversation is cut and maps columns to fields.
+- The input and the reference answer are copied from the material. A row that has its own `input` and `expected` keeps them as the task's input and reference, whatever the model returns. Only drafted criteria come from the conversion. The model chooses where a conversation is cut and maps columns to fields.
 - The model may draft criteria from the reference answer. A person sees every card before Start and can edit or delete it.
 - The model does not create tasks that have no source row.
 - A row with no usable answer and no criteria becomes a set-aside card with the reason `no-reference`.
 - Criteria already in the row are used as they are. The model drafts criteria only for a row that has an answer and none of its own.
 - A row the model cannot map after three attempts is set aside with the reason `not-converted`. The rest of the import continues.
+- A row whose input equals a live task's input in either split, or an earlier row's input in the same import, is set aside with the reason `duplicate`.
+- A held-out task with drafted criteria waits for a person to confirm it. The console confirms the shown cards in one request.
 
 Converted cards record the file, the row and the conversation they came from. That source is the task's group. The conversion model reads every row before the split is assigned. It is stateless and is not the optimizer.
 
@@ -92,7 +94,7 @@ Every task passes this check before it counts, whatever its source. The executor
 2. **An empty answer fails.** Grading an empty output gives a fail.
 3. **The judge agrees with itself.** For `criteria` tasks, the three judgments of the reference give the same verdict, and so do the three judgments of the empty answer.
 
-A task that fails is set aside with the reason shown: `reference-failed`, `empty-passed` or `judge-unstable`. A check whose rollouts fail twice on infrastructure is set aside with `check-failed`. Editing the task runs the check again. A `criteria` task with no reference skips step 1, so step 3 judges only the empty answer.
+A task that fails is set aside with the reason shown: `reference-failed`, `empty-passed` or `judge-unstable`. A check whose rollouts fail twice on infrastructure is set aside with `check-failed`. Running the check again requeues it on the same revision, without an edit. Editing the task also runs the check again. A `criteria` task with no reference skips step 1, so step 3 judges only the empty answer.
 
 The check catches broken graders. It does not catch a task that is answerable but wrong, which is why a person reviews the cards before Start.
 
@@ -126,7 +128,7 @@ Start and resume are refused until the loop has 20 admitted evolve tasks and 20 
 
 `job.expect()` stays. The application reports the correct answer for a real job, and the service turns it into a task.
 
-- **Wire change.** `job.expect(expected, { input, output })` gains an optional `output`, the answer the agent gave.
+- **Wire change.** `job.expect(expected, { input, output, grading })` gains an optional `output`, the answer the agent gave, and an optional `grading` with the import rule. An outcome graded by criteria goes through a one-row conversion first and becomes a task when it finishes. If the conversion fails for good or sets the row aside, the outcome is never lost: it becomes an `exact` task from its own values, set aside with the reason `not-converted`, for a person to edit.
 - **No self-written references.** When `output` is supplied and equals `expected`, the outcome is rejected. The delivered agent never authors tasks, criteria or references.
 - **Provenance.** The source is `outcome`, stored with the delivered version and the reporting principal.
 - **Admission.** The outcome passes the same admission check as any other task.

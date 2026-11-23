@@ -45,6 +45,7 @@ function failure(error: unknown) {
 
 async function readRoundDetail(
   env: Environment,
+  api: AcclimateClient,
   { workspaceId, bundleId }: LearningScope,
   load: () => Promise<LearningRound>,
   fetcher: typeof fetch,
@@ -66,6 +67,12 @@ async function readRoundDetail(
       selection,
       adoptedSample,
       adoptedVersionId,
+      state,
+      failureCause,
+      memoryRevision,
+      evaluations,
+      createdAt,
+      endedAt,
     } = await load();
     const paths = new Set(
       candidates.flatMap(({ changes }) => changes?.files.map(({ path }) => path) ?? []),
@@ -76,6 +83,17 @@ async function readRoundDetail(
           { versionId: parentVersionId },
           fetcher,
         )
+      : null;
+    // A diagnosis names an existing problem by ID. Its root cause is in the memory the round read.
+    const problems = candidates.some(({ diagnosis }) => diagnosis && 'id' in diagnosis.problem)
+      ? await api
+          .getLearningMemory(workspaceId, bundleId, { revision: memoryRevision })
+          .then(({ improvementMemory }) =>
+            Object.fromEntries(
+              improvementMemory.problems.map(({ id, rootCause }) => [id, rootCause]),
+            ),
+          )
+          .catch(() => null)
       : null;
     const parentFiles = parent?.ok
       ? parent.payload.files
@@ -99,8 +117,16 @@ async function readRoundDetail(
         selection,
         adoptedSample,
         adoptedVersionId,
+        state,
+        failureCause: failureCause ?? null,
+        createdAt,
+        endedAt,
+        incumbentEvaluationId:
+          evaluations.find(({ role, split }) => role === 'incumbent' && split === 'evolve')?.id ??
+          null,
       },
       parentFiles,
+      problems: problems as Record<string, string> | null,
     };
   } catch {
     return { ok: false as const, message: 'Could not load this learning round.' };
@@ -184,6 +210,7 @@ export async function readLearningState(
         ? uuid.test(detailId)
           ? readRoundDetail(
               env,
+              api,
               scope,
               () => (detailId === activeId && activeRead ? activeRead : loadRound(detailId)),
               fetcher,

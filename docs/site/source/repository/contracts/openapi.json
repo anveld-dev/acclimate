@@ -3356,6 +3356,14 @@
             }
           },
           {
+            "name": "confirmed",
+            "in": "query",
+            "description": "true lists tasks a person has confirmed, false lists unconfirmed tasks.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "after",
             "in": "query",
             "schema": {
@@ -3959,6 +3967,527 @@
         }
       }
     },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/tasks/imports": {
+      "get": {
+        "operationId": "listLearningImports",
+        "description": "Read access. The 50 most recent imports, newest first. Imports made for production outcomes are not listed.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "importId",
+                          "status",
+                          "rows",
+                          "pending",
+                          "converted",
+                          "setAside",
+                          "setAsideCount",
+                          "message",
+                          "createdAt",
+                          "source"
+                        ],
+                        "properties": {
+                          "importId": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "completed",
+                              "failed"
+                            ]
+                          },
+                          "rows": {
+                            "type": "integer"
+                          },
+                          "pending": {
+                            "type": "integer"
+                          },
+                          "converted": {
+                            "type": "integer"
+                          },
+                          "setAside": {
+                            "type": "array",
+                            "description": "Empty for machine callers.",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "row",
+                                "source",
+                                "reason"
+                              ],
+                              "properties": {
+                                "row": {
+                                  "type": "integer"
+                                },
+                                "source": {
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "description": "no-reference (no usable answer or criteria), not-converted (the model could not map the row in three attempts), too-large (the row exceeds 64 KiB) or duplicate (the row's input equals the input of a live task in either split, or of an earlier row in the same import)."
+                                }
+                              }
+                            }
+                          },
+                          "setAsideCount": {
+                            "type": "integer"
+                          },
+                          "message": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "source": {
+                            "type": "string",
+                            "description": "The upload's filename query parameter, or paste when there was none."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid learning request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks authority for this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested learning resource was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/tasks/confirm": {
+      "post": {
+        "operationId": "confirmLearningTasks",
+        "description": "Write access and a signed-in person. Confirms unconfirmed held-out tasks as one change, with the rules of PATCH {\"confirm\": true}. Only confirmed tasks get a new revision.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "taskIds"
+                ],
+                "properties": {
+                  "taskIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "description": "Duplicate IDs are counted once."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "revision",
+                    "results"
+                  ],
+                  "properties": {
+                    "revision": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "The task revision the confirmed tasks were written at, or null when none needed confirming."
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "taskId",
+                          "result"
+                        ],
+                        "properties": {
+                          "taskId": {
+                            "type": "string"
+                          },
+                          "result": {
+                            "type": "string",
+                            "enum": [
+                              "confirmed",
+                              "already-confirmed",
+                              "not-held-out",
+                              "not-found"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid learning request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks authority for this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested learning resource was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/tasks/recheck": {
+      "post": {
+        "operationId": "recheckLearningTasks",
+        "description": "Write access. Queues the admission check again for live tasks set aside with check-failed, without a new task revision. With no body or {}, every such task is queued; with taskIds, only those. Machine callers queue evolve tasks only. Tasks in any other state are skipped.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "taskIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "description": "Duplicate IDs are counted once."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "taskIds"
+                  ],
+                  "properties": {
+                    "taskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "The tasks queued again, sorted."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid learning request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks authority for this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested learning resource was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/tasks/{id}/recheck": {
+      "post": {
+        "operationId": "recheckLearningTask",
+        "description": "Write access. Queues the admission check again for a live task set aside with check-failed, without a new task revision. Held-out tasks require a signed-in person.",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "taskId",
+                    "admission"
+                  ],
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    },
+                    "admission": {
+                      "const": "pending"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid learning request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks authority for this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested learning resource was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The task is live but was not set aside with check-failed. Edit and save it to run the check on a new revision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/trials/{id}": {
       "get": {
         "operationId": "getLearningTrial",
@@ -4015,6 +4544,21 @@
                       "type": ["array", "null"],
                       "items": {
                         "type": "object"
+                      }
+                    },
+                    "error": {
+                      "type": "object",
+                      "description": "Present when status is failed. code is the failed rollout's error code (gateway-upstream, provider-rejected, sandbox-start, executor, judge-budget, judge-invalid-reply), or cancelled when the provider settings or executor changed under the trial.",
+                      "required": [
+                        "code"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
                       }
                     },
                     "verdict": {
@@ -4120,7 +4664,7 @@
                           },
                           "reason": {
                             "type": "string",
-                            "description": "no-reference (no usable answer or criteria), not-converted (the model could not map the row in three attempts) or too-large (the row exceeds 64 KiB)."
+                            "description": "no-reference (no usable answer or criteria), not-converted (the model could not map the row in three attempts), too-large (the row exceeds 64 KiB) or duplicate (the row's input equals the input of a live task in either split, or of an earlier row in the same import)."
                           }
                         }
                       }
@@ -5034,6 +5578,13 @@
                       "createdAt": {
                         "type": "string",
                         "format": "date-time"
+                      },
+                      "roundId": {
+                        "type": ["string", "null"],
+                        "description": "The latest round before the block that adopted a version with this digest, when one exists."
+                      },
+                      "roundNumber": {
+                        "type": ["integer", "null"]
                       }
                     }
                   }
@@ -5992,7 +6543,8 @@
               "selector-unavailable",
               "stopped",
               null,
-              "no-matching-executor"
+              "no-matching-executor",
+              "provider-unavailable"
             ]
           },
           "parentVersionId": {
@@ -6045,6 +6597,36 @@
                 "type": "null"
               }
             ]
+          },
+          "failureCause": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "The rollout error code: gateway-upstream, provider-rejected, sandbox-start, executor, judge-budget or judge-invalid-reply."
+                  },
+                  "message": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 500,
+                    "description": "The executor's redacted message. Always null for a held-out rollout."
+                  }
+                }
+              }
+            ],
+            "description": "The first failed rollout of the evaluation that ended the round, or of a failed held-out check. Null otherwise."
           },
           "heldOutError": {
             "anyOf": [
@@ -6256,7 +6838,17 @@
             "minimum": 0
           },
           "waiting": {
-            "enum": [null, "daily-cap", "no-new-evidence", "no-executor", "models-not-allowed"]
+            "enum": [null, "daily-cap", "no-new-evidence", "no-executor", "models-not-allowed", "provider-unavailable"]
+          },
+          "nextRoundAt": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "When the next round can start. Set only while waiting is daily-cap or provider-unavailable. The provider wait is ten minutes after one provider-unavailable round and doubles for each consecutive one, up to six hours."
+          },
+          "evolveTasksNeeded": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "description": "While waiting is no-new-evidence, how many more evolve tasks must be added or changed before the loop runs another round."
           },
           "optimizerConfigured": {
             "type": "boolean",
@@ -6394,7 +6986,8 @@
               "selector-unavailable",
               "stopped",
               null,
-              "no-matching-executor"
+              "no-matching-executor",
+              "provider-unavailable"
             ]
           },
           "parentVersionId": {
@@ -6447,6 +7040,36 @@
                 "type": "null"
               }
             ]
+          },
+          "failureCause": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "The rollout error code: gateway-upstream, provider-rejected, sandbox-start, executor, judge-budget or judge-invalid-reply."
+                  },
+                  "message": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 500,
+                    "description": "The executor's redacted message. Always null for a held-out rollout."
+                  }
+                }
+              }
+            ],
+            "description": "The first failed rollout of the evaluation that ended the round, or of a failed held-out check. Null otherwise."
           },
           "heldOutError": {
             "anyOf": [
@@ -7507,7 +8130,8 @@
             "type": ["string", "null"]
           },
           "admissionReason": {
-            "type": ["string", "null"]
+            "type": ["string", "null"],
+            "description": "Why the task was set aside: reference-failed, empty-passed, judge-unstable, check-failed, or not-converted for an outcome whose conversion failed or set it aside."
           },
           "outcomeId": {
             "type": ["string", "null"]
@@ -7554,6 +8178,11 @@
           "output": {},
           "expected": {
             "description": "Any JSON value encoded in at most 64 KiB."
+          },
+          "grading": {
+            "type": "string",
+            "enum": ["exact", "criteria"],
+            "description": "How the expected answer is graded. Without it, a non-string answer or a string of at most 80 characters with no line break is graded exact, and a longer answer is graded by criteria the judge model drafts from it. A criteria outcome becomes a task only when that conversion finishes, and input and expected together must then fit in 64 KiB. If the conversion fails for good or sets the row aside, the outcome becomes an exact task set aside with admissionReason not-converted."
           }
         }
       },
@@ -7575,7 +8204,8 @@
           },
           "taskRevision": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "description": "The revision that added the task. For an outcome graded by criteria, the current revision when the outcome was accepted: its task is added later, once conversion drafts the criteria."
           }
         }
       }

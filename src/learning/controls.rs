@@ -28,6 +28,71 @@ fn enough_changes(changes: i64, live: i64) -> bool {
     changes >= MIN_CHANGED && changes * 100 >= live * CHANGE_PERCENT
 }
 
+/// How many more evolve tasks must be added or changed before the task set wakes the loop.
+/// Counting each as an addition grows the live set too, so the answer also covers edits.
+fn tasks_short(changes: i64, live: i64) -> i64 {
+    (0..)
+        .find(|n| enough_changes(changes + n, live + n))
+        .expect("the share of changes reaches the threshold")
+}
+
+/// Evolve tasks added, edited or retired since `revision`, and the live admitted evolve set.
+async fn task_changes(
+    tx: &mut Tx<'_>,
+    row: &LoopRow,
+    revision: i64,
+) -> Result<(i64, i64), sqlx::Error> {
+    sqlx::query_as("SELECT count(DISTINCT task_id) FILTER(WHERE admission_revision>$3 OR (admission='admitted' AND (added_revision>$3 OR retired_revision>$3))),
+        count(*) FILTER(WHERE retired_revision IS NULL AND admission='admitted')
+        FROM learning_tasks WHERE (project_id,bundle_id)=($1,$2)").bind(&row.project_id).bind(row.bundle_id).bind(revision).fetch_one(&mut **tx).await
+}
+
+/// After a round fails because the model provider was unavailable, the loop waits this long
+/// before it tries again. Each further consecutive outage round doubles the wait, up to
+/// `PROVIDER_WAIT_MAX_MINUTES`.
+const PROVIDER_WAIT_MINUTES: i64 = 10;
+const PROVIDER_WAIT_MAX_MINUTES: i64 = 360;
+/// A round that counts toward the daily cap. An outage round does not.
+const COUNTS_TOWARD_CAP: &str =
+    "(state<>'failed' OR reason IS DISTINCT FROM 'provider-unavailable')";
+
+fn provider_wait(outages: u32) -> chrono::Duration {
+    let doublings = outages.saturating_sub(1).min(6);
+    chrono::Duration::minutes((PROVIDER_WAIT_MINUTES << doublings).min(PROVIDER_WAIT_MAX_MINUTES))
+}
+
+/// When the provider wait after the latest round ends, if that round failed with
+/// `provider-unavailable`. The outages counted for the backoff are the consecutive outage rounds
+/// back to, and including, one a person started with Start or Resume, so a round that succeeded
+/// or failed otherwise, or a person asking for a round, resets the backoff.
+pub(super) async fn provider_wait_until(
+    tx: &mut Tx<'_>,
+    row: &LoopRow,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, sqlx::Error> {
+    let recent: Vec<(bool, bool, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
+        "SELECT state='failed' AND reason IS NOT DISTINCT FROM 'provider-unavailable',trigger IN ('start','resume'),ended_at
+        FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) ORDER BY number DESC LIMIT 8",
+    )
+    .bind(&row.project_id)
+    .bind(row.bundle_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    let Some(&(true, _, Some(ended))) = recent.first() else {
+        return Ok(None);
+    };
+    let mut outages = 0;
+    for &(outage, asked, _) in &recent {
+        if !outage {
+            break;
+        }
+        outages += 1;
+        if asked {
+            break;
+        }
+    }
+    Ok(Some(ended + provider_wait(outages)))
+}
+
 pub(super) async fn schedule(
     tx: &mut Tx<'_>,
     row: &LoopRow,
@@ -40,8 +105,17 @@ pub(super) async fn schedule(
         task_revision: i64,
         created_at: chrono::DateTime<chrono::Utc>,
     }
-    let previous:Option<PreviousRound>=sqlx::query_as("SELECT state,decision,trigger,task_revision,created_at FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) ORDER BY number DESC LIMIT 1")
-        .bind(&row.project_id).bind(row.bundle_id).fetch_optional(&mut **tx).await?;
+    let previous: Option<PreviousRound> = sqlx::query_as(
+        "SELECT state,decision,trigger,task_revision,created_at
+        FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) ORDER BY number DESC LIMIT 1",
+    )
+    .bind(&row.project_id)
+    .bind(row.bundle_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let provider_wait = provider_wait_until(tx, row)
+        .await?
+        .is_some_and(|until| until > chrono::Utc::now());
     let trigger = if let Some(previous) = previous {
         if row.started_at.is_some_and(|t| {
             t > previous.created_at && row.resumed_at.is_none_or(|resumed| resumed <= t)
@@ -52,11 +126,7 @@ pub(super) async fn schedule(
         } else if previous.decision.as_deref() == Some("adopted") {
             Some("adoption")
         } else {
-            let (changes, live): (i64, i64) = {
-                sqlx::query_as("SELECT count(DISTINCT task_id) FILTER(WHERE admission_revision>$3 OR (admission='admitted' AND (added_revision>$3 OR retired_revision>$3))),
-                    count(*) FILTER(WHERE retired_revision IS NULL AND admission='admitted')
-                    FROM learning_tasks WHERE (project_id,bundle_id)=($1,$2)").bind(&row.project_id).bind(row.bundle_id).bind(previous.task_revision).fetch_one(&mut **tx).await?
-            };
+            let (changes, live) = task_changes(tx, row, previous.task_revision).await?;
             if enough_changes(changes, live) {
                 Some("task-change")
             } else if previous.state == "failed" || previous.trigger != "retry" {
@@ -68,9 +138,12 @@ pub(super) async fn schedule(
     } else {
         Some("start")
     };
-    let capped:bool=sqlx::query_scalar("SELECT count(*) >= $3::integer FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) AND created_at>now()-interval '24 hours'").bind(&row.project_id).bind(row.bundle_id).bind(row.max_rounds_per_day).fetch_one(&mut **tx).await?;
+    let capped:bool=sqlx::query_scalar(&format!("SELECT count(*) >= $3::integer FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) AND created_at>now()-interval '24 hours' AND {COUNTS_TOWARD_CAP}")).bind(&row.project_id).bind(row.bundle_id).bind(row.max_rounds_per_day).fetch_one(&mut **tx).await?;
+    // A person who starts or resumes the loop asks for a round now.
     let waiting = if trigger.is_none() {
         Some("no-new-evidence")
+    } else if provider_wait && !matches!(trigger, Some("start" | "resume")) {
+        Some("provider-unavailable")
     } else if capped {
         Some("daily-cap")
     } else {
@@ -85,6 +158,42 @@ pub(super) async fn schedule(
             .await?;
     }
     Ok(trigger.filter(|_| waiting.is_none()))
+}
+
+/// When a waiting loop can start its next round, for the waits that end at a known time.
+pub(super) async fn next_round_at(
+    tx: &mut Tx<'_>,
+    row: &LoopRow,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, sqlx::Error> {
+    match row.waiting.as_deref() {
+        // The window allows another round once the round that filled it is 24 hours old.
+        Some("daily-cap") => Ok(sqlx::query_scalar(&format!("SELECT created_at+interval '24 hours' FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2)
+            AND created_at>now()-interval '24 hours' AND {COUNTS_TOWARD_CAP} ORDER BY created_at DESC OFFSET greatest($3-1,0) LIMIT 1"))
+            .bind(&row.project_id)
+            .bind(row.bundle_id)
+            .bind(row.max_rounds_per_day)
+            .fetch_optional(&mut **tx)
+            .await?),
+        Some("provider-unavailable") => provider_wait_until(tx, row).await,
+        _ => Ok(None),
+    }
+}
+
+/// For a loop waiting for new evidence, how many more evolve tasks must be added or changed.
+pub(super) async fn tasks_to_wake(
+    tx: &mut Tx<'_>,
+    row: &LoopRow,
+) -> Result<Option<i64>, sqlx::Error> {
+    if row.waiting.as_deref() != Some("no-new-evidence") {
+        return Ok(None);
+    }
+    let revision: Option<i64> = sqlx::query_scalar("SELECT task_revision FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) ORDER BY number DESC LIMIT 1")
+        .bind(&row.project_id).bind(row.bundle_id).fetch_optional(&mut **tx).await?;
+    let Some(revision) = revision else {
+        return Ok(None);
+    };
+    let (changes, live) = task_changes(tx, row, revision).await?;
+    Ok(Some(tasks_short(changes, live)))
 }
 
 #[derive(Deserialize)]
@@ -334,7 +443,7 @@ async fn measurement(
                 .await?,
         )),
         Some((id, status)) if status == "failed" => {
-            sqlx::query("UPDATE learning_rollouts SET status='queued',attempts=0,error_code=NULL,lease_token_hash=NULL WHERE evaluation_id=$1 AND status IN ('failed','cancelled')").bind(id).execute(&mut **tx).await?;
+            sqlx::query("UPDATE learning_rollouts SET status='queued',attempts=0,error_code=NULL,error_message=NULL,lease_token_hash=NULL WHERE evaluation_id=$1 AND status IN ('failed','cancelled')").bind(id).execute(&mut **tx).await?;
             sqlx::query("UPDATE learning_evaluations SET measurement_retries=measurement_retries+1,status='running',error=NULL,started_at=now() WHERE id=$1").bind(id).execute(&mut **tx).await?;
             Ok(None)
         }
@@ -423,7 +532,11 @@ pub(super) async fn blocked(
     let b = path(&b)?;
     let mut tx = auth::read_transaction(&s, &h, &p).await?;
     require_loop(&mut tx, &p, b, false).await?;
-    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('digest',digest,'removedBy',removed_by,'note',note,'createdAt',created_at) FROM learning_blocked_versions WHERE (project_id,bundle_id)=($1,$2) ORDER BY created_at DESC,digest").bind(p).bind(b).fetch_all(&mut *tx).await.map_err(db)?;
+    // The round is the latest one before the block that adopted a version with this payload.
+    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('digest',b.digest,'removedBy',b.removed_by,'note',b.note,'createdAt',b.created_at,'roundId',r.id,'roundNumber',r.number)
+        FROM learning_blocked_versions b LEFT JOIN LATERAL (SELECT r.id,r.number FROM learning_rounds r JOIN versions v ON v.id=r.adopted_version_id
+            WHERE (r.project_id,r.bundle_id)=(b.project_id,b.bundle_id) AND v.digest=b.digest AND r.created_at<=b.created_at ORDER BY r.number DESC LIMIT 1) r ON true
+        WHERE (b.project_id,b.bundle_id)=($1,$2) ORDER BY b.created_at DESC,b.digest").bind(p).bind(b).fetch_all(&mut *tx).await.map_err(db)?;
     Ok(Json(json!(rows)))
 }
 pub(super) async fn unblock(
@@ -463,10 +576,26 @@ pub(super) async fn unblock(
 mod tests {
     use super::*;
     #[test]
+    fn provider_wait_doubles_up_to_six_hours() {
+        let minutes: Vec<_> = (1..=8).map(|n| provider_wait(n).num_minutes()).collect();
+        assert_eq!(minutes, [10, 20, 40, 80, 160, 320, 360, 360]);
+    }
+
+    #[test]
     fn task_change_requires_both_thresholds() {
         assert!(!enough_changes(4, 20));
         assert!(!enough_changes(5, 51));
         assert!(enough_changes(5, 50));
+    }
+
+    #[test]
+    fn tasks_short_counts_the_tasks_still_needed() {
+        assert_eq!(tasks_short(0, 20), 5);
+        assert_eq!(tasks_short(3, 20), 2);
+        assert_eq!(tasks_short(5, 50), 0);
+        // Each addition grows the live set, so 100 live tasks need 12 rather than 10.
+        assert_eq!(tasks_short(0, 100), 12);
+        assert!(enough_changes(12, 112) && !enough_changes(11, 111));
     }
 
     /// Twenty judged tasks with four criteria. `partial` of them miss one criterion on every

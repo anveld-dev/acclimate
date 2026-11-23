@@ -64,26 +64,32 @@ All bundle routes sit under `/v1/workspaces/{ws}/bundles/{b}/learning`.
 | Route | Purpose | Right |
 | --- | --- | --- |
 | `PUT` (root) | Turn learning on or change its settings: channel, `domain` and `benchmark`, task model, judge model, `maxRoundsPerDay` | promote |
-| `GET` (root) | Loop status, `waiting` reason, pause reason, split counts, active round, alert state, and `optimizerConfigured` | read |
+| `GET` (root) | Loop status, `waiting` reason, `nextRoundAt` and `evolveTasksNeeded` for a wait, pause reason, split counts, active round, alert state, and `optimizerConfigured` | read |
 | `POST /start` | Start learning. Refused with `tasks-required` below the Start floor, and with `optimizer-required` when the service has no optimizer model. | promote |
 | `POST /pause`, `/resume`, `/stop` | Pause, resume or stop learning. Resume is refused like Start. | promote |
-| `GET /tasks` | List tasks, paged. Filters: `split`, `source`, `admission`, `flagged` | read |
+| `GET /tasks` | List tasks, paged. Filters: `split`, `source`, `admission`, `flagged`, `confirmed` | read |
 | `POST /tasks` | Create one task | write |
 | `PATCH /tasks/{id}` | Edit a task. Bumps the task revision and re-runs admission. | write |
 | `DELETE /tasks/{id}` | Retire a task. Rows are kept. | write |
+| `POST /tasks/confirm` | Confirm up to 100 held-out tasks in one change. Returns a result for each ID. | write, signed-in person |
+| `POST /tasks/{id}/recheck` | Run the admission check again for a task set aside with `check-failed`, without a new revision. Any other state returns 409. | write |
+| `POST /tasks/recheck` | The same for every `check-failed` task, or for the `taskIds` in the body | write |
 | `POST /tasks/import` | Streamed upload of a spreadsheet, CSV, JSONL or pasted text. Returns an import with counts, and the drafted task cards for a console session. | write |
+| `GET /tasks/imports` | The 50 most recent imports, newest first, with counts, `createdAt` and `source` | read |
 | `GET /tasks/imports/{id}` | Import status and counts of converted, pending and set-aside source rows | read |
 | `POST /tasks/{id}/try` | Run one task on the executor against the channel head. Returns a trial ID. | write |
-| `GET /trials/{id}` | A trial's status, gateway log, output and verdict | read |
+| `GET /trials/{id}` | A trial's status, gateway log, output and verdict, and `error: {code}` when it failed | read |
 | `GET /held-out-tasks/export` | Download the held-out tasks | console session only |
 | `GET /rounds`, `GET /rounds/{id}` | Round timeline, and one round with its candidates, diffs, diagnoses and evolve results | read |
 | `POST /rollback` | Move the channel back to the version a named round replaced. The removed version is blocked from adoption. | promote |
 | `GET /blocked-versions` | Versions blocked from adoption after a rollback or revert | read |
 | `DELETE /blocked-versions/{digest}` | Unblock a version | promote |
 | `GET /usage` | Rounds, rollouts and tokens per day | read |
-| `POST /outcomes` | A production outcome from `job.expect()` | write |
+| `POST /outcomes` | A production outcome from `job.expect()`, with optional `grading` | write |
 | `GET /memory` | Improvement memory at a revision | read |
 
 The workspace model provider is at `GET` and `PUT /v1/workspaces/{ws}/model-provider`. It holds an OpenAI-compatible base URL, the key and the allowed models. `PUT` needs a signed-in administrator. The key is write-only: `GET` returns whether one is set and the executor's verification result, never the key.
 
 A signed-in caller needs the administrator role wherever a machine token needs `promote`.
+
+The [learning contract](https://github.com/anveld-dev/acclimate/blob/main/contracts/learning.md#codes-a-script-reads) lists the admission, import, round, waiting, pause and error codes a script can branch on.

@@ -10,7 +10,9 @@ from uuid import uuid4
 from .client import AcclimateClient
 from .delivery import PreparedDelivery, _stage_delivery, resolve_and_cache
 from .errors import UsageError
-from .types import LearningJson, LearningOutcomeRequest, LearningOutcomeReceipt, VerifiedVersion
+from .types import (
+    LearningGrading, LearningJson, LearningOutcomeRequest, LearningOutcomeReceipt, VerifiedVersion,
+)
 
 
 def _setting(value: str | None, name: str) -> str:
@@ -87,8 +89,16 @@ class Job:
         return _stage_delivery(self.version, destination)
 
     def expect(self, expected: LearningJson, input: LearningJson = None, *,
-               output: LearningJson | _Missing = _Missing.VALUE) -> LearningOutcomeReceipt:
-        """Record one correction. Repeat the same call to retry its durable outcome."""
+               output: LearningJson | _Missing = _Missing.VALUE,
+               grading: LearningGrading | None = None) -> LearningOutcomeReceipt:
+        """Record one correction. Repeat the same call to retry its durable outcome.
+
+        ``grading`` chooses how the expected answer is graded. By default a short single-line
+        string or any non-string JSON value is compared exactly, and a longer answer is judged
+        against criteria drafted from it.
+        """
+        if grading not in (None, "exact", "criteria"):
+            raise UsageError('grading must be "exact" or "criteria"', "grading")
         version = self._version["version"]
         body: LearningOutcomeRequest = {
             "outcomeId": self.outcome_id,
@@ -99,4 +109,6 @@ class Job:
         }
         if not isinstance(output, _Missing):
             body["output"] = output
+        if grading is not None:
+            body["grading"] = grading
         return self._client.report_learning_outcome(self._workspace, version["bundleId"], body)

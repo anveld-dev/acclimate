@@ -35,7 +35,7 @@ When the stack is ready, `local:up`:
 - Creates a verified Keycloak login and prints its initial password once. The password is also stored in the `operator` field of `.local/stack/credentials.json`.
 - Makes that login the administrator of the `local-demo` workspace. It uses the service's audited adoption route with the reason "local stack bootstrap".
 - Publishes an example bundle named **Example agent** on the `stable` channel.
-- Starts the rollout executor with its own credential. The executor image is always built from the checkout, which takes a few minutes the first time.
+- Starts the rollout executor with its own credential and waits until its health check passes. The executor image is always built from the checkout, which takes a few minutes the first time.
 - Writes client settings to `.local/stack/env.sh` and prints them.
 
 ```text
@@ -149,6 +149,8 @@ On Docker Desktop, `host.docker.internal` reaches your laptop's loopback, so a p
 ### Tasks for a first round
 
 Start needs 20 admitted tasks in each split. The service assigns each task to evolve or held-out by a hash, so roughly half of your rows land on each side. Import about 50 rows for a first round, so both sides reach 20 after some rows are set aside. See [run a learning loop](/docs/guides/learning-loop).
+
+The quickest start is the sample file for the **Example agent** bundle, [`examples/learning/example-agent-tasks.jsonl`](https://github.com/anveld-dev/acclimate/blob/main/examples/learning/example-agent-tasks.jsonl). It holds 60 support requests, each with a reference reply and its own criteria. On the bundle's **Learning** tab, choose the file under **Import material** and select **Import tasks**. The rows bring their own criteria, so the judge model only maps the fields. Review the cards while their admission checks run. [Sample tasks](https://github.com/anveld-dev/acclimate/blob/main/examples/learning/README.md)
 
 Alert email for a held-out regression arrives in Mailpit.
 

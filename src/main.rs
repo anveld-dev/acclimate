@@ -39,8 +39,15 @@ fn main() -> ExitCode {
     if args.len() == 1 && args[0] == "--check-grants" {
         return check_grants(std::io::stdin().lock());
     }
-    let operator_command = matches!(args.as_slice(), [cmd] if cmd == "--create-executor-token")
-        || matches!(args.as_slice(), [cmd,_] if cmd == "--revoke-executor-token" || cmd == "--set-model-provider");
+    if args.len() == 1 && args[0] == "--reset-provider-keys" {
+        eprintln!(
+            "Error: --reset-provider-keys deletes every stored workspace provider, including its URL, models and API key, and the provider encryption key check. Each workspace administrator must then enter their provider again. To do it, run acclimate-service --reset-provider-keys --confirm"
+        );
+        return ExitCode::FAILURE;
+    }
+    let operator_command = matches!(args.as_slice(), [cmd] if cmd == "--create-executor-token" || cmd == "--list-executor-tokens")
+        || matches!(args.as_slice(), [cmd,_] if cmd == "--revoke-executor-token" || cmd == "--set-model-provider")
+        || matches!(args.as_slice(), [cmd, confirm] if cmd == "--reset-provider-keys" && confirm == "--confirm");
     if !args.is_empty() && !operator_command {
         eprintln!(r#"{{"schemaVersion":1,"valid":false,"code":"command.invalid"}}"#);
         return ExitCode::FAILURE;
@@ -74,6 +81,7 @@ fn main() -> ExitCode {
                 let key = acclimate_service::executor::ProviderKey::from_hex(&required(
                     "ACCLIMATE_PROVIDER_ENCRYPTION_KEY",
                 )?)?;
+                key.verify_stored(&pool).await?;
                 key.store(
                     &pool,
                     &args[1].to_string_lossy(),
@@ -82,6 +90,12 @@ fn main() -> ExitCode {
                     &input.api_key,
                 )
                 .await?;
+            } else if args[0] == "--reset-provider-keys" {
+                let removed = acclimate_service::executor::reset_provider_keys(&pool).await?;
+                println!("{}", serde_json::json!({"removedProviders":removed}));
+            } else if args[0] == "--list-executor-tokens" {
+                let credentials = acclimate_service::executor::list_credentials(&pool).await?;
+                println!("{}", serde_json::Value::Array(credentials));
             } else if let Some(id) = args.get(1) {
                 acclimate_service::executor::revoke_credential(
                     &pool,
@@ -230,6 +244,13 @@ async fn run() -> RunResult {
     }
     // Ownership serializes schema changes and attempt-limited crash recovery.
     sqlx::migrate!("./migrations").run(&db).await?;
+    match &key {
+        // A different key would fail every lease later, and look like a missing executor.
+        Some(key) => key.verify_stored(&db).await?,
+        None => eprintln!(
+            "WARNING: ACCLIMATE_PROVIDER_ENCRYPTION_KEY is not set. Learning cannot store workspace provider keys until it is set: saving a provider fails with 503, and providers already stored show \"Provider key unavailable\". Set it to 64 hex characters (openssl rand -hex 32) in the service environment and restart."
+        ),
+    }
     let runtime = Arc::new(RuntimeStatus::new());
     runtime.ownership_acquired();
     let optimizer = acclimate_service::OpenAiModel::from_env()?;

@@ -27,6 +27,9 @@ pub(super) async fn claim(
                 &mut row.get::<Vec<u8>, _>("encrypted_key"),
             )
         });
+        if secret_key.is_none() {
+            unusable_key(&project, key.is_some());
+        }
         if secret_key.is_none() || row.get::<i16, _>("probe_attempts") >= 2 {
             let message = if secret_key.is_none() {
                 "Provider key unavailable"

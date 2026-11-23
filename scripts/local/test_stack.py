@@ -123,7 +123,7 @@ class StackTests(unittest.TestCase):
                 calls.append((args, options.get('environment')))
                 if '--create-executor-token' in args:
                     return json.dumps(dict(id='e', token='executor-secret')).encode()
-                return b'container\n' if 'ps' in args else None
+                return b'running healthy\n' if 'ps' in args else None
 
             shell = dict(ACCLIMATE_PROVIDER_HTTP_HOSTS='host.docker.internal')
             with patch.object(stack, 'compose', compose):
@@ -140,16 +140,43 @@ class StackTests(unittest.TestCase):
             self.assertEqual(calls[-2][0], ('up', '--detach', 'acclimate-executor'))
 
     def test_executor_that_exits_names_the_exact_logs_command(self):
+        for status, expected, waits in ((b'', 'did not become healthy within 90 seconds', 90),
+                                        (b'running starting\n', 'did not become healthy', 90),
+                                        (b'running unhealthy\n', 'did not become healthy', 90),
+                                        (b'restarting \n', 'The executor stopped', 0),
+                                        (b'exited \n', 'The executor stopped', 0)):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as temporary:
+                state = Path(temporary)
+                stack.write_file(state / 'executor-token', b'executor-secret\n')
+                with patch.object(stack, 'compose', return_value=status), \
+                        patch.object(stack.time, 'sleep') as slept, \
+                        self.assertRaises(ValueError) as raised:
+                    stack.start_executor(ROOT, state, stack.DEFAULT, 'build', environ={})
+                message = str(raised.exception)
+                self.assertIn(expected, message)
+                self.assertIn(f'--project-name acclimate-local-{stack.project_suffix(ROOT)}', message)
+                self.assertIn('-f compose.local.yaml logs acclimate-executor', message)
+                # A container that stopped is reported at once rather than after the timeout.
+                self.assertEqual(slept.call_count, waits)
+
+    def test_executor_start_waits_for_health_not_just_a_running_container(self):
         with tempfile.TemporaryDirectory() as temporary:
             state = Path(temporary)
             stack.write_file(state / 'executor-token', b'executor-secret\n')
-            with patch.object(stack, 'compose', return_value=b''), \
-                    patch.object(stack.time, 'sleep'), \
-                    self.assertRaises(ValueError) as raised:
+            statuses = iter([b'running starting\n', b'running starting\n', b'running healthy\n'])
+            asked = []
+
+            def compose(root, *args, capture=False, **options):
+                if 'ps' in args:
+                    asked.append(args)
+                    return next(statuses)
+                return None
+
+            with patch.object(stack, 'compose', compose), patch.object(stack.time, 'sleep'):
                 stack.start_executor(ROOT, state, stack.DEFAULT, 'build', environ={})
-            message = str(raised.exception)
-            self.assertIn(f'--project-name acclimate-local-{stack.project_suffix(ROOT)}', message)
-            self.assertIn('-f compose.local.yaml logs acclimate-executor', message)
+            self.assertEqual(len(asked), 3)
+            self.assertEqual(asked[0], ('ps', '--all', '--format', '{{.State}} {{.Health}}',
+                                        'acclimate-executor'))
 
     def test_docker_not_running_is_reported_before_any_port_hint(self):
         with patch.object(stack, 'docker_running', return_value=False), \

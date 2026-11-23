@@ -155,6 +155,8 @@ class SandboxGate(unittest.TestCase):
                             ),
                             str(256 * 1024 * 1024),
                         )
+                        # The lease request succeeded, so the health check passes.
+                        docker("exec", name, "acclimate-executor", "--health")
                         docker("kill", "--signal=TERM", name)
                         docker(
                             "exec",
@@ -275,10 +277,11 @@ class SandboxGate(unittest.TestCase):
                 self.assertFalse(results)
                 return
             (result,) = results
-            if case in ("runtime", "upstream", "timeout", "invalid-reply"):
+            if case in ("upstream", "timeout", "invalid-reply"):
+                # A reply the gateway cannot use will not clear by waiting.
                 self.assertEqual(
                     result["error"]["code"],
-                    "sandbox-start" if case == "runtime" else "gateway-upstream",
+                    "provider-rejected" if case == "invalid-reply" else "gateway-upstream",
                     result["error"]["message"],
                 )
                 self.assertNotEqual(result["error"]["message"], result["error"]["code"])
@@ -324,8 +327,68 @@ class SandboxGate(unittest.TestCase):
         ):
             with self.subTest(case=case):
                 self.exercise(runtime, case)
-        if "runsc" not in json.loads(docker("info", "--format", "{{json .Runtimes}}")):
-            self.exercise("runsc", "runtime")
+
+    def start_alone(self, runtime, url, token):
+        """Run an executor in the foreground until it exits."""
+        volume = docker("volume", "create")
+        name = "executor-test-" + uuid.uuid4().hex
+        try:
+            return subprocess.run(
+                ["docker", "run", "--rm", "--name", name,
+                 "--add-host", "host.docker.internal:host-gateway",
+                 "-v", "/var/run/docker.sock:/var/run/docker.sock",
+                 "-v", volume + ":/var/lib/acclimate-executor",
+                 "-e", "ACCLIMATE_SANDBOX_VOLUME=" + volume,
+                 "-e", "ACCLIMATE_EXECUTOR_SERVICE=" + url,
+                 "-e", "ACCLIMATE_SANDBOX_RUNTIME=" + runtime,
+                 "-e", "ACCLIMATE_RUNNER_IMAGE=" + self.runner,
+                 "-e", "ACCLIMATE_EXECUTOR_TOKEN=" + token,
+                 self.executor],
+                capture_output=True, text=True, timeout=120)
+        finally:
+            subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+            # Removing the volume fails if the preflight left a sandbox behind.
+            docker("volume", "rm", volume)
+
+    def test_missing_runtime_stops_the_executor_at_startup(self):
+        if "runsc" in json.loads(docker("info", "--format", "{{json .Runtimes}}")):
+            self.skipTest("runsc is registered")
+        started = time.monotonic()
+        result = self.start_alone("runsc", "http://127.0.0.1:9", "executor-secret")
+        self.assertEqual(result.returncode, 78, result.stderr)
+        self.assertIn("Sandbox preflight failed: could not create a sandbox container", result.stderr)
+        self.assertIn("`runsc` runtime registered", result.stderr)
+        self.assertIn("--host-uds=open", result.stderr)
+        self.assertLess(time.monotonic() - started, 60)
+
+    def test_refused_credential_stops_the_executor(self):
+        requests = []
+
+        class Refuse(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                requests.append(self.path)
+                self.send_response(401)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+        server = ThreadingHTTPServer(("0.0.0.0", 0), Refuse)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        token = "secret-" + uuid.uuid4().hex
+        try:
+            # The plain Docker preflight passes, so the executor reaches the service.
+            result = self.start_alone(
+                "docker", f"http://host.docker.internal:{server.server_port}", token)
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertEqual(result.returncode, 78, result.stderr)
+        self.assertEqual(requests, ["/internal/executor/leases"])
+        self.assertIn("refused the executor credential (HTTP 401)", result.stderr)
+        self.assertIn("acclimate-service --create-executor-token", result.stderr)
+        self.assertNotIn(token, result.stderr)
 
 
 if __name__ == "__main__":

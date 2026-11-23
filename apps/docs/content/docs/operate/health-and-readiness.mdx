@@ -13,8 +13,11 @@ Verify that the service and console are ready to receive traffic, then check aut
 | API `GET /ready` | Bounded database probe, singleton ownership, initialized running worker, and non-draining state. Returns HTTP 200 with `{"ready":true}` or HTTP 503 with `{"ready":false}`. |
 | Console `GET /ready` | Console configuration and upstream service readiness. |
 | Caddy container health | Proxy process and configuration liveness. Its application dependencies require both backends to be ready. |
+| Executor container health | `acclimate-executor --health`. Healthy while the service has answered a lease request or heartbeat in the last 120 seconds. `docker compose ps acclimate-executor` shows it. |
 
 When the API receives SIGTERM, it withdraws readiness before draining requests and work and releasing the ownership lock. If readiness stays unavailable during normal operation, check database reachability, schema initialization, and single-process ownership.
+
+An executor that keeps restarting has exited with status 78: its credential, runner image or sandbox runtime is wrong, and `docker compose logs acclimate-executor` says which. To see which executors the service knows, run `docker compose exec -T service /usr/local/bin/acclimate-service --list-executor-tokens`. It prints each credential's ID, creation time, last-seen time, declared runtime and revoked state, never a token.
 
 ## Verify access and activity
 

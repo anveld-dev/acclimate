@@ -125,3 +125,24 @@ class ProtocolTest(unittest.TestCase):
             * 2,
         )
         UUID(job.outcome_id)
+
+    def test_expect_sends_an_explicit_grading_choice(self):
+        self.enterContext(
+            patch.dict(
+                os.environ,
+                {
+                    "ACCLIMATE_URL": self.url,
+                    "ACCLIMATE_WORKSPACE": "w",
+                    "ACCLIMATE_TOKEN": "token",
+                },
+            )
+        )
+        client = Acclimate.from_env(cache_dir=self.tmp / "delivery")
+        job = client.job("support", channel="stable", input="question")
+        with self.assertRaisesRegex(ValueError, 'grading must be "exact" or "criteria"'):
+            job.expect("answer", grading="fuzzy")  # type: ignore[arg-type]
+        self.assertEqual(self.service.outcomes, [])
+        job.expect("A reply in two short paragraphs.", grading="criteria")
+        client.job("support", channel="stable", input="question").expect("answer")
+        self.assertEqual(self.service.outcomes[0][1]["grading"], "criteria")
+        self.assertNotIn("grading", self.service.outcomes[1][1])

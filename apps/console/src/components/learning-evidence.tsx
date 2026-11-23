@@ -3,6 +3,7 @@ import type { LearningRound, LearningRollout } from '@acclimate/sdk';
 import type { LearningScope } from '../lib/learning';
 import { Button } from './ui/button';
 import { learningRequest } from '../server/central-actions';
+import { TaskLink } from './learning-task-link';
 
 type Evidence = { caseId: string; rollouts: LearningRollout[] }[];
 export function LearningEvidence({
@@ -10,11 +11,13 @@ export function LearningEvidence({
   roundIds,
   evaluation,
   taskId,
+  label = 'Show per-task results',
 }: {
   scope: LearningScope;
   roundIds: string[];
   evaluation?: string;
   taskId?: string;
+  label?: string;
 }) {
   const [result, setResult] = useState<Evidence>();
   const [message, setMessage] = useState('');
@@ -67,13 +70,14 @@ export function LearningEvidence({
   return (
     <div className="space-y-2">
       <Button variant="outline" disabled={busy} onClick={() => void load()}>
-        {busy ? 'Loading evidence…' : taskId ? 'Show last rollout' : 'Show per-task results'}
+        {busy ? 'Loading evidence…' : taskId ? 'Show last rollout' : label}
       </Button>
       {message && <p role="status">{message}</p>}
       {result?.map((c) => (
         <details key={c.caseId}>
           <summary>
-            {c.caseId} · {c.rollouts.filter((r) => r.passed).length} of {c.rollouts.length} passed
+            <TaskLink id={c.caseId} /> · {c.rollouts.filter((r) => r.passed).length} of{' '}
+            {c.rollouts.length} passed
           </summary>
           {c.rollouts.map((r, i) => (
             <RolloutEvidence key={i} r={r} i={i} />
@@ -89,7 +93,8 @@ export function RolloutEvidence({ r, i }: { r: LearningRollout; i: number }) {
   return (
     <div className="rounded border p-2">
       <p>
-        Rollout {i + 1} · {r.error ? 'Error' : r.passed ? 'Passed' : 'Failed'} · score {typeof r.score === 'number' ? Number(r.score.toFixed(3)) : r.score}
+        Rollout {i + 1} · {r.error ? 'Error' : r.passed ? 'Passed' : 'Failed'} · score{' '}
+        {typeof r.score === 'number' ? Number(r.score.toFixed(3)) : r.score}
       </p>
       {reasoning && <pre className="whitespace-pre-wrap break-words">{reasoning}</pre>}
       <details>

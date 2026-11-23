@@ -17,6 +17,9 @@ pub struct Record {
     pub budget_start: u64,
     pub capped: bool,
     pub failure: Option<String>,
+    /// The recorded failure will not clear by waiting: the provider refused the request or
+    /// sent a reply the gateway cannot use. It is reported as `provider-rejected`.
+    pub rejected: bool,
     pub pending: bool,
     pub truncated: bool,
     pub invalid: Option<&'static str>,
@@ -143,8 +146,11 @@ async fn forward(g: &Gateway, body: &mut Value) -> Result<Response, StatusCode> 
         r.input = r.input.saturating_add(input);
         r.output = r.output.saturating_add(output);
     }
+    // Rate limits and server errors may clear; any other refusal or unusable reply will not.
+    let transient = status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error();
     if secret {
         r.failure = Some("Upstream response contained a credential".into());
+        r.rejected = !transient;
         return Err(StatusCode::BAD_GATEWAY);
     }
     if !status.is_success() {
@@ -153,15 +159,18 @@ async fn forward(g: &Gateway, body: &mut Value) -> Result<Response, StatusCode> 
                 Some("Provider rejected the request because it exceeded the context length");
         } else {
             r.failure = Some(format!("Upstream returned HTTP {status}"));
+            r.rejected = !transient;
         }
         return Ok((status, raw).into_response());
     }
     if data["choices"].as_array().is_none() {
         r.failure = Some("Upstream response is missing choices".into());
+        r.rejected = true;
         return Err(StatusCode::BAD_GATEWAY);
     }
     if counts.is_none() {
         r.failure = Some("Upstream response is missing token usage".into());
+        r.rejected = true;
         return Err(StatusCode::BAD_GATEWAY);
     }
     r.truncated = data.pointer("/choices/0/finish_reason") == Some(&json!("length"));
@@ -468,7 +477,7 @@ impl Gateway {
                 code: if r.invalid.is_some() || r.capped {
                     "judge-budget"
                 } else {
-                    "gateway-upstream"
+                    super::provider_failure_code(&r)
                 },
                 message: r
                     .failure
@@ -643,7 +652,8 @@ mod tests {
             StatusCode::BAD_GATEWAY
         );
         let record = gateway.record.lock().unwrap();
-        assert!(record.failure.is_some());
+        // A successful reply that echoes the key is unusable, and waiting will not change it.
+        assert!(record.failure.is_some() && record.rejected);
         assert_eq!(record.log.len(), 1);
         assert!(
             !serde_json::to_string(&record.log)
@@ -651,6 +661,54 @@ mod tests {
                 .contains("provider-secret")
         );
         upstream.abort();
+    }
+    #[tokio::test]
+    async fn a_refusal_that_waiting_cannot_cure_is_rejected() {
+        use axum::extract::Path;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new().route(
+            "/{reply}",
+            post(|Path(reply): Path<String>| async move {
+                match reply.as_str() {
+                    "no-choices" => Json(json!({"usage":{}})).into_response(),
+                    "no-usage" => Json(json!({"choices":[]})).into_response(),
+                    code => (
+                        StatusCode::from_u16(code.parse().unwrap()).unwrap(),
+                        Json(json!({"error":{"message":"refused"}})),
+                    )
+                        .into_response(),
+                }
+            }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        for reply in ["400", "401", "403", "404", "no-choices", "no-usage"] {
+            let gateway = Gateway {
+                model: "task".into(),
+                url: format!("{base}/{reply}"),
+                key: "secret".into(),
+                cap: 10,
+                allowlist: "127.0.0.1".into(),
+                record: Default::default(),
+                serial: Default::default(),
+                closed: watch::channel(()).1,
+            };
+            let _ = forward(&gateway, &mut json!({"model":"task"})).await;
+            let record = gateway.record.lock().unwrap();
+            assert!(record.failure.is_some(), "{reply}");
+            assert_eq!(
+                crate::provider_failure_code(&record),
+                "provider-rejected",
+                "{reply}"
+            );
+        }
+        server.abort();
+        // A failure that may clear stays gateway-upstream.
+        let outage = Record {
+            failure: Some("Upstream returned HTTP 503 Service Unavailable".into()),
+            ..Default::default()
+        };
+        assert_eq!(crate::provider_failure_code(&outage), "gateway-upstream");
     }
     #[test]
     fn evidence_cannot_add_a_judge_message() {

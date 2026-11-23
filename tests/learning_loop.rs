@@ -1,8 +1,16 @@
 mod common;
 #[path = "learning_loop/executor.rs"]
 mod executor_tests;
+#[path = "learning_loop/failure_feedback.rs"]
+mod failure_feedback;
+#[path = "learning_loop/imports.rs"]
+mod imports;
+#[path = "learning_loop/operations.rs"]
+mod operations;
 #[path = "learning_loop/optimizer.rs"]
 mod optimizer;
+#[path = "learning_loop/task_review.rs"]
+mod task_review;
 
 use acclimate_service::{AppState, Grant, RuntimeStatus, learning_worker, router};
 use axum::{
@@ -948,10 +956,22 @@ async fn machine_import_of_known_held_out_input_returns_counts() {
         )
         .await;
     assert!(receipt["importId"].is_string());
+    // The row repeats a live task's input, so it is set aside. A machine caller sees only
+    // the count, never which split the matching task is in.
     assert_eq!(
         receipt,
-        json!({"importId":receipt["importId"],"rows":1,"converted":1,"pending":0,"setAsideCount":0})
+        json!({"importId":receipt["importId"],"rows":1,"converted":0,"pending":0,"setAsideCount":1})
     );
+    let status = f
+        .ok(
+            "GET",
+            &format!("/tasks/imports/{}", receipt["importId"].as_str().unwrap()),
+            "writer",
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status["setAside"], json!([]));
     let page = f.ok("GET", "/tasks", "writer", None, Value::Null).await;
     for card in page["items"].as_array().unwrap() {
         assert_ne!(card["input"], input);
@@ -1171,13 +1191,25 @@ async fn stranded_round_expires_without_pausing() {
         .execute(&f.state.db)
         .await
         .unwrap();
-    sqlx::query("UPDATE learning_rounds SET unmatched_since=now()-interval '6 minutes'")
-        .execute(&f.state.db)
-        .await
-        .unwrap();
-    let failed = f
-        .wait_for(&round_route(&item), "reader", |r| r["state"] == "failed")
-        .await;
+    // A worker tick that read the executor as present just before the updates above can still
+    // clear the wait afterwards. Keep ageing it until the round ends.
+    let failed = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            sqlx::query("UPDATE learning_rounds SET unmatched_since=now()-interval '6 minutes' WHERE state<>'failed'")
+                .execute(&f.state.db)
+                .await
+                .unwrap();
+            let round = f
+                .ok("GET", &round_route(&item), "reader", None, Value::Null)
+                .await;
+            if round["state"] == "failed" {
+                break round;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(failed["reason"], "no-matching-executor");
     let state = f
         .wait_for("", "reader", |r| r["waiting"] == "no-executor")

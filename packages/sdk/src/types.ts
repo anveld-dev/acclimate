@@ -196,6 +196,10 @@ export interface LearningLoop extends Omit<LearningLoopRequest, 'taskModel' | 'j
   alert: { kind: 'regression-check-incomplete'; roundId: string; versionId: string } | { kind?: undefined; reverted?: boolean; roundId: string; score: number; previousScore: number; passRate?: number; previousPassRate?: number; flippedTasks: number } | null;
   setting: LearningSetting;
   waiting: string | null;
+  /** When the next round can start, for the `daily-cap` and `provider-unavailable` waits. */
+  nextRoundAt?: string | null;
+  /** While waiting with `no-new-evidence`, how many more evolve tasks must be added or changed. */
+  evolveTasksNeeded?: number | null;
   /** False when the service has no optimizer model; Start is refused until an operator configures one. */
   optimizerConfigured?: boolean;
   taskRevision: number;
@@ -228,7 +232,9 @@ export interface LearningRoundSummary {
   decision: 'adopted' | 'kept' | null;
   reason: 'selector-kept' | 'no-candidates' | 'no-survivors' | 'no-evaluated-candidates'
     | 'no-matching-executor' | 'channel-moved' | 'incumbent-evaluation-failed' | 'optimizer-unavailable'
-    | 'optimizer-context-too-large' | 'selector-unavailable' | 'stopped' | null;
+    | 'optimizer-context-too-large' | 'selector-unavailable' | 'provider-unavailable' | 'stopped' | null;
+  /** The first failed rollout of the evaluation that ended the round. A held-out failure has no message. */
+  failureCause?: LearningFailureCause | null;
   parentVersionId: string;
   adoptedSample: number | null;
   adoptedVersionId: string | null;
@@ -237,6 +243,10 @@ export interface LearningRoundSummary {
   heldOutError: string | null;
   createdAt: string;
   endedAt: string | null;
+}
+export interface LearningFailureCause {
+  code: 'gateway-upstream' | 'provider-rejected' | 'sandbox-start' | 'executor' | 'judge-budget' | 'judge-invalid-reply' | (string & {});
+  message: string | null;
 }
 export interface LearningRound extends LearningRoundSummary {
   channel: string;
@@ -320,10 +330,14 @@ export interface LearningRollout extends LearningHeldOutRollout {
 export interface LearningEvaluationReport {
   cases: { caseId: string; rollouts: LearningRollout[] }[];
 }
+export type LearningGrading = 'exact' | 'criteria';
 export interface LearningOutcomeRequest {
   input: Json;
   expected: Json;
   output?: Json;
+  /** How the expected answer is graded. By default a short single-line string or any non-string
+   * JSON value is compared exactly, and a longer answer is judged against drafted criteria. */
+  grading?: LearningGrading;
   outcomeId: string;
   versionId: string;
   digest: string;
@@ -431,6 +445,24 @@ export interface LearningTrial {
   output?: Json;
   gatewayLog?: Json;
   verdict?: {passed:boolean; score?:number; votes?:boolean[]|null; reasons?:string[]|null};
+  /** Present when status is `failed`. `code` is the failed rollout's error code, or `cancelled`. */
+  error?: {code: string|null};
+}
+
+export interface LearningTaskConfirmation {
+  /** The task revision the confirmed tasks were written at, or null when none needed confirming. */
+  revision: number|null;
+  results: {taskId: string; result: 'confirmed'|'already-confirmed'|'not-held-out'|'not-found'}[];
+}
+
+export interface LearningTaskRecheck {
+  taskId: string;
+  admission: 'pending';
+}
+
+export interface LearningImportSummary extends LearningImport {
+  createdAt: string;
+  source: string;
 }
 
 export interface LearningImport {
@@ -450,6 +482,9 @@ export interface BlockedLearningVersion {
   removedBy: string;
   note: string | null;
   createdAt: string;
+  /** The round whose adoption this block removed, when it is known. */
+  roundId?: string | null;
+  roundNumber?: number | null;
 }
 
 export interface LearningUsageDay {

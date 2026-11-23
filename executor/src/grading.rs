@@ -216,7 +216,8 @@ Reply with one JSON object that says where the parts of a task are. You point at
 - inputPath: JSON pointer, from the top of the row, to what the agent is asked. Example: "/material/question".
 - referencePath: JSON pointer to the expected answer, when the row has one.
 - criteriaPath: JSON pointer to grading criteria already in the row (a string or a list of strings), when it has them.
-- drafted: only when the row has an answer and no criteria of its own. List at most ten short pass-or-fail statements that the answer satisfies, drawn only from that answer. When you set criteriaPath, leave drafted out.
+- drafted: only when the row has an answer and no criteria of its own. List one to ten short pass-or-fail statements that the answer satisfies, drawn only from that answer, each one checkable from a reply alone. When you set criteriaPath, leave drafted out.
+- grading: the material may say how the answer is graded. "grading": "criteria" means a reply is judged against criteria, not compared word for word: set criteriaPath when the row has criteria, and otherwise draft them from the answer. "grading": "exact" means the answer is compared exactly: give referencePath and no criteria. The grading field is never the input or the answer.
 - inputQuote, referenceQuote: only when one string holds more than the part you need, as with pasted text. Each quote must be copied exactly from the string its path points to. When a field is already just the input or just the answer, leave the quote out.
 - turns: for a conversation, inputPath may point to the messages array. Set turns to the number of leading messages to keep, ending on a user message, and point referencePath at the answer that follows.
 
@@ -258,19 +259,31 @@ fn convert_row(row: &Value, reply: &str) -> Option<Option<Value>> {
         None => return None,
     }
     .filter(|v| !v.is_null() && v.as_str().is_none_or(|s| !s.trim().is_empty()));
+    // The service marks how an answer is graded: "criteria" needs criteria from the row or
+    // drafted from the answer, and "exact" keeps the answer as the expected value.
+    let grading = row.pointer("/material/grading").and_then(Value::as_str);
+    let (criteria_path, drafted_criteria) = if grading == Some("exact") {
+        (None, vec![])
+    } else {
+        (m.criteria_path, m.drafted)
+    };
     // Criteria already in the row win. Models often draft more anyway, and those are dropped.
-    let drafted = m.criteria_path.is_none() && !m.drafted.is_empty();
+    let drafted = criteria_path.is_none() && !drafted_criteria.is_empty();
     if drafted && reference.is_none() {
         return None;
     }
-    let criteria = match m.criteria_path {
+    let criteria = match criteria_path {
         Some(p) => match source_value(&p)? {
             Value::String(c) => vec![c.clone()],
             v => serde_json::from_value::<Vec<String>>(v.clone()).ok()?,
         },
-        None => m.drafted,
+        None => drafted_criteria,
     };
     if criteria.len() > 10 || criteria.iter().any(|c| c.trim().is_empty()) {
+        return None;
+    }
+    // An answer marked for criteria is never compared exactly. Ask the model again.
+    if grading == Some("criteria") && criteria.is_empty() && reference.is_some() {
         return None;
     }
     if reference.is_none() && criteria.is_empty() {
@@ -491,5 +504,30 @@ mod tests {
             "Because."
         );
         assert!(convert_row(&pasted, &mapped.replace("Because.", "Invented")).is_none());
+    }
+    #[test]
+    fn answer_rows_marked_for_criteria_get_drafted_criteria() {
+        let answer =
+            "Sorry about the double charge. We refund the second payment within five days.";
+        let row = json!({"row":3,"source":"row:3","material":{"input":"Charged twice","expected":answer,"grading":"criteria"}});
+        let mapped = r#"{"inputPath":"/material/input","referencePath":"/material/expected","drafted":["Says the payment is refunded"]}"#;
+        let card = convert_row(&row, mapped).unwrap().unwrap();
+        assert_eq!(card["input"], "Charged twice");
+        assert_eq!(
+            card["grader"],
+            json!({"type":"criteria","criteria":["Says the payment is refunded"],"reference":answer})
+        );
+        assert_eq!(card["criteriaDrafted"], true);
+        assert_eq!(card["group"], "row:3");
+        // A reply that only points at the answer would compare prose exactly, so it is retried.
+        let bare = r#"{"inputPath":"/material/input","referencePath":"/material/expected"}"#;
+        assert!(convert_row(&row, bare).is_none());
+        // A row marked exact keeps its answer as the expected value and ignores drafted criteria.
+        let mut exact = row.clone();
+        exact["material"]["grading"] = json!("exact");
+        let card = convert_row(&exact, mapped).unwrap().unwrap();
+        assert_eq!(card["grader"], json!({"type":"exact","expected":answer}));
+        assert_eq!(card["criteriaDrafted"], false);
+        assert!(CONVERT.contains(r#""grading": "criteria""#));
     }
 }

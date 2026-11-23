@@ -9,29 +9,40 @@ An Acclimate executor must be running and connected to the service. It uses the 
 
 1. On the workspace's **Members** page, under **Model provider**, save an OpenAI-compatible provider URL, an API key and at least two allowed models. The executor verifies each model and shows the result. Each must answer a chat request and report token usage. CLIProxyAPI with a Codex sign-in is the reference setup.
 2. Open the bundle’s **Learning** tab. Choose the published channel to improve, a task model to answer tasks, a different judge model to grade answers, and a daily round limit. Save the settings.
-3. Import a spreadsheet, CSV, JSONL, or text file, paste conversations, or choose **Write a task**. Use an exact answer for a value that must match. For free text, write one criterion per line and optionally supply a reference answer.
-4. Review the cards and their source rows. Evolve tasks help the optimizer improve the bundle. Held-out tasks independently measure how the released bundle performs. Review and confirm unconfirmed held-out cards so they can be admitted.
-5. Choose **Try task** to run the current release on one card. Read the output, verdict, reasoning, and gateway log on that card. An executor error means the trial could not finish. Trials do not count toward round scores.
+3. Import a spreadsheet, CSV, JSONL, or text file, paste text under **Paste conversations**, or choose **Write a task**. Use an exact answer for a value that must match. For free text, write one criterion per line and optionally supply a reference answer.
+4. Review the cards and their source rows. Evolve tasks help the optimizer improve the bundle. Held-out tasks independently measure how the released bundle performs. Review and confirm unconfirmed held-out cards so they can be admitted. Check **Needs confirmation** to list them, then choose **Confirm all shown** to confirm every unconfirmed held-out card shown in one step.
+5. Choose **Try task** to run the current release on one card. Read the output, verdict, reasoning, and gateway log on that card. A failed trial says why, for example that the model provider was unavailable. Trials do not count toward round scores.
+
+Each card shows a short task ID with a copy button. Round details link to cards with `#task-<taskId>`.
 
 ## Import shapes
 
-A row with both `input` and `expected` fields becomes an exact-match task without a model call. Its answer must match exactly, so use this shape for short or structured answers. The judge model converts every other row and pasted conversation into a task. It keeps criteria already in the row and drafts criteria only for a row with an answer and none of its own.
+A row with both `input` and `expected` fields is graded by the shape of its answer. An answer that is not a string, or is a string of at most 80 characters with no line break, is compared exactly, and the row becomes an exact-match task without a model call. A longer or multi-line answer is graded by criteria: the judge model drafts pass-or-fail criteria from the answer and keeps the answer as the reference. Add a `grading` field set to `exact` or `criteria` to choose for yourself. Any other value rejects the import.
+
+The judge model converts every other row into a task. It keeps criteria already in the row and drafts criteria only for a row with an answer and none of its own. A held-out task with drafted criteria waits for a person to confirm it.
+
+Pasted text and `.txt` files are split on lines that hold only three or more dashes (`---`). Each piece becomes its own row and its own group. Text with no separator is one row.
+
+The **Imports** section lists past imports, newest first, with their counts and set-aside rows.
+
+For the local stack's **Example agent** bundle, [`examples/learning/example-agent-tasks.jsonl`](https://github.com/anveld-dev/acclimate/blob/main/examples/learning/example-agent-tasks.jsonl) holds 60 ready rows, each with a request, a reference reply and its own criteria. Import it for a first round.
 
 The service assigns each source group to evolve or held-out by its hash, so roughly half of your rows land on each side. For a first round, import about 50 rows so that each side reaches 20 admitted tasks after some are set aside.
 
 ## Admission and import results
 
-A pending card awaits confirmation or a check by the executor. An admitted card counts toward its group’s minimum. Edit a set-aside card to run its checks again.
+A pending card awaits confirmation or a check by the executor. An admitted card counts toward its group’s minimum. Edit a set-aside card to run its checks again. A card set aside with **Check failed** has **Run check again**, which reruns the check without changing the task, and **Run all failed checks again** does it for every such card.
 
 | Reason | What to do |
 | --- | --- |
 | No usable reference | Provide an example answer or explicit criteria for the source row. |
 | Not converted | The conversion could not map the row to a task. Edit the row and import it again. |
 | Row too large | Shorten the source example and import it again. |
+| Duplicate | The row's input matches a live task, or an earlier row in the same import. Nothing to do unless you meant a different task. |
 | Reference failed | Check that the reference answer meets every criterion. |
 | Empty answer passed | Tighten the expected answer or criteria so an empty answer fails. |
 | Judge unstable | Replace ambiguous criteria with observable requirements and try again. |
-| Check failed | Check executor and provider availability, then retry the task. |
+| Check failed | Check executor and provider availability, then choose **Run check again**. |
 
 ## Start and monitor
 
@@ -43,15 +54,16 @@ The score chart follows each round. Use evolve scores to understand candidate se
 
 | Waiting reason | What happens next |
 | --- | --- |
-| No new evidence | Add, edit or retire evolve tasks. The loop wakes when at least 5 evolve tasks, and at least 10 percent of the admitted evolve tasks, changed since the last round. |
-| Daily cap | The next round starts when the rolling 24-hour window has room. |
+| No new evidence | Add, edit or retire evolve tasks. The loop wakes when at least 5 evolve tasks, and at least 10 percent of the admitted evolve tasks, changed since the last round. The console shows how many more are needed. |
+| Daily cap | The next round starts when the rolling 24-hour window has room. The console shows when. |
+| Provider unavailable | The last round failed because the model provider did not answer. The loop tries again ten minutes after that round ended, and waits twice as long after each further outage, up to six hours. Start or Resume runs a round at once. |
 | No executor | Ask the operator to start a connected executor. |
 | Models no longer allowed | Choose two currently allowed models in learning setup. |
 
-A round can fail if no executor matches its pinned settings. Check the executor connection and provider configuration. If learning pauses after repeated failures, inspect recent rounds before starting again. If the optimizer runs out of context, ask the operator to check the optimizer model’s context limit. If the task count falls below the floor, restore the admitted count on both sides.
+A failed round shows its cause: the error of the first rollout that failed, such as a provider error or a sandbox that could not start. A round fails with **provider unavailable** when every failed rollout of the current version's evaluation was a model provider error. That failure does not count toward the pause after repeated failures or the daily cap, and the loop retries by itself. A provider that refuses the request, for example because the key was revoked, fails the round like any other error and counts toward the pause. A round can also fail if no executor matches its pinned settings. Check the executor connection and provider configuration. If learning pauses after repeated failures, the paused banner shows the cause. Inspect recent rounds before starting again. If the optimizer runs out of context, ask the operator to check the optimizer model’s context limit. If the task count falls below the floor, restore the admitted count on both sides.
 
-**Pause** lets the active round finish. **Stop learning** cancels open work. A held-out drop raises an alert linked to the round. Check whether the service already restored the previous version and compare confirmed scores when available. To undo a current adoption, choose **Roll back** on its round and confirm. The removed version is blocked from future adoption. Review its digest and removal note before choosing **Unblock version**.
+**Pause** lets the active round finish. **Stop learning** cancels open work. A held-out drop raises an alert linked to the round, with a **Roll back this release** button. Check whether the service already restored the previous version and compare confirmed scores when available. To undo a current adoption, choose **Roll back** on its round and confirm. The removed version is blocked from future adoption. Review its digest and removal note before choosing **Unblock version**.
 
 ## Report a production outcome
 
-An application with workspace write access can call `job.expect(expected, { input, output })` after a production job. The SDK sends the pinned version and digest. The service assigns the task’s split and runs admission.
+An application with workspace write access can call `job.expect(expected, { input, output, grading })` after a production job (`job.expect(expected, input, output=..., grading=...)` in Python). The SDK sends the pinned version and digest. The service assigns the task’s split and runs admission. `grading` follows the same rule as an import row. An outcome graded by criteria becomes a task once the judge model has drafted its criteria. If drafting fails, the outcome becomes an exact-match task, set aside, so you can edit it to add criteria.

@@ -135,7 +135,8 @@ const descriptions: Record<string, string> = {
   'persistent-failure': 'Candidates repeatedly failed this task.',
   'no-reference':
     'No usable reference answer or grading criteria. Add an expected answer or grading criteria to the row and import it again.',
-  'not-converted': 'The conversion could not turn this row into a task. Edit the row and import it again.',
+  'not-converted':
+    'The conversion could not turn this row into a task. Edit the row and import it again.',
   'too-large': 'The row is over 64 KiB. Shorten it and import it again.',
   'reference-failed':
     'The reference answer does not meet the grading criteria. Fix the answer or the criteria and save.',
@@ -163,7 +164,10 @@ const failureCauses: Record<string, string> = {
     'The judge model did not return a valid judgment. Check the judge model, or choose another one in learning setup.',
 };
 export function describeFailureCause(code: string) {
-  return failureCauses[code] ?? 'A run failed with error ' + code + '. Ask the operator to check the executor.';
+  return (
+    failureCauses[code] ??
+    'A run failed with error ' + code + '. Ask the operator to check the executor.'
+  );
 }
 
 /** Shows the start of a task ID, which is enough to tell tasks apart in a list. */
@@ -173,4 +177,3 @@ export function shortTaskId(id: string) {
 
 /** The Learning page opens the card with this element ID when the URL names it. */
 export const taskAnchor = (id: string) => 'task-' + id;
-

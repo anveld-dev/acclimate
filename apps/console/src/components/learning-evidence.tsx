@@ -76,7 +76,8 @@ export function LearningEvidence({
       {result?.map((c) => (
         <details key={c.caseId}>
           <summary>
-            <TaskLink id={c.caseId} /> · {c.rollouts.filter((r) => r.passed).length} of {c.rollouts.length} passed
+            <TaskLink id={c.caseId} /> · {c.rollouts.filter((r) => r.passed).length} of{' '}
+            {c.rollouts.length} passed
           </summary>
           {c.rollouts.map((r, i) => (
             <RolloutEvidence key={i} r={r} i={i} />
@@ -92,7 +93,8 @@ export function RolloutEvidence({ r, i }: { r: LearningRollout; i: number }) {
   return (
     <div className="rounded border p-2">
       <p>
-        Rollout {i + 1} · {r.error ? 'Error' : r.passed ? 'Passed' : 'Failed'} · score {typeof r.score === 'number' ? Number(r.score.toFixed(3)) : r.score}
+        Rollout {i + 1} · {r.error ? 'Error' : r.passed ? 'Passed' : 'Failed'} · score{' '}
+        {typeof r.score === 'number' ? Number(r.score.toFixed(3)) : r.score}
       </p>
       {reasoning && <pre className="whitespace-pre-wrap break-words">{reasoning}</pre>}
       <details>

@@ -563,3 +563,130 @@ test('running controls, waiting instructions, rollout progress and restores use 
   assert.doesNotMatch(stopped, />Stop learning</);
   assert.match(stopped, /automatically, without approval/);
 });
+
+test('a failed round, a waiting loop and an alert say what happened and what to do next', () => {
+  const failed: LearningRoundSummary = {
+    ...round,
+    id: '00000000-0000-4000-8000-000000000009',
+    number: 3,
+    state: 'failed',
+    decision: null,
+    reason: 'incumbent-evaluation-failed',
+    adoptedSample: null,
+    adoptedVersionId: null,
+    failureCause: { code: 'judge-budget', message: 'judge stopped at its token limit' },
+  };
+  const paused = markup({
+    ...empty,
+    loop: { ...loop, status: 'paused', pauseReason: 'failed-rounds' },
+    rounds: [failed, round],
+  });
+  assert.equal((paused.match(/Learning is paused\./g) ?? []).length, 1);
+  assert.match(paused, /Round 3 failed: The judge model ran out of its token limit/);
+  assert.match(paused, /judge stopped at its token limit/);
+  assert.match(paused, /Inspect round 3/);
+
+  const capped = markup({
+    ...empty,
+    loop: { ...loop, waiting: 'daily-cap', nextRoundAt: '2026-11-21T12:00:00Z' },
+  });
+  assert.match(capped, /The next round can start at <time dateTime="2026-11-21T12:00:00Z"/);
+  assert.match(capped, /Nov 21, 2026, 12:00 UTC/);
+  const outage = markup({
+    ...empty,
+    loop: { ...loop, waiting: 'provider-unavailable', nextRoundAt: '2026-11-21T12:10:00Z' },
+  });
+  assert.match(outage, /check the provider and its rate limits/);
+  assert.match(outage, /The next round can start at/);
+  const idle = markup({
+    ...empty,
+    loop: { ...loop, waiting: 'no-new-evidence', evolveTasksNeeded: 3 },
+  });
+  assert.match(idle, /Add or change 3 more evolve tasks to start another round\./);
+
+  const alert = { roundId: round.id, score: 0.5, previousScore: 0.8, flippedTasks: 3 };
+  const live = {
+    ...empty,
+    loop: { ...loop, alert },
+    rounds: [round, { ...round, id: 'older', number: 0, adoptedVersionId: 'old' }],
+    channelHead: round.adoptedVersionId,
+    blocked: [
+      {
+        digest: 'removed-digest',
+        createdAt: timestamp,
+        removedBy: 'operator',
+        note: null,
+        roundId: round.id,
+        roundNumber: 1,
+      },
+    ],
+  };
+  const html = markup(live);
+  assert.match(html, /Held-out score dropped/);
+  assert.match(html, />Roll back this release</);
+  assert.match(html, /Only the latest release can be rolled back\./);
+  assert.match(
+    html,
+    /Removed by operator on <time[^>]*>Nov 20, 2026, 12:00 UTC<\/time> from <a[^>]*>round 1</,
+  );
+  assert.doesNotMatch(
+    markup({ ...live, canManage: false }),
+    /Roll back this release|Only the latest/,
+  );
+  assert.doesNotMatch(
+    markup({ ...live, loop: { ...loop, alert: { ...alert, reverted: true } } }),
+    /Roll back this release/,
+  );
+  assert.doesNotMatch(markup({ ...live, channelHead: 'external' }), /Roll back this release/);
+});
+
+test('setup explains each field and round detail links tasks and the current version', () => {
+  const setup = markup(empty);
+  for (const help of [
+    'released to this channel automatically, without approval',
+    'a model grading its own work is lenient',
+    'forms each round’s setting',
+    'trusts improvement memory from it most',
+    'every evolve task five times for up to six versions',
+    'the Tasks panel appears below this panel',
+  ])
+    assert.ok(setup.includes(help), help);
+  const html = markup({
+    ...empty,
+    loop,
+    detail: {
+      ok: true,
+      parentFiles: null,
+      problems: { P1: 'Agent stops early' },
+      round: {
+        ...detailRound,
+        state: 'failed',
+        decision: null,
+        reason: 'provider-unavailable',
+        reverted: false,
+        confirmedParentScore: null,
+        confirmedAdoptionScore: null,
+        failureCause: { code: 'gateway-upstream', message: null },
+        incumbentEvaluationId: 'incumbent-evaluation',
+        candidates: [
+          {
+            ...detailRound.candidates[1],
+            diagnosis: {
+              problem: { id: 'P1' },
+              predicted: ['00000000-0000-4000-8000-00000000000a', 'case-a'],
+            },
+          },
+        ],
+      },
+    },
+  });
+  assert.match(html, /P1 · Agent stops early/);
+  assert.match(html, /The model provider was unavailable, rate limited or overloaded/);
+  assert.match(html, /Show the current version(&#x27;|')s results/);
+  assert.match(html, /href="#task-case-a"/);
+  assert.match(
+    html,
+    /href="#task-00000000-0000-4000-8000-00000000000a"[^>]*><code aria-hidden="true">00000000…<\/code><span class="sr-only">00000000-0000-4000-8000-00000000000a/,
+  );
+  assert.match(html, /<time dateTime="2026-11-20T12:00:00Z"/);
+});

@@ -163,8 +163,7 @@ function LoopStatus({
   return (
     <div className="workspace-panel space-y-2 p-4" role="status">
       <p>
-        {describeLearning(loop.status)}{' '}
-        {loop.pauseReason && describeLearning(loop.pauseReason)}{' '}
+        {describeLearning(loop.status)} {loop.pauseReason && describeLearning(loop.pauseReason)}{' '}
         {loop.waiting && describeLearning(loop.waiting)}
       </p>
       {(loop.waiting === 'daily-cap' || loop.waiting === 'provider-unavailable') &&
@@ -186,7 +185,9 @@ function LoopStatus({
               Round {latest.number} failed: <FailureCause cause={latest.failureCause} />
             </>
           ) : (
-            <>Round {latest.number} failed. {latest.reason && describeLearning(latest.reason)}</>
+            <>
+              Round {latest.number} failed. {latest.reason && describeLearning(latest.reason)}
+            </>
           )}{' '}
           <a className="underline" href={href(latest.id)}>
             Inspect round {latest.number}
@@ -292,9 +293,7 @@ function RoundList({
                       : describeLearning(round.heldOutError)
                     : score(round.heldOutScore)}
                 </td>
-                <td>
-                  {round.endedAt ? <ReceiptTime value={round.endedAt} /> : '—'}
-                </td>
+                <td>{round.endedAt ? <ReceiptTime value={round.endedAt} /> : '—'}</td>
               </tr>
             ))}
           </tbody>
@@ -709,12 +708,7 @@ export function BundleLearning({
                 </div>
                 {(
                   [
-                    [
-                      'Task model',
-                      task,
-                      setTask,
-                      'The model the bundle runs on in every rollout.',
-                    ],
+                    ['Task model', task, setTask, 'The model the bundle runs on in every rollout.'],
                     [
                       'Judge model',
                       judge,
@@ -796,8 +790,8 @@ export function BundleLearning({
                 </div>
                 {!loop && (
                   <p className="sm:col-span-2">
-                    After you save these settings, the Tasks panel appears below this panel. Add
-                    or import evolve and held-out tasks there.
+                    After you save these settings, the Tasks panel appears below this panel. Add or
+                    import evolve and held-out tasks there.
                   </p>
                 )}
                 {!state.channels.length && <p>Release a version on a channel first.</p>}

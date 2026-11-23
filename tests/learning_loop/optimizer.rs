@@ -848,6 +848,13 @@ async fn history_keeps_all_same_setting_rounds_and_omits_held_out_data() {
     let server = model(&mut f, |_, _| (StatusCode::PAYLOAD_TOO_LARGE, json!({}))).await;
     f.enroll().await;
     f.seed().await;
+    // A scored Try with a recognizable task, answer and trace must stay out
+    // of the entire optimizer request, including history and improvement memory.
+    sqlx::query("WITH trial AS (INSERT INTO learning_trials(project_id,bundle_id,version_id,runtime,kind)
+        VALUES($1,$2,$3,jsonb_build_object('taskModel','task','judgeModel','judge'),'try') RETURNING id)
+        INSERT INTO learning_rollouts(trial_id,task_id,rollout,input,grader,status,score,passed,output,gateway_log)
+        SELECT id,'trial-only-sentinel',1,'null','{}','scored',1,true,'trial-only-sentinel','[\"trial-only-sentinel\"]' FROM trial")
+        .bind(&f.project).bind(f.bundle).bind(f.version).execute(&f.state.db).await.unwrap();
     let setting = enrollment()["setting"].clone();
     for (first, last, pin) in [
         (1, 60, setting.clone()),
@@ -880,6 +887,7 @@ async fn history_keeps_all_same_setting_rounds_and_omits_held_out_data() {
         .await;
     let requests = server.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
+    assert!(!requests[0].to_string().contains("trial-only-sentinel"));
     let history = requests[0]["history"].as_array().unwrap();
     assert_eq!(history.len(), 60);
     for (i, item) in history.iter().enumerate() {

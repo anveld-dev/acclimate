@@ -43,7 +43,7 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
 
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT table_name FROM information_schema.tables
-         WHERE table_schema=current_schema() AND table_name <> '_sqlx_migrations'
+         WHERE table_schema=current_schema() AND table_type='BASE TABLE' AND table_name <> '_sqlx_migrations'
          ORDER BY table_name",
     )
     .fetch_all(&mut connection)
@@ -56,6 +56,7 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
             "bundles",
             "channels",
             "durable_commands",
+            "executor_credentials",
             "idempotency",
             "integration_credentials",
             "integration_receipts",
@@ -67,7 +68,9 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
             "learning_memory_attempts",
             "learning_memory_problems",
             "learning_optimizer_calls",
+            "learning_rollouts",
             "learning_rounds",
+            "learning_trials",
             "machine_token_events",
             "machine_tokens",
             "mutation_audit",
@@ -79,6 +82,7 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
             "versions",
             "workspace_adoptions",
             "workspace_invitations",
+            "workspace_model_providers",
         ]
     );
     let effort_column: (String, String) = sqlx::query_as(
@@ -91,13 +95,13 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
     .unwrap();
     assert_eq!(effort_column, ("text".into(), "YES".into()));
 
-    let views: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM information_schema.views WHERE table_schema=current_schema()",
+    let views: Vec<String> = sqlx::query_scalar(
+        "SELECT table_name FROM information_schema.views WHERE table_schema=current_schema() ORDER BY table_name",
     )
-    .fetch_one(&mut connection)
+    .fetch_all(&mut connection)
     .await
     .unwrap();
-    assert_eq!(views, 0);
+    assert_eq!(views, ["learning_admission_results"]);
     let functions: Vec<String> = sqlx::query_scalar(
         "SELECT routine_name FROM information_schema.routines WHERE routine_schema=current_schema() ORDER BY routine_name",
     ).fetch_all(&mut connection).await.unwrap();

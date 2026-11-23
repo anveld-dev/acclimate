@@ -278,7 +278,9 @@ class LearningRoundSummary(TypedDict):
     decision: Literal["adopted", "kept"] | None
     reason: Literal["selector-kept", "no-candidates", "no-survivors", "no-evaluated-candidates",
                     "no-matching-executor", "channel-moved", "incumbent-evaluation-failed", "optimizer-unavailable",
-                    "optimizer-context-too-large", "selector-unavailable", "stopped"] | None
+                    "optimizer-context-too-large", "selector-unavailable", "provider-unavailable",
+                    "stopped"] | None
+    failureCause: NotRequired["LearningFailureCause | None"]
     parentVersionId: str
     adoptedSample: int | None
     adoptedVersionId: str | None
@@ -287,6 +289,11 @@ class LearningRoundSummary(TypedDict):
     heldOutError: str | None
     createdAt: str
     endedAt: str | None
+
+
+class LearningFailureCause(TypedDict):
+    code: str
+    message: str | None
 
 
 class _IncompleteCheck(TypedDict):
@@ -313,6 +320,8 @@ class LearningLoop(TypedDict):
     maxRoundsPerDay: int
     taskRevision: int
     waiting: str | None
+    nextRoundAt: NotRequired[str | None]
+    evolveTasksNeeded: NotRequired[int | None]
     alert: _LearningAlert | _IncompleteCheck | None
     optimizerConfigured: NotRequired[bool]
     admittedEvolve: int
@@ -645,6 +654,8 @@ class BlockedLearningVersion(TypedDict):
     removedBy: str
     note: str | None
     createdAt: str
+    roundId: NotRequired[str | None]
+    roundNumber: NotRequired[int | None]
 
 
 class LearningUsageDay(TypedDict):
@@ -696,6 +707,7 @@ __all__ = [
     "ModelProvider",
     "LearningRollback",
     "BlockedLearningVersion",
+    "LearningFailureCause",
     "LearningUsage",
     "LearningUsageDay",
     "LearningImport",

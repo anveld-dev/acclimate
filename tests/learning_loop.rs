@@ -1,6 +1,8 @@
 mod common;
 #[path = "learning_loop/executor.rs"]
 mod executor_tests;
+#[path = "learning_loop/failure_feedback.rs"]
+mod failure_feedback;
 #[path = "learning_loop/imports.rs"]
 mod imports;
 #[path = "learning_loop/operations.rs"]

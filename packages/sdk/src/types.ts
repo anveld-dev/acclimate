@@ -196,6 +196,10 @@ export interface LearningLoop extends Omit<LearningLoopRequest, 'taskModel' | 'j
   alert: { kind: 'regression-check-incomplete'; roundId: string; versionId: string } | { kind?: undefined; reverted?: boolean; roundId: string; score: number; previousScore: number; passRate?: number; previousPassRate?: number; flippedTasks: number } | null;
   setting: LearningSetting;
   waiting: string | null;
+  /** When the next round can start, for the `daily-cap` and `provider-unavailable` waits. */
+  nextRoundAt?: string | null;
+  /** While waiting with `no-new-evidence`, how many more evolve tasks must be added or changed. */
+  evolveTasksNeeded?: number | null;
   /** False when the service has no optimizer model; Start is refused until an operator configures one. */
   optimizerConfigured?: boolean;
   taskRevision: number;
@@ -228,7 +232,9 @@ export interface LearningRoundSummary {
   decision: 'adopted' | 'kept' | null;
   reason: 'selector-kept' | 'no-candidates' | 'no-survivors' | 'no-evaluated-candidates'
     | 'no-matching-executor' | 'channel-moved' | 'incumbent-evaluation-failed' | 'optimizer-unavailable'
-    | 'optimizer-context-too-large' | 'selector-unavailable' | 'stopped' | null;
+    | 'optimizer-context-too-large' | 'selector-unavailable' | 'provider-unavailable' | 'stopped' | null;
+  /** The first failed rollout of the evaluation that ended the round. A held-out failure has no message. */
+  failureCause?: LearningFailureCause | null;
   parentVersionId: string;
   adoptedSample: number | null;
   adoptedVersionId: string | null;
@@ -237,6 +243,10 @@ export interface LearningRoundSummary {
   heldOutError: string | null;
   createdAt: string;
   endedAt: string | null;
+}
+export interface LearningFailureCause {
+  code: 'gateway-upstream' | 'sandbox-start' | 'executor' | 'judge-budget' | 'judge-invalid-reply' | (string & {});
+  message: string | null;
 }
 export interface LearningRound extends LearningRoundSummary {
   channel: string;
@@ -472,6 +482,9 @@ export interface BlockedLearningVersion {
   removedBy: string;
   note: string | null;
   createdAt: string;
+  /** The round whose adoption this block removed, when it is known. */
+  roundId?: string | null;
+  roundNumber?: number | null;
 }
 
 export interface LearningUsageDay {

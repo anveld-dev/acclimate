@@ -7,7 +7,8 @@ import { useBackgroundRefresh } from './use-background-refresh';
 import type { LearningRound, LearningLoop, LearningRoundSummary } from '@acclimate/sdk';
 import { useEffect, useState, type ReactNode } from 'react';
 import { bundleHref } from '../navigation';
-import { ImprovementMemory, LearningRoundDetail } from './learning-details';
+import { FailureCause, ImprovementMemory, LearningRoundDetail } from './learning-details';
+import { ReceiptTime } from './receipt-time';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { learningRequest } from '../server/central-actions';
@@ -148,10 +149,60 @@ function ScoreCurves({ rounds }: { rounds: LearningRoundSummary[] }) {
   );
 }
 
+/** What the loop is doing now, why it waits or paused, and what to do about it. */
+function LoopStatus({
+  loop,
+  latest,
+  href,
+}: {
+  loop: LearningLoop;
+  latest?: LearningRoundSummary;
+  href: (id: string) => string;
+}) {
+  const needed = loop.evolveTasksNeeded;
+  return (
+    <div className="workspace-panel space-y-2 p-4" role="status">
+      <p>
+        {describeLearning(loop.status)} {loop.pauseReason && describeLearning(loop.pauseReason)}{' '}
+        {loop.waiting && describeLearning(loop.waiting)}
+      </p>
+      {(loop.waiting === 'daily-cap' || loop.waiting === 'provider-unavailable') &&
+        loop.nextRoundAt && (
+          <p>
+            The next round can start at <ReceiptTime value={loop.nextRoundAt} />.
+          </p>
+        )}
+      {loop.waiting === 'no-new-evidence' && needed != null && needed > 0 && (
+        <p>
+          Add or change {needed} more evolve {needed === 1 ? 'task' : 'tasks'} to start another
+          round.
+        </p>
+      )}
+      {loop.pauseReason === 'failed-rounds' && latest?.state === 'failed' && (
+        <p>
+          {latest.failureCause ? (
+            <>
+              Round {latest.number} failed: <FailureCause cause={latest.failureCause} />
+            </>
+          ) : (
+            <>
+              Round {latest.number} failed. {latest.reason && describeLearning(latest.reason)}
+            </>
+          )}{' '}
+          <a className="underline" href={href(latest.id)}>
+            Inspect round {latest.number}
+          </a>
+        </p>
+      )}
+    </div>
+  );
+}
+
 function RoundList({
   rounds,
   href,
   rollback,
+  manage,
   history,
   head,
 }: {
@@ -159,6 +210,7 @@ function RoundList({
   href: (id: string) => string;
   history: Extract<LearningState, { ok: true }>['history'];
   head: string | null;
+  manage: boolean;
   rollback?: (id: string) => void;
 }) {
   const [before, setBefore] = useState<number>();
@@ -196,7 +248,14 @@ function RoundList({
                 <td>{round.trigger ? describeLearning(round.trigger) : '—'}</td>
                 <td>{describeLearning('round.' + round.state)}</td>
                 <td className="capitalize">{round.decision ?? '—'}</td>
-                <td>{round.reason ? describeLearning(round.reason) : '—'}</td>
+                <td>
+                  {round.reason ? describeLearning(round.reason) : '—'}
+                  {round.state === 'failed' && round.failureCause && (
+                    <p>
+                      <FailureCause cause={round.failureCause} />
+                    </p>
+                  )}
+                </td>
                 <td>{score(round.incumbentScore)}</td>
                 <td>
                   {round.adoptedSample ?? '—'}
@@ -209,16 +268,21 @@ function RoundList({
                         .map((entry) => (
                           <p key={entry.time}>
                             Previous version restored by {entry.actor} on{' '}
-                            <time dateTime={entry.time}>{entry.time}</time>.
+                            <ReceiptTime value={entry.time} />.
                           </p>
                         ))}
-                      {rollback && round.adoptedVersionId === head && (
-                        <LearningConfirm
-                          label="Roll back"
-                          description="Release this round’s previous version and block the removed version from future adoption."
-                          onConfirm={() => rollback(round.id)}
-                        />
-                      )}
+                      {round.adoptedVersionId === head
+                        ? rollback && (
+                            <LearningConfirm
+                              label="Roll back"
+                              description={rollbackDescription}
+                              onConfirm={() => rollback(round.id)}
+                            />
+                          )
+                        : manage &&
+                          !history?.some((entry) => entry.roundId === round.id) && (
+                            <p>Only the latest release can be rolled back.</p>
+                          )}
                     </>
                   )}
                 </td>
@@ -229,9 +293,7 @@ function RoundList({
                       : describeLearning(round.heldOutError)
                     : score(round.heldOutScore)}
                 </td>
-                <td>
-                  {round.endedAt ? <time dateTime={round.endedAt}>{round.endedAt}</time> : '—'}
-                </td>
+                <td>{round.endedAt ? <ReceiptTime value={round.endedAt} /> : '—'}</td>
               </tr>
             ))}
           </tbody>
@@ -252,6 +314,18 @@ function RoundList({
     </>
   ) : (
     <p className="text-sm text-muted-foreground">No rounds yet.</p>
+  );
+}
+
+const rollbackDescription =
+  'Release this round’s previous version and block the removed version from future adoption.';
+
+/** Help shown under a setup field and linked to it for assistive technology. */
+function Help({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <p id={id} className="text-xs text-muted-foreground">
+      {children}
+    </p>
   );
 }
 
@@ -299,7 +373,8 @@ export function BundleLearning({
             latest.activeRound ||
             latest.status !== loop?.status ||
             latest.waiting !== loop?.waiting ||
-            latest.nextRound !== loop?.nextRound
+            latest.nextRound !== loop?.nextRound ||
+            latest.evolveTasksNeeded !== loop?.evolveTasksNeeded
           )
             await refresh();
         }
@@ -308,10 +383,9 @@ export function BundleLearning({
       }
     },
     {
-      enabled: Boolean(
-        roundId || (loop?.status === 'running' && loop.waiting !== 'no-new-evidence'),
-      ),
-      interval: delay,
+      enabled: Boolean(roundId || loop?.status === 'running'),
+      // An idle loop wakes when tasks change, perhaps in another tab, so it keeps a slow refresh.
+      interval: !roundId && loop?.waiting === 'no-new-evidence' ? 60000 : delay,
       allowScroll: true,
       allowButtonFocus: true,
     },
@@ -355,12 +429,6 @@ export function BundleLearning({
   const started = loop?.status === 'running' || (state.ok && state.rounds.length > 0);
   const monitoring = state.ok && loop && (
     <>
-      {loop.status === 'running' || state.rounds.length > 0 ? (
-        <p>
-          {describeLearning(loop.status)} {loop.waiting && describeLearning(loop.waiting)}{' '}
-          {loop.pauseReason && describeLearning(loop.pauseReason)}
-        </p>
-      ) : null}
       <Panel title="Active round">
         {loop.activeRound ? (
           <>
@@ -417,6 +485,7 @@ export function BundleLearning({
           head={state.channelHead}
           rounds={state.rounds}
           href={roundHref}
+          manage={state.canManage}
           rollback={
             state.canManage && !busy
               ? (roundId) => void submit({ action: 'rollback', body: { roundId } })
@@ -431,7 +500,18 @@ export function BundleLearning({
             <ul>
               {state.blocked?.map((v) => (
                 <li key={v.digest} className="break-words">
-                  <code>{v.digest}</code> · Removed by {v.removedBy} on {v.createdAt} {v.note}
+                  <code>{v.digest}</code> · Removed by {v.removedBy} on{' '}
+                  <ReceiptTime value={v.createdAt} />
+                  {v.roundId && (
+                    <>
+                      {' '}
+                      from{' '}
+                      <a className="underline" href={roundHref(v.roundId)}>
+                        round {v.roundNumber}
+                      </a>
+                    </>
+                  )}
+                  {v.note && ` · ${v.note}`}
                   {state.canManage && (
                     <LearningConfirm
                       label="Unblock version"
@@ -549,8 +629,32 @@ export function BundleLearning({
               <a className="underline" href={roundHref(loop.alert.roundId)}>
                 Inspect round
               </a>
+              {state.canManage &&
+                !(loop.alert.kind === undefined && loop.alert.reverted) &&
+                state.rounds.some(
+                  (r) =>
+                    r.id === loop.alert?.roundId &&
+                    r.adoptedVersionId !== null &&
+                    r.adoptedVersionId === state.channelHead,
+                ) && (
+                  <>
+                    {' '}
+                    <LearningConfirm
+                      label="Roll back this release"
+                      description={rollbackDescription}
+                      disabled={busy}
+                      onConfirm={() =>
+                        void submit({
+                          action: 'rollback',
+                          body: { roundId: loop.alert?.roundId ?? '' },
+                        })
+                      }
+                    />
+                  </>
+                )}
             </p>
           )}
+          {loop && <LoopStatus loop={loop} latest={state.rounds[0]} href={roundHref} />}
           {started && monitoring}
           <Panel title="Learning setup">
             <p>{loop?.channel ?? 'Choose a published channel'}</p>
@@ -584,65 +688,112 @@ export function BundleLearning({
                   });
                 }}
               >
-                <Label>
-                  Learning channel
-                  <NativeSelect
-                    className="block w-full rounded border p-2"
-                    name="channel"
-                    defaultValue={loop?.channel}
-                  >
-                    {state.channels.map((c) => (
-                      <option key={c}>{c}</option>
-                    ))}
-                  </NativeSelect>
-                </Label>
-                {(
-                  [
-                    ['Task model', task, setTask],
-                    ['Judge model', judge, setJudge],
-                  ] as const
-                ).map(([label, value, change]) => (
-                  <Label key={label}>
-                    {label}
+                <div className="space-y-1">
+                  <Label>
+                    Learning channel
                     <NativeSelect
                       className="block w-full rounded border p-2"
-                      value={value}
-                      required
-                      onChange={(e) => change(e.target.value)}
+                      name="channel"
+                      defaultValue={loop?.channel}
+                      aria-describedby="learning-channel-help"
                     >
-                      {provider?.allowedModels.map((m) => (
-                        <option key={m}>{m}</option>
+                      {state.channels.map((c) => (
+                        <option key={c}>{c}</option>
                       ))}
                     </NativeSelect>
                   </Label>
-                ))}
-                <Label>
-                  Task domain
-                  <Input
-                    required
-                    name="domain"
-                    defaultValue={loop?.setting.domain ?? state.bundleName}
-                  />
-                </Label>
-                <Label>
-                  Benchmark name
-                  <Input
-                    required
-                    name="benchmark"
-                    defaultValue={loop?.setting.benchmark ?? 'Learning tasks'}
-                  />
-                </Label>
-                <Label htmlFor="learning-cap">
-                  Maximum rounds per day
-                  <Input
-                    id="learning-cap"
-                    type="number"
-                    min="1"
-                    required
-                    name="cap"
-                    defaultValue={loop?.maxRoundsPerDay ?? 4}
-                  />
-                </Label>
+                  <Help id="learning-channel-help">
+                    Adopted versions are released to this channel automatically, without approval.
+                  </Help>
+                </div>
+                {(
+                  [
+                    ['Task model', task, setTask, 'The model the bundle runs on in every rollout.'],
+                    [
+                      'Judge model',
+                      judge,
+                      setJudge,
+                      'Grades each answer against the task’s criteria. Choose a model other than the task model, because a model grading its own work is lenient.',
+                    ],
+                  ] as const
+                ).map(([label, value, change, help]) => {
+                  const id = `learning-${label.split(' ')[0].toLowerCase()}-help`;
+                  return (
+                    <div key={label} className="space-y-1">
+                      <Label>
+                        {label}
+                        <NativeSelect
+                          className="block w-full rounded border p-2"
+                          value={value}
+                          required
+                          aria-describedby={id}
+                          onChange={(e) => change(e.target.value)}
+                        >
+                          {provider?.allowedModels.map((m) => (
+                            <option key={m}>{m}</option>
+                          ))}
+                        </NativeSelect>
+                      </Label>
+                      <Help id={id}>{help}</Help>
+                    </div>
+                  );
+                })}
+                <div className="space-y-1">
+                  <Label>
+                    Task domain
+                    <Input
+                      required
+                      name="domain"
+                      aria-describedby="learning-domain-help"
+                      defaultValue={loop?.setting.domain ?? state.bundleName}
+                    />
+                  </Label>
+                  <Help id="learning-domain-help">
+                    What the bundle’s work is about, such as customer support. With the benchmark
+                    name and the task model it forms each round’s setting.
+                  </Help>
+                </div>
+                <div className="space-y-1">
+                  <Label>
+                    Benchmark name
+                    <Input
+                      required
+                      name="benchmark"
+                      aria-describedby="learning-benchmark-help"
+                      defaultValue={loop?.setting.benchmark ?? 'Learning tasks'}
+                    />
+                  </Label>
+                  <Help id="learning-benchmark-help">
+                    Names this task set. The optimizer sees the history of rounds with the same
+                    setting and trusts improvement memory from it most, so change the name when the
+                    tasks change in kind.
+                  </Help>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="learning-cap">
+                    Maximum rounds per day
+                    <Input
+                      id="learning-cap"
+                      type="number"
+                      min="1"
+                      required
+                      name="cap"
+                      aria-describedby="learning-cap-help"
+                      defaultValue={loop?.maxRoundsPerDay ?? 4}
+                    />
+                  </Label>
+                  <Help id="learning-cap-help">
+                    Limits rounds in any 24 hours, and with them provider spend. Each round runs
+                    every evolve task five times for up to six versions: the current one and up to
+                    five candidates.
+                  </Help>
+                </div>
+                {!loop && (
+                  <p className="sm:col-span-2">
+                    After you save these settings, the Tasks panel appears below this panel. Add or
+                    import evolve and held-out tasks there.
+                  </p>
+                )}
                 {!state.channels.length && <p>Release a version on a channel first.</p>}
                 {!provider ? (
                   <p>{providerError ? 'Model provider unavailable.' : 'Loading provider…'}</p>
@@ -668,11 +819,6 @@ export function BundleLearning({
             )}
             {loop && (
               <>
-                <p>
-                  {describeLearning(loop.status)}{' '}
-                  {loop.pauseReason && describeLearning(loop.pauseReason)}{' '}
-                  {loop.waiting && describeLearning(loop.waiting)}
-                </p>
                 <p>
                   {evolve} admitted evolve tasks guide changes. {held} admitted held-out tasks check
                   the result independently.
@@ -737,7 +883,8 @@ export function BundleLearning({
                 {(splitDeficit(evolve) > 0 || splitDeficit(held) > 0) && (
                   <p>
                     Start needs {splitDeficit(evolve)} more evolve and {splitDeficit(held)} more
-                    held-out tasks.
+                    held-out tasks. With 20 tasks on each side, a score rests on at least 100 runs,
+                    so one task that changes moves it by five points at most.
                   </p>
                 )}
               </>

@@ -1,5 +1,7 @@
 import type { LearningCandidate, LearningMemory } from '@acclimate/sdk';
-import { describeLearning } from '../lib/central-learning';
+import { describeFailureCause, describeLearning } from '../lib/central-learning';
+import { ReceiptTime } from './receipt-time';
+import { TaskLink } from './learning-task-link';
 import { LearningEvidence } from './learning-evidence';
 import type { ReactNode } from 'react';
 import type { LearningScope } from '../lib/learning';
@@ -12,6 +14,39 @@ type RoundDetail = Extract<
 >;
 
 const list = (values: string[]) => values.join(', ') || 'None';
+
+function TaskList({ ids }: { ids: string[] }) {
+  if (!ids.length) return <>None</>;
+  return (
+    <>
+      {ids.map((id, index) => (
+        <span key={id}>
+          {index > 0 && ', '}
+          <TaskLink id={id} />
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** Why a round failed, in plain words, from the first failed rollout. */
+export function FailureCause({
+  cause,
+}: {
+  cause: NonNullable<RoundDetail['round']['failureCause']>;
+}) {
+  return (
+    <>
+      {describeFailureCause(cause.code)}
+      {cause.message && (
+        <>
+          {' '}
+          The executor reported: <q className="break-words">{cause.message}</q>
+        </>
+      )}
+    </>
+  );
+}
 
 function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -95,7 +130,7 @@ export function LearningRoundDetail({
   scope: LearningScope;
   detail: RoundDetail;
 }) {
-  const { round, parentFiles } = detail;
+  const { round, parentFiles, problems } = detail;
   const { selection } = round;
   const parentRevision = releaseRevision(round.channelRevision);
   const releaseHref = parentRevision
@@ -105,6 +140,37 @@ export function LearningRoundDetail({
     : undefined;
   return (
     <div className="space-y-4 break-words text-sm">
+      <h3 className="font-semibold">Round {round.number}</h3>
+      <dl className="space-y-2">
+        <Detail label="State">
+          {describeLearning('round.' + round.state)}
+          {round.state === 'failed' && round.reason && ` · ${describeLearning(round.reason)}`}
+        </Detail>
+        {round.failureCause && (
+          <Detail label="Cause">
+            <FailureCause cause={round.failureCause} />
+          </Detail>
+        )}
+        <Detail label="Started">
+          <ReceiptTime value={round.createdAt} />
+        </Detail>
+        {round.endedAt && (
+          <Detail label="Ended">
+            <ReceiptTime value={round.endedAt} />
+          </Detail>
+        )}
+      </dl>
+      {round.incumbentEvaluationId && (
+        <section className="space-y-2">
+          <h4 className="font-medium">Current version on evolve tasks</h4>
+          <LearningEvidence
+            scope={scope}
+            roundIds={[round.id]}
+            evaluation={round.incumbentEvaluationId}
+            label="Show the current version's results"
+          />
+        </section>
+      )}
       <h3 className="font-semibold">Round {round.number} candidates</h3>
       {!round.candidates.length && <p>No candidates recorded for this round.</p>}
       {round.candidates.map((candidate) => {
@@ -144,10 +210,12 @@ export function LearningRoundDetail({
                 <>
                   <Detail label="Diagnosis">
                     {'id' in diagnosis.problem
-                      ? diagnosis.problem.id
+                      ? `${diagnosis.problem.id} · ${problems?.[diagnosis.problem.id] ?? 'Root cause unavailable'}`
                       : `New root cause · ${diagnosis.problem.new}`}
                   </Detail>
-                  <Detail label="Predicted cases">{list(diagnosis.predicted)}</Detail>
+                  <Detail label="Predicted cases">
+                    <TaskList ids={diagnosis.predicted} />
+                  </Detail>
                 </>
               )}
               {rationale && <Detail label="Rationale">{rationale}</Detail>}
@@ -246,9 +314,15 @@ export function ImprovementMemory({ memory }: { memory: LearningMemory }) {
                 </summary>
                 <dl className="space-y-2 p-2">
                   <Detail label="Files">{list(attempt.files)}</Detail>
-                  <Detail label="Predicted">{list(attempt.predicted)}</Detail>
-                  <Detail label="Fixed">{list(attempt.fixed)}</Detail>
-                  <Detail label="Missed">{list(attempt.missed)}</Detail>
+                  <Detail label="Predicted">
+                    <TaskList ids={attempt.predicted} />
+                  </Detail>
+                  <Detail label="Fixed">
+                    <TaskList ids={attempt.fixed} />
+                  </Detail>
+                  <Detail label="Missed">
+                    <TaskList ids={attempt.missed} />
+                  </Detail>
                   <Detail label="Passed / total">
                     {attempt.passed} / {attempt.total}
                   </Detail>

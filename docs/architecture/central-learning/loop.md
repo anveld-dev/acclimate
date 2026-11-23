@@ -23,7 +23,7 @@ A candidate carries a rationale, its edits, and a diagnosis written before any e
 
 Adoption releases in the same transaction. `adopt` takes the loop lock, the promotion lock and the channel row lock, checks that the channel has not moved, promotes the candidate's version, appends memory and queues held-out scoring. If the channel moved, the round records `kept` / `channel-moved` and scores the channel's actual head. There is no approval step.
 
-**Scores.** As today, a task's score is the mean of its five rollout scores, and an evaluation's score is the mean over its tasks. Separately, a task counts as passed when at least three of its five rollouts pass. Pass counts feed the predicted, fixed and missed bookkeeping in memory. An evaluation scores only when every rollout of every task has a score. An executor or judge error is never a score: it is retried once as an infrastructure failure, then fails the evaluation. A failed incumbent evaluation fails the round.
+**Scores.** As today, a task's score is the mean of its five rollout scores, and an evaluation's score is the mean over its tasks. Separately, a task counts as passed when at least three of its five rollouts pass. Pass counts feed the predicted, fixed and missed bookkeeping in memory. An evaluation scores only when every rollout of every task has a score. An executor or judge error is never a score: it is retried once as an infrastructure failure, then fails the evaluation. A failed incumbent evaluation fails the round. A failed candidate evaluation skips that candidate. A failed initial held-out evaluation completes the round with an error. Failed baseline and confirmation measurements are retried.
 
 ## Optimizer
 
@@ -116,17 +116,17 @@ The gateway log gives the tokens of every task-model and judge call, and each op
 
 ### Held-out drop alert
 
-When a round completes, the service compares the new held-out score with the score of the version it replaced. Any drop raises an alert on the bundle, shown as a console banner and emailed to workspace administrators. The alert shows scores and counts only.
+For an adoption, the service compares the new held-out score with a measurement of the parent at the same task revision and runtime. It measures the parent when there is no matching score. A kept round clears the previous alert. Any drop raises an alert on the bundle, shown as a console banner. Only a clear drop emails workspace administrators, after confirmation settles. The email reports whether the service restored the previous version. The alert identifies the round and shows scores, flips and whether the parent was restored.
 
 ### Rollback
 
-`POST /rollback` moves the channel back to the version a named round replaced, in one transaction with the same locks as adoption. The console offers it on every adopted round. The caller may attach a note. The loop keeps running.
+`POST /rollback` moves the channel back to the version a named round replaced, in one transaction with the same locks as adoption. The named round’s adopted version must still be the channel head. The caller may attach a note. The loop keeps running.
 
 ### Automatic revert
 
 With no approval gate, a person reading an alert would otherwise be the only regression control. The thresholds are starting values that can be tuned.
 
-A clear drop needs all three:
+Automatic revert requires all three conditions:
 
 1. The adopted version's held-out score is at least 0.10 below its parent's.
 2. At least two held-out tasks went from pass to fail.
@@ -141,3 +141,5 @@ Rollback and automatic revert both add the removed version's payload digest to a
 History does not mark a round as reverted, and the optimizer is given no score, task, count or note about a revert. The memory attempt stays, because memory is append-only, and rule 5 already lets the optimizer override an adopted edit. The optimizer can see in a later round's history that a candidate was dropped as blocked. That is a small leak of held-out signal when the block came from an automatic revert. It is accepted and listed with the assumed decisions.
 
 A person who wants the optimizer to learn why a change was bad writes an evolve task for it. A held-out task rewritten that way is [retired from held-out](tasks-and-grading.md).
+
+If queued rollouts lack a matching live executor for five continuous minutes, the worker ends the round with `no-matching-executor`. This leaves the failed-round counter unchanged. The next round pins the available runtime.

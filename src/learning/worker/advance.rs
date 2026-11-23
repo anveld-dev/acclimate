@@ -68,6 +68,10 @@ async fn rebuild(
     Ok((payload, bytes, parent_digest))
 }
 
+async fn blocked(tx: &mut Tx<'_>, round: &Pins, digest: &str) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT EXISTS(SELECT FROM learning_blocked_versions WHERE (project_id,bundle_id,digest)=($1,$2,$3))").bind(&round.project_id).bind(round.bundle_id).bind(digest).fetch_one(&mut **tx).await
+}
+
 async fn proposing(tx: &mut Tx<'_>, row: &LoopRow, round: &Pins) -> Result<(), sqlx::Error> {
     let sample: i16 = sqlx::query_scalar(
         "SELECT sample FROM learning_candidates WHERE round_id=$1 AND status='generating'",
@@ -94,7 +98,7 @@ async fn proposing(tx: &mut Tx<'_>, row: &LoopRow, round: &Pins) -> Result<(), s
             let patch = json!({"edits":output["edits"],"files":output["files"]});
             let (_, bytes, parent_digest) = rebuild(tx, round, &patch).await?;
             let digest = crate::digest(&bytes);
-            let blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM learning_blocked_versions WHERE (project_id,bundle_id,digest)=($1,$2,$3))").bind(&row.project_id).bind(row.bundle_id).bind(&digest).fetch_one(&mut **tx).await?;
+            let blocked = blocked(tx, round, &digest).await?;
             if blocked {
                 reason = Some("blocked-version")
             } else if digest == parent_digest {
@@ -200,7 +204,7 @@ async fn queue_survivor(tx: &mut Tx<'_>, round: &Pins) -> Result<bool, sqlx::Err
             .await
             .map_err(|error| invariant(error.2))?;
         let digest = crate::digest(&bytes);
-        let blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM learning_blocked_versions WHERE (project_id,bundle_id,digest)=($1,$2,$3))").bind(&round.project_id).bind(round.bundle_id).bind(&digest).fetch_one(&mut **tx).await?;
+        let blocked = blocked(tx, round, &digest).await?;
         if !blocked {
             break (survivor, bytes, digest);
         }
@@ -237,10 +241,10 @@ async fn evaluating(tx: &mut Tx<'_>, row: &LoopRow, round: &Pins) -> Result<(), 
         "SELECT c.sample,e.status,e.score FROM learning_candidates c JOIN learning_evaluations e ON e.id=c.evaluation_id
          WHERE c.round_id=$1 AND c.status='evaluating' AND e.role='candidate' AND e.split='evolve'")
         .bind(round.id).fetch_one(&mut **tx).await?;
-    if status != "scored" {
+    if status != "scored" && status != "failed" {
         return Ok(());
     }
-    sqlx::query("UPDATE learning_candidates SET status='evaluated',evolve_score=$3 WHERE (round_id,sample)=($1,$2)")
+    sqlx::query("UPDATE learning_candidates SET status=CASE WHEN $3::float8 IS NULL THEN 'evaluation_failed' ELSE 'evaluated' END,evolve_score=$3 WHERE (round_id,sample)=($1,$2)")
         .bind(round.id).bind(sample).bind(score).execute(&mut **tx).await?;
     if queue_survivor(tx, round).await? {
         return Ok(());

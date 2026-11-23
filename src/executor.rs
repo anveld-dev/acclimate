@@ -310,7 +310,7 @@ async fn output(
 ) -> ApiResult<Json<Value>> {
     if !matches!(
         req.stop.as_str(),
-        "completed" | "token-limit" | "time-limit"
+        "completed" | "token-limit" | "time-limit" | "invalid-output"
     ) {
         return Err(invalid());
     }

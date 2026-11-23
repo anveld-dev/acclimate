@@ -91,7 +91,7 @@ impl Pins {
     pub(super) async fn load(tx: &mut Tx<'_>, id: Uuid) -> Result<Self, sqlx::Error> {
         sqlx::query_as(
             "SELECT id,project_id,bundle_id,number,parent_version_id,channel,channel_revision,
-            evolve_revision,memory_revision,setting,optimizer_model,optimizer_reasoning_effort,history_digest,memory_digest
+            task_revision AS evolve_revision,memory_revision,setting,optimizer_model,optimizer_reasoning_effort,history_digest,memory_digest
             FROM learning_rounds WHERE id=$1",
         )
         .bind(id)
@@ -159,6 +159,7 @@ pub(super) async fn version(
 
 #[derive(FromRow)]
 pub(super) struct EvolveEvaluation {
+    pub rollouts_per_task: i32,
     pub status: String,
     pub score: Option<f64>,
     pub version_id: Uuid,
@@ -172,7 +173,7 @@ pub(super) async fn evolve_evaluation(
     role: &str,
     id: Option<Uuid>,
 ) -> Result<Option<EvolveEvaluation>, sqlx::Error> {
-    sqlx::query_as("SELECT status,score,version_id,evolve_revision,report
+    sqlx::query_as("SELECT status,score,version_id,evolve_revision,report,learning_rollouts_per_task() AS rollouts_per_task
         FROM learning_evaluations WHERE round_id=$1 AND role=$2 AND split='evolve' AND ($3::uuid IS NULL OR id=$3)")
         .bind(round).bind(role).bind(id).fetch_optional(&mut **tx).await
 }
@@ -275,6 +276,7 @@ async fn render(tx: &mut Tx<'_>, round: &Pins, kind: Kind) -> Result<Input, sqlx
                 &incumbent.report,
                 &evaluation.report,
                 &diagnosis.predicted,
+                evaluation.rollouts_per_task as usize,
             )
             .map_err(invariant)?;
             let mut evolve = evaluation.summary(true);

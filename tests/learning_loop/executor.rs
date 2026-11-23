@@ -118,13 +118,13 @@ async fn executor_leases_recover_and_keep_secrets_out_of_storage() {
         &app,
         &retry,
         "output",
-        json!({"output":"reply","stop":"completed","gatewayLog":[]}),
+        json!({"output":null,"stop":"invalid-output","gatewayLog":[]}),
     )
     .await;
     assert_eq!(status, 200);
     assert_eq!(grade["grader"], json!({"type":"exact","expected":null}));
     let counts = json!({"input":1,"output":2});
-    let verdict = json!({"verdict":{"passed":true,"score":1,"reasons":[]},"judgeLog":[],"tokens":{"task":counts,"judge":counts}});
+    let verdict = json!({"verdict":{"passed":false,"score":0,"reasons":["Invalid provider output"]},"judgeLog":[],"tokens":{"task":counts,"judge":counts}});
     assert_eq!(act(&app, &retry, "result", verdict).await.0, 204);
     let error = json!({"error":{"code":"sandbox-start","message":"fixture"},"tokens":{"task":counts,"judge":counts}});
     assert_eq!(act(&app, &other, "result", error.clone()).await.0, 204);
@@ -247,7 +247,7 @@ async fn combined_gate_fixture() {
     let round = Uuid::new_v4();
     let id = Uuid::new_v4();
     let mut tx = f.state.db.begin().await.unwrap();
-    sqlx::query("INSERT INTO learning_rounds(id,project_id,bundle_id,number,state,parent_version_id,channel,channel_revision,evolve_revision,memory_revision,setting,runtime,task_revision) VALUES($1,$2,$3,1,'scoring_incumbent',$4,'stable',7,1,0,'{}',$5,1)").bind(round).bind(&f.project).bind(f.bundle).bind(f.version).bind(runtime).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO learning_rounds(id,project_id,bundle_id,number,state,parent_version_id,channel,channel_revision,memory_revision,setting,runtime,task_revision) VALUES($1,$2,$3,1,'scoring_incumbent',$4,'stable',7,0,'{}',$5,1)").bind(round).bind(&f.project).bind(f.bundle).bind(f.version).bind(runtime).execute(&mut *tx).await.unwrap();
     sqlx::query("INSERT INTO learning_evaluations(id,round_id,role,split,version_id,digest,evolve_revision) VALUES($1,$2,'incumbent','evolve',$3,$4,1)").bind(id).bind(round).bind(f.version).bind(DIGEST).execute(&mut *tx).await.unwrap();
     for task in ["a", "b"] {
         sqlx::query(r#"INSERT INTO learning_tasks(project_id,bundle_id,task_id,"group",input,grader,source,added_revision,admission) VALUES($1,$2,$3,$3,to_jsonb($3::text),$4,'console',1,'admitted')"#)

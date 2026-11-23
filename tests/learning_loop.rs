@@ -542,13 +542,40 @@ async fn start_floor_pauses_on_loss_and_allows_active_round_to_finish() {
     assert!(!started.to_string().contains("secret-held-task"));
     f.spawn_worker();
     let first = f.item("evolve", 1).await;
-    sqlx::query(
-        "UPDATE learning_tasks SET retired_revision=2 WHERE bundle_id=$1 AND task_id='floor-1'",
+    f.ok(
+        "PATCH",
+        "/tasks/floor-1",
+        "writer",
+        None,
+        json!({"grader":{"type":"exact","expected":"updated"}}),
     )
-    .bind(f.bundle)
-    .execute(&f.state.db)
+    .await;
+    sqlx::query("UPDATE executor_credentials SET last_seen_at=now()-interval '2 minutes'")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if sqlx::query_scalar::<_, bool>(
+                "SELECT unmatched_since IS NOT NULL FROM learning_rounds WHERE number=1",
+            )
+            .fetch_one(&f.state.db)
+            .await
+            .unwrap()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(40)).await;
+        }
+    })
     .await
     .unwrap();
+    assert_eq!(
+        f.ok("GET", "", "reader", None, Value::Null).await["status"],
+        "running"
+    );
+    f.ok("DELETE", "/tasks/floor-1", "writer", None, Value::Null)
+        .await;
     let paused = f
         .wait_for("", "reader", |r| r["pauseReason"] == "tasks-required")
         .await;
@@ -580,6 +607,25 @@ async fn retry_idles_then_task_change_wakes_after_rolling_cap() {
     assert_eq!(idle["rounds"][0]["trigger"], "retry");
     assert_eq!(idle["rounds"][0]["incumbentReused"], true);
     assert!(!idle.to_string().contains("private-id"));
+    sqlx::query("UPDATE learning_held_out_tasks SET admission_revision=2 WHERE task_id='held-out-sentinel-1'").execute(&f.state.db).await.unwrap();
+    sqlx::query("UPDATE learning_loops SET task_revision=2")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(10),async {
+        loop {
+            let queued:i64=sqlx::query_scalar("SELECT count(*) FROM learning_trials t JOIN learning_rollouts l ON l.trial_id=t.id WHERE t.kind='head-monitor' AND t.task_revision=2").fetch_one(&f.state.db).await.unwrap();
+            if queued==100 {break;}
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }).await.unwrap();
+    assert_eq!(
+        f.ok("GET", "", "reader", None, Value::Null).await["rounds"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     sqlx::query("UPDATE learning_tasks SET retired_revision=2 WHERE task_id IN ('extra-3','extra-4','extra-5','extra-6','extra-7')").execute(&f.state.db).await.unwrap();
     sqlx::query(r#"INSERT INTO learning_tasks(project_id,bundle_id,task_id,"group",input,grader,source,confirmed_by,admission,added_revision)
         SELECT project_id,bundle_id,task_id,"group",input,grader,source,confirmed_by,admission,2 FROM learning_tasks WHERE retired_revision=2"#).execute(&f.state.db).await.unwrap();
@@ -630,6 +676,48 @@ async fn model_settings_and_provider_key_custody() {
         .await
         .unwrap();
         assert_eq!(audits, 1);
+        let ciphertext: Vec<u8> =
+            sqlx::query_scalar("SELECT encrypted_key FROM workspace_model_providers")
+                .fetch_one(&f.state.db)
+                .await
+                .unwrap();
+        let update = f
+            .ok(
+                "PUT",
+                &route,
+                &admin,
+                None,
+                json!({"baseUrl":"https://example.test/v1","allowedModels":["judge","task"]}),
+            )
+            .await;
+        assert_eq!(update["verification"]["status"], "pending");
+        assert_eq!(
+            sqlx::query_scalar::<_, Vec<u8>>("SELECT encrypted_key FROM workspace_model_providers")
+                .fetch_one(&f.state.db)
+                .await
+                .unwrap(),
+            ciphertext
+        );
+        assert_eq!(
+            f.req(
+                "PUT",
+                &route,
+                &admin,
+                None,
+                json!({"baseUrl":"https://other.test/v1","allowedModels":["task"]})
+            )
+            .await
+            .0,
+            400
+        );
+        f.ok(
+            "PUT",
+            &route,
+            &admin,
+            None,
+            json!({"baseUrl":"https://example.test/v1","allowedModels":["task","judge"]}),
+        )
+        .await;
     } else {
         assert_eq!(f.req("PUT", &route, &admin, None, provider).await.0, 503);
         acclimate_service::executor::ProviderKey::from_hex(&"42".repeat(32))
@@ -875,4 +963,43 @@ async fn provider_probe_supersedes_old_leases_and_requires_usage() {
             );
         }
     }
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn stranded_round_expires_without_pausing() {
+    let mut f = Fixture::new().await;
+    f.enroll().await;
+    f.seed().await;
+    f.spawn_worker();
+    let item = f.item("evolve", 1).await;
+    sqlx::query("UPDATE executor_credentials SET last_seen_at=now()-interval '10 minutes'")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE learning_rounds SET unmatched_since=now()-interval '6 minutes'")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    let failed = f
+        .wait_for(&round_route(&item), "reader", |r| r["state"] == "failed")
+        .await;
+    assert_eq!(failed["reason"], "no-matching-executor");
+    let state = f
+        .wait_for("", "reader", |r| r["waiting"] == "no-executor")
+        .await;
+    assert_eq!(state["status"], "running");
+    assert_eq!(
+        sqlx::query_scalar::<_, i32>("SELECT failed_rounds FROM learning_loops")
+            .fetch_one(&f.state.db)
+            .await
+            .unwrap(),
+        0
+    );
+    sqlx::query("UPDATE workspace_model_providers SET allowed_models=ARRAY['judge']")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    f.wait_for("", "reader", |r| r["waiting"] == "models-not-allowed")
+        .await;
 }

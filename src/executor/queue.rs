@@ -6,7 +6,7 @@ pub async fn queue_evaluation(
     tx: &mut Transaction<'_, Postgres>,
     evaluation: Uuid,
 ) -> Result<u64, sqlx::Error> {
-    let split: String = sqlx::query_scalar("SELECT e.split FROM learning_evaluations e JOIN learning_rounds r ON r.id=e.round_id JOIN workspace_model_providers p ON p.project_id=r.project_id WHERE e.id=$1 AND p.verification->>'status'='verified' FOR SHARE OF p")
+    let split: String = sqlx::query_scalar("SELECT split FROM learning_evaluations WHERE id=$1")
         .bind(evaluation)
         .fetch_one(&mut **tx)
         .await?;
@@ -19,7 +19,7 @@ pub async fn queue_evaluation(
         "INSERT INTO learning_rollouts(evaluation_id,task_id,rollout,input,grader)
         SELECT e.id,t.task_id,n,t.input,t.grader FROM learning_evaluations e
         JOIN learning_rounds r ON r.id=e.round_id JOIN {table} t USING(project_id,bundle_id)
-        CROSS JOIN generate_series(1,5) n WHERE e.id=$1 AND t.admission='admitted'
+        CROSS JOIN generate_series(1,learning_rollouts_per_task()) n WHERE e.id=$1 AND t.admission='admitted'
           AND greatest(t.added_revision,t.admission_revision)<=r.task_revision
           AND (t.retired_revision IS NULL OR t.retired_revision>r.task_revision)"
     );
@@ -56,7 +56,7 @@ pub(crate) async fn settle_round(
     ), tasks AS (
         SELECT l.evaluation_id,l.task_id,avg(l.score) AS mean,
                jsonb_agg(jsonb_build_object('score',l.score,'passed',l.passed) ||
-                   CASE WHEN e.split='evolve' THEN jsonb_strip_nulls(jsonb_build_object('gatewayLog',l.gateway_log,'reasons',l.reasons))
+                   CASE WHEN e.split='evolve' THEN jsonb_strip_nulls(jsonb_build_object('gatewayLog',learning_feedback_log(l.gateway_log),'reasons',l.reasons))
                         ELSE '{}'::jsonb END ORDER BY l.rollout) AS rollouts
         FROM ready e JOIN learning_rollouts l ON l.evaluation_id=e.id GROUP BY l.evaluation_id,l.task_id
     ), reports AS (

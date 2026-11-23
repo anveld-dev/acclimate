@@ -1,6 +1,6 @@
 use super::*;
 use super::{
-    evaluations::{ROLLOUTS_PER_CASE, Report, case_passes, passed_rollouts},
+    evaluations::{Report, case_passes, passed_rollouts},
     optimizer::{
         Diagnosis, DiagnosisProblem, Pins, candidates, digest, evolve_evaluation, invariant,
         stored, version,
@@ -34,6 +34,7 @@ pub(super) fn attempt_outcome(
     incumbent: &Report,
     candidate: &Report,
     predicted: &[String],
+    rollouts_per_task: usize,
 ) -> Result<AttemptOutcome, &'static str> {
     let passes = |report: &Report| {
         report
@@ -52,7 +53,7 @@ pub(super) fn attempt_outcome(
             .cases
             .iter()
             .chain(&candidate.cases)
-            .any(|case| case.rollouts.len() != ROLLOUTS_PER_CASE)
+            .any(|case| case.rollouts.len() != rollouts_per_task)
         || predicted.iter().any(|id| !before.contains_key(id))
     {
         return Err("Invalid evolve reports or prediction for attempt");
@@ -64,7 +65,7 @@ pub(super) fn attempt_outcome(
     fixed.sort_unstable();
     missed.sort_unstable();
     let passed = candidate.cases.iter().map(passed_rollouts).sum::<usize>();
-    let total = candidate.cases.len() * ROLLOUTS_PER_CASE;
+    let total = candidate.cases.len() * rollouts_per_task;
     Ok(AttemptOutcome {
         fixed,
         missed,
@@ -192,8 +193,13 @@ pub(super) async fn write_back(tx: &mut Tx<'_>, round: &Pins) -> Result<i32, sql
         })
         .ok_or_else(|| invariant(format!("Invalid candidate evaluation for round {round_id}")))?;
     let revision = i32::try_from(current + 1).map_err(|_| invariant("Memory revision overflow"))?;
-    let outcome = attempt_outcome(&incumbent.report, &evaluation.report, &diagnosis.predicted)
-        .map_err(invariant)?;
+    let outcome = attempt_outcome(
+        &incumbent.report,
+        &evaluation.report,
+        &diagnosis.predicted,
+        evaluation.rollouts_per_task as usize,
+    )
+    .map_err(invariant)?;
     let id = resolve_problem(tx, round, diagnosis.problem, revision).await?;
     let (parent, _) = version(tx, round.parent_version_id).await?;
     let (adopted, _) = version(tx, adopted_version).await?;
@@ -318,6 +324,7 @@ mod tests {
             &before,
             &after,
             &["3".into(), "1".into(), "0".into(), "2".into()],
+            5,
         )
         .unwrap();
         assert_eq!(outcome.fixed, ["0"]);
@@ -325,18 +332,18 @@ mod tests {
         assert_eq!(outcome.passed, 12);
         let before = report(&[1; 30]);
         let after = report(&[4; 30]);
-        let outcome = attempt_outcome(&before, &after, &[]).unwrap();
+        let outcome = attempt_outcome(&before, &after, &[], 5).unwrap();
         assert_eq!((outcome.passed, outcome.total), (120, 150));
     }
 
     #[test]
     fn rejects_mismatched_cases_predictions_and_incomplete_rollouts() {
         let before = report(&[2]);
-        assert!(attempt_outcome(&before, &report(&[3, 3]), &[]).is_err());
-        assert!(attempt_outcome(&before, &report(&[3]), &["unknown".into()]).is_err());
+        assert!(attempt_outcome(&before, &report(&[3, 3]), &[], 5).is_err());
+        assert!(attempt_outcome(&before, &report(&[3]), &["unknown".into()], 5).is_err());
         let mut after = report(&[3]);
         after.cases[0].rollouts.pop();
-        assert!(attempt_outcome(&before, &after, &[]).is_err());
+        assert!(attempt_outcome(&before, &after, &[], 5).is_err());
     }
 
     #[test]

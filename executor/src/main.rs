@@ -7,9 +7,9 @@ use serde_json::{Value, json};
 use std::{
     env, fs,
     os::unix::fs::PermissionsExt,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 use tokio::{
     net::UnixListener,
@@ -93,14 +93,11 @@ impl Worker {
     async fn expired(&self, l: &Lease) {
         loop {
             sleep(Duration::from_secs(l.heartbeat_seconds.max(1))).await;
-            if self
-                .post(l, "heartbeat")
-                .json(&json!({}))
-                .send()
-                .await
-                .is_ok_and(|r| r.status() == 409)
-            {
-                return;
+            match self.post(l, "heartbeat").json(&json!({})).send().await {
+                Ok(r) if r.status() == 409 => return,
+                // A long rollout does not poll, so its heartbeats keep the executor healthy.
+                Ok(r) if r.status().is_success() => touch_health(),
+                _ => (),
             }
         }
     }
@@ -160,17 +157,9 @@ impl Worker {
             _ => return Err("executor".into()),
         };
         let limits = l.limits.as_ref().ok_or("executor")?;
-        let (dir, _lock) = lease_dir(&self.root).map_err(start_failure)?;
         let payload = json!({"bundle":bundle,"input":input,"model":task_model,"timeoutSeconds":limits.timeout_seconds});
-        fs::write(dir.path().join("input"), payload.to_string()).map_err(start_failure)?;
-        let socket = UnixListener::bind(dir.path().join("gateway")).map_err(start_failure)?;
-        for (path, mode) in [
-            (dir.path().to_owned(), 0o711),
-            (dir.path().join("gateway"), 0o666),
-            (dir.path().join("input"), 0o444),
-        ] {
-            fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(start_failure)?;
-        }
+        let (dir, _lock, socket) =
+            open_lease(&self.root, payload.to_string().as_bytes()).map_err(start_failure)?;
         let record = l.task_record.clone();
         let (shutdown, closed) = watch::channel(());
         let gateway = Gateway::new(
@@ -188,17 +177,8 @@ impl Worker {
                 })
                 .await;
         });
-        let mount = match &self.volume {
-            Some(v) => format!(
-                "type=volume,source={v},volume-subpath={},target=/lease,readonly",
-                dir.path().file_name().unwrap().to_string_lossy()
-            ),
-            None => format!(
-                "type=bind,source={},target=/lease,readonly",
-                dir.path().display()
-            ),
-        };
-        self.create_sandbox(name, &mount).await?;
+        self.create_sandbox(name, &self.mount(dir.path()), &[])
+            .await?;
         let _ = created.send(());
         let run = bounded_command(
             Command::new("docker").args(["start", "-a", name]),
@@ -244,40 +224,31 @@ impl Worker {
         )
         .await
     }
-    async fn create_sandbox(&self, name: &str, mount: &str) -> Result<(), Failure> {
-        let mut command = Command::new("docker");
-        command.args([
-            "create",
-            "--rm",
-            "--pull=never",
-            "--name",
+    fn mount(&self, dir: &Path) -> String {
+        match &self.volume {
+            Some(v) => format!(
+                "type=volume,source={v},volume-subpath={},target=/lease,readonly",
+                dir.file_name().unwrap().to_string_lossy()
+            ),
+            None => format!("type=bind,source={},target=/lease,readonly", dir.display()),
+        }
+    }
+    /// `command` replaces the runner's entrypoint. Rollouts pass none.
+    async fn create_sandbox(
+        &self,
+        name: &str,
+        mount: &str,
+        command: &[&str],
+    ) -> Result<(), Failure> {
+        let mut docker = Command::new("docker");
+        docker.args(sandbox_args(
+            &self.runtime,
             name,
-            "--network",
-            "none",
-            "--runtime",
-            if self.runtime == "docker" {
-                "runc"
-            } else {
-                &self.runtime
-            },
-            "--read-only",
-            "--cap-drop=ALL",
-            "--security-opt=no-new-privileges",
-            "--pids-limit",
-            "64",
-            "--memory",
-            "256m",
-            "--memory-swap",
-            "256m",
-            "--cpus",
-            "1",
-            "--log-driver",
-            "none",
-            "--mount",
             mount,
             &self.image,
-        ]);
-        let result = bounded_command(&mut command, Duration::from_secs(30))
+            command,
+        ));
+        let result = bounded_command(&mut docker, Duration::from_secs(30))
             .await
             .map_err(start_failure)?
             .map_err(start_failure)?;
@@ -286,6 +257,66 @@ impl Worker {
         }
         Ok(())
     }
+    /// Run one throwaway sandbox exactly as a rollout does, so a missing runtime fails at startup
+    /// rather than in every rollout. Provider verification runs outside the sandbox and cannot
+    /// show it.
+    async fn preflight(&self) -> Result<(), String> {
+        let name = format!("acclimate-preflight-{}", Uuid::new_v4());
+        let (dir, _lock, socket) = open_lease(&self.root, b"{}").map_err(|error| {
+            format!(
+                "Sandbox preflight could not prepare a lease directory in {}: {error}",
+                self.root.display()
+            )
+        })?;
+        let answered = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let server = tokio::spawn({
+            let answered = answered.clone();
+            async move {
+                while let Ok((stream, _)) = socket.accept().await {
+                    if stream.writable().await.is_ok() && stream.try_write(b"ok").is_ok() {
+                        answered.store(true, std::sync::atomic::Ordering::SeqCst);
+                    }
+                }
+            }
+        });
+        let outcome = match self
+            .create_sandbox(&name, &self.mount(dir.path()), PREFLIGHT_COMMAND)
+            .await
+        {
+            Err(failure) => Err(PreflightStage::Create(failure.message)),
+            Ok(()) => {
+                let run = bounded_command(
+                    Command::new("docker").args(["start", "-a", &name]),
+                    Duration::from_secs(60),
+                )
+                .await;
+                match run {
+                    Err(_) => Err(PreflightStage::Timeout),
+                    Ok(Err(error)) => Err(PreflightStage::Run(error.to_string())),
+                    Ok(Ok(out)) => match out.status.code() {
+                        Some(0) if answered.load(std::sync::atomic::Ordering::SeqCst) => Ok(()),
+                        Some(3) | Some(0) => Err(PreflightStage::Socket),
+                        Some(4) => Err(PreflightStage::Input),
+                        _ => Err(PreflightStage::Run(format!(
+                            "{}: {}",
+                            out.status,
+                            String::from_utf8_lossy(&out.stderr).trim()
+                        ))),
+                    },
+                }
+            }
+        };
+        server.abort();
+        let removed = remove(&name).await;
+        drop(dir);
+        outcome.map_err(|stage| preflight_message(&stage, &self.runtime, &self.image))?;
+        removed.map_err(|failure| {
+            format!(
+                "Sandbox preflight could not remove its container {name}: {}",
+                failure.message
+            )
+        })
+    }
     async fn once(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let response = self
             .client
@@ -293,8 +324,12 @@ impl Worker {
             .bearer_auth(&self.token)
             .json(&json!({"executor":self.identity,"waitSeconds":25}))
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+        if credential_refused(response.status()) {
+            return Err(Box::new(CredentialRefused));
+        }
+        let response = response.error_for_status()?;
+        touch_health();
         if response.status() == 204 {
             return Ok(());
         }
@@ -353,6 +388,183 @@ fn lease_dir(root: &std::path::Path) -> std::io::Result<(tempfile::TempDir, fs::
     let lock = fs::File::open(dir.path())?;
     lock.lock()?;
     Ok((dir, lock))
+}
+/// A lease directory holding the runner input and the gateway socket, readable by the runner's
+/// unprivileged user.
+fn open_lease(
+    root: &Path,
+    input: &[u8],
+) -> std::io::Result<(tempfile::TempDir, fs::File, UnixListener)> {
+    let (dir, lock) = lease_dir(root)?;
+    fs::write(dir.path().join("input"), input)?;
+    let socket = UnixListener::bind(dir.path().join("gateway"))?;
+    for (path, mode) in [
+        (dir.path().to_owned(), 0o711),
+        (dir.path().join("gateway"), 0o666),
+        (dir.path().join("input"), 0o444),
+    ] {
+        fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
+    }
+    Ok((dir, lock, socket))
+}
+fn sandbox_args(
+    runtime: &str,
+    name: &str,
+    mount: &str,
+    image: &str,
+    command: &[&str],
+) -> Vec<String> {
+    let mut args = [
+        "create",
+        "--rm",
+        "--pull=never",
+        "--name",
+        name,
+        "--network",
+        "none",
+        "--runtime",
+        if runtime == "docker" { "runc" } else { runtime },
+        "--read-only",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--pids-limit",
+        "64",
+        "--memory",
+        "256m",
+        "--memory-swap",
+        "256m",
+        "--cpus",
+        "1",
+        "--log-driver",
+        "none",
+        "--mount",
+        mount,
+    ]
+    .map(String::from)
+    .to_vec();
+    if let Some((entrypoint, rest)) = command.split_first() {
+        args.extend(["--entrypoint".into(), entrypoint.to_string()]);
+        args.push(image.into());
+        args.extend(rest.iter().map(|arg| arg.to_string()));
+    } else {
+        args.push(image.into());
+    }
+    args
+}
+/// Reads the input and reaches the gateway socket the way the chat runner does. Exit 4 means the
+/// lease directory was not readable and 3 that the socket could not be reached.
+const PREFLIGHT_COMMAND: &[&str] = &[
+    "node",
+    "-e",
+    "try{require('fs').readFileSync('/lease/input')}catch{process.exit(4)}\
+     const s=require('net').connect('/lease/gateway');\
+     s.on('data',d=>process.exit(String(d)==='ok'?0:3));\
+     s.on('error',()=>process.exit(3));\
+     setTimeout(()=>process.exit(3),10000);",
+];
+enum PreflightStage {
+    Create(String),
+    Run(String),
+    Timeout,
+    Input,
+    Socket,
+}
+fn preflight_message(stage: &PreflightStage, runtime: &str, image: &str) -> String {
+    let runtime = if runtime == "docker" { "runc" } else { runtime };
+    let registered = format!(
+        "the Docker daemon has the `{runtime}` runtime registered: `docker info --format '{{{{json .Runtimes}}}}'` must list it"
+    );
+    let gvisor = "for gVisor, register `runsc` in /etc/docker/daemon.json with \"runtimeArgs\": [\"--host-uds=open\"] and restart Docker";
+    let runner = format!(
+        "the runner image {image} exists and matches this executor: `docker compose build acclimate-runner`"
+    );
+    let (what, checks) = match stage {
+        PreflightStage::Create(detail) => (
+            format!("could not create a sandbox container: {}", detail.trim()),
+            vec![registered, gvisor.into(), runner],
+        ),
+        PreflightStage::Run(detail) => (
+            format!("the sandbox container did not run: {detail}"),
+            vec![registered, gvisor.into(), runner],
+        ),
+        PreflightStage::Timeout => (
+            "the sandbox container did not finish within 60 seconds".into(),
+            vec![registered, gvisor.into()],
+        ),
+        PreflightStage::Input => (
+            "the sandboxed process could not read its lease directory".into(),
+            vec![
+                "Docker Engine is 26 or later, which the lease volume subpath mount needs".into(),
+                "ACCLIMATE_SANDBOX_VOLUME names the volume mounted at ACCLIMATE_SANDBOX_DIR".into(),
+            ],
+        ),
+        PreflightStage::Socket => (
+            "the sandboxed process could not reach the gateway socket in its lease directory"
+                .into(),
+            vec![gvisor.into(), registered],
+        ),
+    };
+    format!(
+        "Sandbox preflight failed: {what}. Every rollout would fail the same way, so the executor will not start. Check that:\n{}",
+        checks
+            .iter()
+            .map(|check| format!("- {check}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    )
+}
+/// Exit status for configuration the executor cannot run with (EX_CONFIG).
+const EXIT_CONFIG: i32 = 78;
+const CREDENTIAL_HELP: &str = "Create a credential with `acclimate-service --create-executor-token`, save its token in the file that ACCLIMATE_EXECUTOR_TOKEN_FILE names, and restart the executor.";
+fn fatal(message: impl std::fmt::Display) -> ! {
+    eprintln!("{message}");
+    std::process::exit(EXIT_CONFIG)
+}
+#[derive(Debug)]
+struct CredentialRefused;
+impl std::fmt::Display for CredentialRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "The service refused the executor credential (HTTP 401): the token is wrong, revoked or missing. {CREDENTIAL_HELP}"
+        )
+    }
+}
+impl std::error::Error for CredentialRefused {}
+/// The lease route answers 401 only for a bad credential. Retrying cannot fix it.
+fn credential_refused(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::UNAUTHORIZED
+}
+const HEALTH_MAX_AGE: Duration = Duration::from_secs(120);
+fn health_path() -> PathBuf {
+    env::var_os("ACCLIMATE_EXECUTOR_HEALTH_FILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| "/tmp/acclimate-executor-health".into())
+}
+static HEALTH_FILE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+/// Record that the service answered. The health check reads only the modification time.
+fn touch_health() {
+    if let Some(path) = HEALTH_FILE.get() {
+        touch(path);
+    }
+}
+fn touch(path: &Path) {
+    if let Err(error) = fs::File::create(path).and_then(|file| file.set_modified(SystemTime::now()))
+    {
+        eprintln!(
+            "Could not update the health file {}: {error}",
+            path.display()
+        );
+    }
+}
+fn healthy(path: &Path, now: SystemTime) -> bool {
+    fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .is_ok_and(|modified| {
+            now.duration_since(modified)
+                .is_ok_and(|age| age <= HEALTH_MAX_AGE)
+                || modified > now
+        })
 }
 fn cleanup_stale(root: &std::path::Path) -> std::io::Result<()> {
     let guard = fs::File::open(root)?;
@@ -515,11 +727,44 @@ fn exact(a: &Value, b: &Value) -> bool {
 }
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let health = health_path();
+    if env::args().nth(1).as_deref() == Some("--health") {
+        if healthy(&health, SystemTime::now()) {
+            return Ok(());
+        }
+        eprintln!(
+            "The executor has not reached the service in the last {} seconds. Read its logs.",
+            HEALTH_MAX_AGE.as_secs()
+        );
+        std::process::exit(1);
+    }
+    // A file left by an earlier run of this container must not report this one healthy.
+    let _ = fs::remove_file(&health);
+    let _ = HEALTH_FILE.set(health);
     let runtime = env::var("ACCLIMATE_SANDBOX_RUNTIME").unwrap_or_else(|_| "runsc".into());
     match runtime.as_str() {
         "docker" => eprintln!("WARNING: plain Docker sandbox isolation is weaker than gVisor"),
         "runsc" => (),
-        _ => return Err("Unsupported sandbox runtime".into()),
+        _ => fatal(format!(
+            "Unsupported sandbox runtime {runtime:?}. Set ACCLIMATE_SANDBOX_RUNTIME to runsc (gVisor) or docker."
+        )),
+    }
+    let token = match env::var_os("ACCLIMATE_EXECUTOR_TOKEN_FILE") {
+        Some(path) => fs::read_to_string(&path)
+            .unwrap_or_else(|error| {
+                fatal(format!(
+                    "Cannot read the executor credential file {} that ACCLIMATE_EXECUTOR_TOKEN_FILE names: {error}. {CREDENTIAL_HELP}",
+                    Path::new(&path).display()
+                ))
+            })
+            .trim()
+            .to_owned(),
+        None => env::var("ACCLIMATE_EXECUTOR_TOKEN").unwrap_or_default(),
+    };
+    if token.is_empty() {
+        fatal(format!(
+            "The executor credential is empty. {CREDENTIAL_HELP}"
+        ));
     }
     let runner = env::var("ACCLIMATE_RUNNER_IMAGE").unwrap_or_else(|_| "acclimate-chat:1".into());
     let inspect = bounded_command(
@@ -528,11 +773,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await??;
     if !inspect.status.success() {
-        return Err(format!(
-            "Inspecting runner image failed: {}",
-            String::from_utf8_lossy(&inspect.stderr)
-        )
-        .into());
+        fatal(format!(
+            "Inspecting the runner image {runner} failed: {}. Build or pull it before starting the executor (`docker compose build acclimate-runner` or `docker compose pull acclimate-runner`), or set ACCLIMATE_RUNNER_IMAGE.",
+            String::from_utf8_lossy(&inspect.stderr).trim()
+        ));
     }
     let image = String::from_utf8(inspect.stdout)?.trim().to_owned();
     let build = option_env!("ACCLIMATE_EXECUTOR_BUILD").unwrap_or(env!("CARGO_PKG_VERSION"));
@@ -552,10 +796,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "{}/internal/executor/leases",
             env::var("ACCLIMATE_EXECUTOR_SERVICE")?.trim_end_matches('/')
         ),
-        token: match env::var_os("ACCLIMATE_EXECUTOR_TOKEN_FILE") {
-            Some(path) => fs::read_to_string(path)?.trim().to_owned(),
-            None => env::var("ACCLIMATE_EXECUTOR_TOKEN")?,
-        },
+        token,
         runtime,
         image,
         identity,
@@ -565,10 +806,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let count: std::num::NonZeroUsize = env::var("ACCLIMATE_EXECUTOR_CONCURRENCY")
         .unwrap_or_else(|_| "1".into())
         .parse()?;
-    let mut workers = tokio::task::JoinSet::new();
-    if worker.token.is_empty() {
-        return Err("Empty executor credential".into());
+    if let Err(message) = worker.preflight().await {
+        fatal(message);
     }
+    let mut workers = tokio::task::JoinSet::new();
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let (drain, stop) = watch::channel(false);
     for _ in 0..count.get() {
@@ -576,19 +817,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let stop = stop.clone();
         workers.spawn(async move {
             while !*stop.borrow() {
-                if let Err(error) = w.once().await {
-                    eprintln!("Executor lease request or report failed: {error}");
-                    sleep(Duration::from_secs(1)).await;
+                match w.once().await {
+                    Ok(()) => (),
+                    Err(error) if error.is::<CredentialRefused>() => return Err(error.to_string()),
+                    Err(error) => {
+                        eprintln!("Executor lease request or report failed: {error}");
+                        sleep(Duration::from_secs(1)).await;
+                    }
                 }
             }
+            Ok(())
         });
     }
-    tokio::select! {_=terminate.recv()=>(),_=workers.join_next()=>return Err("Executor worker stopped".into())};
+    tokio::select! {
+        _ = terminate.recv() => (),
+        stopped = workers.join_next() => {
+            if let Some(Ok(Err(message))) = stopped {
+                refused(message, &mut workers).await;
+            }
+            return Err("Executor worker stopped".into());
+        }
+    };
     drain.send_replace(true);
     while let Some(result) = workers.join_next().await {
-        result?;
+        if let Err(message) = result? {
+            refused(message, &mut workers).await;
+        }
     }
     Ok(())
+}
+/// Stop the other workers, and so their sandboxes, before exiting.
+async fn refused(message: String, workers: &mut tokio::task::JoinSet<Result<(), String>>) -> ! {
+    workers.abort_all();
+    while workers.join_next().await.is_some() {}
+    fatal(message)
 }
 #[cfg(test)]
 mod tests {
@@ -622,6 +884,87 @@ mod tests {
         assert_eq!(
             classify_runner(timed_out(), &pending).unwrap_err().code,
             "gateway-upstream"
+        );
+    }
+    #[test]
+    fn only_a_refused_credential_stops_the_executor() {
+        assert!(credential_refused(reqwest::StatusCode::UNAUTHORIZED));
+        for status in [403, 404, 409, 500, 502, 503] {
+            assert!(!credential_refused(
+                reqwest::StatusCode::from_u16(status).unwrap()
+            ));
+        }
+        let message = CredentialRefused.to_string();
+        assert!(message.contains("--create-executor-token"));
+        assert!(message.contains("restart the executor"));
+    }
+    #[test]
+    fn health_file_goes_stale_after_two_minutes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("health");
+        let now = SystemTime::now();
+        assert!(!healthy(&path, now));
+        touch(&path);
+        assert!(healthy(&path, now));
+        assert!(healthy(&path, now + Duration::from_secs(119)));
+        assert!(!healthy(&path, now + Duration::from_secs(121)));
+        // A clock step backwards does not report a fresh file stale.
+        assert!(healthy(&path, now - Duration::from_secs(600)));
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(now - Duration::from_secs(300))
+            .unwrap();
+        assert!(!healthy(&path, now));
+        touch(&path);
+        assert!(healthy(&path, SystemTime::now()));
+    }
+    #[test]
+    fn preflight_uses_the_rollout_sandbox_flags() {
+        let rollout = sandbox_args("runsc", "n", "type=bind", "image", &[]);
+        let preflight = sandbox_args("runsc", "n", "type=bind", "image", PREFLIGHT_COMMAND);
+        assert_eq!(rollout.last().unwrap(), "image");
+        let flags = &rollout[..rollout.len() - 1];
+        assert_eq!(&preflight[..flags.len()], flags);
+        assert_eq!(
+            &preflight[flags.len()..flags.len() + 3],
+            ["--entrypoint", "node", "image"]
+        );
+        assert_eq!(&preflight[flags.len() + 3..], &PREFLIGHT_COMMAND[1..]);
+        for flag in [
+            "--network",
+            "none",
+            "--read-only",
+            "--cap-drop=ALL",
+            "runsc",
+        ] {
+            assert!(rollout.iter().any(|arg| arg == flag));
+        }
+        assert!(
+            sandbox_args("docker", "n", "m", "i", &[])
+                .windows(2)
+                .any(|w| w == ["--runtime", "runc"])
+        );
+    }
+    #[test]
+    fn preflight_failures_say_what_to_check() {
+        let created = preflight_message(
+            &PreflightStage::Create("unknown or invalid runtime name: runsc\n".into()),
+            "runsc",
+            "sha256:abc",
+        );
+        assert!(created.contains("unknown or invalid runtime name: runsc. Every rollout"));
+        assert!(created.contains("`runsc` runtime registered"));
+        assert!(created.contains("docker info --format '{{json .Runtimes}}'"));
+        assert!(created.contains("--host-uds=open"));
+        assert!(created.contains("sha256:abc"));
+        let socket = preflight_message(&PreflightStage::Socket, "runsc", "i");
+        assert!(socket.contains("gateway socket"));
+        assert!(socket.lines().nth(1).unwrap().contains("--host-uds=open"));
+        assert!(
+            preflight_message(&PreflightStage::Create(String::new()), "docker", "i")
+                .contains("`runc`")
         );
     }
     #[test]

@@ -619,13 +619,29 @@ def start_executor(root, state, ports, source, environ=os.environ):
     rebuild = ['--build'] if source == 'build' else []
     compose(root, 'up', '--detach', *rebuild, 'acclimate-executor', ports=ports, source=source,
             environment=dict(ACCLIMATE_PROVIDER_HTTP_HOSTS=hosts))
-    for _ in range(30):
-        if compose(root, 'ps', '--status', 'running', '--quiet', 'acclimate-executor',
-                   capture=True, ports=ports, source=source).strip():
-            return
-        time.sleep(1)
     logs = shlex.join([*compose_command(root), 'logs', 'acclimate-executor'])
-    raise ValueError(f'The executor did not stay running. To see why, run {logs} in {root}')
+    # Healthy means the service has answered the executor with its credential, after the
+    # sandbox preflight passed. A running container alone can be between restarts.
+    for _ in range(EXECUTOR_START_SECONDS):
+        state, health = executor_status(root, ports, source)
+        if state == 'running' and health == 'healthy':
+            return
+        if state in ('restarting', 'exited', 'dead'):
+            raise ValueError(f'The executor stopped. To see why, run {logs} in {root}')
+        time.sleep(1)
+    raise ValueError(f'The executor did not become healthy within {EXECUTOR_START_SECONDS} '
+                     f'seconds. To see why, run {logs} in {root}')
+
+
+EXECUTOR_START_SECONDS = 90
+
+
+def executor_status(root, ports, source):
+    """The executor container's state and health, such as ('running', 'healthy')."""
+    output = compose(root, 'ps', '--all', '--format', '{{.State}} {{.Health}}',
+                     'acclimate-executor', capture=True, ports=ports, source=source)
+    state, _, health = (output or b'').decode().strip().partition(' ')
+    return state, health.strip()
 
 
 def docker_running():

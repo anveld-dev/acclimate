@@ -70,6 +70,14 @@ services:
       - executor-data:/var/lib/acclimate-executor
     networks: [executor, executor-egress]
     restart: unless-stopped
+    # Healthy while the service has answered a lease request or heartbeat in the last two minutes.
+    healthcheck:
+      test: ["CMD", "acclimate-executor", "--health"]
+      interval: 30s
+      timeout: 5s
+      retries: 2
+      start_period: 2m
+      start_interval: 2s
   console:
     image: ${ACCLIMATE_CONSOLE_IMAGE:-ghcr.io/anveld-dev/acclimate-console:${ACCLIMATE_VERSION:-latest}}
     build:

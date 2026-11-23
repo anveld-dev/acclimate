@@ -96,8 +96,8 @@ class KeycloakDeployment(unittest.TestCase):
         self.assertEqual(runner['network_mode'], 'none')
         self.assertFalse(runner.get('ports'))
         for name, service in services.items():
+            self.assertIn('healthcheck', service)
             if name != 'acclimate-executor':
-                self.assertIn('healthcheck', service)
                 self.assertEqual(service['stop_grace_period'], '1m30s')
             self.assertEqual(service['restart'], 'unless-stopped')
             if name != 'proxy':

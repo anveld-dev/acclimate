@@ -46,10 +46,14 @@ class DeploymentTests(unittest.TestCase):
         self.assertFalse(runner.get('ports'))
         for name, service in services.items():
             self.assertEqual(service['restart'],'unless-stopped')
+            self.assertIn('healthcheck', service)
             if name != 'acclimate-executor':
                 self.assertEqual(service['stop_grace_period'],'1m30s')
-                self.assertIn('healthcheck', service)
             if name != 'proxy': self.assertFalse(service.get('ports'))
+        # The executor drains leased rollouts, and reports health from its own service contact.
+        self.assertEqual(services['acclimate-executor']['stop_grace_period'],'1h0m0s')
+        self.assertEqual(services['acclimate-executor']['healthcheck']['test'],
+                         ['CMD','acclimate-executor','--health'])
         self.assertEqual({port['target'] for port in services['proxy']['ports']}, {80,443})
         self.assertEqual(services['service']['build']['dockerfile'],'deploy/Dockerfile')
         self.assertEqual(services['console']['build']['dockerfile'],'deploy/console.Dockerfile')

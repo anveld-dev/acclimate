@@ -3,6 +3,8 @@ mod common;
 mod executor_tests;
 #[path = "learning_loop/optimizer.rs"]
 mod optimizer;
+#[path = "learning_loop/task_review.rs"]
+mod task_review;
 
 use acclimate_service::{AppState, Grant, RuntimeStatus, learning_worker, router};
 use axum::{

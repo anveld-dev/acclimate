@@ -431,6 +431,24 @@ export interface LearningTrial {
   output?: Json;
   gatewayLog?: Json;
   verdict?: {passed:boolean; score?:number; votes?:boolean[]|null; reasons?:string[]|null};
+  /** Present when status is `failed`. `code` is the failed rollout's error code, or `cancelled`. */
+  error?: {code: string|null};
+}
+
+export interface LearningTaskConfirmation {
+  /** The task revision the confirmed tasks were written at, or null when none needed confirming. */
+  revision: number|null;
+  results: {taskId: string; result: 'confirmed'|'already-confirmed'|'not-held-out'|'not-found'}[];
+}
+
+export interface LearningTaskRecheck {
+  taskId: string;
+  admission: 'pending';
+}
+
+export interface LearningImportSummary extends LearningImport {
+  createdAt: string;
+  source: string;
 }
 
 export interface LearningImport {

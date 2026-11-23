@@ -434,6 +434,12 @@ class AcclimateClient:
     def import_learning_tasks(self, workspace_id: str, bundle_id: str, data: bytes, content_type: str, filename: str | None = None) -> LearningImport:
         return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/tasks/import" + self._learning_query(filename=filename), _body_bytes=data, _content_type=content_type, _optional_key=True)
 
+    def list_blocked_learning_versions(self, workspace_id: str, bundle_id: str) -> list[BlockedLearningVersion]:
+        return self._request("GET", self._loop_path(workspace_id, bundle_id) + "/blocked-versions")
+
+    def unblock_learning_version(self, workspace_id: str, bundle_id: str, digest: str) -> None:
+        self._request("DELETE", self._loop_path(workspace_id, bundle_id) + f"/blocked-versions/{self._part(digest)}", _optional_key=True)
+
     def get_learning_usage(self, workspace_id: str, bundle_id: str) -> LearningUsage:
         return self._request("GET", self._loop_path(workspace_id, bundle_id) + "/usage")
 

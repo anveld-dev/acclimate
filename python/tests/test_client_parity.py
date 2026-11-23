@@ -99,6 +99,11 @@ class ParityTest(unittest.TestCase):
         prefix = "/v1/workspaces/w/bundles/b/learning"
         client.list_learning_tasks("w", "b", split="evolve", flagged=False)
         self.assertEqual(self.last()["path"], prefix + "/tasks?split=evolve&flagged=false")
+        client.list_blocked_learning_versions("w", "b")
+        self.assertEqual(self.last()["path"], prefix + "/blocked-versions")
+        client.unblock_learning_version("w", "b", "a/b")
+        self.assertEqual((self.last()["method"], self.last()["path"]),
+                         ("DELETE", prefix + "/blocked-versions/a%2Fb"))
         patch = {"confirm": True}
         client.edit_learning_task("w", "b", "a/b", patch)
         self.assertEqual((self.last()["method"], self.last()["path"], self.last()["body"]),

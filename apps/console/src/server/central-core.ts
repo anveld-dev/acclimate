@@ -1,4 +1,3 @@
-import { blockedVersions } from './blocked-learning-versions';
 import { ApiError } from '@acclimate/sdk';
 import { consoleClient } from './console-client';
 import type { Environment } from './selection';
@@ -82,7 +81,7 @@ export async function centralRequest(env: Environment, data: CentralRequest, fet
         return { items: page.items, nextCursor: page.next };
       });
     case 'unblock':
-      return blockedVersions(env, ws, bundle, fetcher, data.id);
+      return api.unblockLearningVersion(ws, bundle, data.id);
     default:
       throw Error('Unknown learning action.');
   }

@@ -7,7 +7,7 @@ import type {
   DeliveryReceiptRequest, ListOptions, Operation, Page, Release, ReleasePage,
   VersionMetadata, Workspace,
   LearningLoopRequest, LearningLoop, LearningRoundSummary, LearningRound, LearningMemory,
-  LearningTaskRequest, LearningTaskEdit, LearningTaskPage, LearningTaskReceipt, LearningTaskRevision, LearningTrialReceipt, LearningTrial, LearningImport, LearningUsage, LearningRollback, ModelProvider, ModelProviderRequest,
+  LearningTaskRequest, LearningTaskEdit, LearningTaskPage, LearningTaskReceipt, LearningTaskRevision, LearningTrialReceipt, LearningTrial, LearningImport, BlockedLearningVersion, LearningUsage, LearningRollback, ModelProvider, ModelProviderRequest,
   LearningOutcomeRequest, LearningOutcomeReceipt,
 } from './types.js';
 
@@ -478,6 +478,12 @@ export class AcclimateClient {
   }
   importLearningTasks(workspaceId: string, bundleId: string, data: ArrayBuffer, contentType: string, filename?: string): Promise<LearningImport> {
     return this.request('POST', this.loopPath(workspaceId, bundleId) + `/tasks/import` + this.learningQuery({filename}), data, undefined, {'Content-Type': contentType}, false, false, true);
+  }
+  listBlockedLearningVersions(workspaceId: string, bundleId: string): Promise<BlockedLearningVersion[]> {
+    return this.request('GET', this.loopPath(workspaceId, bundleId) + '/blocked-versions');
+  }
+  unblockLearningVersion(workspaceId: string, bundleId: string, digest: string): Promise<void> {
+    return this.request('DELETE', this.loopPath(workspaceId, bundleId) + '/blocked-versions/' + this.part(digest), undefined, undefined, {}, false, false, true);
   }
   getLearningUsage(workspaceId: string, bundleId: string): Promise<LearningUsage> {
     return this.request('GET', this.loopPath(workspaceId, bundleId) + `/usage`);

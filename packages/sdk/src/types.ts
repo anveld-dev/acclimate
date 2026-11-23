@@ -443,6 +443,13 @@ export interface LearningImport {
   setAside?: { row: number; source: string; reason: string }[];
 }
 
+export interface BlockedLearningVersion {
+  digest: string;
+  removedBy: string;
+  note: string | null;
+  createdAt: string;
+}
+
 export interface LearningUsageDay {
   day: string;
   rounds: number;

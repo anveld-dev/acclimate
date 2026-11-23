@@ -1,4 +1,3 @@
-import { blockedVersions } from './blocked-learning-versions';
 import { ApiError, type AcclimateClient, type LearningRound } from '@acclimate/sdk';
 import { readVersion } from './release-history';
 import { consoleClient } from './console-client';
@@ -216,7 +215,7 @@ export async function readLearningState(
             .catch(() => null)
         : [];
     const blocked = loop
-      ? await blockedVersions(env, workspaceId, bundleId, fetcher).catch(() => null)
+      ? await api.listBlockedLearningVersions(workspaceId, bundleId).catch(() => null)
       : [];
     const openEvaluation = active?.evaluations.find(
       ({ status }) => status === 'queued' || status === 'running',

@@ -627,6 +627,13 @@ class LearningImport(TypedDict):
     setAside: NotRequired[list[_SetAsideRow]]
 
 
+class BlockedLearningVersion(TypedDict):
+    digest: str
+    removedBy: str
+    note: str | None
+    createdAt: str
+
+
 class LearningUsageDay(TypedDict):
     day: str
     rounds: int
@@ -675,6 +682,7 @@ __all__ = [
     "ModelProviderRequest",
     "ModelProvider",
     "LearningRollback",
+    "BlockedLearningVersion",
     "LearningUsage",
     "LearningUsageDay",
     "LearningImport",

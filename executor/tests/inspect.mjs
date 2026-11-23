@@ -3,7 +3,8 @@ import { closeSync, lstatSync, openSync, readdirSync, readSync } from 'node:fs';
 
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
-const markers = JSON.parse(Buffer.concat(chunks).toString()).map(text => Buffer.from(text));
+const input = Buffer.concat(chunks).toString();
+const markers = (input.startsWith('[') ? JSON.parse(input) : [input]).map(text => Buffer.from(text));
 if (markers.some(marker => JSON.stringify(process.env).includes(marker.toString()))) process.exit(1);
 
 const overlap = Math.max(...markers.map(marker => marker.length)) - 1;

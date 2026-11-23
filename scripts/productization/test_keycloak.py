@@ -90,11 +90,16 @@ class KeycloakDeployment(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             config = self.resolve(Path(temporary))
         services = config['services']
-        self.assertEqual(set(services), {'postgres', 'service', 'console', 'proxy', 'keycloak', 'keycloak-db'})
+        self.assertEqual(set(services), {'postgres', 'service', 'console', 'proxy', 'keycloak', 'keycloak-db', 'acclimate-executor', 'acclimate-runner'})
+        # The runner service only builds the sandbox image; it exits at once and has no network.
+        runner = services.pop('acclimate-runner')
+        self.assertEqual(runner['network_mode'], 'none')
+        self.assertFalse(runner.get('ports'))
         for name, service in services.items():
-            self.assertIn('healthcheck', service)
+            if name != 'acclimate-executor':
+                self.assertIn('healthcheck', service)
+                self.assertEqual(service['stop_grace_period'], '1m30s')
             self.assertEqual(service['restart'], 'unless-stopped')
-            self.assertEqual(service['stop_grace_period'], '1m30s')
             if name != 'proxy':
                 self.assertFalse(service.get('ports'))
         self.assertNotEqual(services['postgres']['volumes'][0]['source'], services['keycloak-db']['volumes'][0]['source'])

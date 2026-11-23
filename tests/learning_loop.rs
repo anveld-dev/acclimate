@@ -1,4 +1,6 @@
 mod common;
+#[path = "learning_loop/executor.rs"]
+mod executor_tests;
 #[path = "learning_loop/optimizer.rs"]
 mod optimizer;
 
@@ -23,6 +25,7 @@ struct Fixture {
     project: String,
     bundle: Uuid,
     version: Uuid,
+    token: String,
     worker: Option<JoinHandle<()>>,
 }
 
@@ -61,9 +64,10 @@ impl Fixture {
             grants: Arc::new(
                 [
                     ("admin", &["promote", "read"][..]),
-                    ("app", &["evaluate", "promote"][..]),
-                    ("other", &["evaluate"][..]),
+                    ("app", &["read", "write", "promote"][..]),
+                    ("other", &["read"][..]),
                     ("reader", &["read"][..]),
+                    ("writer", &["read", "write"][..]),
                 ]
                 .into_iter()
                 .map(|(principal, rights)| Grant {
@@ -80,7 +84,11 @@ impl Fixture {
         };
         let (bundle, version) = Self::create_bundle(&state.db, &project).await;
         let app = router(state.clone());
+        let (_, token) = acclimate_service::executor::create_credential(&state.db)
+            .await
+            .unwrap();
         Self {
+            token,
             state,
             app,
             project,
@@ -125,12 +133,17 @@ impl Fixture {
         key: Option<&str>,
         body: Value,
     ) -> (u16, Value) {
-        let mut req = Request::builder()
-            .method(method)
-            .uri(format!(
+        let uri = if suffix.starts_with("/v1/") {
+            suffix.to_owned()
+        } else {
+            format!(
                 "/v1/workspaces/{}/bundles/{}/learning{suffix}",
                 self.project, self.bundle
-            ))
+            )
+        };
+        let mut req = Request::builder()
+            .method(method)
+            .uri(uri)
             .header("content-type", "application/json");
         if let Some(session) = caller.strip_prefix("console/") {
             req = req
@@ -178,18 +191,80 @@ impl Fixture {
     }
 
     async fn enroll(&self) -> Value {
+        self.provider().await;
         self.ok("PUT", "", "admin", None, enrollment()).await
     }
 
-    async fn seed(&self) {
-        self.ok(
-            "POST",
-            "/evolve-cases",
-            "app",
-            None,
-            json!({"cases":[case("a"),case("b")]}),
+    fn key() -> acclimate_service::executor::ProviderKey {
+        acclimate_service::executor::ProviderKey::from_hex(&"01".repeat(32)).unwrap()
+    }
+    async fn provider(&self) {
+        Self::key()
+            .store(
+                &self.state.db,
+                &self.project,
+                "https://provider.invalid/v1",
+                &["task".into(), "judge".into()],
+                "private-fixture-provider-key",
+            )
+            .await
+            .unwrap();
+        self.state.runtime.ownership_acquired();
+        executor_tests::verify_provider(&self.internal(), &self.token, &Self::identity()).await;
+    }
+    fn internal(&self) -> axum::Router {
+        acclimate_service::executor::router(
+            self.state.db.clone(),
+            Some(Self::key()),
+            self.state.runtime.clone(),
         )
-        .await;
+    }
+    fn identity() -> Value {
+        json!({"build":"fixture","harnesses":{"chat":"1"},"sandboxRuntime":"docker","runnerImage":"fixture-image"})
+    }
+    async fn announce(&self) {
+        self.state.runtime.ownership_acquired();
+        assert_eq!(
+            executor_tests::post(
+                &self.internal(),
+                "",
+                &self.token,
+                json!({"executor":Self::identity()})
+            )
+            .await
+            .0,
+            204
+        );
+    }
+    async fn seed(&self) {
+        self.admit_tasks().await;
+        self.ok("POST", "/start", "admin", None, Value::Null).await;
+    }
+
+    /// Admits twenty tasks in each split and announces the executor, so the loop can start.
+    async fn admit_tasks(&self) {
+        for (table, identifier) in [
+            (
+                "learning_tasks",
+                "CASE i WHEN 1 THEN 'a' WHEN 2 THEN 'b' ELSE 'extra-'||i END",
+            ),
+            ("learning_held_out_tasks", "'held-out-sentinel-'||i"),
+        ] {
+            sqlx::query(&format!(r#"INSERT INTO {table}(project_id,bundle_id,task_id,"group",input,grader,source,confirmed_by,admission,added_revision)
+              SELECT $1,$2,{identifier},i::text,to_jsonb({identifier}), '{{"type":"exact","expected":"fixture answer"}}','console','operator','admitted',1 FROM generate_series(1,20) i"#))
+              .bind(&self.project).bind(self.bundle).execute(&self.state.db).await.unwrap();
+        }
+        sqlx::query("UPDATE learning_loops SET task_revision=1")
+            .execute(&self.state.db)
+            .await
+            .unwrap();
+        self.announce().await;
+    }
+
+    /// Serves requests from a state with this optimizer, as a restarted service would.
+    fn set_optimizer(&mut self, optimizer: Option<Arc<dyn acclimate_service::OptimizerModel>>) {
+        self.state.optimizer = optimizer;
+        self.app = router(self.state.clone());
     }
 
     async fn wait_for(&self, suffix: &str, caller: &str, ready: impl Fn(&Value) -> bool) -> Value {
@@ -207,43 +282,27 @@ impl Fixture {
     }
 
     async fn item(&self, split: &str, number: i32) -> Value {
-        self.wait_for("/work", "app", |v| {
-            v["items"][0]["split"] == split && v["items"][0]["roundNumber"] == number
-        })
-        .await["items"][0]
-            .clone()
-    }
-
-    async fn start(&self, item: &Value, attempt: &str) -> Value {
-        self.ok(
-            "POST",
-            &eval_route(item, "start"),
-            "app",
-            Some(attempt),
-            json!({"attemptId":attempt}),
-        )
-        .await
+        let split = if split == "heldOut" {
+            "held_out"
+        } else {
+            "evolve"
+        };
+        tokio::time::timeout(Duration::from_secs(60),async {
+            loop {
+                let item:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('evaluationId',e.id,'roundId',r.id,'versionId',e.version_id,'sample',e.sample,'role',e.role) FROM learning_evaluations e JOIN learning_rounds r ON r.id=e.round_id WHERE r.number=$1 AND e.split=$2 AND e.status='running' AND EXISTS(SELECT FROM learning_rollouts WHERE evaluation_id=e.id AND status='queued') ORDER BY e.created_at LIMIT 1")
+                    .bind(number).bind(split).fetch_optional(&self.state.db).await.unwrap();
+                if let Some(item)=item{return item;}
+                tokio::time::sleep(Duration::from_millis(40)).await;
+            }
+        }).await.expect("evaluation became available")
     }
 }
 
 fn enrollment() -> Value {
-    json!({"channel":"stable","appPrincipalId":"app","setting":{"domain":"support","benchmark":"v3","policyModel":"fixed"},
-           "heldOut":{"digest":HELD_OUT,"cases":1}})
-}
-fn case(id: &str) -> Value {
-    json!({"caseId":id,"input":{"text":id},"expected":null})
+    json!({"channel":"stable","taskModel":"task","judgeModel":"judge","setting":{"domain":"support","benchmark":"v3","policyModel":"task"}})
 }
 fn result(id: &str, score: f64) -> Value {
     json!({"caseId":id,"rollouts":vec![json!({"score":score,"passed":score>=0.5});5]})
-}
-fn eval_route(item: &Value, action: &str) -> String {
-    format!(
-        "/evaluations/{}/{action}",
-        item["evaluationId"].as_str().unwrap()
-    )
-}
-fn report(cases: &[Value]) -> Value {
-    json!({"attemptId":"attempt","cases":cases})
 }
 fn round_route(item: &Value) -> String {
     format!("/rounds/{}", item["roundId"].as_str().unwrap())
@@ -271,846 +330,870 @@ async fn session(f: &Fixture, role: &str) -> String {
     secret
 }
 
-async fn principal(f: &Fixture, caller: &str) -> (u16, Value) {
-    let mut req = Request::builder()
-        .method("GET")
-        .uri(format!("/v1/workspaces/{}/principal", f.project));
-    if let Some(session) = caller.strip_prefix("console/") {
-        req = req
-            .header("authorization", format!("Bearer {}", common::CONSOLE_TOKEN))
-            .header("x-acclimate-session", session);
-    } else {
-        req = req.header("authorization", format!("Bearer {caller}"));
-    }
-    let reply = f
-        .app
-        .clone()
-        .oneshot(req.body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    let status = reply.status().as_u16();
-    let bytes = to_bytes(reply.into_body(), 65_536).await.unwrap();
-    (
-        status,
-        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
-    )
-}
-
 #[tokio::test]
-#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn one_token_enrolls_itself_and_reads_its_identity() {
+#[ignore = "requires isolated PostgreSQL"]
+async fn task_custody_revisions_confirmation_and_outcomes() {
     let f = Fixture::new().await;
+    f.enroll().await;
+    for (method, suffix) in [
+        ("GET", "/work"),
+        ("POST", "/evolve-cases"),
+        ("POST", "/evaluations/unused/start"),
+        ("POST", "/evaluations/unused/report"),
+    ] {
+        assert_eq!(
+            f.req(method, suffix, "admin", None, Value::Null).await.0,
+            404
+        );
+    }
     assert_eq!(
-        principal(&f, "app").await,
-        (
-            200,
-            json!({"principalId":"app","kind":"machine","rights":["read","evaluate","promote"]})
-        )
-    );
-    assert_eq!(principal(&f, "reader").await.1["rights"], json!(["read"]));
-    let editor = format!("console/{}", session(&f, "editor").await);
-    assert_eq!(
-        principal(&f, &editor).await.1["rights"],
-        json!(["read", "evaluate", "write"])
-    );
-    let admin = format!("console/{}", session(&f, "admin").await);
-    assert_eq!(
-        principal(&f, &admin).await.1["rights"],
-        json!(["read", "evaluate", "write", "promote"])
-    );
-    assert_eq!(principal(&f, "unknown-token").await.0, 401);
-    let loop_doc = f.ok("PUT", "", "app", None, enrollment()).await;
-    assert_eq!(loop_doc["appPrincipalId"], "app");
-    assert_eq!(loop_doc["enrolledBy"], "app");
-    assert_eq!(
-        f.ok("POST", "/pause", "app", None, Value::Null).await["status"],
-        "paused"
-    );
-    assert_eq!(
-        f.ok("POST", "/resume", "app", None, Value::Null).await["status"],
-        "running"
-    );
-    // Improvement memory stays optimizer-only: the app principal cannot read it.
-    assert_eq!(
-        f.req("GET", "/memory", "app", None, Value::Null).await.0,
+        f.req("POST", "/outcomes", "reader", None, json!({}))
+            .await
+            .0,
         403
     );
     assert_eq!(
-        f.req("GET", "/memory", "admin", None, Value::Null).await.0,
-        200
-    );
-}
-
-#[tokio::test]
-#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn enrollment_authority_validation_and_idempotency() {
-    let f = Fixture::new().await;
-    let body = enrollment();
-    let editor = format!("console/{}", session(&f, "editor").await);
-    for caller in [&editor[..], "other", "reader"] {
-        assert_eq!(f.req("PUT", "", caller, None, body.clone()).await.0, 403);
-    }
-    for (key, value) in [
-        ("appPrincipalId", json!("reader")),
-        ("channel", json!("unreleased")),
-        ("permittedPaths", json!([])),
-        ("automaticRollout", json!(true)),
-        ("heldOut", json!({"digest":HELD_OUT,"cases":0})),
-        (
-            "setting",
-            json!({"domain":"x".repeat(257),"benchmark":"v3","policyModel":"fixed"}),
-        ),
-    ] {
-        let mut invalid = body.clone();
-        invalid[key] = value;
-        assert_eq!(
-            f.req("PUT", "", "admin", None, invalid).await.0,
-            400,
-            "{key}"
-        );
-    }
-    let admin = session(&f, "admin").await;
-    let browser = format!("console/{admin}");
-    let token_route = format!("/v1/workspaces/{}/machine-tokens", f.project);
-    let token_reply = f
-        .app
-        .clone()
-        .oneshot(
-            Request::post(token_route)
-                .header("authorization", format!("Bearer {}", common::CONSOLE_TOKEN))
-                .header("x-acclimate-session", &admin)
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({"name":"evaluator","rights":["evaluate"]}).to_string(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(token_reply.status(), 201);
-    let token: Value =
-        serde_json::from_slice(&to_bytes(token_reply.into_body(), 65536).await.unwrap()).unwrap();
-    let principal = token["token"]["principalId"]
-        .as_str()
-        .expect("token response principal");
-    let mut machine = body.clone();
-    machine["appPrincipalId"] = json!(principal);
-    assert_eq!(
-        f.ok("PUT", "", &browser, None, machine.clone()).await["appPrincipalId"],
-        principal
-    );
-    sqlx::query(
-        "UPDATE machine_tokens SET revoked_at=now(),revoked_by='fixture' WHERE principal_id=$1",
-    )
-    .bind(principal)
-    .execute(&f.state.db)
-    .await
-    .unwrap();
-    assert_eq!(f.req("PUT", "", "admin", None, machine).await.0, 400);
-
-    let enrolled = f.ok("PUT", "", "admin", Some("enroll"), body.clone()).await;
-    assert_eq!(enrolled["status"], "running");
-    assert_eq!(enrolled["evolveRevision"], 0);
-    assert_eq!(enrolled["nextRound"], 1);
-    assert_eq!(f.ok("PUT", "", "admin", None, body.clone()).await, enrolled);
-    assert_eq!(
-        f.ok("PUT", "", "admin", Some("enroll"), body).await,
-        enrolled
-    );
-    let pages = f.ok("GET", "/rounds", "reader", None, Value::Null).await;
-    assert_eq!(pages, json!({"items":[],"next":null}));
-    assert_eq!(
-        f.req("GET", "/rounds?before=bad", "reader", None, Value::Null)
-            .await
-            .0,
-        400
-    );
-}
-
-#[tokio::test]
-#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn evolve_revisions_and_outcome_replay() {
-    let f = Fixture::new().await;
-    f.enroll().await;
-    for caller in ["reader", "other"] {
-        assert_eq!(
-            f.req(
-                "POST",
-                "/evolve-cases",
-                caller,
-                None,
-                json!({"cases":[case("a")]})
-            )
-            .await
-            .0,
-            403
-        );
-    }
-    f.seed().await;
-    let put = |body| f.req("POST", "/evolve-cases", "app", None, body);
-    assert_eq!(
-        put(json!({"cases":[case("a")]})).await.1,
-        json!({"evolveRevision":1,"added":0,"retired":0,"liveCases":2})
-    );
-    assert_eq!(
-        put(json!({"cases":[{"caseId":"a","input":"changed","expected":null}]}))
-            .await
-            .0,
+        f.req("POST", "/resume", "admin", None, Value::Null).await.0,
         409
     );
-    for bad in [
-        json!({}),
-        json!({"cases":[case("outcome:fake")]}),
-        json!({"cases":[case("a"),case("a")]}),
-        json!({"retire":["unknown"]}),
-        json!({"cases":(0..101).map(|n|case(&format!("a{n}"))).collect::<Vec<_>>()}),
-        json!({"cases":[{"caseId":"large","input":"x".repeat(65536),"expected":null}]}),
-    ] {
-        assert_eq!(put(bad).await.0, 400);
-    }
-    let receipt = put(json!({"cases":[case("c"),case("d")],"retire":["a","b"]})).await;
+    let person = format!("console/{}", session(&f, "editor").await);
+    let mut index = 0;
+    let input = loop {
+        let input = json!(format!("secret {index}"));
+        let group = format!("console:{}", hex::encode(Sha256::digest(input.to_string())));
+        if Sha256::digest(group)[0] < 128 {
+            break input;
+        }
+        index += 1;
+    };
+    let new = json!({"input":input,"grader":{"type":"exact","expected":"secret answer"}});
     assert_eq!(
-        receipt.1,
-        json!({"evolveRevision":2,"added":2,"retired":2,"liveCases":2})
+        f.ok("POST", "/tasks", "writer", None, new).await,
+        json!({"heldOutCount":1})
     );
-    assert_eq!(put(json!({"cases":[case("a")]})).await.0, 409);
-    assert_eq!(put(json!({"retire":["a"]})).await.1["evolveRevision"], 2);
-    let first = f
-        .ok(
-            "GET",
-            "/evolve-cases?after=&limit=1",
-            "app",
-            None,
-            Value::Null,
-        )
-        .await;
-    let mut c = case("c");
-    c["addedRevision"] = json!(2);
-    assert_eq!(first, json!({"items":[c],"next":"c","evolveRevision":2}));
-    let last = f
-        .ok(
-            "GET",
-            "/evolve-cases?after=c&limit=1",
-            "app",
-            None,
-            Value::Null,
-        )
-        .await;
-    let mut d = case("d");
-    d["addedRevision"] = json!(2);
-    assert_eq!(last, json!({"items":[d],"next":null,"evolveRevision":2}));
-    for query in ["limit=0", "limit=101", "after=%20"] {
-        assert_eq!(
-            f.req(
-                "GET",
-                &format!("/evolve-cases?{query}"),
-                "app",
-                None,
-                Value::Null
-            )
+    assert_eq!(
+        f.req("GET", "/held-out-tasks/export", "writer", None, Value::Null)
             .await
             .0,
-            400
+        403
+    );
+    let page = f.ok("GET", "/tasks", "writer", None, Value::Null).await;
+    assert_eq!(page, json!({"heldOutCount":1,"items":[],"next":null}));
+    let export = f
+        .ok("GET", "/held-out-tasks/export", &person, None, Value::Null)
+        .await;
+    let old = &export["items"][0];
+    assert_eq!(old["input"], input);
+    let route = format!("/tasks/{}", old["taskId"].as_str().unwrap());
+    assert!(
+        sqlx::query("UPDATE learning_held_out_tasks SET admission='admitted'")
+            .execute(&f.state.db)
+            .await
+            .is_err()
+    );
+    for method in ["DELETE", "PATCH"] {
+        assert_eq!(
+            f.req(method, &route, "writer", None, json!({"input":0}))
+                .await
+                .0,
+            404
         );
     }
-    let outcome_id = Uuid::new_v4();
-    let mut outcome = json!({"outcomeId":outcome_id,"versionId":f.version,"digest":DIGEST,"input":null,"expected":{"action":"refund"}});
-    let send = |body| f.req("POST", "/outcomes", "app", None, body);
-    for (key, value) in [
-        ("digest", json!(HELD_OUT)),
-        (
-            "versionId",
-            json!(Fixture::create_bundle(&f.state.db, &f.project).await.1),
-        ),
-        ("lesson", json!("old")),
-        ("feedback", json!("old")),
-        ("status", json!("old")),
-    ] {
-        let mut bad = outcome.clone();
-        bad[key] = value;
-        assert_eq!(send(bad).await.0, 400);
-    }
-    let mut bad = outcome.clone();
-    bad.as_object_mut().unwrap().remove("expected");
-    assert_eq!(send(bad).await.0, 400);
-    let receipt = send(outcome.clone()).await;
-    assert_eq!(
-        receipt,
-        (
-            200,
-            json!({"outcomeId":outcome_id,"caseId":format!("outcome:{outcome_id}"),"evolveRevision":3})
-        )
-    );
-    assert_eq!(send(outcome.clone()).await, receipt);
-    outcome["expected"] = json!("different");
-    assert_eq!(send(outcome).await.0, 409);
-    let stored: (String, Uuid) = sqlx::query_as(
-        "SELECT source,version_id FROM learning_evolve_cases WHERE bundle_id=$1 AND outcome_id=$2",
+    f.ok(
+        "PATCH",
+        &route,
+        &person,
+        None,
+        json!({"input":"edited","confirm":true}),
     )
-    .bind(f.bundle)
-    .bind(outcome_id)
+    .await;
+    let page = f
+        .ok(
+            "GET",
+            "/tasks?split=held-out&source=console&admission=pending",
+            &person,
+            None,
+            Value::Null,
+        )
+        .await;
+    let new = &page["items"][0];
+    for key in ["taskId", "group", "split"] {
+        assert_eq!(old[key], new[key]);
+    }
+    assert_ne!(old["addedRevision"], new["addedRevision"]);
+    assert!(new["confirmedBy"].is_string());
+    f.ok("DELETE", &route, &person, None, Value::Null).await;
+    let n: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM learning_held_out_tasks WHERE retired_revision IS NOT NULL",
+    )
     .fetch_one(&f.state.db)
     .await
     .unwrap();
-    assert_eq!(stored, ("outcome".into(), f.version));
-}
+    assert_eq!(n, 2);
 
-#[tokio::test]
-#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn round_pins_recovery_monitoring_and_pagination() {
-    let mut f = Fixture::new().await;
-    f.enroll().await;
-    f.spawn_worker();
-    tokio::time::sleep(Duration::from_millis(550)).await;
+    let job = (0..100)
+        .map(Uuid::from_u128)
+        .find(|id| Sha256::digest(id.to_string())[0] < 128)
+        .unwrap();
+    let mut outcome = json!({"outcomeId":job,"versionId":f.version,"digest":DIGEST,"input":input,"expected":null,"output":null});
     assert_eq!(
-        f.ok("GET", "", "reader", None, Value::Null).await["activeRound"],
-        Value::Null
-    );
-    f.seed().await;
-    let incumbent = f.item("evolve", 1).await;
-    assert_eq!(incumbent["versionId"], json!(f.version));
-    assert_eq!(incumbent["evolveRevision"], 1);
-    assert_eq!(incumbent["heldOut"], Value::Null);
-    let round = round_route(&incumbent);
-    let first = f.ok("GET", &round, "reader", None, Value::Null).await;
-    assert_eq!(first["channelRevision"], "7");
-    assert_eq!(first["channel"], "stable");
-    assert_eq!(first["heldOut"], enrollment()["heldOut"]);
-    assert_eq!(first["memoryRevision"], 0);
-    assert_eq!(first["optimizerModel"], "fixture");
-    assert!(sqlx::query("INSERT INTO learning_rounds(id,project_id,bundle_id,number,state,parent_version_id,channel,
-        channel_revision,evolve_revision,memory_revision,setting,held_out)
-        SELECT $1,project_id,bundle_id,999,state,parent_version_id,channel,channel_revision,evolve_revision,memory_revision,setting,held_out
-        FROM learning_rounds WHERE bundle_id=$2")
-        .bind(Uuid::new_v4()).bind(f.bundle).execute(&f.state.db).await.is_err());
-    for (key, value) in [
-        ("channel", json!("beta")),
-        ("appPrincipalId", json!("other")),
-        ("heldOut", json!({"digest":HELD_OUT,"cases":4})),
-    ] {
-        let mut change = enrollment();
-        change[key] = value;
-        assert_eq!(f.req("PUT", "", "admin", None, change).await.0, 409);
-    }
-    let mut change = enrollment();
-    change["setting"]["benchmark"] = json!("next");
-    assert_eq!(
-        f.ok("PUT", "", "admin", None, change).await["setting"]["benchmark"],
-        "next"
-    );
-    f.ok(
-        "POST",
-        "/evolve-cases",
-        "app",
-        None,
-        json!({"retire":["a"],"cases":[case("c")]}),
-    )
-    .await;
-    let outcome_id = Uuid::new_v4();
-    let correction = f.ok("POST","/outcomes","app",None,json!({
-        "outcomeId":outcome_id,"versionId":f.version,"digest":DIGEST,"input":"new","expected":"correct"
-    })).await;
-    let assignment = f.start(&incumbent, "attempt").await;
-    assert_eq!(assignment["cases"], json!([case("a"), case("b")]));
-    let mut a = result("a", 1.0);
-    let long_trace = "t".repeat(100 * 1024);
-    a["rollouts"][0]["trace"] = json!(&long_trace);
-    a["rollouts"][0]["error"] = Value::Null;
-    let report_uri = eval_route(&incumbent, "report");
-    let ack = f
-        .ok(
-            "POST",
-            &report_uri,
-            "app",
-            Some("case-a"),
-            report(&[a.clone()]),
-        )
-        .await;
-    assert_eq!(ack["reportedCases"], 1);
-    assert_eq!(
-        f.ok(
-            "POST",
-            &report_uri,
-            "app",
-            Some("duplicate-a"),
-            report(&[a])
-        )
-        .await,
-        ack
-    );
-    assert_eq!(
-        f.req(
-            "POST",
-            &report_uri,
-            "app",
-            Some("changed-a"),
-            report(&[result("a", 0.0)])
-        )
-        .await
-        .0,
-        409
-    );
-
-    f.crash_worker().await;
-    assert_eq!(
-        f.start(&incumbent, "attempt").await["reportedCaseIds"],
-        json!(["a"])
-    );
-    f.ok(
-        "POST",
-        &report_uri,
-        "app",
-        Some("case-b"),
-        report(&[result("b", 0.25)]),
-    )
-    .await;
-    assert_eq!(
-        f.ok("GET", &round, "reader", None, Value::Null).await["state"],
-        "scoring_incumbent"
-    );
-    f.spawn_worker();
-
-    let retained = f.item("heldOut", 1).await;
-    let heldout_id = retained["evaluationId"].as_str().unwrap();
-    assert_eq!(retained["heldOut"], enrollment()["heldOut"]);
-    assert_eq!(retained["evolveRevision"], Value::Null);
-    let hold = f.start(&retained, "attempt").await;
-    assert_eq!(hold["heldOut"], retained["heldOut"]);
-    assert_eq!(hold["cases"], Value::Null);
-    let hold_route = eval_route(&retained, "report");
-    for field in ["trace", "error", "extra"] {
-        let mut bad = result("private-sentinel", 0.25);
-        bad["rollouts"][0][field] = Value::Null;
-        assert_eq!(
-            f.req("POST", &hold_route, "app", Some("bad-hold"), report(&[bad]))
-                .await
-                .0,
-            400
-        );
-    }
-    let private = result("private-sentinel", 0.25);
-    assert_eq!(
-        f.req(
-            "POST",
-            &hold_route,
-            "app",
-            Some("bad-hold"),
-            report(&[private.clone(), result("extra", 0.0)])
-        )
-        .await
-        .0,
-        400
-    );
-    assert_eq!(
-        f.req(
-            "POST",
-            &hold_route,
-            "app",
-            Some("bad-hold"),
-            report(&[private.clone(), private.clone()])
-        )
-        .await
-        .0,
-        400
-    );
-    let held = f
-        .ok(
-            "POST",
-            &hold_route,
-            "app",
-            Some("valid-hold"),
-            report(&[private]),
-        )
-        .await;
-    assert!(held.get("caseSummaries").is_none() && held.get("report").is_none());
-    let completed = f
-        .wait_for(&round, "reader", |v| v["state"] == "completed")
-        .await;
-    assert_eq!(completed["setting"]["benchmark"], "v3");
-    assert_eq!(completed["incumbentScore"], 0.625);
-    assert_eq!(completed["heldOutScore"], 0.25);
-    assert_eq!(completed["decision"], "kept");
-    assert_eq!(completed["reason"], "no-candidates");
-    assert_eq!(completed["evaluations"].as_array().unwrap().len(), 2);
-    assert!(!completed.to_string().contains("private-sentinel"));
-    assert!(!completed.to_string().contains(&long_trace));
-    let full = f
-        .ok(
-            "GET",
-            &format!(
-                "{round}?evaluation={}",
-                incumbent["evaluationId"].as_str().unwrap()
-            ),
-            "reader",
-            None,
-            Value::Null,
-        )
-        .await;
-    assert_eq!(
-        full["evaluations"][0]["report"]["cases"][0]["rollouts"][0]["trace"],
-        long_trace
-    );
-    assert!(!full.to_string().contains("private-sentinel"));
-    assert_eq!(
-        f.req(
-            "GET",
-            &format!("{round}?evaluation={heldout_id}"),
-            "reader",
-            None,
-            Value::Null
-        )
-        .await
-        .0,
-        400
-    );
-    let second = f.item("evolve", 2).await;
-    let second_assignment = f.start(&second, "attempt").await;
-    let cases = second_assignment["cases"].as_array().unwrap();
-    assert_eq!(
-        cases
-            .iter()
-            .map(|c| c["caseId"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        ["b", "c", correction["caseId"].as_str().unwrap()]
-    );
-    let page = f
-        .ok("GET", "/rounds?limit=1", "reader", None, Value::Null)
-        .await;
-    assert_eq!(page["items"][0]["number"], 2);
-    assert_eq!(page["next"], 2);
-    let page = f
-        .ok(
-            "GET",
-            "/rounds?before=2&limit=1",
-            "reader",
-            None,
-            Value::Null,
-        )
-        .await;
-    assert_eq!(page["items"][0]["number"], 1);
-    assert_eq!(page["next"], Value::Null);
-}
-
-#[tokio::test]
-#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn evaluation_ownership_attempts_and_strict_reports() {
-    let mut f = Fixture::new().await;
-    f.enroll().await;
-    f.seed().await;
-    f.spawn_worker();
-    let item = f.item("evolve", 1).await;
-    let user = format!("console/{}", session(&f, "admin").await);
-    for caller in ["reader", "other", &user] {
-        assert_eq!(
-            f.req("GET", "/work", caller, None, Value::Null).await.0,
-            403
-        );
-        for action in ["start", "report"] {
-            assert_eq!(
-                f.req(
-                    "POST",
-                    &eval_route(&item, action),
-                    caller,
-                    Some("attempt"),
-                    json!({"attemptId":"attempt"})
-                )
-                .await
-                .0,
-                403
-            );
-        }
-    }
-    let other = Fixture::new().await;
-    other.enroll().await;
-    for action in ["start", "report"] {
-        let unknown = json!({"evaluationId":Uuid::new_v4()});
-        let body = json!({"attemptId":"attempt"});
-        assert_eq!(
-            f.req(
-                "POST",
-                &eval_route(&unknown, action),
-                "app",
-                Some("attempt"),
-                body.clone()
-            )
+        f.req("POST", "/outcomes", "app", None, outcome.clone())
             .await
             .0,
-            404
-        );
-        assert_eq!(
-            other
-                .req(
-                    "POST",
-                    &eval_route(&item, action),
-                    "app",
-                    Some("attempt"),
-                    body
-                )
-                .await
-                .0,
-            404
-        );
-    }
-    let start_uri = eval_route(&item, "start");
-    assert_eq!(
-        f.req(
-            "POST",
-            &start_uri,
-            "app",
-            None,
-            json!({"attemptId":"attempt"})
-        )
-        .await
-        .0,
         400
     );
-    assert_eq!(
-        f.start(&item, "attempt").await,
-        f.start(&item, "attempt").await
-    );
-    assert_eq!(
-        f.req(
-            "POST",
-            &start_uri,
-            "app",
-            Some("another"),
-            json!({"attemptId":"another"})
-        )
-        .await
-        .0,
-        409
-    );
-    let uri = eval_route(&item, "report");
-    let mut wrong_count = result("a", 0.5);
-    wrong_count["rollouts"].as_array_mut().unwrap().pop();
-    let mut bad_trace = result("a", 0.5);
-    bad_trace["rollouts"][0]["trace"] = json!(1);
-    for bad in [
-        wrong_count,
-        bad_trace,
-        result("a", 1.5),
-        result("outside", 0.5),
-    ] {
-        assert_eq!(
-            f.req("POST", &uri, "app", Some("bad"), report(&[bad]))
-                .await
-                .0,
-            400
-        );
-    }
-    let correct = report(&[result("a", 0.5), result("b", 0.75)]);
-    let receipt = f
-        .ok("POST", &uri, "app", Some("done"), correct.clone())
+    outcome["output"] = json!("wrong");
+    let receipt = f.ok("POST", "/outcomes", "app", None, outcome).await;
+    assert!(receipt.get("caseId").is_none());
+    let export = f
+        .ok("GET", "/held-out-tasks/export", &person, None, Value::Null)
         .await;
-    assert_eq!(receipt["score"], 0.625);
-    assert_eq!(receipt["status"], "scored");
-    assert_eq!(
-        f.ok("POST", &uri, "app", Some("done"), correct).await,
-        receipt
-    );
-    assert_eq!(
-        f.req(
-            "POST",
-            &uri,
-            "app",
-            Some("done"),
-            report(&[result("a", 0.5)])
-        )
-        .await
-        .1["error"]["code"],
-        "learning_conflict"
-    );
-    assert_eq!(
-        f.start(&item, "attempt").await["evaluation"]["status"],
-        "scored"
-    );
+    assert_eq!(export["items"][0]["group"], job.to_string());
+    assert_eq!(export["items"][0]["output"], "wrong");
 }
 
 #[tokio::test]
-#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn pause_resume_stop_and_held_out_failure() {
-    let mut f = Fixture::new().await;
+#[ignore = "requires isolated PostgreSQL"]
+async fn streamed_import_preserves_rows_and_returns_cards_only_to_people() {
+    let f = Fixture::new().await;
     f.enroll().await;
-    f.seed().await;
-    assert_eq!(
-        f.ok("POST", "/resume", "admin", None, Value::Null).await["status"],
-        "running"
-    );
-    f.spawn_worker();
-    let item = f.item("evolve", 1).await;
-    let paused = f
-        .ok("POST", "/pause", "admin", Some("pause"), Value::Null)
-        .await;
-    assert_eq!(paused["pauseReason"], "operator");
-    assert_eq!(
-        f.ok("POST", "/pause", "admin", None, Value::Null).await,
-        paused
-    );
-    assert_eq!(
-        f.ok("GET", "/work", "app", None, Value::Null).await["status"],
-        "paused"
-    );
-    f.start(&item, "attempt").await;
-    f.ok(
-        "POST",
-        &eval_route(&item, "report"),
-        "app",
-        Some("both"),
-        report(&[result("a", 0.5), result("b", 0.5)]),
-    )
-    .await;
-    let held = f.item("heldOut", 1).await;
-    f.start(&held, "attempt").await;
-    let failure = f
-        .ok(
-            "POST",
-            &eval_route(&held, "report"),
-            "app",
-            Some("error"),
-            json!({"attemptId":"attempt","error":"learning.held_out_mismatch"}),
-        )
-        .await;
-    assert_eq!(failure["status"], "failed");
-    let round = f
-        .wait_for(&round_route(&held), "reader", |v| v["state"] == "completed")
-        .await;
-    assert_eq!(round["heldOutError"], "learning.held_out_mismatch");
-    assert_eq!(round["decision"], "kept");
-    assert_eq!(
-        f.ok("GET", "/work", "app", None, Value::Null).await["items"],
-        json!([])
-    );
-
-    for (number, running) in [(2, false), (3, true)] {
-        let resumed = f.ok("POST", "/resume", "admin", None, Value::Null).await;
-        assert_eq!(resumed["pauseReason"], Value::Null);
-        let item = f.item("evolve", number).await;
-        if running {
-            f.start(&item, "attempt").await;
-        }
-        let stopped = f.ok("POST", "/stop", "admin", None, Value::Null).await;
-        assert_eq!(stopped["status"], "stopped");
-        assert_eq!(stopped["failedRounds"], 0);
-        assert_eq!(stopped["nextRound"], number + 1);
-        assert_eq!(
-            f.ok("POST", "/stop", "admin", None, Value::Null).await,
-            stopped
-        );
-        assert_eq!(
-            f.ok("GET", "/work", "app", None, Value::Null).await["items"],
-            json!([])
-        );
-        let round = f
-            .ok("GET", &round_route(&item), "reader", None, Value::Null)
+    let person = format!("console/{}", session(&f, "editor").await);
+    let mut previous_id = Value::Null;
+    for who in [&person, "writer"] {
+        let material = json!({"input":null,"expected":{"answer":42}});
+        let reply = f
+            .ok(
+                "POST",
+                "/tasks/import?filename=tickets.jsonl",
+                who,
+                None,
+                material,
+            )
             .await;
-        assert_eq!(round["reason"], "stopped");
-        assert_eq!(round["evaluations"][0]["status"], "cancelled");
-        assert_eq!(
-            f.req(
-                "POST",
-                &eval_route(&item, "report"),
-                "app",
-                Some("late"),
-                report(&[result("a", 1.0)])
-            )
-            .await
-            .0,
-            409
-        );
-        for route in ["/pause", "/resume"] {
+        assert_eq!(reply["rows"], 1);
+        assert_eq!(reply["converted"], 1);
+        assert_eq!(reply["pending"], 0);
+        if who == "writer" {
+            assert!(reply.get("cards").is_none());
+            assert_eq!(reply["importId"], previous_id);
+        } else {
+            previous_id = reply["importId"].clone();
+            let card = &reply["cards"][0];
+            assert_eq!(card["sourceFile"], "tickets.jsonl");
+            assert_eq!(card["sourceRow"], 1);
             assert_eq!(
-                f.req("POST", route, "admin", None, Value::Null).await.0,
-                409
+                card["grader"],
+                json!({"type":"exact","expected":{"answer":42}})
             );
         }
-        assert_eq!(f.enroll().await["status"], "running");
     }
-    let item = f.item("evolve", 4).await;
-    f.start(&item, "attempt").await;
-    f.ok(
-        "POST",
-        &eval_route(&item, "report"),
-        "app",
-        Some("both"),
-        report(&[result("a", 1.0), result("b", 1.0)]),
-    )
-    .await;
-    let held = f.item("heldOut", 4).await;
-    f.ok("POST", "/pause", "admin", None, Value::Null).await;
-    f.ok("POST", "/stop", "admin", None, Value::Null).await;
-    let round = f
-        .ok("GET", &round_route(&held), "reader", None, Value::Null)
-        .await;
-    assert_eq!(round["state"], "stopped");
-    assert_eq!(round["decision"], "kept");
-    assert_eq!(round["reason"], "no-candidates");
-}
-
-#[tokio::test]
-#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn queue_and_run_deadlines_count_toward_auto_pause() {
-    let mut f = Fixture::new().await;
-    f.enroll().await;
-    f.seed().await;
-    f.spawn_worker();
-    for (number, running) in [(1, false), (2, true), (3, false)] {
-        let item = f.item("evolve", number).await;
-        if running {
-            f.start(&item, "attempt").await;
-        }
-        f.crash_worker().await;
-        let id = Uuid::parse_str(item["evaluationId"].as_str().unwrap()).unwrap();
-        sqlx::query(
-            "UPDATE learning_evaluations SET deadline_at=now()-interval '1 second' WHERE id=$1",
+    let material = json!({"question":"retry conversion"});
+    let first = f
+        .ok(
+            "POST",
+            "/tasks/import?filename=retry.jsonl",
+            "writer",
+            None,
+            material.clone(),
         )
-        .bind(id)
+        .await;
+    sqlx::query("UPDATE learning_task_imports SET failure='Conversion failed' WHERE id=$1")
+        .bind(Uuid::parse_str(first["importId"].as_str().unwrap()).unwrap())
         .execute(&f.state.db)
         .await
         .unwrap();
+    let retry = f
+        .ok(
+            "POST",
+            "/tasks/import?filename=retry.jsonl",
+            "writer",
+            None,
+            material,
+        )
+        .await;
+    assert_ne!(first["importId"], retry["importId"]);
+    let long = "x".repeat(2 * 1024 * 1024 + 1);
+    let reply = f
+        .ok("POST", "/tasks/import", "writer", None, json!(long))
+        .await;
+    assert_eq!(reply["pending"], 0);
+    let path = format!("/tasks/imports/{}", reply["importId"].as_str().unwrap());
+    let status = f.ok("GET", &path, &person, None, Value::Null).await;
+    assert_eq!(
+        status["setAside"],
+        json!([{"row":1,"source":"paste","reason":"too-large"}])
+    );
+    let status = f.ok("GET", &path, "writer", None, Value::Null).await;
+    assert_eq!(status["setAsideCount"], 1);
+    assert_eq!(status["setAside"], json!([]));
+    assert_eq!(
+        f.req("POST", "/tasks", "writer", None, json!({"input":long}))
+            .await
+            .0,
+        413
+    );
+    // Reuse one chunk so the test exercises the streaming limit without a 65 MiB allocation.
+    let chunk = axum::body::Bytes::from(vec![b'x'; 1024 * 1024]);
+    let stream =
+        futures_util::stream::iter((0..65).map(move |_| Ok::<_, std::io::Error>(chunk.clone())));
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/v1/workspaces/{}/bundles/{}/learning/tasks/import",
+            f.project, f.bundle
+        ))
+        .header("authorization", "Bearer writer")
+        .header("content-type", "text/plain")
+        .body(Body::from_stream(stream))
+        .unwrap();
+    let res = f.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    let body = to_bytes(res.into_body(), 4096).await.unwrap();
+    assert!(std::str::from_utf8(&body).unwrap().contains("64 MiB"));
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn start_and_resume_require_a_configured_optimizer() {
+    let mut f = Fixture::new().await;
+    f.enroll().await;
+    f.admit_tasks().await;
+    f.set_optimizer(None);
+    let refused = |reply: (u16, Value)| {
+        assert_eq!(reply.0, 409, "{}", reply.1);
+        assert_eq!(reply.1["error"]["code"], "optimizer-required");
+        let message = reply.1["error"]["message"].as_str().unwrap();
+        for setting in [
+            "ACCLIMATE_MODEL_ENDPOINT",
+            "ACCLIMATE_MODEL_TOKEN",
+            "ACCLIMATE_MODEL",
+        ] {
+            assert!(message.contains(setting), "{message}");
+        }
+    };
+    let untouched = async |f: &Fixture, started: bool| {
+        let document = f.ok("GET", "", "reader", None, Value::Null).await;
+        assert_eq!(document["optimizerConfigured"], false);
+        assert_eq!(document["status"], "paused");
+        assert_eq!(document["pauseReason"], "operator");
+        assert!(document["activeRound"].is_null());
+        let (began, rounds): (bool, i64) = sqlx::query_as(
+            "SELECT started_at IS NOT NULL,(SELECT count(*) FROM learning_rounds) FROM learning_loops",
+        )
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap();
+        assert_eq!((began, rounds), (started, 0));
+    };
+    untouched(&f, false).await;
+    refused(f.req("POST", "/start", "admin", None, Value::Null).await);
+    untouched(&f, false).await;
+
+    f.set_optimizer(Some(Arc::new(optimizer::NoChangeModel("fixture"))));
+    let document = f.ok("GET", "", "reader", None, Value::Null).await;
+    assert_eq!(document["optimizerConfigured"], true);
+    let started = f.ok("POST", "/start", "admin", None, Value::Null).await;
+    assert_eq!(
+        (&started["status"], &started["optimizerConfigured"]),
+        (&json!("running"), &json!(true))
+    );
+    f.ok("POST", "/pause", "admin", None, Value::Null).await;
+
+    f.set_optimizer(None);
+    refused(f.req("POST", "/resume", "admin", None, Value::Null).await);
+    untouched(&f, true).await;
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn start_floor_pauses_on_loss_and_allows_active_round_to_finish() {
+    let mut f = Fixture::new().await;
+    f.enroll().await;
+    f.announce().await;
+    sqlx::query("UPDATE learning_loops SET task_revision=1")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    for (table, count) in [("learning_tasks", 20), ("learning_held_out_tasks", 19)] {
+        sqlx::query(&format!(r#"INSERT INTO {table}(project_id,bundle_id,task_id,"group",input,grader,source,confirmed_by,admission,added_revision)
+            SELECT $1,$2,'floor-'||i,i::text,'null','{{}}','console','operator','admitted',1 FROM generate_series(1,$3::int) i"#))
+            .bind(&f.project).bind(f.bundle).bind(count).execute(&f.state.db).await.unwrap();
+    }
+    let (status, error) = f.req("POST", "/start", "admin", None, Value::Null).await;
+    assert_eq!(status, 409);
+    assert!(error.to_string().contains("tasks-required"));
+    sqlx::query(r#"INSERT INTO learning_held_out_tasks(project_id,bundle_id,task_id,"group",input,grader,source,confirmed_by,admission,added_revision)
+        VALUES($1,$2,'secret-held-task','secret','"private"','{}','console','operator','admitted',1)"#)
+        .bind(&f.project).bind(f.bundle).execute(&f.state.db).await.unwrap();
+    let started = f.ok("POST", "/start", "admin", None, Value::Null).await;
+    assert_eq!(started["admittedHeldOut"], 20);
+    assert!(!started.to_string().contains("secret-held-task"));
+    f.spawn_worker();
+    let first = f.item("evolve", 1).await;
+    f.ok(
+        "PATCH",
+        "/tasks/floor-1",
+        "writer",
+        None,
+        json!({"grader":{"type":"exact","expected":"updated"}}),
+    )
+    .await;
+    sqlx::query("UPDATE executor_credentials SET last_seen_at=now()-interval '2 minutes'")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if sqlx::query_scalar::<_, bool>(
+                "SELECT unmatched_since IS NOT NULL FROM learning_rounds WHERE number=1",
+            )
+            .fetch_one(&f.state.db)
+            .await
+            .unwrap()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(40)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        f.ok("GET", "", "reader", None, Value::Null).await["status"],
+        "running"
+    );
+    f.ok("DELETE", "/tasks/floor-1", "writer", None, Value::Null)
+        .await;
+    let paused = f
+        .wait_for("", "reader", |r| r["pauseReason"] == "tasks-required")
+        .await;
+    assert_eq!(paused["activeRound"]["id"], first["roundId"]);
+    assert_eq!(paused["activeRound"]["trigger"], "start");
+    assert_eq!(
+        f.req("POST", "/resume", "admin", None, Value::Null).await.0,
+        409
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn retry_idles_then_task_change_wakes_after_rolling_cap() {
+    let mut f = Fixture::new().await;
+    f.provider().await;
+    let mut input = enrollment();
+    input["maxRoundsPerDay"] = json!(2);
+    f.ok("PUT", "", "admin", None, input).await;
+    f.seed().await;
+    f.spawn_worker();
+    let first = f.item("evolve", 1).await;
+    optimizer::evaluate(&f, &first, &[]).await;
+    let held = f.item("heldOut", 1).await;
+    optimizer::evaluate(&f, &held, &[]).await;
+    let idle = f
+        .wait_for("", "reader", |r| r["waiting"] == "no-new-evidence")
+        .await;
+    assert_eq!(idle["rounds"][0]["trigger"], "retry");
+    assert_eq!(idle["rounds"][0]["incumbentReused"], true);
+    assert!(!idle.to_string().contains("private-id"));
+    sqlx::query("UPDATE learning_held_out_tasks SET admission_revision=2 WHERE task_id='held-out-sentinel-1'").execute(&f.state.db).await.unwrap();
+    sqlx::query("UPDATE learning_loops SET task_revision=2")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    // Task revisions that change while the loop is idle must not re-score the channel head.
+    let measured =
+        "SELECT (SELECT count(*) FROM learning_evaluations)+(SELECT count(*) FROM learning_trials)";
+    let before: i64 = sqlx::query_scalar(measured)
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap();
+    for revision in 3..8 {
+        sqlx::query("UPDATE learning_loops SET task_revision=$1")
+            .bind(i64::from(revision))
+            .execute(&f.state.db)
+            .await
+            .unwrap();
+        // The worker ticks every 500 ms, so the window covers several ticks.
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+    let after: i64 = sqlx::query_scalar(measured)
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap();
+    assert_eq!(after, before);
+    assert_eq!(
+        f.ok("GET", "", "reader", None, Value::Null).await["rounds"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    sqlx::query("UPDATE learning_tasks SET retired_revision=2 WHERE task_id IN ('extra-3','extra-4','extra-5','extra-6','extra-7')").execute(&f.state.db).await.unwrap();
+    sqlx::query(r#"INSERT INTO learning_tasks(project_id,bundle_id,task_id,"group",input,grader,source,confirmed_by,admission,added_revision)
+        SELECT project_id,bundle_id,task_id,"group",input,grader,source,confirmed_by,admission,2 FROM learning_tasks WHERE retired_revision=2"#).execute(&f.state.db).await.unwrap();
+    sqlx::query("UPDATE learning_loops SET task_revision=2")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    f.wait_for("", "reader", |r| r["waiting"] == "daily-cap")
+        .await;
+    sqlx::query("UPDATE learning_rounds SET created_at=now()-interval '25 hours' WHERE bundle_id=$1 AND number=1").bind(f.bundle).execute(&f.state.db).await.unwrap();
+    let wake = f
+        .wait_for("", "reader", |r| {
+            r["activeRound"]["trigger"] == "task-change"
+        })
+        .await;
+    assert_eq!(wake["activeRound"]["incumbentReused"], false);
+    let usage = f.ok("GET", "/usage", "reader", None, Value::Null).await;
+    assert_eq!(usage["items"][0]["rounds"], 3);
+    assert_eq!(usage["items"][0]["rollouts"], 200);
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn model_settings_and_provider_key_custody() {
+    let f = Fixture::new().await;
+    let route = format!("/v1/workspaces/{}/model-provider", f.project);
+    let provider = json!({"baseUrl":"https://example.test/v1","allowedModels":["task","judge"],"apiKey":"private-provider-fixture"});
+    assert_eq!(
+        f.ok("GET", &route, "reader", None, Value::Null).await["hasKey"],
+        false
+    );
+    assert_eq!(
+        f.req("PUT", &route, "admin", None, provider.clone())
+            .await
+            .0,
+        403
+    );
+    let admin = format!("console/{}", session(&f, "admin").await);
+    if std::env::var_os("ACCLIMATE_PROVIDER_ENCRYPTION_KEY").is_some() {
+        let result = f.ok("PUT", &route, &admin, None, provider).await;
+        assert!(!result.to_string().contains("private-provider-fixture"));
+        assert_eq!(result["verification"]["status"], "pending");
+        let audits: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM mutation_audit WHERE path=$1 AND actor_user_id IS NOT NULL",
+        )
+        .bind(&route)
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap();
+        assert_eq!(audits, 1);
+        let ciphertext: Vec<u8> =
+            sqlx::query_scalar("SELECT encrypted_key FROM workspace_model_providers")
+                .fetch_one(&f.state.db)
+                .await
+                .unwrap();
+        let update = f
+            .ok(
+                "PUT",
+                &route,
+                &admin,
+                None,
+                json!({"baseUrl":"https://example.test/v1","allowedModels":["judge","task"]}),
+            )
+            .await;
+        assert_eq!(update["verification"]["status"], "pending");
+        assert_eq!(
+            sqlx::query_scalar::<_, Vec<u8>>("SELECT encrypted_key FROM workspace_model_providers")
+                .fetch_one(&f.state.db)
+                .await
+                .unwrap(),
+            ciphertext
+        );
         assert_eq!(
             f.req(
-                "POST",
-                &eval_route(&item, "start"),
-                "app",
-                Some("attempt"),
-                json!({"attemptId":"attempt"})
+                "PUT",
+                &route,
+                &admin,
+                None,
+                json!({"baseUrl":"https://other.test/v1","allowedModels":["task"]})
             )
             .await
             .0,
-            409
+            400
         );
-        if running {
+        f.ok(
+            "PUT",
+            &route,
+            &admin,
+            None,
+            json!({"baseUrl":"https://example.test/v1","allowedModels":["task","judge"]}),
+        )
+        .await;
+    } else {
+        assert_eq!(f.req("PUT", &route, &admin, None, provider).await.0, 503);
+        acclimate_service::executor::ProviderKey::from_hex(&"42".repeat(32))
+            .unwrap()
+            .store(
+                &f.state.db,
+                &f.project,
+                "https://example.test/v1",
+                &["task".into(), "judge".into()],
+                "private-provider-fixture",
+            )
+            .await
+            .unwrap();
+    }
+    let read = f.ok("GET", &route, "reader", None, Value::Null).await;
+    assert_eq!(read["allowedModels"], json!(["task", "judge"]));
+    assert_eq!(read["hasKey"], true);
+    assert!(!read.to_string().contains("private-provider-fixture"));
+    let mut settings = json!({"channel":"stable","taskModel":"task","judgeModel":"task","setting":{"domain":"support","benchmark":"v3"}});
+    assert_eq!(
+        f.req("PUT", "", "admin", None, settings.clone()).await.0,
+        400
+    );
+    settings["judgeModel"] = json!("unknown");
+    assert_eq!(
+        f.req("PUT", "", "admin", None, settings.clone()).await.0,
+        400
+    );
+    settings["judgeModel"] = json!("judge");
+    let doc = f.ok("PUT", "", "admin", None, settings).await;
+    assert_eq!(doc["status"], "paused");
+    assert_eq!(doc["setting"]["policyModel"], "task");
+    assert_eq!(doc["maxRoundsPerDay"], 4);
+    assert_eq!(
+        f.req("POST", "/start", "admin", None, Value::Null).await.0,
+        409
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn two_exhausted_leases_fail_the_incumbent_and_pause_after_three_rounds() {
+    let mut f = Fixture::new().await;
+    f.enroll().await;
+    f.seed().await;
+    f.spawn_worker();
+    let internal = f.internal();
+    for number in 1..=3 {
+        let item = f.item("evolve", number).await;
+        let mut first = Value::Null;
+        for attempt in 1..=2 {
+            let (status, lease) = executor_tests::post(
+                &internal,
+                "",
+                &f.token,
+                json!({"executor":Fixture::identity()}),
+            )
+            .await;
+            assert_eq!(status, 200);
+            if attempt == 1 {
+                first = lease["rolloutId"].clone()
+            } else {
+                assert_eq!(first, lease["rolloutId"]);
+            }
             assert_eq!(
-                f.req(
-                    "POST",
-                    &eval_route(&item, "report"),
-                    "app",
-                    Some("expired"),
-                    report(&[result("a", 0.0)])
+                executor_tests::act(
+                    &internal,
+                    &lease,
+                    "result",
+                    json!({"error":{"code":"executor","message":"fixture"}})
                 )
                 .await
                 .0,
-                409
+                204
             );
         }
-        f.spawn_worker();
-        let failed = f
-            .wait_for(&round_route(&item), "reader", |v| v["state"] == "failed")
+        let round = f
+            .wait_for(&round_route(&item), "reader", |r| r["state"] == "failed")
             .await;
-        assert_eq!(failed["reason"], "incumbent-evaluation-failed");
-        assert_eq!(
-            failed["evaluations"][0]["error"],
-            if running {
-                "Evaluation run deadline passed"
-            } else {
-                "Evaluation queue deadline passed"
-            }
-        );
+        assert_eq!(round["reason"], "incumbent-evaluation-failed");
     }
-    let paused = f.ok("GET", "", "reader", None, Value::Null).await;
-    assert_eq!(paused["pauseReason"], "failed-rounds");
-    assert_eq!(paused["failedRounds"], 3);
-    let resumed = f.ok("POST", "/resume", "admin", None, Value::Null).await;
-    assert_eq!(resumed["failedRounds"], 0);
-    f.item("evolve", 4).await;
+    let state = f.ok("GET", "", "reader", None, Value::Null).await;
+    assert_eq!(state["pauseReason"], "failed-rounds");
+    let open: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM learning_rollouts WHERE status IN ('queued','running','grading')",
+    )
+    .fetch_one(&f.state.db)
+    .await
+    .unwrap();
+    assert_eq!(open, 0);
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn machine_import_of_known_held_out_input_returns_counts() {
+    let f = Fixture::new().await;
+    f.enroll().await;
+    let person = format!("console/{}", session(&f, "editor").await);
+    let route = "/tasks/import?filename=known.JSONL";
+    let mut held = None;
+    for n in 0..100 {
+        let input = format!("known question {n}");
+        let receipt = f
+            .ok(
+                "POST",
+                route,
+                &person,
+                None,
+                json!({"input":input,"expected":"private-reference"}),
+            )
+            .await;
+        let card = &receipt["cards"][0];
+        if card["split"] == "held-out" {
+            held = Some((input, card["taskId"].clone()));
+            break;
+        }
+    }
+    let (input, id) = held.unwrap();
+    let receipt = f
+        .ok(
+            "POST",
+            route,
+            "writer",
+            None,
+            json!({"input":input,"expected":"writer reference"}),
+        )
+        .await;
+    assert!(receipt["importId"].is_string());
+    assert_eq!(
+        receipt,
+        json!({"importId":receipt["importId"],"rows":1,"converted":1,"pending":0,"setAsideCount":0})
+    );
+    let page = f.ok("GET", "/tasks", "writer", None, Value::Null).await;
+    for card in page["items"].as_array().unwrap() {
+        assert_ne!(card["input"], input);
+        assert_ne!(card["taskId"], id);
+    }
+    let trial = f
+        .ok(
+            "POST",
+            &format!("/tasks/{}/try", id.as_str().unwrap()),
+            &person,
+            None,
+            json!({}),
+        )
+        .await;
+    let path = format!("/trials/{}", trial["trialId"].as_str().unwrap());
+    assert_eq!(
+        f.req("GET", &path, "writer", None, Value::Null).await.0,
+        404
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn provider_probe_supersedes_old_leases_and_requires_usage() {
+    let f = Fixture::new().await;
+    f.enroll().await;
+    f.seed().await;
+    let models = ["task".into(), "judge".into()];
+    let app = f.internal();
+    let identity = json!({"executor":Fixture::identity()});
+    for i in 0..2 {
+        Fixture::key()
+            .store(
+                &f.state.db,
+                &f.project,
+                "https://example.invalid",
+                &models,
+                "test",
+            )
+            .await
+            .unwrap();
+        let pending = f
+            .ok(
+                "GET",
+                &format!("/v1/workspaces/{}/model-provider", f.project),
+                "reader",
+                None,
+                Value::Null,
+            )
+            .await;
+        assert_eq!(
+            pending["verification"],
+            json!({"status":"pending","checkedAt":null,"models":[]})
+        );
+        assert_eq!(
+            f.req("POST", "/start", "admin", None, Value::Null).await.0,
+            409
+        );
+        let lease = executor_tests::post(&app, "", &f.token, identity.clone())
+            .await
+            .1;
+        assert_eq!(lease["kind"], "probe");
+        assert_eq!(
+            executor_tests::act(&app, &lease, "heartbeat", json!({}))
+                .await
+                .0,
+            200
+        );
+        if i == 0 {
+            Fixture::key()
+                .store(
+                    &f.state.db,
+                    &f.project,
+                    "https://example.invalid",
+                    &models,
+                    "replacement",
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                executor_tests::act(&app, &lease, "result", json!({"models":[]}))
+                    .await
+                    .0,
+                409
+            );
+        } else {
+            let results = json!([{"model":"judge","ok":true,"usage":false,"message":"missing usage"},{"model":"task","ok":true,"usage":true,"message":null}]);
+            assert_eq!(
+                executor_tests::act(&app, &lease, "result", json!({"models":results}))
+                    .await
+                    .0,
+                204
+            );
+            let state = f
+                .ok(
+                    "GET",
+                    &format!("/v1/workspaces/{}/model-provider", f.project),
+                    "reader",
+                    None,
+                    Value::Null,
+                )
+                .await;
+            assert_eq!(state["verification"]["status"], "failed");
+            assert!(state["verification"]["checkedAt"].is_string());
+            assert_eq!(state["verification"]["models"], results);
+            assert_eq!(
+                executor_tests::post(&app, "", &f.token, identity.clone())
+                    .await
+                    .0,
+                204
+            );
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn next_round_pins_the_identity_the_executor_last_declared() {
+    let mut f = Fixture::new().await;
+    f.enroll().await;
+    f.seed().await;
+    f.spawn_worker();
+    f.item("evolve", 1).await;
+    let app = f.internal();
+    let lease = executor_tests::post(&app, "", &f.token, json!({"executor":Fixture::identity()}))
+        .await
+        .1;
+    assert_eq!(lease["kind"], "rollout");
+    // The executor restarts on a new build while the lease it took before is still unexpired.
+    let mut restarted = Fixture::identity();
+    restarted["build"] = json!("restarted");
+    sqlx::query("UPDATE executor_credentials SET runtime=$1,last_seen_at=now()")
+        .bind(&restarted)
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE learning_rounds SET state='failed',reason='incumbent-evaluation-failed',ended_at=now()")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    let pinned = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let next: Option<Value> = sqlx::query_scalar(
+                "SELECT runtime->'executor' FROM learning_rounds WHERE number=2",
+            )
+            .fetch_optional(&f.state.db)
+            .await
+            .unwrap();
+            if let Some(next) = next {
+                break next;
+            }
+            tokio::time::sleep(Duration::from_millis(40)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(pinned, restarted);
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn stranded_round_expires_without_pausing() {
+    let mut f = Fixture::new().await;
+    f.enroll().await;
+    f.seed().await;
+    f.spawn_worker();
+    let item = f.item("evolve", 1).await;
+    let app = f.internal();
+    let lease = executor_tests::post(&app, "", &f.token, json!({"executor":Fixture::identity()}))
+        .await
+        .1;
+    assert_eq!(lease["kind"], "rollout");
+    sqlx::query("UPDATE executor_credentials SET last_seen_at=now()-interval '10 minutes'")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        executor_tests::act(&app, &lease, "heartbeat", json!({}))
+            .await
+            .0,
+        200
+    );
+    assert!(
+        sqlx::query_scalar::<_, bool>(
+            "SELECT last_seen_at>now()-interval '1 minute' FROM executor_credentials"
+        )
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap()
+    );
+    sqlx::query("UPDATE executor_credentials SET last_seen_at=now()-interval '10 minutes'")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE learning_rounds SET unmatched_since=now()-interval '6 minutes'")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !sqlx::query_scalar::<_, bool>(
+            "SELECT unmatched_since IS NULL AND state='scoring_incumbent' FROM learning_rounds",
+        )
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap()
+        {
+            tokio::time::sleep(Duration::from_millis(40)).await;
+        }
+    })
+    .await
+    .unwrap();
+    sqlx::query("UPDATE learning_rollouts SET lease_expires_at=now() WHERE status='running'")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE executor_credentials SET last_seen_at=now()-interval '10 minutes'")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE learning_rounds SET unmatched_since=now()-interval '6 minutes'")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    let failed = f
+        .wait_for(&round_route(&item), "reader", |r| r["state"] == "failed")
+        .await;
+    assert_eq!(failed["reason"], "no-matching-executor");
+    let state = f
+        .wait_for("", "reader", |r| r["waiting"] == "no-executor")
+        .await;
+    assert_eq!(state["status"], "running");
+    assert_eq!(
+        sqlx::query_scalar::<_, i32>("SELECT failed_rounds FROM learning_loops")
+            .fetch_one(&f.state.db)
+            .await
+            .unwrap(),
+        0
+    );
+    sqlx::query("UPDATE workspace_model_providers SET allowed_models=ARRAY['judge']")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    f.wait_for("", "reader", |r| r["waiting"] == "models-not-allowed")
+        .await;
 }

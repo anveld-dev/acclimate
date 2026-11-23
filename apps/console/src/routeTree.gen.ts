@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HealthRouteImport } from './routes/health'
+import { Route as LearningImportRouteImport } from './routes/learning-import'
 import { Route as ReadyRouteImport } from './routes/ready'
 import { Route as AuthActionRouteImport } from './routes/auth.$action'
 import { Route as InvitationsInviteIdRouteImport } from './routes/invitations.$inviteId'
@@ -24,6 +25,11 @@ const IndexRoute = IndexRouteImport.update({
 const HealthRoute = HealthRouteImport.update({
   id: '/health',
   path: '/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LearningImportRoute = LearningImportRouteImport.update({
+  id: '/learning-import',
+  path: '/learning-import',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReadyRoute = ReadyRouteImport.update({
@@ -50,6 +56,7 @@ const WSplatRoute = WSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/health': typeof HealthRoute
+  '/learning-import': typeof LearningImportRoute
   '/ready': typeof ReadyRoute
   '/auth/$action': typeof AuthActionRoute
   '/invitations/$inviteId': typeof InvitationsInviteIdRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/health': typeof HealthRoute
+  '/learning-import': typeof LearningImportRoute
   '/ready': typeof ReadyRoute
   '/auth/$action': typeof AuthActionRoute
   '/invitations/$inviteId': typeof InvitationsInviteIdRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/health': typeof HealthRoute
+  '/learning-import': typeof LearningImportRoute
   '/ready': typeof ReadyRoute
   '/auth/$action': typeof AuthActionRoute
   '/invitations/$inviteId': typeof InvitationsInviteIdRoute
@@ -77,6 +86,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/health'
+    | '/learning-import'
     | '/ready'
     | '/auth/$action'
     | '/invitations/$inviteId'
@@ -85,6 +95,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/health'
+    | '/learning-import'
     | '/ready'
     | '/auth/$action'
     | '/invitations/$inviteId'
@@ -93,6 +104,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/health'
+    | '/learning-import'
     | '/ready'
     | '/auth/$action'
     | '/invitations/$inviteId'
@@ -102,6 +114,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   HealthRoute: typeof HealthRoute
+  LearningImportRoute: typeof LearningImportRoute
   ReadyRoute: typeof ReadyRoute
   AuthActionRoute: typeof AuthActionRoute
   InvitationsInviteIdRoute: typeof InvitationsInviteIdRoute
@@ -122,6 +135,13 @@ declare module '@tanstack/react-router' {
       path: '/health'
       fullPath: '/health'
       preLoaderRoute: typeof HealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/learning-import': {
+      id: '/learning-import'
+      path: '/learning-import'
+      fullPath: '/learning-import'
+      preLoaderRoute: typeof LearningImportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ready': {
@@ -158,6 +178,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   HealthRoute: HealthRoute,
+  LearningImportRoute: LearningImportRoute,
   ReadyRoute: ReadyRoute,
   AuthActionRoute: AuthActionRoute,
   InvitationsInviteIdRoute: InvitationsInviteIdRoute,

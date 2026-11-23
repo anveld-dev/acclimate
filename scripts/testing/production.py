@@ -20,7 +20,7 @@ def service_env(*, database_url, bind, tokens, login_token, console_token,
                    ['read', 'write', 'promote'])
               for principal, token in tokens.items()
               if principal not in ('login-authority', 'console-transport')]
-    env.update(DATABASE_URL=database_url, ACCLIMATE_BIND=bind,
+    env.update(DATABASE_URL=database_url, ACCLIMATE_BIND=bind, ACCLIMATE_INTERNAL_BIND="127.0.0.1:0",
                ACCLIMATE_AUTH=json.dumps(grants), ACCLIMATE_LOGIN_TOKEN=login_token,
                ACCLIMATE_CONSOLE_TOKEN=console_token, ACCLIMATE_OIDC_ISSUER=issuer,
                ACCLIMATE_OPERATORS=json.dumps([dict(issuer=issuer, subject='operator')]))

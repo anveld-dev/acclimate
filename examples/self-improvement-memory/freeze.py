@@ -16,7 +16,7 @@ from run import BLOCK_COUNT, CEILING_THRESHOLD, DEFAULTS, HERE, MODELS, ROOT, no
 
 FIXTURES = HERE / "fixtures/w1"
 LLM_COMMIT = "46f0461d9b1ea9e898cac8a1d7333ab9bc6c8f7f"
-SPEC = ROOT / "docs/architecture/self-improvement-memory/experiment.md"
+SPEC = ROOT / "examples/self-improvement-memory/experiment.md"
 sys.path.insert(0, str(FIXTURES))
 from grade import grade, parse
 from tasks import cases

@@ -31,7 +31,7 @@ test('job pins the verified version and retries one outcome body and idempotency
         attempts.push({ key: new Headers(init?.headers).get('idempotency-key'), body });
         if (attempts.length === 1)
           return Response.json({ error: { code: 'unavailable', message: 'try again', requestId: 'retry' } }, { status: 503 });
-        return Response.json({ outcomeId: body.outcomeId, caseId: 'outcome:' + body.outcomeId, evolveRevision: 1 });
+        return Response.json({ outcomeId: body.outcomeId, taskId: 'outcome:' + body.outcomeId, taskRevision: 1 });
       },
     });
     const input = { ticket: 1 };
@@ -40,13 +40,13 @@ test('job pins the verified version and retries one outcome body and idempotency
     assert.equal(job.prepare(verified => verified.payload.files[0].text), 'Do the job.');
     input.ticket = 2;
     const expected = { action: 'refund' };
-    await assert.rejects(job.expect(expected), /try again/);
+    await assert.rejects(job.expect(expected, { output: null }), /try again/);
     expected.action = 'ignore';
     const [left, right] = await Promise.all([job.expect(expected), job.expect(expected)]);
     assert.equal(left, right);
     assert.deepEqual(attempts, Array(2).fill({
       key: job.outcomeId,
-      body: { outcomeId: job.outcomeId, input: { ticket: 1 }, expected: { action: 'refund' }, versionId: version.id, digest: version.digest },
+      body: { outcomeId: job.outcomeId, input: { ticket: 1 }, output: null, expected: { action: 'refund' }, versionId: version.id, digest: version.digest },
     }));
   } finally {
     await rm(cacheDir, { recursive: true, force: true });

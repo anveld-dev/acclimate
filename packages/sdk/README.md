@@ -10,36 +10,9 @@ npm install --offline --ignore-scripts /path/to/acclimate-sdk-0.1.0.tgz
 
 Verify release artifacts against `SHA256SUMS`. From a checkout, run `npm ci --ignore-scripts` and `npm run build:packages`, then run `npm pack --workspace @acclimate/sdk` to create the tarball. Registry installation with `npm install @acclimate/sdk` requires a separate registry publication.
 
-## Test an evaluator adapter
+## Production outcomes
 
-Put an `application.mjs` (or `application.mts`) next to your agent. It exports the saved cases, a callback that runs your agent with one version of its instructions, and an independent grader.
-
-```js
-// application.mjs
-import { runAgent, scoreResult, savedCases } from './support-agent.mjs';
-
-export const cases = savedCases; // [{ caseId, input, expected }]
-
-export async function execute({ version, input, signal }) {
-  const result = await runAgent({ files: version.payload.files, task: input, signal });
-  return { output: result.answer, usage: result.usage };
-}
-
-export async function grade({ output, expected }) {
-  return scoreResult(output, expected); // { reward: 0..1, explanation? }
-}
-```
-
-```sh
-npx acclimate-eval describe
-npx acclimate-eval try --payload ./bundle --live
-```
-
-## Run a learning loop
-
-Release a bundle and configure the service optimizer. Set `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` for a machine principal with `evaluate` and `promote`. Save a default-exported `defineLoop` configuration in `acclimate.loop.ts`, then run `npx acclimate learn`. Use `openai()` for OpenAI-compatible Chat Completions or supply your own executor. For a loop with an app-managed held-out split, use `acclimate-learning`.
-
-Use `createAcclimate().job(bundle, { channel, input })` to pin the release for a production job. After running the job, call `await job.expect(expected)` as the enrolled app principal to record a known answer for the evolve split.
+An application with workspace write access can call `job.expect(expected, { input, output })` after a production job. The SDK sends the pinned version and digest. The service assigns the task’s split and runs admission.
 
 ## Start a job with its connection’s release
 
@@ -66,19 +39,13 @@ try {
 | --- | --- |
 | `@acclimate/sdk` | Client, delivery, payload validation helpers. |
 | `@acclimate/sdk/validation` | Payload and native compatibility checks without Node file APIs. |
-| `@acclimate/sdk/evaluation` | `defineEvaluation`, `tryEvaluation` and the application adapter types. |
-| `@acclimate/sdk/learning` | Configure a learning loop, serve evaluations and report outcomes. |
 | `@acclimate/sdk/native-files` | Inspect and prepare bundle files for native harnesses. |
-| `@acclimate/sdk/evaluation/manifest` | Create and restore an application manifest. |
-| `@acclimate/sdk/evaluation/cli` | Run evaluator commands against an application adapter. |
-| `@acclimate/sdk/evaluation/app-cli` | Load and run an installed application adapter. |
 
-`acclimate-eval` provides `try`, `describe`, `coverage`, `doctor`, and `pull`.
+Use `acclimate pull --config /absolute/path/pull.json --bundle ID --channel stable --out payload.json` to save a released payload. Use a new output path. The config is an owner-only JSON file inside an owner-only directory with `schemaVersion` set to 1, `serviceUrl`, `workspaceId`, `scope` and an absolute `cacheDir`. Supply the read credential through `ACCLIMATE_TOKEN` or the private config’s `token` field.
 
 ## Documentation
 
 - [TypeScript SDK reference](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/reference/typescript-sdk.mdx)
-- [Evaluator CLI reference](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/reference/evaluator-cli.mdx)
 - [Versioning and compatibility](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/reference/versioning.mdx)
 
 Licensed under Apache-2.0.

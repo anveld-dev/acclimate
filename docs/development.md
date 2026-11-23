@@ -2,7 +2,7 @@
 
 If you already have a workspace, start with [Connect an existing agent](getting-started.md). This document covers developing and operating the service.
 
-The Rust service uses PostgreSQL. The TypeScript and Python SDKs deliver versioned content and run app-side learning evaluations. Start with the local stack and the delivery example. Configure an optimizer endpoint to run learning rounds.
+The Rust service uses PostgreSQL. The TypeScript and Python SDKs deliver versioned content and report production outcomes. Start with the local stack and the delivery example. Learning rounds need an optimizer endpoint, a workspace model provider and the rollout executor, which `npm run local:up` starts.
 
 ## Configure the app
 
@@ -50,7 +50,7 @@ npm run example:codex -- --live "$TASK"
 
 The explicit --live flag authorizes a paid Luna turn using the official Codex SDK and existing app authentication. The app fetches a fresh channel mapping, verifies/caches immutable bytes, prepares native files, then starts a fresh read-only session. Only `gpt-6-luna` and `gpt-5.6-luna` are accepted; the default is `gpt-6-luna`. The service never receives Codex credentials. The example requests cancellation after 110 seconds; an SDK error does not prove external termination. Successful completion cleans the prepared inputs, while unconfirmed execution retains them and reports uncertainty. Use the [native repository starter](../examples/native-repository/README.md) for persistent private job locators and explicit quarantine recovery. No new live-provider termination guarantee is claimed.
 
-The cache uses `ACCLIMATE_CACHE` or `~/.cache/acclimate`. Its root must be private and have no symlink ancestors; choose a canonical path if your machine uses symlinked home or temp directories. `ACCLIMATE_SCOPE` must identify the authenticated app principal consistently; never reuse it across unrelated principals. Refresh does not modify active sessions.
+The cache uses `ACCLIMATE_CACHE` or `~/.cache/acclimate`. Its root must be private and have no symlink ancestors; choose a canonical path if your machine uses symlinked home or temp directories. `ACCLIMATE_SCOPE` must identify the authenticated application identity consistently; never reuse it across unrelated principals. Refresh does not modify active sessions.
 
 `npm run build:packages` emits JavaScript and type declarations under `dist/`. `npm run build` builds both the packages and web console. Local package entry points are `acclimate/sdk`, `acclimate/codex-plugin`, `acclimate/claude-plugin`, `acclimate/pi-plugin`, and `acclimate/cursor-plugin`. Build locally installable packages with `npm run build:packages`, then use `npm pack --workspace @acclimate/sdk --pack-destination artifacts` (create `artifacts/` first). Repeat for each plugin you use, including `@acclimate/cursor-plugin` if needed. Install the SDK tarball and selected plugin tarballs together in the external app, for example `npm install /path/artifacts/acclimate-sdk-0.1.0.tgz /path/artifacts/acclimate-codex-plugin-0.1.0.tgz`. `npm run pack:verify` builds and retains versioned tarballs, the Python wheel, SHA256SUMS and a manifest under `artifacts/releases/<version>/`, after checking isolated external consumers. It refuses an existing release output; use `npm run pack:verify -- --output /new/private/release` for another run. Preparation-only imports work without native peers.
 
@@ -81,15 +81,15 @@ python3 scripts/check-python-package.py
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 python3 scripts/productization/rust_tests.py --pg-bin /path/to/postgresql/bin
+PG_BIN=/path/to/postgresql/bin python3 executor/tests/central_learning.py -v
 cargo build
 npm run test:e2e -- --pg-bin /path/to/postgresql/bin
-npm run test:learning-e2e -- --pg-bin /path/to/postgresql/bin
-npm run test:learn-cli -- --pg-bin /path/to/postgresql/bin
 ```
 
 Plain `cargo test` reports tests that need PostgreSQL as ignored. The Rust test runner above provisions an isolated database and executes the full suite, including those tests.
 
-For the model-free experiment checks, install the grader dependencies and run the simulation as shown in the [experiment README](../examples/self-improvement-memory/README.md#prepare-and-check-the-fixtures). The learning integration runners use scripted optimizers and require no provider credentials.
+The central learning gate starts a private PostgreSQL cluster, the service, an executor container, and a scripted model endpoint. It kills and restarts the executor during a live sandbox run and waits for lease expiry. Set `ACCLIMATE_SANDBOX_RUNTIME=runsc` to exercise gVisor on a configured Linux host. Docker Desktop uses plain Docker by default.
+
 
 The process-level test checks publication, cache and preparation, release, authorization, rollback and restart persistence. `npm run test:codex` is the separate live Luna-only check: it asks for random values stored only in prepared resources. It does not claim a direct SDK discovery event or cover resumed sessions.
 

@@ -124,6 +124,7 @@ impl OpenAiModel {
     async fn complete(&self, kind: Kind, data: &Value) -> Result<String, ModelError> {
         let body = self.request_body(kind, data);
         for delay in [Some(5), Some(30), None] {
+            let mut retry_after = 0;
             let response = self
                 .client
                 .post(self.endpoint.clone())
@@ -136,6 +137,14 @@ impl OpenAiModel {
                     if resp.status() == StatusCode::TOO_MANY_REQUESTS
                         || resp.status().is_server_error() =>
                 {
+                    // An overloaded provider can name a recovery time of minutes. Wait for it.
+                    retry_after = resp
+                        .headers()
+                        .get(reqwest::header::RETRY_AFTER)
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .unwrap_or(0)
+                        .min(MAX_RETRY_AFTER_SECONDS);
                     status_error(resp.status())
                 }
                 response => {
@@ -158,13 +167,17 @@ impl OpenAiModel {
                 }
             };
             match delay {
-                Some(seconds) => tokio::time::sleep(Duration::from_secs(seconds)).await,
+                Some(seconds) => {
+                    tokio::time::sleep(Duration::from_secs(seconds.max(retry_after))).await
+                }
                 None => return Err(retry),
             }
         }
         unreachable!()
     }
 }
+
+const MAX_RETRY_AFTER_SECONDS: u64 = 600;
 
 fn validate_effort(effort: Option<&str>) -> io::Result<()> {
     match effort {
@@ -243,6 +256,9 @@ async fn decode(mut response: Response) -> Result<String, ReadError> {
     }
     let outer =
         outer.map_err(|_| ReadError::Model(ModelError::Format("Invalid provider JSON".into())))?;
+    if let Some(tokens) = outer["usage"]["total_tokens"].as_i64().filter(|v| *v >= 0) {
+        let _ = super::RESPONSE_TOKENS.try_with(|t| t.set(t.get().saturating_add(tokens)));
+    }
     match outer["choices"][0]["finish_reason"].as_str() {
         Some("stop") => outer["choices"][0]["message"]["content"]
             .as_str()

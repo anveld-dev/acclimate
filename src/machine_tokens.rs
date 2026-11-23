@@ -266,7 +266,7 @@ async fn issue(
     body: Bytes,
 ) -> ApiResult<axum::response::Response> {
     let q: Issue = serde_json::from_slice(&body).map_err(|_| invalid("Malformed request"))?;
-    let rights = q.rights.unwrap_or_else(|| vec!["evaluate".into()]);
+    let rights = q.rights.unwrap_or_else(|| vec!["read".into()]);
     let days = q.expires_in_days.unwrap_or(DEFAULT_DAYS);
     if !valid_name(&q.name) {
         return Err(invalid(
@@ -275,7 +275,7 @@ async fn issue(
     }
     if !valid_rights(&rights) {
         return Err(invalid(
-            "Rights must be distinct values from read, evaluate, write and promote",
+            "Rights must be distinct values from read, write and promote",
         ));
     }
     if !(1..=MAX_DAYS).contains(&days) {
@@ -540,7 +540,7 @@ mod tests {
             assert!(!valid_name(name), "{name}");
         }
         let rights = |r: &[&str]| r.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert!(valid_rights(&rights(&["evaluate"])));
+        assert!(!valid_rights(&rights(&["evaluate"])));
         assert!(valid_rights(&rights(&["read", "write", "promote"])));
         assert!(!valid_rights(&rights(&[])));
         assert!(!valid_rights(&rights(&["admin"])));
@@ -559,12 +559,12 @@ mod tests {
             id: Uuid::nil(),
             project_id: "p".into(),
             principal_id: "machine:ci".into(),
-            rights: vec!["evaluate".into()],
+            rights: vec!["read".into()],
         })
         .unwrap();
         h.insert(TRUSTED_HEADER, HeaderValue::from_str(&value).unwrap());
         let parsed = trusted(&h).unwrap();
         assert_eq!(parsed.principal_id, "machine:ci");
-        assert_eq!(parsed.rights, vec!["evaluate".to_string()]);
+        assert_eq!(parsed.rights, vec!["read".to_string()]);
     }
 }

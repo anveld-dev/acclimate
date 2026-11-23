@@ -53,7 +53,7 @@ class StackTests(unittest.TestCase):
             service = env_file(state / 'service.env')
             console = env_file(state / 'console.env')
             keycloak = env_file(state / 'keycloak.env')
-            evaluator = json.loads((state / 'evaluator.json').read_bytes())
+            runtime = json.loads((state / 'pull.json').read_bytes())
             self.assertEqual(service['ACCLIMATE_OIDC_ISSUER'], console['CONSOLE_OIDC_ISSUER'])
             self.assertEqual(console['CONSOLE_ORIGIN'], keycloak['ACCLIMATE_CONSOLE_ORIGIN'])
             self.assertEqual(console['CONSOLE_OIDC_CLIENT_SECRET'], keycloak['ACCLIMATE_OIDC_CLIENT_SECRET'])
@@ -65,14 +65,102 @@ class StackTests(unittest.TestCase):
             self.assertEqual(json.loads(service['ACCLIMATE_OPERATORS']),
                              [{'issuer': stack.ISSUER, 'subject': SUBJECT}])
             self.assertEqual(json.loads(service['ACCLIMATE_AUTH']), [
-                {'token': evaluator['evaluatorToken'], 'principalId': evaluator['evaluatorPrincipalId'],
-                 'workspaceId': evaluator['workspaceId'], 'rights': ['read', 'write']},
+                {'token': runtime['token'], 'principalId': runtime['scope'],
+                 'workspaceId': runtime['workspaceId'], 'rights': ['read', 'write']},
             ])
-            self.assertEqual(console['CONSOLE_PUBLIC_API_URL'], evaluator['serviceUrl'])
+            self.assertEqual(console['CONSOLE_PUBLIC_API_URL'], runtime['serviceUrl'])
+            self.assertEqual(service['ACCLIMATE_PROVIDER_ENCRYPTION_KEY'], values['provider_key'])
+            self.assertFalse(set(stack.LEARNING_SETTINGS) & set(service))
             self.assertEqual((state / 'postgres-password').read_text().strip(), values['postgres'])
             self.assertEqual((state / 'keycloak-postgres-password').read_text().strip(),
                              keycloak['KC_DB_PASSWORD'])
             self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in state.iterdir()))
+
+    def test_learning_settings_come_from_the_shell_and_survive_a_later_start(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            values = stack.credentials(state)
+            shell = dict(ACCLIMATE_MODEL_ENDPOINT='http://host.docker.internal:8317/v1/chat/completions',
+                         ACCLIMATE_MODEL_TOKEN='proxy-key', ACCLIMATE_MODEL='optimizer',
+                         ACCLIMATE_PROVIDER_HTTP_HOSTS='host.docker.internal', UNRELATED='x')
+            stack.write_application(state, values, SUBJECT, environ=shell)
+            first = env_file(state / 'service.env')
+            self.assertEqual({name: first[name] for name in shell if name != 'UNRELATED'},
+                             {name: value for name, value in shell.items() if name != 'UNRELATED'})
+            self.assertNotIn('UNRELATED', first)
+            # A later start from a shell without the settings keeps them, and a new value wins.
+            stack.write_application(state, values, SUBJECT, environ={})
+            self.assertEqual(env_file(state / 'service.env'), first)
+            stack.write_application(state, values, SUBJECT, environ=dict(ACCLIMATE_MODEL='other'))
+            self.assertEqual(env_file(state / 'service.env'), dict(first, ACCLIMATE_MODEL='other'))
+            with self.assertRaisesRegex(ValueError, 'single line'):
+                stack.write_application(state, values, SUBJECT, environ=dict(ACCLIMATE_MODEL='a\nB=c'))
+            # An exported empty value removes the saved setting; the others stay.
+            stack.write_application(state, values, SUBJECT, environ=dict(ACCLIMATE_PROVIDER_HTTP_HOSTS=''))
+            cleared = env_file(state / 'service.env')
+            self.assertNotIn('ACCLIMATE_PROVIDER_HTTP_HOSTS', cleared)
+            self.assertEqual(cleared['ACCLIMATE_MODEL'], 'other')
+            stack.write_application(state, values, SUBJECT, environ={})
+            self.assertNotIn('ACCLIMATE_PROVIDER_HTTP_HOSTS', env_file(state / 'service.env'))
+
+    def test_older_credentials_gain_a_provider_key_once(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            values = stack.credentials(state)
+            older = {name: value for name, value in values.items() if name != 'provider_key'}
+            stack.write_file(state / 'credentials.json', json.dumps(older).encode())
+            upgraded = stack.credentials(state)
+            self.assertEqual({name: upgraded[name] for name in older}, older)
+            self.assertRegex(upgraded['provider_key'], '^[0-9a-f]{64}$')
+            self.assertEqual(stack.credentials(state), upgraded)
+
+    def test_executor_gets_one_credential_and_the_service_allowlist(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            calls = []
+
+            def compose(root, *args, capture=False, **options):
+                calls.append((args, options.get('environment')))
+                if '--create-executor-token' in args:
+                    return json.dumps(dict(id='e', token='executor-secret')).encode()
+                return b'container\n' if 'ps' in args else None
+
+            shell = dict(ACCLIMATE_PROVIDER_HTTP_HOSTS='host.docker.internal')
+            with patch.object(stack, 'compose', compose):
+                stack.start_executor(ROOT, state, stack.DEFAULT, 'build', environ=shell)
+                stack.start_executor(ROOT, state, stack.DEFAULT, 'build', environ=shell)
+            token = state / 'executor-token'
+            self.assertEqual(token.read_text(), 'executor-secret\n')
+            self.assertEqual(stat.S_IMODE(token.stat().st_mode), 0o600)
+            self.assertEqual(sum('--create-executor-token' in args for args, _ in calls), 1)
+            started = [(args, environment) for args, environment in calls if args[:1] == ('up',)]
+            self.assertEqual(started, [(('up', '--detach', '--build', 'acclimate-executor'), shell)] * 2)
+            with patch.object(stack, 'compose', compose):
+                stack.start_executor(ROOT, state, stack.DEFAULT, 'release', environ=shell)
+            self.assertEqual(calls[-2][0], ('up', '--detach', 'acclimate-executor'))
+
+    def test_executor_that_exits_names_the_exact_logs_command(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            stack.write_file(state / 'executor-token', b'executor-secret\n')
+            with patch.object(stack, 'compose', return_value=b''), \
+                    patch.object(stack.time, 'sleep'), \
+                    self.assertRaises(ValueError) as raised:
+                stack.start_executor(ROOT, state, stack.DEFAULT, 'build', environ={})
+            message = str(raised.exception)
+            self.assertIn(f'--project-name acclimate-local-{stack.project_suffix(ROOT)}', message)
+            self.assertIn('-f compose.local.yaml logs acclimate-executor', message)
+
+    def test_docker_not_running_is_reported_before_any_port_hint(self):
+        with patch.object(stack, 'docker_running', return_value=False), \
+                patch.object(stack, 'locked_state') as locked, \
+                self.assertRaises(SystemExit) as raised:
+            stack.main(['up'])
+        self.assertIn('Docker is not running', str(raised.exception))
+        self.assertNotIn('port', str(raised.exception))
+        locked.assert_not_called()
+        with patch.object(stack.subprocess, 'run', side_effect=FileNotFoundError('docker')):
+            self.assertFalse(stack.docker_running())
 
     def test_refuses_symlink_or_exposed_credentials(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -176,7 +264,7 @@ class StackTests(unittest.TestCase):
                              'https://localhost:6443')
             self.assertEqual(console['CONSOLE_PUBLIC_API_URL'], 'https://127.0.0.1:6444')
             self.assertEqual(service['ACCLIMATE_OIDC_ISSUER'], 'https://127.0.0.1:6445/realms/acclimate')
-            self.assertEqual(json.loads((state / 'evaluator.json').read_bytes())['serviceUrl'],
+            self.assertEqual(json.loads((state / 'pull.json').read_bytes())['serviceUrl'],
                              'https://127.0.0.1:6444')
 
     def test_saved_ports_cannot_change_without_reset_and_are_validated(self):
@@ -344,7 +432,7 @@ class StackTests(unittest.TestCase):
             self.assertTrue(merged.startswith(system.read_bytes()) and merged.endswith(local))
             self.assertEqual(stat.S_IMODE((state / 'env.sh').stat().st_mode), 0o600)
             self.assertEqual((state / 'env.sh').read_text(), text)
-            self.assertIn(f"export EVALUATOR_CONFIG='{state / 'evaluator.json'}'", text)
+            self.assertIn(f"export ACCLIMATE_PULL_CONFIG='{state / 'pull.json'}'", text)
             self.assertIn(f"export NODE_EXTRA_CA_CERTS='{state / 'root.crt'}'", text)
             self.assertIn(f"export SSL_CERT_FILE='{state / 'ca-bundle.pem'}'", text)
             self.assertIn("export BUNDLE_ID='bundle-1'", text)

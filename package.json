@@ -13,17 +13,16 @@
     "lint:workflows": "actionlint && git ls-files --cached --others --exclude-standard -z -- '*.sh' | xargs -0 sh -c 'for file do [ ! -f \"$file\" ] || shellcheck \"$file\" || exit; done' sh",
     "lint:format": "prettier --check .oxlintrc.json .prettierrc.json package.json 'apps/*/package.json' 'packages/*/package.json' 'tsconfig*.json' 'apps/*/tsconfig.json' '.github/workflows/*.{yaml,yml}'",
     "lint:docs": "python3 scripts/check_docs.py",
-    "lint:rust": "cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings",
+    "lint:rust": "cargo fmt --all --check && cargo clippy --workspace --locked --all-targets -- -D warnings",
     "test": "npm run test:packages && npm run test:console",
     "typecheck": "npm run typecheck:packages && npm run typecheck --workspace @acclimate/console && npm run typecheck --workspace @acclimate/keycloak-theme && npm run typecheck:docs",
     "test:codex": "tsx examples/codex-smoke.ts",
     "test:e2e": "python3 scripts/productization/service_e2e.py",
-    "test:learning-e2e": "python3 scripts/productization/learning_loop_e2e.py",
+    "test:learning-e2e": "python3 executor/tests/central_learning.py",
     "build": "npm run build:packages && npm run build:console",
     "example:publish": "tsx examples/publish.ts",
     "example:codex": "tsx examples/codex-agent.ts",
     "pack:verify": "node scripts/packaging/verify.mjs",
-    "qualify:dx": "node scripts/packaging/qualify-dx.mjs",
     "test:codex-session": "tsx examples/codex-session-check.ts",
     "build:packages": "node scripts/build-packages.mjs",
     "typecheck:packages": "tsc --noEmit",
@@ -56,9 +55,7 @@
     "mail:status": "python3 scripts/mailpit.py status",
     "mail:stop": "python3 scripts/mailpit.py stop",
     "test:email": "python3 scripts/testing/email_invitations.py",
-    "test:starters": "node --test scripts/packaging/starter-artifacts.test.mjs",
-    "test:sim-experiment": "npm --prefix examples/self-improvement-memory run test:sim-experiment",
-    "test:learn-cli": "python3 scripts/learn_cli_e2e.py"
+    "test:starters": "node --test scripts/packaging/starter-artifacts.test.mjs"
   },
   "devDependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.325",
@@ -85,14 +82,6 @@
       "types": "./dist/packages/sdk/src/index.d.ts",
       "import": "./dist/packages/sdk/src/index.js"
     },
-    "./sdk/evaluation": {
-      "types": "./dist/packages/sdk/src/evaluation/index.d.ts",
-      "import": "./dist/packages/sdk/src/evaluation/index.js"
-    },
-    "./sdk/evaluation/cli": {
-      "types": "./dist/packages/sdk/src/evaluation/cli.d.ts",
-      "import": "./dist/packages/sdk/src/evaluation/cli.js"
-    },
     "./codex-plugin": {
       "types": "./dist/packages/codex-plugin/src/index.d.ts",
       "import": "./dist/packages/codex-plugin/src/index.js"
@@ -108,14 +97,6 @@
     "./cursor-plugin": {
       "types": "./dist/packages/cursor-plugin/src/index.d.ts",
       "import": "./dist/packages/cursor-plugin/src/index.js"
-    },
-    "./sdk/evaluation/manifest": {
-      "types": "./dist/packages/sdk/src/evaluation/manifest.d.ts",
-      "import": "./dist/packages/sdk/src/evaluation/manifest.js"
-    },
-    "./sdk/learning": {
-      "types": "./dist/packages/sdk/src/learning/index.d.ts",
-      "import": "./dist/packages/sdk/src/learning/index.js"
     }
   },
   "engines": {

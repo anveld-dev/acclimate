@@ -42,9 +42,10 @@ Set `DATABASE_URL` explicitly. It has no default. The Rust service reads the set
 | `ACCLIMATE_MODEL_REASONING_EFFORT` | Unset. Accepts `low`, `medium`, `high`, `xhigh`, `max` or `ultra`. |
 | `ACCLIMATE_MODEL_TIMEOUT_SECONDS` | 600 seconds per HTTP attempt. Accepts 30–3,600. |
 | `ACCLIMATE_MODEL_MAX_COMPLETION_TOKENS` | 32,768. Accepts 1,024–262,144. |
-| `ACCLIMATE_LEARNING_EVALUATION_QUEUE_SECONDS` | 604,800 seconds (7 days) to start a queued evaluation. |
-| `ACCLIMATE_LEARNING_EVALUATION_SECONDS` | 86,400 seconds (24 hours) to finish a started evaluation. |
 | `ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS` | 3 consecutive failed rounds before an automatic pause. |
+| `ACCLIMATE_INTERNAL_BIND` | `127.0.0.1:3001`. The executor listener. Compose sets `executor-listener:3001` on the private executor network. |
+| `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` | Unset. 64 hex characters. Required to save a workspace model provider and to lease learning work. |
+| `ACCLIMATE_PROVIDER_HTTP_HOSTS` | Empty. Comma-separated exact hostnames a model provider may reach over plain HTTP or at a loopback, private, carrier-grade NAT or unique-local address. Set the same value on the executor. See [provider addresses](#provider-addresses). |
 | `ACCLIMATE_SMTP_HOST` | Unset. This disables email delivery and requires leaving the other SMTP settings unset. |
 | `ACCLIMATE_CONSOLE_ORIGIN` | Required with SMTP. Use the public HTTPS console origin. |
 | `ACCLIMATE_SMTP_FROM` | Required with SMTP. Use a valid sender mailbox. |
@@ -53,7 +54,7 @@ Set `DATABASE_URL` explicitly. It has no default. The Rust service reads the set
 | `ACCLIMATE_SMTP_USERNAME` | Unset. Supply with a password over TLS to authenticate. |
 | `ACCLIMATE_SMTP_PASSWORD` | Unset. Supply with a username over TLS to authenticate. |
 
-Learning timeout and failure-count settings use their defaults for missing, zero or invalid values. Remove any obsolete settings listed in the [changelog](https://github.com/anveld-dev/acclimate/blob/main/CHANGELOG.md#removed) before startup.
+`ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS` uses its default for a missing, zero or invalid value. The service no longer reads `ACCLIMATE_LEARNING_EVALUATION_QUEUE_SECONDS` or `ACCLIMATE_LEARNING_EVALUATION_SECONDS`; rollout leases govern retries. Remove any obsolete settings listed in the [changelog](https://github.com/anveld-dev/acclimate/blob/main/CHANGELOG.md#removed) before startup.
 
 ## CLIProxyAPI with Codex sign-in
 
@@ -70,22 +71,55 @@ Set these values in the service environment.
 | `ACCLIMATE_MODEL` | `gpt-6.2-astra` for the experiment, or the model ID served by your proxy. |
 | `ACCLIMATE_MODEL_REASONING_EFFORT` | `high` for the experiment. |
 
-The optimizer requests JSON mode and includes `max_completion_tokens` (default 32,768). The inspected CLIProxyAPI Codex translator maps `max_completion_tokens` to `max_output_tokens` and `reasoning_effort` to `reasoning.effort`. Its format switch has no `json_object` case, so JSON mode is unenforced on that route. The optimizer prompts for JSON and validates the returned content. The service retries HTTP 429, HTTP 5xx, connection errors and timeouts with 5- and 30-second backoffs. [Codex Chat Completions translator](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/internal/translator/codex/openai/chat-completions/codex_openai_request.go)
+The optimizer requests JSON mode and includes `max_completion_tokens` (default 32,768). The inspected CLIProxyAPI Codex translator maps `max_completion_tokens` to `max_output_tokens` and `reasoning_effort` to `reasoning.effort`. Its format switch has no `json_object` case, so JSON mode is unenforced on that route. The optimizer prompts for JSON and validates the returned content. The service retries HTTP 429, HTTP 5xx, connection errors and timeouts with 5- and 30-second backoffs, or after the provider's `Retry-After` when that is longer, up to ten minutes. [Codex Chat Completions translator](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/internal/translator/codex/openai/chat-completions/codex_openai_request.go)
 
-## Build and start
+With a single Codex sign-in, set `routing.cooldown.disable-cooling: true` in the proxy configuration. By default the proxy blocks a model for the time the upstream names after one overloaded or rate-limited reply, which was about five minutes in testing, and answers every request for that model with HTTP 503 in the meantime. With cooling off, only the affected request waits. The executor gateway asks again every 30 seconds for up to seven minutes while the provider keeps sending `Retry-After`, and the optimizer waits for the `Retry-After` time before it retries.
 
-Export the path/hostname variables above into the deployment shell, without putting secret values in command arguments. Validate and build first:
+## First start
 
-```sh
-docker compose config --quiet
-docker compose build service console
-```
+Export the path/hostname variables above into the deployment shell, without putting secret values in command arguments. Also export `ACCLIMATE_EXECUTOR_TOKEN_FILE` as an absolute path to a private file, and `ACCLIMATE_PROVIDER_HTTP_HOSTS` if you need it (see [provider addresses](#provider-addresses)). The runner and executor have no published images, so they are always built from the checkout. Follow these steps in order. This repository does not run them for you.
 
-Startup below is an explicit deployment action; this repository does not execute it automatically:
+1. Generate the provider encryption key and add it to `service.env`. The key is 64 hex characters. Store a copy outside the host, separately from database backups. See [Upgrades and recovery](#upgrades-and-recovery) for why.
 
-```sh
-docker compose up -d --wait
-```
+   ```sh
+   umask 077
+   printf 'ACCLIMATE_PROVIDER_ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" >> "$ACCLIMATE_SERVICE_ENV"
+   ```
+
+2. Validate the configuration, build or pull the service and console, then start PostgreSQL, the service, the console and Caddy. The service applies the database migrations on startup.
+
+   ```sh
+   touch "$ACCLIMATE_EXECUTOR_TOKEN_FILE" && chmod 600 "$ACCLIMATE_EXECUTOR_TOKEN_FILE"
+   docker compose config --quiet
+   docker compose build service console
+   docker compose up -d --wait postgres service console proxy
+   ```
+
+   With published images, run `docker compose pull postgres service console proxy` instead of the build, and add `--no-build` to `up`.
+
+3. Create the executor credential inside the service container. It prints `{id, token}`. Save only the token in the file that `ACCLIMATE_EXECUTOR_TOKEN_FILE` names. Keep the `id` in your deployment records: `--revoke-executor-token` takes it.
+
+   ```sh
+   docker compose exec -T service /usr/local/bin/acclimate-service --create-executor-token \
+     | python3 -c 'import json, sys; c = json.load(sys.stdin); print(c["token"], file=open(sys.argv[1], "w")); print("executor credential id:", c["id"])' "$ACCLIMATE_EXECUTOR_TOKEN_FILE"
+   ```
+
+4. Build the runner and executor images.
+
+   ```sh
+   docker compose build acclimate-runner acclimate-executor
+   ```
+
+5. Configure [gVisor](#gvisor) on the Docker daemon. Then start the executor. It inspects the runner image when it starts, so the image must exist first.
+
+   ```sh
+   docker compose up -d acclimate-executor
+   docker compose ps acclimate-executor
+   ```
+
+   If it is not running, read `docker compose logs acclimate-executor`.
+
+Later starts can use `docker compose up -d --wait postgres service console proxy` followed by `docker compose up -d acclimate-executor`. Do not run `docker compose up --no-build` without service names: the runner and executor images cannot be pulled.
 
 Caddy obtains and stores certificates in its persistent volume. It pins the upstream console `Host` to the configured public hostname, strips incoming forwarding headers and replaces them from the trusted connection. The console reconstructs public URLs from its pinned HTTPS origin, rejects a different Host, and ignores caller-supplied `Forwarded`/`X-Forwarded-*` headers. HTTP from Caddy to the two application listeners is allowed only on the private network. Direct access bypassing this proxy is unsupported. Caddy's administration listener stays container-local; its health check is process/configuration liveness, while its dependency checks require both applications ready.
 
@@ -101,14 +135,26 @@ Migrations `0017_remove_manual_changes.sql` and `0018_remove_connected_learning.
 
 1. Stop incoming traffic and connected-learning evaluators. Record the version IDs delivered by affected connections, then stop the old service and console. [Upgrade and recover](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/operate/upgrades-and-recovery.mdx) has the query for affected connections.
 2. Back up the stopped installation's database with `python3 scripts/operations/backup.py dump /private/backups/acclimate-pre-loop.dump --pg-bin /path/to/postgresql-16/bin`. To read old rounds, proposals or comparisons later, restore the backup into a separate database and run the `pre-learning-loop` build against it.
-3. Start the new build to apply the migrations. Queued connected-learning rounds, proposals and evaluation requests are dropped. Configure a bundle evaluator for the new learning API.
+3. Start the new build to apply the migrations. Queued connected-learning rounds, proposals and evaluation requests are dropped. Set up learning again in the bundle's Learning tab.
 4. Connections resolve the version on their configured channel. Release a retained version on that channel with a reason if its connections should use that version. Existing `learn-<connectionId>` channels remain available as ordinary channels with their release history.
+
+Migrations `0022_central_learning.sql` through `0024_learning_reliability.sql` move learning into the service. Back up first. There is no downgrade: to roll back, restore that backup and run the matching earlier build. The cutover stops active rounds and pauses running loops with `tasks-required`. It copies live and retired evolve cases into the task tables as `exact` tasks and keeps round history and improvement memory. It turns each stored `evaluate` machine right into `read`. Give tokens that report outcomes `write`. Startup refuses a static grant in `ACCLIMATE_AUTH` that still lists `evaluate`, so update those first. Then set `ACCLIMATE_PROVIDER_ENCRYPTION_KEY`, start the [rollout executor](#rollout-executor), configure the workspace model provider and start each loop again once its tasks pass admission.
 
 ## Upgrades and recovery
 
 See [Upgrade and recover](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/operate/upgrades-and-recovery.mdx) for release pinning and the upgrade sequence.
 
 Stop traffic and both application containers before changing service versions. Rehearse the upgrade on a restored copy if it crosses the destructive migrations above. Take a backup and rehearse restoration on a separate database with the matching service build. Verify readiness and an authenticated read before routing traffic. Normal `docker compose down` preserves volumes. The `--volumes` option deletes them.
+
+There is no downgrade path for the schema. Rolling back means restoring the backup taken before the upgrade and running the build that matches it.
+
+Upgrade the service first, then the executor. A newer service accepts the 1-or-0 judged scores of an executor built before partial credit, so rollouts in flight survive the service upgrade. An older service rejects a newer executor's fractional scores.
+
+Upgrade or restart the executor between rounds. A round pins the executor build and runner image it started with. If no live executor matches them for five minutes, the round fails with `no-matching-executor`. That failure does not count toward the failed-rounds pause, and the next round pins the new executor. Rebuild with `docker compose build acclimate-runner acclimate-executor`, then run `docker compose up -d acclimate-executor`.
+
+Keep the provider encryption key with your database backups, but store it separately from them. A backup restored under a different key cannot decrypt any saved provider key: each workspace provider shows "Provider key unavailable" and fails verification, and a workspace administrator must enter its API key again.
+
+To rotate the executor credential, create a new one with `--create-executor-token` as in [First start](#first-start), replace the token file with the new token, restart the executor with `docker compose up -d --force-recreate acclimate-executor`, then revoke the old one with `docker compose exec -T service /usr/local/bin/acclimate-service --revoke-executor-token <old id>`. The executor reads the file only at startup. Stopping it waits up to an hour for its leased rollouts to finish.
 
 Supervisors restart failed processes with policy; investigate repeated failures. Exit code 75 identifies lost database ownership. The standalone service wrapper does not invent credentials or silently recover against another database. On SIGTERM readiness is withdrawn before HTTP/work draining and lock release. Backups include sensitive content and must be protected and restored on a schedule.
 
@@ -160,3 +206,53 @@ python3 scripts/operations/qualify.py --pg-bin /path/to/postgresql-16/bin
 ```
 
 It creates three randomly named databases, installs the schema and inserts fixture records, compares all restored table data including exact binary payloads and history, tests refusal of a populated target and transactional failure, and drops only the databases it created. It does not alter the database named by `DATABASE_URL`. A process kill or database outage can interrupt cleanup; remove only the randomly named `acclimate_ops_…` databases after identifying them. This synthetic qualification does not prove any particular production backup is restorable; perform and verify a restore of each operational backup on an appropriate schedule.
+
+## Rollout executor
+
+The executor runs each rollout in a sandbox container started from the chat runner image. [First start](#first-start) creates its credential and starts it. The executor resolves the runner's immutable image ID at startup.
+
+`ACCLIMATE_EXECUTOR_TOKEN_FILE` names the file that holds the executor credential. Revoke a credential with `acclimate-service --revoke-executor-token <id>`, run with the service's `DATABASE_URL`, for example through `docker compose exec -T service`. See [Upgrades and recovery](#upgrades-and-recovery) to rotate it. Revoking requeues the rollouts it held, or fails those already on their second attempt.
+
+`ACCLIMATE_EXECUTOR_CONCURRENCY` sets how many rollouts the executor runs at once. The default is 1. A higher value finishes rounds sooner, but sends more concurrent requests to the provider and runs more sandboxes on the host.
+
+The service listens at `ACCLIMATE_INTERNAL_BIND`. Compose binds port 3001 to the service address on the private executor network. The executor reaches the workspace model endpoint over `executor-egress`. Attach a containerized model proxy to that network when using its Compose hostname.
+
+The executor mounts a volume subpath into each sandbox, so it needs Docker Engine 26 or later. Each runner receives its own read-only lease directory from that volume.
+
+### gVisor
+
+Production sandboxes use the gVisor runtime `runsc`, the Compose default. Install `runsc` on the host and register it with the Docker daemon in `/etc/docker/daemon.json`, with `--host-uds=open` so the runner can connect to the mounted gateway socket:
+
+```json
+{
+  "runtimes": {
+    "runsc": {
+      "path": "runsc",
+      "runtimeArgs": ["--host-uds=open"]
+    }
+  }
+}
+```
+
+Restart Docker, then check that the daemon lists the runtime:
+
+```sh
+docker info --format '{{json .Runtimes}}'
+```
+
+Run `ACCLIMATE_SANDBOX_RUNTIME=runsc python3 executor/tests/sandbox.py -v` on the Linux host to verify isolation. Local Compose uses plain Docker.
+
+Without the runtime the executor still starts, and provider verification still passes, because a verification request does not use a sandbox. Every rollout then fails with `sandbox-start`. Rounds fail, and a loop pauses with `failed-rounds` after three failed rounds in a row (`ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS`).
+
+### Provider addresses
+
+The service checks a workspace provider's base URL when it is saved. The executor checks it again, resolves the host, checks every resolved address and connects only to a checked address, with redirects off. `ACCLIMATE_PROVIDER_HTTP_HOSTS` is a comma-separated list of exact hostnames or IP addresses, compared without case. It is empty by default. Set it to the same value in `service.env` and in the Compose environment for the executor. If they differ, the service can accept a URL that the executor then refuses.
+
+- The URL must use HTTPS. Plain HTTP is allowed only for a listed host.
+- The URL must not contain a user name, password, query or fragment.
+- These are always refused, listed or not: link-local addresses (including `169.254.169.254`), the unspecified address, multicast, broadcast, `100.100.100.200`, `168.63.129.16`, `fd00:ec2::254`, and the hostnames `metadata.google.internal` and `metadata.goog`.
+- These need the host on the list, even over HTTPS: loopback, `localhost` and `*.localhost`, private IPv4 addresses (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), carrier-grade NAT (`100.64.0.0/10`) and IPv6 unique-local addresses (`fc00::/7`). For a hostname, the executor applies the same checks to every address it resolves to.
+
+### Executor privileges
+
+The executor mounts the host Docker socket, which grants host administrator authority to the executor image. Only the executor receives this mount. The executor runs as root, has outbound network access over `executor-egress`, and holds each leased workspace's provider key in memory while it runs that work. Run it only on a host you trust with every workspace's provider key.

@@ -110,10 +110,70 @@ impl MailConfig {
             role,
             &format!("{}/invitations/{id}", self.console_origin),
         );
+        self.send(
+            recipient,
+            "You're invited to an Acclimate workspace",
+            text,
+            html,
+        )
+        .await
+    }
+
+    pub(crate) async fn claim_learning_alert(
+        &self,
+        db: &sqlx::PgPool,
+    ) -> Result<Option<LearningAlert>, sqlx::Error> {
+        sqlx::query_as("WITH pending AS (
+            SELECT d.round_id,d.user_id,u.email,p.name AS workspace,b.name AS bundle,r.reverted,r.adopted_version_id
+            FROM learning_alert_deliveries d JOIN learning_rounds r ON r.id=d.round_id
+            JOIN bundles b ON b.id=r.bundle_id JOIN projects p ON p.id=r.project_id
+            JOIN project_memberships m ON m.user_id=d.user_id AND m.project_id=p.id AND m.role='admin'
+            JOIN users u ON u.id=m.user_id AND u.email_verified
+            WHERE d.sent_at IS NULL AND d.attempts<5 AND d.next_attempt_at<=now()
+            ORDER BY d.next_attempt_at LIMIT 1 FOR UPDATE OF d SKIP LOCKED)
+            UPDATE learning_alert_deliveries d SET attempts=attempts+1,next_attempt_at=now()+interval '1 minute'
+            FROM pending p WHERE (d.round_id,d.user_id)=(p.round_id,p.user_id)
+            RETURNING d.round_id,d.user_id,p.email,p.workspace,p.bundle,d.score,d.previous_score,d.flipped_tasks,p.reverted,p.adopted_version_id")
+            .fetch_optional(db).await
+    }
+
+    pub(crate) async fn deliver_learning_alert(
+        &self,
+        db: &sqlx::PgPool,
+        alert: LearningAlert,
+    ) -> Result<(), sqlx::Error> {
+        let (text, html) = alert.body();
+        if self
+            .send(
+                &alert.email,
+                if alert.score.is_none() {
+                    "Acclimate regression check incomplete"
+                } else {
+                    "Acclimate held-out score decreased"
+                },
+                text,
+                html,
+            )
+            .await
+            .is_ok()
+        {
+            sqlx::query("UPDATE learning_alert_deliveries SET sent_at=now() WHERE (round_id,user_id)=($1,$2)")
+                .bind(alert.round_id).bind(alert.user_id).execute(db).await?;
+        }
+        Ok(())
+    }
+
+    async fn send(
+        &self,
+        recipient: &str,
+        subject: &str,
+        text: String,
+        html: String,
+    ) -> Result<(), ()> {
         let message = Message::builder()
             .from(self.sender.clone())
             .to(recipient.parse().map_err(|_| ())?)
-            .subject("You're invited to an Acclimate workspace")
+            .subject(subject)
             .multipart(
                 MultiPart::alternative()
                     .singlepart(SinglePart::plain(text))
@@ -125,6 +185,51 @@ impl MailConfig {
             .map_err(|_| ())?
             .map_err(|_| ())?;
         Ok(())
+    }
+}
+
+#[derive(sqlx::FromRow)]
+pub(crate) struct LearningAlert {
+    round_id: uuid::Uuid,
+    user_id: uuid::Uuid,
+    email: String,
+    workspace: String,
+    bundle: String,
+    adopted_version_id: uuid::Uuid,
+    previous_score: Option<f64>,
+    score: Option<f64>,
+    flipped_tasks: Option<i32>,
+    reverted: bool,
+}
+impl LearningAlert {
+    fn body(&self) -> (String, String) {
+        let text = if let (Some(previous), Some(score), Some(flips)) =
+            (self.previous_score, self.score, self.flipped_tasks)
+        {
+            format!(
+                "The share of held-out runs that pass for {} in {} fell from {:.1}% to {:.1}%. {} tasks changed from pass to fail. {}",
+                self.bundle,
+                self.workspace,
+                100.0 * previous,
+                100.0 * score,
+                flips,
+                if self.reverted {
+                    "The service restored the previous version."
+                } else {
+                    "The service did not restore the previous version."
+                }
+            )
+        } else {
+            format!(
+                "The regression check could not be completed for version {} of {} in {}.",
+                self.adopted_version_id, self.bundle, self.workspace
+            )
+        };
+        let html = format!(
+            include_str!("email/learning-alert.html"),
+            body = escape_html(&text)
+        );
+        (text, html)
     }
 }
 
@@ -174,6 +279,26 @@ mod tests {
         ] {
             assert!(normalize_email(invalid).is_none());
         }
+    }
+
+    #[test]
+    fn held_out_alert_escapes_bundle_names_and_reports_only_aggregates() {
+        let alert = LearningAlert {
+            round_id: uuid::Uuid::nil(),
+            user_id: uuid::Uuid::nil(),
+            email: "admin@example.test".into(),
+            workspace: "workspace".into(),
+            bundle: "<bundle>".into(),
+            adopted_version_id: uuid::Uuid::nil(),
+            previous_score: Some(0.8),
+            score: Some(0.6),
+            flipped_tasks: Some(3),
+            reverted: true,
+        };
+        let (text, html) = alert.body();
+        assert!(text.contains("80.0% to 60.0%. 3 tasks"));
+        assert!(html.contains("&lt;bundle&gt;"));
+        assert!(!html.contains("<bundle>"));
     }
 
     #[test]

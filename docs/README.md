@@ -4,7 +4,7 @@
 
 - [Get started with versioned delivery](getting-started.md)
 - [Run Acclimate locally](development.md)
-- [Set up an evaluator](evaluator-operations.md)
+- [Set up learning](architecture/central-learning/experience.md)
 - [Read the design guide](design/README.md)
 - [Explore the implementation architecture](architecture/README.md)
 - [Publish an Acclimate release](releasing.md)

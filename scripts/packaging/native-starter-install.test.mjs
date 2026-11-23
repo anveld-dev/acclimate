@@ -16,59 +16,6 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const release = process.env.ACCLIMATE_NATIVE_RELEASE_ROOT;
 const names = ['sdk', 'codex-plugin', 'claude-plugin', 'pi-plugin', 'cursor-plugin'];
 
-async function checkNativeApplication(app, scratch) {
-  const sourceRoot = path.join(scratch, 'repository');
-  await cp(path.join(app, 'fixture'), sourceRoot, { recursive: true });
-  const config = {
-    sourceRoot, stateRoot: path.join(scratch, 'state'), sourceRevision: 'retry-fixture-v1',
-    sourceFiles: ['package.json', 'src/retry.js', 'tests/retry.test.mjs'],
-    resultFiles: ['src/retry.js'], testFiles: ['tests/retry.test.mjs'], model: 'deployment-a',
-    cases: [{ caseId: 'retry', input: { prompt: 'Preserve retry identity.' }, expected: null }],
-  };
-  const configure = () => writeFile(path.join(app, 'native.json'), JSON.stringify(config), { mode: 0o600 });
-  const describe = async () => JSON.parse((await run(path.join(app, 'node_modules/.bin/acclimate-eval'), ['describe'], { cwd: app })).stdout);
-  await assert.rejects(describe(), /Create native\.json beside the native starter/);
-  await writeFile(path.join(app, 'native.json'), JSON.stringify({
-    ...config, testFiles: ['tests/private-case-name.mjs'],
-  }), { mode: 0o600 });
-  await assert.rejects(describe(), error => {
-    assert.match(error.stderr, /every testFiles entry is in sourceFiles and outside resultFiles/);
-    assert.doesNotMatch(error.stderr, /private-case-name/);
-    return true;
-  });
-  await configure();
-  const original = await describe();
-  assert.equal(original.runtime.configId, 'native-repository');
-  assert.deepEqual(original.expectedCases, [{ caseId: 'retry', repetition: 0 }]);
-
-  // Grade a real retained solution against the installed application's original Node tests.
-  const [jobId] = await readdir(path.join(config.stateRoot, 'artifacts'));
-  const bytes = await readFile(path.join(config.stateRoot, 'artifacts', jobId, 'manifest.json'));
-  const repository = { jobId, manifestSha256: createHash('sha256').update(bytes).digest('hex') };
-  const { stdout } = await run(process.execPath, ['--input-type=module', '-e',
-    "import { grade } from './application.mjs'; console.log(JSON.stringify(await grade({output:{repository:JSON.parse(process.argv[1])},signal:new AbortController().signal})));",
-    JSON.stringify(repository)], { cwd: app });
-  assert.equal(JSON.parse(stdout).reward, 1);
-
-  config.model = 'deployment-b';
-  await configure();
-  const changedModel = await describe();
-  assert.notEqual(changedModel.runtime.configRevision, original.runtime.configRevision);
-  assert.equal(changedModel.graderRevision, original.graderRevision);
-  config.model = 'deployment-a';
-  await configure();
-  await writeFile(path.join(sourceRoot, 'src/retry.js'), 'export const retryKey = id => id;\n');
-  const changedSource = await describe();
-  assert.notEqual(changedSource.runtime.configRevision, original.runtime.configRevision);
-  assert.notEqual(changedSource.graderRevision, original.graderRevision);
-  await writeFile(path.join(sourceRoot, 'tests/retry.test.mjs'), 'import "node:test";\n');
-  const changedTests = await describe();
-  assert.notEqual(changedTests.graderRevision, changedSource.graderRevision);
-  const helper = path.join(app, 'harnesses.mjs');
-  await writeFile(helper, (await readFile(helper, 'utf8')) + '\n// A new harness build.\n');
-  assert.notEqual((await describe()).runtime.configRevision, changedTests.runtime.configRevision);
-}
-
 async function checkCodexExecutable(app) {
   // Use this checkout's installed, pinned upstream packages in an isolated consumer.
   const sdkEntry = fileURLToPath(import.meta.resolve('@openai/codex-sdk'));
@@ -145,12 +92,11 @@ for (const nested of [false, true]) {
       for (const name of ['fixture', 'native.replay.json', 'smoke.mjs'])
         assert.ok(publicFiles.includes(name), `offline path missing: ${name}`);
       const { stdout: smoke } = await run(process.execPath, [path.join(app, 'smoke.mjs')], { cwd: app });
-      assert.equal(JSON.parse(smoke).candidate['request-scoped-retry'].reward, 1);
+      assert.equal(JSON.parse(smoke).instructions, 'Keep payment retries request-scoped.');
       await cp(path.join(root, 'examples/native-repository/test'), path.join(app, 'test'), { recursive: true });
       const { stdout: fixture } = await run(process.execPath, [path.join(app, 'test/run-fixture.mjs'), '--state-root', path.join(scratch, 'state'), '--harness', 'codex']);
       assert.equal(JSON.parse(fixture).cleaned, true);
       if (!nested) {
-        await checkNativeApplication(app, scratch);
         await checkCodexExecutable(app);
       }
 

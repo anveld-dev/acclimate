@@ -17,6 +17,7 @@ fn service(bind: &str) -> Command {
             "ACCLIMATE_OPERATORS",
             r#"[{"issuer":"https://fixture.example","subject":"operator"}]"#,
         )
+        .env("ACCLIMATE_INTERNAL_BIND", "127.0.0.1:0")
         .env("ACCLIMATE_BIND", bind)
         .stdout(Stdio::null())
         .stderr(Stdio::piped());

@@ -3,13 +3,6 @@ import type { BundlePayload } from './types.js';
 export type { CompatibilityTarget } from './types.js';
 export { compatibilityIssues, assertCompatible } from './compatibility.js';
 export type { CompatibilityIssue } from './compatibility.js';
-export {
-  validateEvaluationDescriptor,
-  validateEvaluationServiceUrl,
-  assertGuidedTarget,
-  EvaluationConfigurationError,
-} from './evaluation-validation.js';
-export type { GuidedTarget } from './evaluation-validation.js';
 
 export type DeliveryErrorCode =
   | 'cache_miss'

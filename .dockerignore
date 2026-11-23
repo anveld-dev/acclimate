@@ -15,10 +15,6 @@
 !apps/console/**
 !apps/keycloak-theme/
 !apps/keycloak-theme/**
-!examples/
-!examples/evaluation/
-!examples/evaluation/descriptor.ts
-!examples/evaluation/adapter.ts
 !scripts/
 !scripts/build-packages.mjs
 !scripts/packaging/
@@ -46,3 +42,5 @@
 **/*.key
 **/.local
 **/state.json
+!executor/
+!executor/**

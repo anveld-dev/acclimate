@@ -24,11 +24,16 @@ services:
     env_file:
       - ${ACCLIMATE_SERVICE_ENV:?Set ACCLIMATE_SERVICE_ENV to a private production service.env file}
     environment:
+      ACCLIMATE_INTERNAL_BIND: executor-listener:3001
       ACCLIMATE_BIND: 0.0.0.0:3000
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [backend, outbound]
+    networks:
+      executor:
+        aliases: [executor-listener]
+      backend: {}
+      outbound: {}
     restart: unless-stopped
     stop_grace_period: 90s
     healthcheck:
@@ -37,6 +42,34 @@ services:
       timeout: 4s
       retries: 12
       start_period: 30s
+  acclimate-runner:
+    image: ${ACCLIMATE_RUNNER_IMAGE:-acclimate-chat:1}
+    build: executor/runner
+    entrypoint: ["node", "-e", ""]
+    network_mode: none
+  acclimate-executor:
+    init: true
+    stop_grace_period: 1h
+    depends_on:
+      acclimate-runner:
+        condition: service_completed_successfully
+    secrets: [executor_token]
+    build:
+      context: .
+      dockerfile: executor/Dockerfile
+    environment:
+      ACCLIMATE_PROVIDER_HTTP_HOSTS: ${ACCLIMATE_PROVIDER_HTTP_HOSTS:-}
+      ACCLIMATE_EXECUTOR_SERVICE: http://service:3001
+      ACCLIMATE_EXECUTOR_TOKEN_FILE: /run/secrets/executor_token
+      ACCLIMATE_EXECUTOR_CONCURRENCY: ${ACCLIMATE_EXECUTOR_CONCURRENCY:-1}
+      ACCLIMATE_SANDBOX_RUNTIME: ${ACCLIMATE_SANDBOX_RUNTIME:-runsc}
+      ACCLIMATE_RUNNER_IMAGE: ${ACCLIMATE_RUNNER_IMAGE:-acclimate-chat:1}
+      ACCLIMATE_SANDBOX_VOLUME: ${COMPOSE_PROJECT_NAME}_executor-data
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - executor-data:/var/lib/acclimate-executor
+    networks: [executor, executor-egress]
+    restart: unless-stopped
   console:
     image: ${ACCLIMATE_CONSOLE_IMAGE:-ghcr.io/anveld-dev/acclimate-console:${ACCLIMATE_VERSION:-latest}}
     build:
@@ -86,6 +119,9 @@ services:
       timeout: 3s
       retries: 6
 networks:
+  executor-egress: {}
+  executor:
+    internal: true
   # PostgreSQL has no outbound route. Applications use a separate outbound
   # bridge for issuer/model HTTPS; no application listener is host-published.
   backend:
@@ -93,9 +129,12 @@ networks:
   outbound: {}
   edge: {}
 volumes:
+  executor-data:
   postgres-data:
   caddy-data:
   caddy-config:
 secrets:
+  executor_token:
+    file: ${ACCLIMATE_EXECUTOR_TOKEN_FILE:-./.local/stack/executor-token}
   postgres_password:
     file: ${ACCLIMATE_POSTGRES_PASSWORD_FILE:?Set ACCLIMATE_POSTGRES_PASSWORD_FILE to a private password file}

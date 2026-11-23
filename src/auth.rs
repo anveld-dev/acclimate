@@ -1,17 +1,10 @@
 use crate::{ApiResult, AppState, Grant, err};
 use std::collections::{HashMap, HashSet};
 
-/// Machine rights. `evaluate` is the narrow evaluator right: it reads the
-/// workspace and runs evaluations, but never publishes, promotes or moves channels.
-pub(crate) const RIGHTS: [&str; 4] = ["read", "evaluate", "write", "promote"];
+pub(crate) const RIGHTS: [&str; 3] = ["read", "write", "promote"];
 
-/// `write` keeps its historical evaluator authority, and `evaluate` includes `read`.
 pub(crate) fn rights_allow(rights: &[String], right: &str) -> bool {
-    rights.iter().any(|granted| {
-        granted == right
-            || (right == "read" && granted == "evaluate")
-            || (right == "evaluate" && granted == "write")
-    })
+    rights.iter().any(|granted| granted == right)
 }
 
 /// Validate static grants before accepting requests. Errors never contain grant values.
@@ -38,6 +31,9 @@ pub fn validate_grants(grants: &[Grant]) -> Result<(), &'static str> {
         }
         let mut rights = HashSet::new();
         for right in &grant.rights {
+            if right == "evaluate" {
+                return Err("the evaluate grant right was removed; outcome reporters need write");
+            }
             if !RIGHTS.contains(&right.as_str()) {
                 return Err("unknown grant right");
             }

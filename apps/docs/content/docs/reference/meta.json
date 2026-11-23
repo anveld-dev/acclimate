@@ -3,7 +3,6 @@
   "pages": [
     "typescript-sdk",
     "python-sdk",
-    "evaluator-cli",
     "error-codes",
     "configuration",
     "http-api",

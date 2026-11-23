@@ -15,6 +15,7 @@ mod bundles;
 mod channels;
 mod commands;
 pub mod compatibility;
+pub mod executor;
 mod integrations;
 mod invitations;
 mod learning;
@@ -95,9 +96,19 @@ pub(crate) fn digest(b: &[u8]) -> String {
 pub(crate) fn path(s: &str) -> ApiResult<Uuid> {
     Uuid::parse_str(s).map_err(|_| err(StatusCode::BAD_REQUEST, "invalid_content", "Invalid UUID"))
 }
-async fn request_limits(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+async fn request_limits<const INTERNAL: bool>(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
     static REQUESTS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
-    let semaphore = REQUESTS.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(64)));
+    static EXECUTOR_REQUESTS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let semaphore = (if INTERNAL {
+        &EXECUTOR_REQUESTS
+    } else {
+        &REQUESTS
+    })
+    .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(64)));
     let Ok(_permit) = semaphore.try_acquire() else {
         return err(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -106,11 +117,23 @@ async fn request_limits(request: axum::extract::Request, next: axum::middleware:
         )
         .into_response();
     };
-    match tokio::time::timeout(std::time::Duration::from_secs(30), next.run(request)).await {
+    let import = request.method() == axum::http::Method::POST
+        && request
+            .extensions()
+            .get::<axum::extract::MatchedPath>()
+            .is_some_and(|path| path.as_str() == learning::IMPORT_ROUTE);
+    let deadline = std::time::Duration::from_secs(if import { 600 } else { 30 });
+    match tokio::time::timeout(deadline, next.run(request)).await {
         Ok(response) if response.status() == StatusCode::PAYLOAD_TOO_LARGE => err(
             StatusCode::PAYLOAD_TOO_LARGE,
             "payload_too_large",
-            "Request exceeds 2MiB",
+            if INTERNAL {
+                "Request exceeds 32 MiB"
+            } else if import {
+                "Import exceeds 64 MiB"
+            } else {
+                "Request exceeds 2MiB"
+            },
         )
         .into_response(),
         Ok(response) => response,
@@ -166,7 +189,7 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             auth::session_context,
         ))
-        .layer(axum::middleware::from_fn(request_limits))
+        .layer(axum::middleware::from_fn(request_limits::<false>))
         .with_state(state)
 }
 

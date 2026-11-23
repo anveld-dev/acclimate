@@ -155,17 +155,6 @@ async fn begin_mutation_inner<'a>(
     prepare_mutation(tx, a, project, path, h, body, require_admin).await
 }
 
-pub(crate) async fn begin_authorized_mutation<'a>(
-    tx: Transaction<'a, Postgres>,
-    a: &Actor,
-    project: &str,
-    path: &str,
-    h: &HeaderMap,
-    body: &[u8],
-) -> ApiResult<MutationStart<'a>> {
-    prepare_mutation(tx, a, project, path, h, body, false).await
-}
-
 async fn prepare_mutation<'a>(
     mut tx: Transaction<'a, Postgres>,
     a: &Actor,
@@ -230,15 +219,7 @@ async fn prepare_mutation<'a>(
         {
             return Err(err(
                 StatusCode::CONFLICT,
-                if path
-                    .strip_prefix(&format!("/v1/workspaces/{project}/bundles/"))
-                    .and_then(|suffix| suffix.split_once('/'))
-                    .is_some_and(|(_, route)| route.starts_with("learning/evaluations/"))
-                {
-                    "learning_conflict"
-                } else {
-                    "idempotency_conflict"
-                },
+                "idempotency_conflict",
                 "Key was used with different request bytes",
             ));
         }
@@ -344,7 +325,7 @@ pub(crate) async fn audit_mutation(
     .await
 }
 
-async fn write_audit(
+pub(crate) async fn write_audit(
     tx: &mut Transaction<'_, Postgres>,
     project: &str,
     user: Option<uuid::Uuid>,
@@ -428,7 +409,7 @@ async fn outcome(
         .and_then(|r| r.first().copied())
         .unwrap_or(if closing { "write" } else { "read" });
     let actor = if path.is_empty() {
-        ["read", "evaluate", "write", "promote"]
+        ["read", "write", "promote"]
             .into_iter()
             .find_map(|right| crate::auth::actor(&h, &s, &p, right).ok())
             .ok_or_else(|| {

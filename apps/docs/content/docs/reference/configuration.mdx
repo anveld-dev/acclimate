@@ -3,11 +3,11 @@ title: Configuration and environment variables
 description: Find the values your application, service, and console read.
 ---
 
-Configure each process with its own credentials and addresses. Use the [self-hosting guide](/docs/operate/self-host) for the private runtime files and [machine-token access](/docs/operate/evaluator-access) for workspace credentials.
+Configure each process with its own credentials and addresses. Use the [self-hosting guide](/docs/operate/self-host) for the private runtime files and machine-token access for workspace credentials.
 
 ## Application and CLI recipes
 
-The SDK’s job helpers and learning CLIs read `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` directly. Other delivery variables below are app setup conventions. Read them in your app and pass them to the client or preparation call.
+The SDK’s job helpers read `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` directly. Other delivery variables below are app setup conventions. Read them in your app and pass them to the client or preparation call.
 
 | Variable | Purpose |
 | --- | --- |
@@ -17,11 +17,6 @@ The SDK’s job helpers and learning CLIs read `ACCLIMATE_URL`, `ACCLIMATE_WORKS
 | `ACCLIMATE_WORKSPACE`, `ACCLIMATE_BUNDLE`, `ACCLIMATE_CHANNEL` | Workspace ID, bundle ID, and channel used by the delivery examples. |
 | `ACCLIMATE_CACHE`, `ACCLIMATE_JOB_DIR` | Cache and staging directory overrides in the console recipes. |
 | `ACCLIMATE_CONNECTION`, `ACCLIMATE_RECEIPT_TOKEN` | Connection ID and separate optional delivery reporting credential. |
-| `ACCLIMATE_EVALUATOR_CASES` | Absolute path to a private JSON array that overrides the installed adapter's cases. Use mode 0600. |
-| `ACCLIMATE_APP_PRINCIPAL` | Optional learning evaluator principal ID. Usually discovered from the evaluator token. |
-| `ACCLIMATE_ENROLL_TOKEN` | Optional separate machine token with `promote` access for learning enrollment. |
-| `OPENAI_BASE_URL`, `OPENAI_API_KEY` | Defaults for the SDK learning adapter’s base URL and optional bearer key. The URL defaults to `https://api.openai.com/v1`. Adapter options override these values. |
-| `ACCLIMATE_DEBUG` | Enables verbose evaluator CLI diagnostics when nonempty and other than `0`, `false` or `no` (case-insensitive). |
 | `AGENT_TASK` | Task input for the console's connected agent recipe. |
 
 
@@ -35,19 +30,30 @@ The SDK’s job helpers and learning CLIs read `ACCLIMATE_URL`, `ACCLIMATE_WORKS
 | `ACCLIMATE_LOGIN_TOKEN` | Required login authority token. Match `CONSOLE_LOGIN_TOKEN`. |
 | `ACCLIMATE_CONSOLE_TOKEN` | Required console transport token. Match `CONSOLE_SERVICE_TOKEN`. Use a different token from the login authority and every machine grant. The login authority and machine tokens must also be distinct. |
 | `ACCLIMATE_OPERATORS` | Required nonempty JSON array of objects with `issuer` and `subject`. Each pair must be unique, use the exact configured issuer and have a nonempty subject of at most 512 bytes. |
-| `ACCLIMATE_AUTH` | Required JSON array of static machine grants with `token`, `principalId`, `workspaceId` and `rights`. Use `[]` when every machine token is issued from the console. Rights are `read`, `evaluate`, `write` and `promote`. `evaluate` grants `read`. `write` grants `evaluate`. Explicitly include `read` or `evaluate` if a writer also needs read access. A token identifies one principal and can appear once per workspace. Keep colons out of principal IDs. Changing this value requires a restart; console-issued [machine tokens](/docs/operate/evaluator-access) do not. |
+| `ACCLIMATE_AUTH` | Required JSON array of static machine grants with `token`, `principalId`, `workspaceId` and `rights`. Use `[]` when every machine token is issued from the console. Rights are `read`, `write` and `promote`.
+
+A token identifies one principal and can appear once per workspace. Keep colons out of principal IDs. Changing this value requires a restart; console-issued machine tokens do not. |
 | `ACCLIMATE_SERVICE_BINARY` | Absolute path to the executable used by the native `npm start` wrapper. Defaults to `target/release/acclimate-service` under the checkout. |
 
 Remove `ACCLIMATE_MODE` and `CONSOLE_MODE` from both the Rust and console environments. Startup rejects any defined value.
 
 ### Learning
 
-The evaluation queue timeout, evaluation timeout and failed-round threshold accept integers from 1 to 4,294,967,295. An unset or invalid value falls back to its default. Invalid optimizer timeout, token limit or reasoning effort settings prevent startup, even when the endpoint is unset.
+Run the `acclimate-executor` container with a provisioned executor credential and access to the Docker socket. Create the credential with the service binary's `--create-executor-token` command, which prints it as JSON, save the token in a private file, and point `ACCLIMATE_EXECUTOR_TOKEN_FILE` at that file. Build the chat runner image and configure gVisor (`runsc`) in production. Set `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` on the service to a 64-character hex key so workspace provider credentials can be encrypted at rest. [Enable learning](/docs/operate/self-host#enable-learning) lists the steps in order.
+
+`ACCLIMATE_PROVIDER_HTTP_HOSTS` is a comma-separated list of exact hostnames or IP addresses, compared without case. It defaults to empty. Set it to the same value on the service and on the executor. The service checks a provider's base URL when it is saved, and the executor checks it again with the addresses the host resolves to.
+
+- The base URL must use HTTPS. Plain HTTP is allowed only for a listed host.
+- It must not contain a user name, password, query or fragment.
+- Link-local addresses, the unspecified address, multicast, broadcast, the cloud metadata addresses `100.100.100.200`, `168.63.129.16` and `fd00:ec2::254`, and the hostnames `metadata.google.internal` and `metadata.goog` are always refused.
+- Loopback, `localhost` and `*.localhost`, private IPv4, carrier-grade NAT (`100.64.0.0/10`) and IPv6 unique-local addresses need the host on the list, even over HTTPS.
+
+The settings below configure the optimizer. The task model and judge model come from the workspace model provider, which must be an OpenAI-compatible endpoint. Workspace administrators set it in the console.
+
+The failed-round threshold accepts integers from 1 to 4,294,967,295. An unset or invalid value falls back to its default. Invalid optimizer timeout, token limit or reasoning effort settings prevent startup, even when the endpoint is unset.
 
 | Learning setting | Purpose |
 | --- | --- |
-| `ACCLIMATE_LEARNING_EVALUATION_QUEUE_SECONDS` | Time allowed to start a queued evaluation. Defaults to 604,800 seconds (7 days). |
-| `ACCLIMATE_LEARNING_EVALUATION_SECONDS` | Time allowed to finish a started evaluation. Defaults to 86,400 seconds (24 hours). |
 | `ACCLIMATE_MODEL_ENDPOINT` | Full HTTP or HTTPS OpenAI-compatible Chat Completions URL without embedded credentials, including `/v1/chat/completions` for CLIProxyAPI. An unset endpoint leaves the optimizer unavailable. |
 | `ACCLIMATE_MODEL_TOKEN` | Nonblank optimizer endpoint bearer credential without control characters. Required when the endpoint is set. |
 | `ACCLIMATE_MODEL` | Model for proposing, screening and selecting. Required when the endpoint is set. The trimmed model ID must have 1–256 bytes and no control characters. The round pins this value at its start. |

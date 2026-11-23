@@ -28,6 +28,7 @@ services:
       - path: ./.local/stack/service.env
         required: false
     environment:
+      ACCLIMATE_INTERNAL_BIND: executor-listener:3001
       ACCLIMATE_BIND: 127.0.0.1:3000
       SSL_CERT_FILE: /run/acclimate-local/root.crt
     volumes:
@@ -51,6 +52,36 @@ services:
       retries: 12
       start_period: 30s
 
+  acclimate-runner:
+    image: ${ACCLIMATE_RUNNER_IMAGE:-acclimate-chat:1}
+    build: executor/runner
+    entrypoint: ["node", "-e", ""]
+    network_mode: none
+  acclimate-executor:
+    init: true
+    stop_grace_period: 1h
+    depends_on:
+      acclimate-runner:
+        condition: service_completed_successfully
+    secrets: [executor_token]
+    build:
+      context: .
+      dockerfile: executor/Dockerfile
+    environment:
+      ACCLIMATE_PROVIDER_HTTP_HOSTS: ${ACCLIMATE_PROVIDER_HTTP_HOSTS:-}
+      ACCLIMATE_EXECUTOR_SERVICE: http://proxy:3001
+      ACCLIMATE_EXECUTOR_TOKEN_FILE: /run/secrets/executor_token
+      ACCLIMATE_EXECUTOR_CONCURRENCY: ${ACCLIMATE_EXECUTOR_CONCURRENCY:-4}
+      ACCLIMATE_SANDBOX_RUNTIME: ${ACCLIMATE_SANDBOX_RUNTIME:-docker}
+      ACCLIMATE_RUNNER_IMAGE: ${ACCLIMATE_RUNNER_IMAGE:-acclimate-chat:1}
+      ACCLIMATE_SANDBOX_VOLUME: ${COMPOSE_PROJECT_NAME}_executor-data
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - executor-data:/var/lib/acclimate-executor
+    networks: [executor, executor-egress]
+    # A model proxy on the laptop is reached by this name on Linux as well as Docker Desktop.
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    restart: unless-stopped
   console:
     image: ${ACCLIMATE_LOCAL_CONSOLE_IMAGE:-acclimate-local-console:source}
     pull_policy: ${ACCLIMATE_LOCAL_PULL_POLICY:-build}
@@ -165,7 +196,13 @@ services:
       - "127.0.0.1:${ACCLIMATE_LOCAL_CONSOLE_PORT:-3443}:${ACCLIMATE_LOCAL_CONSOLE_PORT:-3443}"
       - "127.0.0.1:${ACCLIMATE_LOCAL_API_PORT:-3444}:${ACCLIMATE_LOCAL_API_PORT:-3444}"
       - "127.0.0.1:${ACCLIMATE_LOCAL_KEYCLOAK_PORT:-3445}:${ACCLIMATE_LOCAL_KEYCLOAK_PORT:-3445}"
-    networks: [backend, edge]
+    networks:
+      executor:
+        aliases: [executor-listener]
+      backend: {}
+      edge: {}
+    # The service shares this network, and its optimizer may be a model proxy on the laptop.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     depends_on:
       keycloak:
         condition: service_healthy
@@ -176,16 +213,22 @@ services:
       retries: 12
 
 networks:
+  executor-egress: {}
+  executor:
+    internal: true
   backend:
     internal: true
   edge: {}
 volumes:
+  executor-data:
   postgres-data:
   keycloak-postgres-data:
   mailpit-data:
   caddy-data:
   caddy-config:
 secrets:
+  executor_token:
+    file: ${ACCLIMATE_EXECUTOR_TOKEN_FILE:-./.local/stack/executor-token}
   postgres_password:
     file: ./.local/stack/postgres-password
   keycloak_postgres_password:

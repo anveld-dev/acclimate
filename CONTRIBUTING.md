@@ -19,4 +19,4 @@ By submitting a contribution, you agree to license it under the [Apache License 
 
 ## Project records
 
-Earlier qualification records and experiments were removed from the tree; they remain in git history at [`ab0d8d3b`](https://github.com/anveld-dev/acclimate/tree/ab0d8d3b5ba7fd33a468d6526edcd5d87cb722ef/docs). The current design and experiment plan are in [`docs/architecture/self-improvement-memory/`](docs/architecture/self-improvement-memory/README.md).
+Earlier qualification records and experiments were removed from the tree; they remain in git history at [`ab0d8d3b`](https://github.com/anveld-dev/acclimate/tree/ab0d8d3b5ba7fd33a468d6526edcd5d87cb722ef/docs). The central learning architecture is in [`docs/architecture/central-learning/`](docs/architecture/central-learning/README.md), and the experiment plan is in [`examples/self-improvement-memory/experiment.md`](examples/self-improvement-memory/experiment.md).

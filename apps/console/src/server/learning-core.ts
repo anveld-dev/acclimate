@@ -2,15 +2,9 @@ import { ApiError, type AcclimateClient, type LearningRound } from '@acclimate/s
 import { readVersion } from './release-history';
 import { consoleClient } from './console-client';
 import { allPages } from './listing';
-import { accessTransport } from './access-core';
-import type { MachineToken } from './machine-token-core';
 import type { Environment } from './selection';
 import {
-  enrollmentError,
-  evolveCaseBody,
-  type CaseSummary,
   type ActiveEvaluation,
-  type LearningCommand,
   type LearningScope,
   type LearningReadOptions,
 } from '../lib/learning';
@@ -37,7 +31,7 @@ async function inspect(api: AcclimateClient, { workspaceId, bundleId }: Learning
   }
 }
 
-function failure(error: unknown, mutation = false) {
+function failure(error: unknown) {
   return {
     ok: false as const,
     message:
@@ -45,9 +39,7 @@ function failure(error: unknown, mutation = false) {
         ? 'Access denied. Check your workspace access.'
         : error instanceof ApiError && [400, 409].includes(error.status)
           ? error.message
-          : mutation
-            ? 'Could not confirm the change. Refresh the learning page before trying again.'
-            : 'Could not load the learning loop. Refresh to try again.',
+          : 'Could not load the learning loop. Refresh to try again.',
   };
 }
 
@@ -59,10 +51,14 @@ async function readRoundDetail(
 ) {
   try {
     const {
+      id,
       number,
       channel,
       channelRevision,
       parentVersionId,
+      reverted,
+      confirmedParentScore,
+      confirmedAdoptionScore,
       incumbentScore,
       candidates,
       decision,
@@ -89,9 +85,13 @@ async function readRoundDetail(
     return {
       ok: true as const,
       round: {
+        id,
         number,
         channel,
         channelRevision,
+        reverted: reverted ?? false,
+        confirmedParentScore: confirmedParentScore ?? null,
+        confirmedAdoptionScore: confirmedAdoptionScore ?? null,
         incumbentScore,
         candidates,
         decision,
@@ -162,24 +162,6 @@ export async function readLearningState(
       inspect(api, scope),
       allPages((cursor) => api.listChannels(workspaceId, bundleId, { cursor, limit: 100 })),
     ]);
-    const needsEnrollment = !loop || loop.status === 'stopped';
-    const principals =
-      canManage && needsEnrollment
-        ? await accessTransport(
-            env,
-            fetcher,
-          )(`/v1/workspaces/${encodeURIComponent(workspaceId)}/machine-tokens`)
-            .then(({ items }: { items: MachineToken[] }) =>
-              items
-                .filter(
-                  ({ status, rights }) =>
-                    status === 'active' &&
-                    (rights.includes('evaluate') || rights.includes('write')),
-                )
-                .map(({ name, principalId }) => ({ name, principalId })),
-            )
-            .catch(() => [])
-        : [];
     const rounds = loop
       ? await allPages(async (before) => {
           const page = await api.listLearningRounds(workspaceId, bundleId, {
@@ -190,32 +172,51 @@ export async function readLearningState(
         })
       : [];
     const activeId = loop?.activeRound?.id;
-    const lastScoredId = rounds.find((round) => round.incumbentScore !== null)?.id;
     const loadRound = (id: string) => api.getLearningRound(workspaceId, bundleId, id);
     const activeRead = activeId ? loadRound(activeId) : null;
-    const lastScoredRead =
-      lastScoredId && lastScoredId !== activeId ? loadRound(lastScoredId) : null;
-    const detailId = options.round;
-    const [active, lastScored, detail, memory] = await Promise.all([
+    const detailId =
+      options.round && /^\d+$/.test(options.round)
+        ? (rounds.find((r) => String(r.number) === options.round)?.id ?? options.round)
+        : options.round;
+    const [active, detail, memory] = await Promise.all([
       activeRead,
-      lastScoredRead,
       loop && detailId
         ? uuid.test(detailId)
           ? readRoundDetail(
               env,
               scope,
-              () =>
-                (detailId === activeId
-                  ? activeRead
-                  : detailId === lastScoredId
-                    ? lastScoredRead
-                    : null) ?? loadRound(detailId),
+              () => (detailId === activeId && activeRead ? activeRead : loadRound(detailId)),
               fetcher,
             )
           : { ok: false as const, message: 'Invalid learning round ID.' }
         : null,
       loop && options.memory ? readMemory(api, scope, options.memory) : null,
     ]);
+    const history =
+      loop && rounds.length
+        ? await allPages(async (beforeRevision) => {
+            const page = await api.listReleases(workspaceId, bundleId, loop.channel, {
+              beforeRevision,
+              limit: 100,
+            });
+            return { items: page.items, nextCursor: page.nextBeforeRevision };
+          })
+            .then((releases) =>
+              releases.flatMap((release) => {
+                const match = /^Restore parent of learning round ([a-f0-9-]{36})$/.exec(
+                  release.unevaluatedReason ?? '',
+                );
+                return match &&
+                  rounds.some((r) => r.id === match[1] && r.parentVersionId === release.version.id)
+                  ? [{ roundId: match[1], actor: release.reviewer, time: release.createdAt }]
+                  : [];
+              }),
+            )
+            .catch(() => null)
+        : [];
+    const blocked = loop
+      ? await api.listBlockedLearningVersions(workspaceId, bundleId).catch(() => null)
+      : [];
     const openEvaluation = active?.evaluations.find(
       ({ status }) => status === 'queued' || status === 'running',
     );
@@ -229,24 +230,6 @@ export async function readLearningState(
           reportedCases: openEvaluation.reportedCases,
         }
       : null;
-    let caseSnapshot: { roundNumber: number; revision: number; cases: CaseSummary[] } | null = null;
-    for (const round of [active, lastScored]) {
-      const cases = round?.evaluations.find(
-        ({ split, role }) => split === 'evolve' && role === 'incumbent',
-      )?.caseSummaries;
-      if (round && cases?.length) {
-        caseSnapshot = {
-          roundNumber: round.number,
-          revision: round.evolveRevision,
-          cases: cases.map(({ caseId, passedRollouts, meanScore }) => ({
-            caseId,
-            passedRollouts,
-            meanScore,
-          })),
-        };
-        break;
-      }
-    }
     return {
       ok: true as const,
       bundleName: bundle.name,
@@ -256,10 +239,12 @@ export async function readLearningState(
       detail,
       memory,
       channels: channels.map(({ name }) => name),
-      principals,
       rounds,
       activeEvaluation,
-      caseSnapshot,
+      history,
+      blocked,
+      progress: active?.progress ?? null,
+      channelHead: channels.find((c) => c.name === loop?.channel)?.versionId ?? null,
     };
   } catch (error) {
     return failure(error);
@@ -267,67 +252,3 @@ export async function readLearningState(
 }
 
 export type LearningState = Awaited<ReturnType<typeof readLearningState>>;
-
-export async function runLearningCommand(
-  env: Environment,
-  scope: LearningScope,
-  command: LearningCommand,
-  fetcher = fetch,
-) {
-  try {
-    validateScope(scope);
-    if (env.CONSOLE_ALLOW_EDITS !== 'true')
-      return { ok: false as const, message: 'Changes are disabled for this console.' };
-    const api = consoleClient(env, fetcher);
-    const { workspaceId, bundleId } = scope;
-    const key = crypto.randomUUID();
-    switch (command?.action) {
-      case 'enroll': {
-        const error = enrollmentError(command.body);
-        if (error) return { ok: false as const, message: error };
-        const { channel, appPrincipalId, setting, heldOut } = command.body;
-        await api.enrollLearningLoop(
-          workspaceId,
-          bundleId,
-          {
-            channel,
-            appPrincipalId,
-            setting: {
-              domain: setting.domain,
-              benchmark: setting.benchmark,
-              policyModel: setting.policyModel,
-            },
-            heldOut: { digest: heldOut.digest, cases: heldOut.cases },
-          },
-          key,
-        );
-        break;
-      }
-      case 'pause':
-        await api.pauseLearningLoop(workspaceId, bundleId, key);
-        break;
-      case 'resume':
-        await api.resumeLearningLoop(workspaceId, bundleId, key);
-        break;
-      case 'stop':
-        await api.stopLearningLoop(workspaceId, bundleId, key);
-        break;
-      case 'addCase':
-      case 'retireCase': {
-        let body;
-        try {
-          body = evolveCaseBody(command);
-        } catch (error) {
-          return { ok: false as const, message: (error as Error).message };
-        }
-        const receipt = await api.addLearningEvolveCases(workspaceId, bundleId, body, key);
-        return { ok: true as const, receipt };
-      }
-      default:
-        return { ok: false as const, message: 'Invalid learning action.' };
-    }
-    return { ok: true as const };
-  } catch (error) {
-    return failure(error, true);
-  }
-}

@@ -29,9 +29,9 @@ def private_write(path, text):
 def full_stack_definition(definition, directory, public_port, issuer):
     """Use project-local application builds and disposable routing/trust inputs."""
     services = definition['services']
-    if set(services) != {'postgres', 'service', 'console', 'proxy'}:
+    if set(services) != {'postgres', 'service', 'console', 'proxy', 'acclimate-executor', 'acclimate-runner'}:
         raise ValueError('Canonical complete deployment changed; review container qualification')
-    for name in ('postgres', 'service', 'console'):
+    for name in ('postgres', 'service', 'console', 'acclimate-executor', 'acclimate-runner'):
         if services[name].get('ports'):
             raise ValueError('Backend host ports are forbidden')
     for name in ('service', 'console'):
@@ -137,7 +137,7 @@ https://127.0.0.1 {
                     time.sleep(.2)
                 raise RuntimeError('Full-stack readiness timeout')
             started = True  # Cleanup also owns a partially created stack.
-            compose('up', '-d', '--build', '--wait')
+            compose('up', '-d', '--build', '--wait', 'proxy')
             ready()
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True, args=['--host-resolver-rules=MAP host.docker.internal 127.0.0.1'])

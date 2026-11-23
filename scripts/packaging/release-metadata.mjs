@@ -36,9 +36,7 @@ export async function releaseMetadata(root) {
       })),
       { package: 'acclimate-sdk', version: pythonVersion, kind: 'wheel', file: `acclimate_sdk-${pythonVersion}-py3-none-any.whl` },
     ],
-    starters: ['evaluation', 'python-evaluation', 'native-repository'].map(name => ({
-      name, file: `acclimate-${name}-starter-${version}.tgz`,
-    })),
+    starters: [{ name: 'native-repository', file: `acclimate-native-repository-starter-${version}.tgz` }],
     prerequisites: {
       node: '>=22.22.0', python: '>=3.11', platform: 'Linux or macOS (POSIX)',
       storage: 'Owner-only local persistent filesystem with flock, atomic rename and fsync',

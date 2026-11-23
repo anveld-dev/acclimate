@@ -1,7 +1,7 @@
 use super::{
     Tx,
     evaluations::{CaseReport, Report, case_passes, mean_score, passed_rollouts},
-    evolve, history, memory,
+    history, memory,
 };
 use crate::{
     AppState, BundlePayload,
@@ -29,6 +29,9 @@ pub enum ModelError {
     ContextTooLarge,
     Format(String),
 }
+
+// Scoped to a durable call so parser retries are charged to the same bundle.
+tokio::task_local! { static RESPONSE_TOKENS: std::cell::Cell<i64>; }
 
 pub type ModelFuture<'a> = Pin<Box<dyn Future<Output = Result<String, ModelError>> + Send + 'a>>;
 
@@ -88,7 +91,7 @@ impl Pins {
     pub(super) async fn load(tx: &mut Tx<'_>, id: Uuid) -> Result<Self, sqlx::Error> {
         sqlx::query_as(
             "SELECT id,project_id,bundle_id,number,parent_version_id,channel,channel_revision,
-            evolve_revision,memory_revision,setting,optimizer_model,optimizer_reasoning_effort,history_digest,memory_digest
+            task_revision AS evolve_revision,memory_revision,setting,optimizer_model,optimizer_reasoning_effort,history_digest,memory_digest
             FROM learning_rounds WHERE id=$1",
         )
         .bind(id)
@@ -156,6 +159,7 @@ pub(super) async fn version(
 
 #[derive(FromRow)]
 pub(super) struct EvolveEvaluation {
+    pub rollouts_per_task: i32,
     pub status: String,
     pub score: Option<f64>,
     pub version_id: Uuid,
@@ -169,7 +173,7 @@ pub(super) async fn evolve_evaluation(
     role: &str,
     id: Option<Uuid>,
 ) -> Result<Option<EvolveEvaluation>, sqlx::Error> {
-    sqlx::query_as("SELECT status,score,version_id,evolve_revision,report
+    sqlx::query_as("SELECT status,score,version_id,evolve_revision,report,learning_rollouts_per_task() AS rollouts_per_task
         FROM learning_evaluations WHERE round_id=$1 AND role=$2 AND split='evolve' AND ($3::uuid IS NULL OR id=$3)")
         .bind(round).bind(role).bind(id).fetch_optional(&mut **tx).await
 }
@@ -200,26 +204,26 @@ async fn render_feedback(
     round: &Pins,
     incumbent: &EvolveEvaluation,
 ) -> Result<Value, sqlx::Error> {
-    let cases = evolve::cases_at(
-        tx,
-        &round.project_id,
-        round.bundle_id,
-        round.evolve_revision,
-    )
-    .await?;
-    let inputs: BTreeMap<_, _> = cases
-        .into_iter()
-        .map(|case| (case.case_id, case.input))
-        .collect();
+    let tasks: BTreeMap<String,(Value,Value)> = sqlx::query_as::<_,(String,Value,Value)>("SELECT task_id,input,grader FROM learning_tasks
+        WHERE (project_id,bundle_id)=($1,$2) AND added_revision <= $3 AND (retired_revision IS NULL OR retired_revision > $3)")
+        .bind(&round.project_id).bind(round.bundle_id).bind(round.evolve_revision)
+        .fetch_all(&mut **tx).await?.into_iter().map(|(id,input,grader)| (id,(input,grader))).collect();
     let mut doc = incumbent.summary(true);
     doc["versionId"] = json!(incumbent.version_id);
     doc["evolveRevision"] = json!(incumbent.evolve_revision);
     for case in doc["cases"].as_array_mut().expect("case array") {
         let id = case["caseId"].as_str().expect("case id");
-        case["input"] = inputs
+        let (input, grader) = tasks
             .get(id)
-            .cloned()
             .ok_or_else(|| invariant("Missing pinned case"))?;
+        // An exact-match failure has no judge reasons. Without the expected answer the optimizer
+        // would know only that the case failed. This is the evolve split; held-out is never read here.
+        let failed =
+            case["passedRollouts"].as_u64() < case["rollouts"].as_array().map(|r| r.len() as u64);
+        if grader["type"] == "exact" && failed {
+            case["expected"] = grader["expected"].clone();
+        }
+        case["input"] = input.clone();
     }
     Ok(doc)
 }
@@ -279,6 +283,7 @@ async fn render(tx: &mut Tx<'_>, round: &Pins, kind: Kind) -> Result<Input, sqlx
                 &incumbent.report,
                 &evaluation.report,
                 &diagnosis.predicted,
+                evaluation.rollouts_per_task as usize,
             )
             .map_err(invariant)?;
             let mut evolve = evaluation.summary(true);
@@ -625,6 +630,7 @@ pub(super) async fn run_call(s: &AppState, key: CallKey) -> Result<(), sqlx::Err
     let target = round.target(&mut tx).await?;
     tx.commit().await?;
     let data = &input.data;
+    let mut tokens = 0;
     let result = if digest(data) != input_digest
         || round.history_digest.as_deref() != Some(&digest(&data["history"]))
         || round.memory_digest.as_deref() != Some(&digest(&data["improvementMemory"]))
@@ -636,7 +642,13 @@ pub(super) async fn run_call(s: &AppState, key: CallKey) -> Result<(), sqlx::Err
         } else if model.reasoning_effort() != round.optimizer_reasoning_effort.as_deref() {
             Err(ModelError::Provider("reasoning effort changed".into()))
         } else {
-            request(model.as_ref(), key.kind, &input, &target).await
+            RESPONSE_TOKENS
+                .scope(std::cell::Cell::new(0), async {
+                    let result = request(model.as_ref(), key.kind, &input, &target).await;
+                    tokens = RESPONSE_TOKENS.with(|t| t.get());
+                    result
+                })
+                .await
         }
     } else {
         Err(ModelError::Provider("optimizer unavailable".into()))
@@ -662,6 +674,7 @@ pub(super) async fn run_call(s: &AppState, key: CallKey) -> Result<(), sqlx::Err
             )
         }
     };
+    let mut tx = s.db.begin().await?;
     sqlx::query(
         "UPDATE learning_optimizer_calls SET status=$4,output=$5,error_code=$6,error=$7
         WHERE (round_id,kind,sample)=($1,$2,$3) AND status='running' AND attempts=$8",
@@ -674,9 +687,10 @@ pub(super) async fn run_call(s: &AppState, key: CallKey) -> Result<(), sqlx::Err
     .bind(code)
     .bind(error)
     .bind(attempt)
-    .execute(&s.db)
+    .execute(&mut *tx)
     .await?;
-    Ok(())
+    sqlx::query("INSERT INTO learning_usage(project_id,bundle_id,day,optimizer_tokens) VALUES($1,$2,(now() AT TIME ZONE 'UTC')::date,$3) ON CONFLICT(project_id,bundle_id,day) DO UPDATE SET optimizer_tokens=learning_usage.optimizer_tokens+excluded.optimizer_tokens").bind(round.project_id).bind(round.bundle_id).bind(tokens).execute(&mut *tx).await?;
+    tx.commit().await
 }
 
 #[cfg(test)]

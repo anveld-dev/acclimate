@@ -37,13 +37,18 @@ class DeploymentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             config = self.resolve(Path(temporary))
         services = config['services']
-        self.assertEqual(set(services), {'postgres','service','console','proxy'})
+        self.assertEqual(set(services), {'postgres','service','console','proxy','acclimate-executor','acclimate-runner'})
         self.assertEqual(services['postgres']['image'],'postgres:16-alpine')
         self.assertIn('postgres-data', config['volumes'])
+        # The runner service only builds the sandbox image; it exits at once and has no network.
+        runner = services.pop('acclimate-runner')
+        self.assertEqual(runner['network_mode'],'none')
+        self.assertFalse(runner.get('ports'))
         for name, service in services.items():
             self.assertEqual(service['restart'],'unless-stopped')
-            self.assertEqual(service['stop_grace_period'],'1m30s')
-            self.assertIn('healthcheck', service)
+            if name != 'acclimate-executor':
+                self.assertEqual(service['stop_grace_period'],'1m30s')
+                self.assertIn('healthcheck', service)
             if name != 'proxy': self.assertFalse(service.get('ports'))
         self.assertEqual({port['target'] for port in services['proxy']['ports']}, {80,443})
         self.assertEqual(services['service']['build']['dockerfile'],'deploy/Dockerfile')
@@ -53,6 +58,26 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(services['postgres']['environment']['POSTGRES_PASSWORD_FILE'],'/run/secrets/postgres_password')
         self.assertNotIn('POSTGRES_PASSWORD',services['postgres']['environment'])
         self.assertIn('/ready', ' '.join(services['service']['healthcheck']['test']))
+
+    def test_executor_listener_uses_only_the_executor_network(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            production = self.resolve(Path(temporary))
+            local = json.loads(subprocess.check_output([
+                'docker', 'compose', '--env-file', os.devnull, '-f', str(ROOT/'compose.local.yaml'),
+                'config', '--no-env-resolution', '--format', 'json',
+            ]))
+        for config, owner in ((production, 'service'), (local, 'proxy')):
+            services = config['services']
+            hostname, port = services['service']['environment']['ACCLIMATE_INTERNAL_BIND'].split(':')
+            self.assertIn(hostname, services[owner]['networks']['executor']['aliases'])
+            self.assertEqual({name for name, s in services.items() if 'executor' in s.get('networks', {})},
+                             {owner, 'acclimate-executor'})
+            self.assertTrue(config['networks']['executor']['internal'])
+            worker = services['acclimate-executor']
+            self.assertEqual(worker['environment']['ACCLIMATE_EXECUTOR_SERVICE'], f'http://{owner}:{port}')
+            for service in services.values():
+                self.assertNotIn(int(port), [p['target'] for p in service.get('ports', [])])
+        self.assertEqual(local['services']['service']['network_mode'], 'service:proxy')
 
     def test_manifest_missing_config_is_error_without_reading_dotenv(self):
         # Compose may validate services in any order. Remove one required input
@@ -109,7 +134,9 @@ class DeploymentTests(unittest.TestCase):
             if line.startswith('FROM '): stage+=1
             if stage==1 and line.startswith('COPY '):
                 for pattern in shlex.split(line)[1:-1]:
-                    sources.extend(ROOT.glob(pattern))
+                    matches = list(ROOT.glob(pattern))
+                    self.assertTrue(matches, "Missing console builder COPY source: " + pattern)
+                    sources.extend(matches)
         def copied(path):
             return any(path==source or source.is_dir() and source in path.parents for source in sources)
         pending=list((ROOT/'packages').glob('*/src/**/*.ts'))+list((ROOT/'apps/console/src').rglob('*.ts'))+list((ROOT/'apps/console/src').rglob('*.tsx'))+[ROOT/'apps/console/vite.config.ts', ROOT/'scripts/build-packages.mjs', ROOT/'python/pyproject.toml']
@@ -157,8 +184,7 @@ class DeploymentTests(unittest.TestCase):
         # The context's positive allowlist must admit the new cross-root files;
         # its final secret exclusions still apply independently.
         ignore=(ROOT/'.dockerignore').read_text().splitlines()
-        for name in ('examples/','examples/evaluation/','examples/evaluation/descriptor.ts','examples/evaluation/adapter.ts',
-                     'scripts/', 'scripts/build-packages.mjs', 'scripts/packaging/',
+        for name in ('scripts/', 'scripts/build-packages.mjs', 'scripts/packaging/',
                      'scripts/packaging/release-metadata.mjs', 'scripts/packaging/release-metadata.json',
                      'scripts/packaging/build-receipt.mjs', 'python/', 'python/pyproject.toml'):
             self.assertIn('!'+name,ignore)

@@ -27,13 +27,15 @@ Use `http://service:3000` for the private console-to-service URL in Compose. Set
 
 ## Build and start
 
-With the file paths and hostnames set in the deployment shell, validate, build, and start the stack from the checkout.
+With the file paths and hostnames set in the deployment shell, validate, build, and start the application stack from the checkout. Name the services: the rollout executor starts later, after its credential exists.
 
 ```sh
 docker compose config --quiet
 docker compose build service console
-docker compose up -d --wait
+docker compose up -d --wait postgres service console proxy
 ```
+
+To run learning, create the executor credential, build the runner and executor images, configure gVisor and start the executor, in that order. [Enable learning](/docs/operate/self-host#enable-learning)
 
 Caddy obtains certificates and forwards the canonical public console host. Open the public `CONSOLE_ORIGIN` to sign in. A verified deployment operator can create a workspace, or explicitly adopt an existing memberless workspace by exact ID and reason. Workspace administrators grant membership for subsequent access.
 

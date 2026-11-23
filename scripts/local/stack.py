@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shlex
 import shutil
 import socket
 import ssl
@@ -82,7 +83,7 @@ ADMIN = 'bootstrap-admin'
 OPERATOR = 'operator@acclimate.invalid'
 CLIENT = 'acclimate-console'
 PROJECT = 'local-demo'
-PRINCIPAL = 'local-evaluator'
+PRINCIPAL = 'local-runtime'
 ADOPTION_REASON = 'local stack bootstrap'
 EXAMPLE_BUNDLE = 'Example agent'
 EXAMPLE_CHANNEL = 'stable'
@@ -95,7 +96,13 @@ RELEASE_IMAGES = dict(service='ghcr.io/anveld-dev/acclimate-service',
                       console='ghcr.io/anveld-dev/acclimate-console')
 SECRET_NAMES = (
     'postgres', 'keycloak_postgres', 'keycloak_admin', 'operator',
-    'oidc_client', 'login', 'console', 'evaluator',
+    'oidc_client', 'login', 'console', 'runtime', 'provider_key',
+)
+# Learning needs a model endpoint for the optimizer, and an allowlist when the workspace
+# provider is a local proxy. Both come from the shell that runs local:up and are then kept.
+LEARNING_SETTINGS = (
+    'ACCLIMATE_MODEL_ENDPOINT', 'ACCLIMATE_MODEL_TOKEN', 'ACCLIMATE_MODEL',
+    'ACCLIMATE_MODEL_REASONING_EFFORT', 'ACCLIMATE_PROVIDER_HTTP_HOSTS',
 )
 
 
@@ -160,6 +167,14 @@ def credentials(state):
         values = {name: secrets.token_hex(32) for name in SECRET_NAMES}
     else:
         values = json.loads(saved)
+    # Preserve the runtime credential in existing local installations.
+    if isinstance(values, dict) and 'evaluator' in values and 'runtime' not in values:
+        values['runtime'] = values.pop('evaluator')
+        saved = None
+    # Stacks created before learning ran on the service have no provider encryption key.
+    if isinstance(values, dict) and 'provider_key' not in values:
+        values['provider_key'] = secrets.token_hex(32)
+        saved = None
     if (not isinstance(values, dict) or set(values) != set(SECRET_NAMES)
             or any(not isinstance(value, str) or not re.fullmatch(r'[0-9a-f]{64}', value)
                    for value in values.values())
@@ -295,20 +310,37 @@ def write_infrastructure(state, values, ports=DEFAULT):
     ))
 
 
-def write_application(state, values, subject, ports=DEFAULT):
+def learning_settings(state, environ):
+    """Optional learning settings from the shell, or the ones saved by an earlier start."""
+    saved = existing_file(state / 'service.env', 0o600)
+    kept = dict(line.split('=', 1) for line in saved.decode().splitlines()) if saved else {}
+    chosen = {}
+    for name in LEARNING_SETTINGS:
+        # An exported empty value clears the saved one; an unset name keeps it.
+        value = environ[name] if name in environ else kept.get(name)
+        if value:
+            if any(character in value for character in '\r\n'):
+                raise ValueError(f'{name} must be a single line')
+            chosen[name] = value
+    return chosen
+
+
+def write_application(state, values, subject, ports=DEFAULT, environ=os.environ):
     write_env(state / 'service.env', dict(
         DATABASE_URL=f"postgresql://acclimate:{values['postgres']}@postgres:5432/acclimate",
         ACCLIMATE_OIDC_ISSUER=ports.issuer,
         ACCLIMATE_LOGIN_TOKEN=values['login'],
         ACCLIMATE_CONSOLE_TOKEN=values['console'],
         ACCLIMATE_OPERATORS=json.dumps([dict(issuer=ports.issuer, subject=str(UUID(subject)))]),
-        ACCLIMATE_AUTH=json.dumps([dict(token=values['evaluator'], principalId=PRINCIPAL,
+        ACCLIMATE_AUTH=json.dumps([dict(token=values['runtime'], principalId=PRINCIPAL,
                                         workspaceId=PROJECT, rights=['read', 'write'])]),
         ACCLIMATE_CONSOLE_ORIGIN=ports.console,
         ACCLIMATE_SMTP_HOST='mailpit',
         ACCLIMATE_SMTP_PORT=1025,
         ACCLIMATE_SMTP_FROM='Acclimate <noreply@acclimate.local>',
         ACCLIMATE_SMTP_TLS='none',
+        ACCLIMATE_PROVIDER_ENCRYPTION_KEY=values['provider_key'],
+        **learning_settings(state, environ),
     ))
     write_env(state / 'console.env', dict(
         CONSOLE_ORIGIN=ports.console,
@@ -322,9 +354,9 @@ def write_application(state, values, subject, ports=DEFAULT):
         CONSOLE_ALLOW_EDITS='true',
     ))
     config = dict(schemaVersion=1, serviceUrl=ports.api, workspaceId=PROJECT,
-                  evaluatorPrincipalId=PRINCIPAL, evaluatorToken=values['evaluator'],
-                  journalRoot=str(state / 'evaluator-journal'))
-    write_file(state / 'evaluator.json', (json.dumps(config, indent=2) + '\n').encode())
+                  scope=PRINCIPAL, token=values['runtime'],
+                  cacheDir=str(state / 'pull-cache'))
+    write_file(state / 'pull.json', (json.dumps(config, indent=2) + '\n').encode())
 
 
 def release_version(root):
@@ -345,12 +377,17 @@ def image_environment(root, source):
                 ACCLIMATE_LOCAL_PULL_POLICY='build')
 
 
-def compose(root, *args, capture=False, ports=DEFAULT, source='build'):
+def compose_command(root):
+    return ['docker', 'compose', '--env-file', os.devnull, '--project-name',
+            f'acclimate-local-{project_suffix(root)}', '-f', 'compose.local.yaml']
+
+
+def compose(root, *args, capture=False, ports=DEFAULT, source='build', environment=None):
     return subprocess.run(
-        ['docker', 'compose', '--env-file', os.devnull, '--project-name',
-         f'acclimate-local-{project_suffix(root)}', '-f', 'compose.local.yaml', *args],
+        [*compose_command(root), *args],
         cwd=root, check=True, stdout=subprocess.PIPE if capture else None,
-        env={**os.environ, **ports.environment(), **image_environment(root, source)},
+        env={**os.environ, **ports.environment(), **image_environment(root, source),
+             **(environment or {})},
     ).stdout
 
 
@@ -557,7 +594,7 @@ def write_client_files(state, ports, certificate, bundle):
     merged = system.rstrip(b'\n') + b'\n' + certificate if system else certificate
     write_file(state / 'ca-bundle.pem', merged, mode=0o644)
     lines = {
-        'EVALUATOR_CONFIG': state / 'evaluator.json',
+        'ACCLIMATE_PULL_CONFIG': state / 'pull.json',
         'NODE_EXTRA_CA_CERTS': state / 'root.crt',
         'SSL_CERT_FILE': state / 'ca-bundle.pem',
         'ACCLIMATE_API': ports.api,
@@ -567,6 +604,36 @@ def write_client_files(state, ports, certificate, bundle):
     text = ''.join(f"export {key}='{value}'\n" for key, value in lines.items())
     write_file(state / 'env.sh', text.encode(), mode=0o600)
     return text, source
+
+
+def start_executor(root, state, ports, source, environ=os.environ):
+    """Give the executor a credential on first start, then run it beside the service."""
+    path = state / 'executor-token'
+    if existing_file(path, 0o600) is None:
+        created = compose(root, 'exec', '-T', 'service', '/usr/local/bin/acclimate-service',
+                          '--create-executor-token', capture=True, ports=ports, source=source)
+        write_file(path, json.loads(created)['token'].encode() + b'\n')
+    # The executor applies the same provider allowlist as the service.
+    hosts = learning_settings(state, environ).get('ACCLIMATE_PROVIDER_HTTP_HOSTS', '')
+    # The executor has no released image. A source start rebuilds it with the checkout.
+    rebuild = ['--build'] if source == 'build' else []
+    compose(root, 'up', '--detach', *rebuild, 'acclimate-executor', ports=ports, source=source,
+            environment=dict(ACCLIMATE_PROVIDER_HTTP_HOSTS=hosts))
+    for _ in range(30):
+        if compose(root, 'ps', '--status', 'running', '--quiet', 'acclimate-executor',
+                   capture=True, ports=ports, source=source).strip():
+            return
+        time.sleep(1)
+    logs = shlex.join([*compose_command(root), 'logs', 'acclimate-executor'])
+    raise ValueError(f'The executor did not stay running. To see why, run {logs} in {root}')
+
+
+def docker_running():
+    try:
+        return subprocess.run(['docker', 'info'], stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, check=False).returncode == 0
+    except OSError:
+        return False
 
 
 def stack_running(root):
@@ -613,6 +680,8 @@ def up(root, state, requested_source=None):
     with opener.open(ports.console + '/auth/login', timeout=15) as response:
         if not response.geturl().startswith(ports.issuer + '/protocol/openid-connect/auth?'):
             raise ValueError('The console did not redirect sign-in to the local Keycloak issuer.')
+    print('Starting the executor. Its first build takes a few minutes.', flush=True)
+    start_executor(root, state, ports, source)
     save_endpoints(state, ports)
     write_file(state / 'images.json', (json.dumps(dict(source=source)) + '\n').encode())
 
@@ -629,8 +698,15 @@ def up(root, state, requested_source=None):
     env, ca_source = write_client_files(state, ports, certificate, workspace.get('bundle'))
 
     print(f'\nConsole       {ports.console}\nLogin         {OPERATOR}\nAPI           {ports.api}')
-    print(f'Mailpit       {ports.mailpit}\nEvaluator     {state / "evaluator.json"}\n'
+    print(f'Mailpit       {ports.mailpit}\nPull config   {state / "pull.json"}\n'
           f'Local CA      {ca}')
+    learning = learning_settings(state, os.environ)
+    if 'ACCLIMATE_MODEL_ENDPOINT' in learning:
+        print(f'Optimizer     {learning.get("ACCLIMATE_MODEL", "model not set")} at '
+              f'{learning["ACCLIMATE_MODEL_ENDPOINT"]}')
+    else:
+        print('Optimizer     Not configured. To run learning rounds, set ACCLIMATE_MODEL_ENDPOINT, '
+              'ACCLIMATE_MODEL_TOKEN and ACCLIMATE_MODEL, then run npm run local:up again.')
     if workspace['adopted']:
         print(f'Workspace     {PROJECT}, adopted for {OPERATOR} ("{ADOPTION_REASON}")')
         if workspace.get('bundle'):
@@ -681,6 +757,9 @@ def main(argv=None):
     if arguments.source and command != 'up':
         parser.error('--build and --release apply only to up')
     try:
+        if not docker_running():
+            raise SystemExit(f'Local stack {command} failed: Docker is not running. '
+                             'Start Docker Desktop or the Docker daemon and run the command again.')
         with locked_state(ROOT) as state:
             if command == 'up':
                 up(ROOT, state, arguments.source)

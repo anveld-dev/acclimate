@@ -12,12 +12,8 @@ import type {
   LearningRoundSummary,
 } from '@acclimate/sdk';
 import { BundleLearning } from '../src/components/bundle-learning';
-import { activeRoundStates, enrollmentError } from '../src/lib/learning';
-import {
-  readLearningState,
-  runLearningCommand,
-  type LearningState,
-} from '../src/server/learning-core';
+import { activeRoundStates } from '../src/lib/learning';
+import { readLearningState, type LearningState } from '../src/server/learning-core';
 import { consoleEnvironment } from './console-fixture';
 
 const scope = { workspaceId: 'acme', bundleId: '00000000-0000-4000-8000-000000000001' };
@@ -26,14 +22,22 @@ const path = base + '/learning';
 const env = { ...consoleEnvironment, CONSOLE_ALLOW_EDITS: 'true' };
 const body: LearningLoopRequest = {
   channel: 'canary',
-  appPrincipalId: 'machine:app',
-  setting: { domain: 'support', benchmark: 'refunds', policyModel: 'policy' },
-  heldOut: { digest: 'sha256:' + 'a'.repeat(64), cases: 2 },
+  taskModel: 'task',
+  judgeModel: 'judge',
+  setting: { domain: 'support', benchmark: 'refunds' },
 };
 const timestamp = '2026-11-20T12:00:00Z';
 const round: LearningRoundSummary = {
   id: '00000000-0000-4000-8000-000000000002',
   number: 1,
+  diff: null,
+  diagnosis: null,
+  evolveScore: 0.9,
+  trigger: 'start',
+  incumbentReused: false,
+  taskModel: 'task',
+  judgeModel: 'judge',
+  taskRevision: 2,
   state: 'completed',
   decision: 'adopted',
   reason: null,
@@ -51,8 +55,13 @@ const loop: LearningLoop = {
   ...body,
   status: 'running',
   pauseReason: null,
-  evolveRevision: 2,
-  liveCases: 3,
+  taskRevision: 2,
+  setting: { ...body.setting, policyModel: body.taskModel },
+  admittedEvolve: 0,
+  admittedHeldOut: 0,
+  maxRoundsPerDay: 4,
+  waiting: null,
+  alert: null,
   memoryRevision: 0,
   nextRound: 2,
   failedRounds: 0,
@@ -67,10 +76,13 @@ const empty: Extract<LearningState, { ok: true }> = {
   bundleName: 'Support',
   loop: null,
   channels: ['canary'],
-  principals: [],
+
   rounds: [],
   activeEvaluation: null,
-  caseSnapshot: null,
+  history: [],
+  blocked: [],
+  channelHead: null,
+  progress: null,
   canManage: true,
   canEditCases: true,
   detail: null,
@@ -92,32 +104,17 @@ function bundleFixture(url: URL, role = 'admin'): Response | undefined {
   if (url.pathname === '/v1/workspaces/acme/bundles')
     return response({ items: [{ id: scope.bundleId, name: 'Support' }] });
   if (url.pathname === base + '/channels') return response({ items: [{ name: 'canary' }] });
-  if (url.pathname === '/v1/workspaces/acme/machine-tokens')
-    return response({
-      items: [
-        { name: 'App', principalId: 'machine:app', status: 'active', rights: ['write'] },
-        { name: 'Read only', principalId: 'machine:read', status: 'active', rights: ['read'] },
-        { name: 'Expired', principalId: 'machine:old', status: 'expired', rights: ['evaluate'] },
-      ],
-    });
 }
 
 test('enrollment and recovery render for the appropriate states and roles', () => {
-  assert.match(markup(empty), /Enroll loop/);
-  assert.match(markup(empty), /acclimate-learning held-out/);
-  assert.match(markup({ ...empty, channels: [] }), /Release a version on a channel/);
-  assert.doesNotMatch(markup({ ...empty, canManage: false }), /Enroll loop/);
-  assert.match(markup({ ok: false, message: 'Access denied' }), /role="alert"[^>]*>Access denied/);
-  assert.match(markup({ ...empty, loop }), />Pause<.*>Stop</);
+  assert.match(markup(empty), /Save learning settings/);
+  assert.match(markup({ ...empty, loop }), /Import material/);
   assert.match(
-    markup({ ...empty, loop: { ...loop, status: 'paused', pauseReason: 'operator' } }),
-    />Resume<.*operator|operator.*>Resume</,
+    markup({ ...empty, loop: { ...loop, status: 'paused' } }),
+    /Start needs 20 more evolve and 20 more held-out/,
   );
-  assert.match(markup({ ...empty, loop: { ...loop, status: 'stopped' } }), />Restart loop</);
-  assert.doesNotMatch(
-    markup({ ...empty, canManage: false, canEditCases: false, loop }),
-    />(Pause|Resume|Stop|Add case|Retire case)</,
-  );
+  assert.doesNotMatch(markup({ ...empty, canManage: false }), /Save learning settings/);
+  assert.match(markup({ ok: false, message: 'Access denied' }), /role="alert"/);
 });
 
 test('renders round states, evaluation progress and decreasing measured scores', () => {
@@ -164,7 +161,18 @@ test('renders round states, evaluation progress and decreasing measured scores',
         ...round,
         id: 'third',
         number: 3,
-        heldOutError: 'Monitoring timed out',
+        heldOutError: 'held-out-evaluation-failed',
+        heldOutScore: null,
+        state: 'completed',
+      },
+      {
+        ...round,
+        id: 'kept-unchecked',
+        number: 5,
+        decision: 'kept',
+        adoptedSample: null,
+        adoptedVersionId: null,
+        heldOutError: 'held-out-evaluation-failed',
         heldOutScore: null,
         state: 'completed',
       },
@@ -175,24 +183,22 @@ test('renders round states, evaluation progress and decreasing measured scores',
         decision: 'kept',
         reason: 'no-candidates',
         incumbentScore: 0.6,
+        evolveScore: 0.6,
         heldOutScore: 0,
       },
       round,
     ],
-    caseSnapshot: {
-      roundNumber: 1,
-      revision: 1,
-      cases: [{ caseId: 'evolve-01', meanScore: 0.6, passedRollouts: 3 }],
-    },
   });
-  assert.match(html, /Round 1 · Incumbent evolve score · 0\.9/);
-  assert.match(html, /Round 2 · Incumbent evolve score · 0\.6/);
+  assert.match(html, /Round 1 · Evolve score · 0\.9/);
+  assert.match(html, /Round 2 · Evolve score · 0\.6/);
   assert.match(html, /Round 2 · Held-out score \(monitoring only\) · 0/);
-  assert.match(html, /Monitoring timed out/);
+  assert.match(html, /This version was released, but the regression check could not run\./);
+  assert.match(html, /The regression check on held-out tasks could not run\./);
+  assert.doesNotMatch(html, /held-out-evaluation-failed/);
   assert.match(html, />Failed<\/td>/);
   assert.match(html, />Stopped<\/td>/);
   assert.match(html, /adopted.*kept|kept.*adopted/);
-  assert.match(html, /evolve-01/);
+  assert.match(html, /Small held-out sets/);
   assert.doesNotMatch(html, />(Approve|Review|Rollout)</);
 });
 
@@ -203,7 +209,7 @@ test('distinguishes an unenrolled bundle from access and service errors', async 
     return bundleFixture(url) ?? response({}, 500);
   };
   const state = await readLearningState(env, scope, fetcher);
-  assert.deepEqual(state, { ...empty, principals: [{ name: 'App', principalId: 'machine:app' }] });
+  assert.deepEqual(state, empty);
   for (const status of [403, 503]) {
     const denied = await readLearningState(
       env,
@@ -268,106 +274,7 @@ test('round pagination uses before and round reads omit trace requests and held-
     [path + '/rounds?limit=100', path + '/rounds?limit=100&before=1', path + '/rounds/' + round.id],
   );
   assert.equal(state.activeEvaluation?.status, 'running');
-  assert.deepEqual(state.caseSnapshot?.cases, [
-    { caseId: 'case-a', passedRollouts: 3, meanScore: 0.6 },
-  ]);
   assert.doesNotMatch(JSON.stringify(state), /sentinel/);
-});
-
-test('enrollment, pause, resume, stop and setup cases send their exact service shapes', async () => {
-  const seen: { method?: string; path: string; key: string | null; body?: string | null }[] = [];
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(String(input));
-    const fixture = bundleFixture(url);
-    if (fixture) return fixture;
-    const headers = new Headers(init?.headers);
-    const isCase = url.pathname.endsWith('/evolve-cases');
-    assert.equal(headers.get('x-acclimate-session'), env.CONSOLE_SESSION_TOKEN);
-    assert.equal(headers.get('authorization'), `Bearer ${env.CONSOLE_SERVICE_TOKEN}`);
-    seen.push({
-      path: url.pathname,
-      method: init?.method,
-      key: headers.get('idempotency-key'),
-      body: init?.body as string | undefined,
-    });
-    return response(isCase ? { evolveRevision: 3, added: 1, retired: 0, liveCases: 4 } : loop);
-  };
-  assert.deepEqual(await runLearningCommand(env, scope, { action: 'enroll', body }, fetcher), {
-    ok: true,
-  });
-  for (const action of ['pause', 'resume', 'stop'] as const)
-    assert.deepEqual(await runLearningCommand(env, scope, { action }, fetcher), { ok: true });
-  const added = await runLearningCommand(
-    env,
-    scope,
-    {
-      action: 'addCase',
-      caseId: 'setup-1',
-      input: '{"key":true}',
-      expected: 'null',
-    },
-    fetcher,
-  );
-  assert.deepEqual(added, {
-    ok: true,
-    receipt: { evolveRevision: 3, added: 1, retired: 0, liveCases: 4 },
-  });
-  assert.equal(
-    (
-      await runLearningCommand(
-        env,
-        scope,
-        { action: 'retireCase', caseId: 'outcome:corrected' },
-        fetcher,
-      )
-    ).ok,
-    true,
-  );
-  assert.deepEqual(
-    seen.map((item) => [item.method, item.path, item.body]),
-    [
-      ['PUT', path, JSON.stringify(body)],
-      ['POST', path + '/pause', undefined],
-      ['POST', path + '/resume', undefined],
-      ['POST', path + '/stop', undefined],
-      [
-        'POST',
-        path + '/evolve-cases',
-        '{"cases":[{"caseId":"setup-1","input":{"key":true},"expected":null}]}',
-      ],
-      ['POST', path + '/evolve-cases', '{"retire":["outcome:corrected"]}'],
-    ],
-  );
-  assert.equal(new Set(seen.map(({ key }) => key)).size, 6);
-  for (const { key } of seen) assert.match(key ?? '', /^[a-f0-9-]{36}$/);
-});
-
-test('rejects invalid enrollment before network and preserves conflict guidance', async () => {
-  for (const invalid of [
-    { ...body, appPrincipalId: '' },
-    { ...body, appPrincipalId: 'é'.repeat(513) },
-    { ...body, setting: { ...body.setting, domain: 'é'.repeat(129) } },
-    { ...body, setting: { ...body.setting, domain: 'a\nb' } },
-    { ...body, heldOut: { ...body.heldOut, cases: 0 } },
-  ]) {
-    assert.ok(enrollmentError(invalid));
-    const result = await runLearningCommand(
-      env,
-      scope,
-      { action: 'enroll', body: invalid },
-      async () => {
-        assert.fail('invalid enrollment must not fetch');
-      },
-    );
-    assert.equal(result.ok, false);
-  }
-  const result = await runLearningCommand(env, scope, { action: 'resume' }, async () =>
-    response(
-      { error: { code: 'learning_conflict', message: 'Use enrollment to restart the loop' } },
-      409,
-    ),
-  );
-  assert.deepEqual(result, { ok: false, message: 'Use enrollment to restart the loop' });
 });
 
 const changes = {
@@ -395,8 +302,8 @@ const detailRound: LearningRound = {
   memoryRevision: 0,
   memoryDigest: 'memory-digest',
   historyDigest: null,
-  setting: body.setting,
-  heldOut: body.heldOut,
+  setting: loop.setting,
+  optimizerReasoningEffort: null,
   optimizerModel: 'optimizer',
   adoptedVersionId: candidate.versionId,
   selection: {
@@ -433,7 +340,7 @@ const detailRound: LearningRound = {
   ],
   evaluations: [],
 };
-const provenance = { ...body.setting, round: 1 };
+const provenance = { ...loop.setting, round: 1 };
 const memory: LearningMemory = {
   currentRevision: 2,
   memoryRevision: 1,
@@ -477,7 +384,6 @@ const memory: LearningMemory = {
         ...provenance,
         optimizerModel: 'optimizer',
         evolveRevision: 2,
-        heldOutDigest: body.heldOut.digest,
       },
     },
   ],
@@ -501,7 +407,7 @@ test('round detail and historical memory load with the session and render for ed
       if (url.pathname === path + '/memory') return response(memory);
       return bundleFixture(url, 'editor') ?? response({}, 500);
     },
-    { round: round.id, memory: '1' },
+    { round: String(round.number), memory: '1' },
   );
   assert.ok(state.ok);
   assert.equal(state.canManage, false);
@@ -513,7 +419,7 @@ test('round detail and historical memory load with the session and render for ed
     'Sample 2 · Adopted',
     'Adopted sample 2',
     'Fixed the failures',
-    'scanner-rejected',
+    'The proposal failed the content scan.',
     'email · rationale',
     'Agent stops early',
     'Targets the diagnosis',
@@ -528,8 +434,7 @@ test('round detail and historical memory load with the session and render for ed
     '9 / 10',
     'Optimizer model optimizer · evolve revision 2',
     'Revision 1 of 2',
-    'Add an evolve case',
-    'Retire an evolve case',
+    'Export held-out tasks',
   ])
     assert.ok(html.includes(label), label);
   assert.doesNotMatch(html, /appToken|>Pause</);
@@ -544,6 +449,9 @@ test('renders keep and empty candidate and memory states', () => {
       parentFiles: null,
       round: {
         ...detailRound,
+        reverted: false,
+        confirmedParentScore: null,
+        confirmedAdoptionScore: null,
         candidates: [],
         decision: 'kept',
         reason: 'no-survivors',
@@ -556,7 +464,7 @@ test('renders keep and empty candidate and memory states', () => {
     },
   });
   assert.match(html, /No candidates recorded/);
-  assert.match(html, /Kept incumbent.*no-survivors/);
+  assert.match(html, /Kept incumbent.*No candidate passed screening/);
   assert.match(html, /No problems recorded/);
 });
 
@@ -604,4 +512,51 @@ test('whole-file changes use verified incumbent content for replacements and del
   assert.match(html, /- Original instructions/);
   assert.match(html, /\+ Replacement instructions/);
   assert.match(html, /- Removed note/);
+});
+
+test('rollback is offered only on the live version and monitoring leads after start', () => {
+  const html = markup({
+    ...empty,
+    loop,
+    rounds: [round, { ...round, id: 'older', adoptedVersionId: 'old' }],
+    channelHead: round.adoptedVersionId,
+  });
+  assert.equal((html.match(/>Roll back</g) ?? []).length, 1);
+  assert.ok(html.indexOf('Scores by round') < html.indexOf('Learning setup'));
+  assert.doesNotMatch(
+    markup({ ...empty, loop, rounds: [round], channelHead: 'external' }),
+    />Roll back</,
+  );
+});
+
+test('running controls, waiting instructions, rollout progress and restores use service state', () => {
+  const active = {
+    ...loop,
+    activeRound: round,
+    waiting: 'no-executor',
+    alert: { roundId: round.id, score: 0.5, previousScore: 0.8, flippedTasks: 4, reverted: true },
+  };
+  const html = markup({
+    ...empty,
+    loop: active,
+    rounds: [round],
+    progress: { scored: 17, total: 100 },
+    history: [{ time: timestamp, actor: 'person@example', roundId: round.id }],
+    blocked: [
+      { digest: 'removed-digest', createdAt: timestamp, removedBy: 'operator', note: 'bad answer' },
+    ],
+  });
+  for (const message of [
+    'Stop learning',
+    'start an executor',
+    '17 of 100 rollouts scored',
+    'restored the previous version',
+    'person@example',
+    'removed-digest',
+    'Unblock version',
+  ])
+    assert.ok(html.includes(message), message);
+  const stopped = markup({ ...empty, loop: { ...loop, status: 'stopped', waiting: null } });
+  assert.doesNotMatch(stopped, />Stop learning</);
+  assert.match(stopped, /automatically, without approval/);
 });

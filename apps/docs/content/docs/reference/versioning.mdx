@@ -50,7 +50,7 @@ JSON fields are camelCase on the wire and in both SDKs' request and response obj
 
 ## Document schema versions
 
-Several JSON documents carry a `schemaVersion` field: bundle payloads and evaluation manifests. All are version `1` today.
+Several JSON documents carry a `schemaVersion` field: bundle payloads, improvement memory and the `acclimate pull` config. All are version `1` today.
 
 - A document's `schemaVersion` changes only when the document changes incompatibly. Additive fields keep the number.
 - Readers reject a `schemaVersion` they don't know rather than guessing.

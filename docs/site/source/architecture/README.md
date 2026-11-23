@@ -7,4 +7,4 @@ Acclimate is a PostgreSQL-backed Rust service, an authenticated TanStack Start c
 - [SDK and native plugins](sdk.md) covers client preparation, caching and native integration.
 - [Run locally](../development.md) covers setup and verification.
 
-The [learning contract](../../contracts/learning.md) describes the shipped loop, and [evaluator operations](../evaluator-operations.md) covers setup. The [self-improvement memory design](self-improvement-memory/README.md) records the loop design and experiment.
+The [central learning architecture](central-learning/README.md) covers tasks, executor isolation and release decisions. The [experiment plan](../../examples/self-improvement-memory/experiment.md) describes the parked W1 workload.

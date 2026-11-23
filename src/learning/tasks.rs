@@ -79,18 +79,8 @@ impl Task {
         }
     }
 }
-fn validate(t: &Task) -> ApiResult<()> {
-    let ok = match t.grader["type"].as_str() {
-        Some("exact") => t.grader.get("expected").is_some(),
-        Some("criteria") => t.grader["criteria"].as_array().is_some_and(|cs| {
-            (1..=10).contains(&cs.len())
-                && cs
-                    .iter()
-                    .all(|c| c.as_str().is_some_and(|s| !s.trim().is_empty()))
-        }),
-        _ => false,
-    };
-    if !ok
+pub(super) fn validate(t: &Task) -> ApiResult<()> {
+    if !crate::executor::trials::valid_grader(&t.grader)
         || t.input.to_string().len() > 65536
         || t.grader
             .get("expected")
@@ -364,7 +354,7 @@ async fn change(
     Err(missing("Task not found"))
 }
 /// Compare the checked revision so a stale grade cannot admit edited material.
-#[allow(dead_code, clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn set_admission(
     tx: &mut Tx<'_>,
     project: &str,
@@ -385,16 +375,22 @@ pub(crate) async fn set_admission(
     } else {
         ""
     };
-    Ok(sqlx::query(&format!("UPDATE {} SET admission=$5,admission_reason=$6 WHERE (project_id,bundle_id,task_id,added_revision)=($1,$2,$3,$4) AND retired_revision IS NULL{evidence}",split.table()))
-        .bind(project)
-        .bind(bundle)
-        .bind(id)
-        .bind(revision)
-        .bind(admission)
-        .bind(reason)
-        .execute(&mut **tx)
-        .await
-        .map_err(db)?.rows_affected()==1)
+    require_loop(tx, project, bundle, true).await?;
+    let previous: Option<String> = sqlx::query_scalar(&format!("SELECT admission FROM {} WHERE (project_id,bundle_id,task_id,added_revision)=($1,$2,$3,$4) AND retired_revision IS NULL AND $5::text IS NOT NULL{evidence} FOR UPDATE",split.table()))
+        .bind(project).bind(bundle).bind(id).bind(revision).bind(admission)
+        .fetch_optional(&mut **tx).await.map_err(db)?;
+    let Some(previous) = previous else {
+        return Ok(false);
+    };
+    let stamp = if previous != admission && (previous == "admitted" || admission == "admitted") {
+        Some(self::revision(tx, project, bundle).await?)
+    } else {
+        None
+    };
+    sqlx::query(&format!("UPDATE {} SET admission=$5,admission_reason=$6,admission_revision=coalesce($7,admission_revision) WHERE (project_id,bundle_id,task_id,added_revision)=($1,$2,$3,$4)",split.table()))
+        .bind(project).bind(bundle).bind(id).bind(revision).bind(admission).bind(reason).bind(stamp)
+        .execute(&mut **tx).await.map_err(db)?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -414,11 +410,7 @@ mod tests {
     #[test]
     fn optimizer_has_no_held_out_task_query() {
         fn inspect(path: &std::path::Path) {
-            if path.is_dir() {
-                for entry in std::fs::read_dir(path).unwrap() {
-                    inspect(&entry.unwrap().path());
-                }
-            } else if path.extension().is_some_and(|s| s == "rs") {
+            if path.extension().is_some_and(|s| s == "rs") {
                 let source = std::fs::read_to_string(path).unwrap().to_lowercase();
                 for table in ["learning_held_out_tasks", "learning_round_held_out_tasks"] {
                     assert!(
@@ -429,15 +421,24 @@ mod tests {
                 }
             }
         }
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/learning");
-        for entry in std::fs::read_dir(dir).unwrap() {
-            let entry = entry.unwrap();
-            if ["optimizer", "worker", "history", "memory", "proposal"]
-                .iter()
-                .any(|prefix| entry.file_name().to_string_lossy().starts_with(prefix))
-            {
-                inspect(&entry.path());
+        fn walk(root: &std::path::Path, path: &std::path::Path) {
+            if path.is_dir() {
+                for entry in std::fs::read_dir(path).unwrap() {
+                    walk(root, &entry.unwrap().path())
+                }
+            } else if !matches!(
+                path.strip_prefix(root).unwrap().to_str(),
+                Some(
+                    "executor/queue.rs"
+                        | "learning/controls.rs"
+                        | "learning/tasks.rs"
+                        | "learning/imports.rs"
+                )
+            ) {
+                inspect(path)
             }
         }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        walk(&root, &root);
     }
 }

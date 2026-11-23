@@ -37,6 +37,22 @@ pub(super) async fn act(
     .await
 }
 
+pub(super) async fn verify_provider(app: &axum::Router, token: &str, identity: &Value) {
+    let (status, probe) = post(app, "", token, json!({"executor":identity})).await;
+    assert_eq!(status, 200, "{probe}");
+    assert_eq!(probe["kind"], "probe");
+    let models: Vec<_> = probe["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| json!({"model":m,"ok":true,"usage":true,"message":null}))
+        .collect();
+    assert_eq!(
+        act(app, &probe, "result", json!({"models":models})).await.0,
+        204
+    );
+}
+
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn executor_leases_recover_and_keep_secrets_out_of_storage() {
@@ -64,6 +80,7 @@ async fn executor_leases_recover_and_keep_secrets_out_of_storage() {
     .unwrap();
     let app = executor::router(pool.clone(), Some(key), f.state.runtime.clone());
     let (id, token) = executor::create_credential(pool).await.unwrap();
+    verify_provider(&app, &token, &identity).await;
     assert_eq!(post(&f.app, "", &token, acquire.clone()).await.0, 404);
     assert_eq!(
         post(&app, "", &token, json!({"executor":{"build":"wrong","harnesses":{"chat":"1"},"sandboxRuntime":"docker","runnerImage":"fixture-image"}}))
@@ -74,6 +91,8 @@ async fn executor_leases_recover_and_keep_secrets_out_of_storage() {
     let (status, first) = post(&app, "", &token, acquire.clone()).await;
     assert_eq!(status, 200, "{first}");
     assert_eq!(first["provider"]["apiKey"], secret);
+    let large_invalid = json!({"stop":"invalid","output":"x".repeat(2*1024*1024),"gatewayLog":[]});
+    assert_eq!(act(&app, &first, "output", large_invalid).await.0, 400);
     assert!(first.get("grader").is_none() && first.get("expected").is_none());
     assert_eq!(act(&app, &first, "heartbeat", json!({})).await.0, 200);
     let other = post(&app, "", &token, acquire.clone()).await.1;
@@ -107,7 +126,7 @@ async fn executor_leases_recover_and_keep_secrets_out_of_storage() {
     let counts = json!({"input":1,"output":2});
     let verdict = json!({"verdict":{"passed":true,"score":1,"reasons":[]},"judgeLog":[],"tokens":{"task":counts,"judge":counts}});
     assert_eq!(act(&app, &retry, "result", verdict).await.0, 204);
-    let error = json!({"error":{"code":"sandbox-start","message":"fixture"}});
+    let error = json!({"error":{"code":"sandbox-start","message":"fixture"},"tokens":{"task":counts,"judge":counts}});
     assert_eq!(act(&app, &other, "result", error.clone()).await.0, 204);
     let last = post(&app, "", &token, acquire.clone()).await.1;
     assert_eq!(last["rolloutId"], other["rolloutId"]);
@@ -116,6 +135,14 @@ async fn executor_leases_recover_and_keep_secrets_out_of_storage() {
     let failed:bool= sqlx::query_scalar("SELECT attempts=2 AND score IS NULL AND passed IS NULL AND error_code='sandbox-start' FROM learning_rollouts WHERE status='failed'")
         .fetch_one(pool).await.unwrap();
     assert!(failed);
+    let totals: (i64, i64, i64) = sqlx::query_as(
+        "SELECT rollouts,task_tokens,judge_tokens FROM learning_usage WHERE bundle_id=$1",
+    )
+    .bind(f.bundle)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(totals, (4, 9, 9));
     let trial_rollout: Uuid = sqlx::query_scalar(
         "WITH trial AS (INSERT INTO learning_trials(project_id,bundle_id,version_id,runtime)
          SELECT r.project_id,r.bundle_id,e.version_id,r.runtime FROM learning_evaluations e
@@ -127,9 +154,17 @@ async fn executor_leases_recover_and_keep_secrets_out_of_storage() {
     .fetch_one(pool)
     .await
     .unwrap();
+    // A bulk admission job predates both the Try and the queued round work.
+    sqlx::query("WITH bulk AS (INSERT INTO learning_trials(project_id,bundle_id,version_id,runtime,kind)
+        SELECT project_id,bundle_id,version_id,runtime,'admission' FROM learning_trials WHERE id=(SELECT trial_id FROM learning_rollouts WHERE id=$1) RETURNING id)
+        INSERT INTO learning_rollouts(trial_id,task_id,rollout,input,grader,created_at) SELECT id,'empty',1,'null','{}',now()-interval '1 day' FROM bulk").bind(trial_rollout).execute(pool).await.unwrap();
     let trial = post(&app, "", &token, acquire.clone()).await.1;
     assert_eq!(trial["rolloutId"], json!(trial_rollout));
+    assert_eq!(trial["limits"]["judgeMaxTokens"], 64000);
+    let next = post(&app, "", &token, acquire.clone()).await.1;
+    assert_eq!(next["kind"], "rollout");
     executor::revoke_credential(pool, id).await.unwrap();
+    assert_eq!(act(&app, &trial, "heartbeat", json!({})).await.0, 409);
     assert_eq!(post(&app, "", &token, acquire).await.0, 401);
     let leaks:bool= sqlx::query_scalar("SELECT EXISTS(SELECT FROM workspace_model_providers WHERE position($1::bytea in encrypted_key)>0) OR EXISTS(SELECT FROM learning_rollouts l WHERE strpos(to_jsonb(l)::text,$2)>0) OR EXISTS(SELECT FROM mutation_audit a WHERE strpos(to_jsonb(a)::text,$2)>0)")
         .bind(secret.as_bytes())
@@ -142,7 +177,7 @@ async fn executor_leases_recover_and_keep_secrets_out_of_storage() {
             .fetch_one(pool)
             .await
             .unwrap();
-    assert_eq!(entries, 8);
+    assert_eq!(entries, 11);
 }
 
 /// Fixture bridge for the real-process Docker gate. Runs in its disposable cluster.
@@ -196,11 +231,7 @@ async fn combined_gate_fixture() {
                 if !criterion.starts_with("no-reference") {
                     g["reference"] = json!("answer")
                 }
-                results.push(json!(
-                    run_admission(&mut tx, &target, &json!("input"), &g)
-                        .await
-                        .unwrap()
-                ));
+                results.push(json!(run_admission(&mut tx, &target, &g).await.unwrap()));
             }
             results.push(json!(queue_conversion(&mut tx,&target,&json!({"format":"rows","rows":[{"row":1,"source":"sheet#1","question":"Question","answer":"Answer"},{"row":2,"source":"sheet#2","question":"Missing answer"}]})).await.unwrap()));
             tx.commit().await.unwrap();
@@ -259,6 +290,7 @@ async fn trial_leases_resolve_admission_and_validate_material() {
     .unwrap();
     let app = executor::router(pool.clone(), Some(key), f.state.runtime.clone());
     let (_, token) = executor::create_credential(pool).await.unwrap();
+    verify_provider(&app, &token, &identity).await;
     let target = TrialTarget {
         project: &f.project,
         bundle: f.bundle,
@@ -271,6 +303,7 @@ async fn trial_leases_resolve_admission_and_validate_material() {
         .await
         .unwrap();
     tx.commit().await.unwrap();
+    sqlx::query("UPDATE learning_trials SET runtime=jsonb_set(runtime,'{executor}', to_jsonb('stale-runtime'::text)) WHERE id=$1").bind(attempt).execute(pool).await.unwrap();
     let lease = post(&app, "", &token, json!({"executor":identity})).await.1;
     assert_eq!(lease["kind"], "rollout");
     assert!(lease.get("grader").is_none());
@@ -284,6 +317,12 @@ async fn trial_leases_resolve_admission_and_validate_material() {
     assert_eq!(output.1["grader"], grader);
     let counts = json!({"input":0,"output":0});
     assert_eq!(act(&app,&lease,"result",json!({"verdict":{"passed":true,"score":1,"reasons":[]},"judgeLog":[],"tokens":{"task":counts,"judge":counts}})).await.0,204);
+    let counted: i64 = sqlx::query_scalar("SELECT rollouts FROM learning_usage WHERE bundle_id=$1")
+        .bind(f.bundle)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(counted, 1);
     let result = read_trial(pool, &f.project, f.bundle, attempt)
         .await
         .unwrap();
@@ -340,7 +379,9 @@ async fn trial_leases_resolve_admission_and_validate_material() {
             .iter()
             .find(|t| t["taskId"] == card["taskId"])
             .unwrap();
-        if matches!(outcome, "admitted" | "pending") {
+        if outcome == "pending" {
+            assert_eq!(checked["admissionReason"], "check-failed");
+        } else if outcome == "admitted" {
             assert_eq!(checked["admission"], outcome);
         } else {
             assert_eq!(checked["admissionReason"], outcome);
@@ -356,7 +397,18 @@ async fn trial_leases_resolve_admission_and_validate_material() {
     assert_eq!(lease["material"], material);
     let mut report = json!({"cards":[{"row":8,"group":"sheet#4","input":"Hi","grader":{"type":"exact","expected":"x"},"criteriaDrafted":false}],"setAside":[],"judgeLog":[],"tokens":{"judge":{"input":10,"output":5}}});
     assert_eq!(act(&app, &lease, "result", report.clone()).await.0, 400);
+    assert_eq!(
+        read_trial(pool, &f.project, f.bundle, id).await.unwrap()["status"],
+        "failed"
+    );
+    let mut tx = pool.begin().await.unwrap();
+    let id = queue_conversion(&mut tx, &target, &material).await.unwrap();
+    tx.commit().await.unwrap();
+    let lease = post(&app, "", &token, json!({"executor":identity})).await.1;
     report["cards"][0]["row"] = json!(4);
+    let mut another = report["cards"][0].clone();
+    another["group"] = json!("second");
+    report["cards"].as_array_mut().unwrap().push(another);
     assert_eq!(act(&app, &lease, "result", report.clone()).await.0, 204);
     assert_eq!(
         read_trial(pool, &f.project, f.bundle, id).await.unwrap()["cards"],
@@ -376,6 +428,7 @@ async fn trial_leases_resolve_admission_and_validate_material() {
     let lease = post(&app, "", &token, json!({"executor":identity})).await.1;
     let row = &lease["material"]["rows"][0];
     assert_eq!(row["material"]["answer"], "x");
+    report["cards"].as_array_mut().unwrap().truncate(1);
     report["cards"][0]["row"] = row["row"].clone();
     report["cards"][0]["group"] = row["source"].clone();
     assert_eq!(act(&app, &lease, "result", report).await.0, 204);
@@ -395,27 +448,10 @@ async fn trial_leases_resolve_admission_and_validate_material() {
         .await;
     assert_eq!(cards["items"][0]["admission"], "admitted");
 
-    // A terminal infrastructure failure has no verdict. Once its cooldown expires,
-    // the next poll creates a fresh admission trial for the same live revision.
-    sqlx::query("UPDATE learning_rollouts SET lease_expires_at=now()-interval '2 minutes' WHERE status='failed'")
-        .execute(pool).await.unwrap();
-    for _ in 0..2 {
-        let lease = post(&app, "", &token, json!({"executor":identity})).await.1;
-        assert_eq!(lease["kind"], "grade");
-        let pass = lease["output"] == "ref";
-        let verdict = json!({"passed":pass,"score":u8::from(pass),"votes":[pass,pass,pass],"reasons":["Reason"]});
-        assert_eq!(
-            act(
-                &app,
-                &lease,
-                "result",
-                json!({"verdict":verdict,"judgeLog":[],"tokens":{"task":counts,"judge":counts}})
-            )
-            .await
-            .0,
-            204
-        );
-    }
+    assert_eq!(
+        post(&app, "", &token, json!({"executor":identity})).await.0,
+        204
+    );
     let page = f.ok("GET", "/tasks", &browser, None, Value::Null).await;
     let retried = page["items"]
         .as_array()
@@ -423,5 +459,5 @@ async fn trial_leases_resolve_admission_and_validate_material() {
         .iter()
         .find(|card| card["input"] == "pending")
         .unwrap();
-    assert_eq!(retried["admission"], "admitted");
+    assert_eq!(retried["admissionReason"], "check-failed");
 }

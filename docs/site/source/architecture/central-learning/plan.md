@@ -2,6 +2,12 @@
 
 **Status: built.** Follow-up work is listed in the [release plan](plan.md#after-the-first-release).
 
+## Accepted risks
+
+| Risk | Exposure |
+| --- | --- |
+| A machine writer can import a known input and inspect the evolve listing to confirm held-out membership. | The public group hash already lets a writer predict its own new groups. The inference exposes no held-out reference, criteria, ID, log or result. |
+
 ## First release
 
 1. In workspace settings, configure an OpenAI-compatible model provider, its key and allowed models.

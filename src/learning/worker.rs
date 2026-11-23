@@ -249,7 +249,7 @@ async fn start_round(
     let runtime: Option<serde_json::Value> = sqlx::query_scalar(
         "SELECT jsonb_build_object('executor',c.runtime,'taskModel',$2::text,'judgeModel',$3::text,'baseUrl',p.base_url)
          FROM executor_credentials c CROSS JOIN workspace_model_providers p
-         WHERE p.project_id=$1 AND c.revoked_at IS NULL AND c.runtime IS NOT NULL
+         WHERE p.project_id=$1 AND p.verification->>'status'='verified' AND c.revoked_at IS NULL AND c.runtime IS NOT NULL
            AND c.last_seen_at > now()-interval '1 minute' AND $2=ANY(p.allowed_models) AND $3=ANY(p.allowed_models)
          ORDER BY c.last_seen_at DESC,c.id LIMIT 1")
         .bind(&row.project_id).bind(&row.task_model).bind(&row.judge_model).fetch_optional(&mut **tx).await?;

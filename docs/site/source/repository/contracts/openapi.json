@@ -4082,7 +4082,28 @@
                       "type": "integer"
                     },
                     "setAside": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["row", "source", "reason"],
+                        "properties": {
+                          "row": {
+                            "type": "integer"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "setAsideCount": {
                       "type": "integer"
+                    },
+                    "message": {
+                      "type": ["string", "null"]
                     }
                   }
                 }
@@ -4147,6 +4168,9 @@
                       "items": {
                         "$ref": "#/components/schemas/LearningTask"
                       }
+                    },
+                    "setAsideCount": {
+                      "type": "integer"
                     }
                   },
                   "required": []
@@ -4363,7 +4387,7 @@
                 "schema": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["baseUrl", "allowedModels", "hasKey"],
+                  "required": ["baseUrl", "allowedModels", "hasKey", "verification"],
                   "properties": {
                     "baseUrl": {
                       "type": ["string", "null"]
@@ -4376,6 +4400,41 @@
                     },
                     "hasKey": {
                       "type": "boolean"
+                    },
+                    "verification": {
+                      "type": "object",
+                      "required": ["status", "checkedAt", "models"],
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": ["pending", "verified", "failed"]
+                        },
+                        "checkedAt": {
+                          "type": ["string", "null"],
+                          "format": "date-time"
+                        },
+                        "models": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": ["model", "ok", "usage", "message"],
+                            "properties": {
+                              "model": {
+                                "type": "string"
+                              },
+                              "ok": {
+                                "type": "boolean"
+                              },
+                              "usage": {
+                                "type": "boolean"
+                              },
+                              "message": {
+                                "type": ["string", "null"]
+                              }
+                            }
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -4434,7 +4493,7 @@
                 "schema": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["baseUrl", "allowedModels", "hasKey"],
+                  "required": ["baseUrl", "allowedModels", "hasKey", "verification"],
                   "properties": {
                     "baseUrl": {
                       "type": ["string", "null"]
@@ -4447,6 +4506,41 @@
                     },
                     "hasKey": {
                       "type": "boolean"
+                    },
+                    "verification": {
+                      "type": "object",
+                      "required": ["status", "checkedAt", "models"],
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": ["pending", "verified", "failed"]
+                        },
+                        "checkedAt": {
+                          "type": ["string", "null"],
+                          "format": "date-time"
+                        },
+                        "models": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": ["model", "ok", "usage", "message"],
+                            "properties": {
+                              "model": {
+                                "type": "string"
+                              },
+                              "ok": {
+                                "type": "boolean"
+                              },
+                              "usage": {
+                                "type": "boolean"
+                              },
+                              "message": {
+                                "type": ["string", "null"]
+                              }
+                            }
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -7053,7 +7147,7 @@
         "type": "object",
         "properties": {
           "flagReason": {
-            "enum": ["rollout-error", "judge-disagreement", "split-rollouts", "persistent-failure"]
+            "enum": ["rollout-error", "judge-disagreement", "persistent-failure"]
           },
           "input": {},
           "grader": {

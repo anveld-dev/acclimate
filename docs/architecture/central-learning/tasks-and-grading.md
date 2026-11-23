@@ -43,7 +43,7 @@ Edits and retirement are tracked by revision, the way evolve revisions work toda
 
 ## Turning material into tasks
 
-The console and API accept a spreadsheet, CSV, JSONL or pasted conversations, up to 64 MiB. Conversion runs as an executor job that calls the bundle's judge model through the gateway. It turns each row or conversation into a task card. This is conversion, not invention:
+The console and API accept a spreadsheet, CSV, JSONL or pasted conversations, up to 64 MiB and 10,000 material rows. XLSX entries together can expand to 256 MiB. Conversion runs as an executor job that calls the bundle's judge model through the gateway. It turns each row or conversation into a task card. This is conversion, not invention:
 
 - The input and the reference answer are copied from the material. The model chooses where a conversation is cut and maps columns to fields.
 - The model may draft criteria from the reference answer. A person sees every card before Start and can edit or delete it.
@@ -96,7 +96,7 @@ The held-out digest commitment goes away. Held-out tasks are stored in their own
 
 - **The optimizer never reads held-out.** It gets no content, task ids, gateway logs, judge reasons or per-task results. No optimizer code path queries `learning_held_out_tasks`, and a test asserts this. The round stores only the aggregate held-out score, for the chart and the alert.
 - **The task model and the judge do read held-out tasks**, because that is how the tasks are scored. They read them statelessly, through the gateway, with server-side storage refused.
-- **Machine tokens never receive held-out content.** A response to a machine token leaves out held-out task content, held-out trial logs and per-task held-out results. It carries counts and aggregate scores. An import returns drafted cards only to a person signed in to the console.
+- **Machine tokens never receive held-out content.** A response to a machine token leaves out held-out task content, held-out trial logs and per-task held-out results. It carries counts and aggregate scores. An import returns drafted cards only to a person signed in to the console. A machine writer who already knows the exact input can infer held-out membership by reimporting it and checking the evolve listing.
 - **People read held-out in the console**, with a session.
 - **Rewriting retires.** A person who rewrites a held-out task into a new evolve task retires the held-out original.
 - **Export.** A person can export held-out tasks, so the set is not locked into the service.

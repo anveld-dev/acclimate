@@ -166,6 +166,7 @@ It creates three randomly named databases, installs the schema and inserts fixtu
 Compose builds the chat runner and the executor resolves its immutable image ID at startup.
 Point `ACCLIMATE_EXECUTOR_TOKEN_FILE` to a file containing a provisioned executor credential and
 set the service's `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` to 64 hex characters.
+Set `ACCLIMATE_PROVIDER_HTTP_HOSTS` on the service and executor to a comma-separated list of exact hostnames when a local proxy requires HTTP or loopback access. The default is empty.
 Compose binds port 3001 to the service address on the private executor network.
 The executor reaches the workspace model endpoint over `executor-egress`.
 Attach a containerized model proxy to that network when using its Compose hostname.

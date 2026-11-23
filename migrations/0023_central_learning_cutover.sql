@@ -40,10 +40,7 @@ UPDATE machine_tokens t SET rights=coalesce((SELECT array_agg(right_name ORDER B
 ALTER TABLE machine_tokens ADD CONSTRAINT machine_tokens_rights_check
     CHECK(cardinality(rights) BETWEEN 1 AND 3 AND rights <@ ARRAY['read','write','promote']);
 
--- Record the identity announced by a credential's most recent lease poll.
-ALTER TABLE executor_credentials ADD COLUMN runtime jsonb, ADD COLUMN last_seen_at timestamptz;
-
-CREATE OR REPLACE VIEW learning_flagged_tasks AS
+CREATE VIEW learning_flagged_tasks AS
 WITH evidence AS (
     SELECT t.project_id,t.bundle_id,t.task_id,r.id AS round_id,e.id,
         bool_or(l.status='failed') AS errored,
@@ -58,10 +55,9 @@ WITH evidence AS (
 SELECT project_id,bundle_id,task_id,
     CASE WHEN bool_or(errored) THEN 'rollout-error'
          WHEN bool_or(disagreed) THEN 'judge-disagreement'
-         WHEN bool_or(scored AND passes BETWEEN 1 AND 4) THEN 'split-rollouts'
          ELSE 'persistent-failure' END AS reason
 FROM evidence GROUP BY project_id,bundle_id,task_id
-HAVING bool_or(errored OR disagreed OR (scored AND passes BETWEEN 1 AND 4))
+HAVING bool_or(errored OR disagreed)
     OR (count(DISTINCT round_id) FILTER(WHERE scored)>=2 AND max(passes) FILTER(WHERE scored)<3);
 
 CREATE TABLE learning_alert_deliveries (

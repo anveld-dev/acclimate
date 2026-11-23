@@ -16,6 +16,16 @@ Catch `AcclimateError` to handle errors in the SDK’s coded hierarchy, then bra
 | `ApiError` | `acclimate.ApiError` | The service's error code, such as `not_found` or `revision_conflict`, with the HTTP `status`. |
 | `DeliveryError` | `acclimate.DeliveryError` | Delivery and cache codes such as `invalid_payload`, `unsafe_cache` and `cache_miss`. |
 
+## Learning loop conflicts
+
+`POST /start` and `POST /resume` on a bundle's learning loop return HTTP 409. The SDK raises `ApiError` with one of these codes.
+
+| Code | Cause |
+| --- | --- |
+| `tasks-required` | A split has fewer than 20 admitted tasks. |
+| `optimizer-required` | The service has no optimizer model. Set `ACCLIMATE_MODEL_ENDPOINT`, `ACCLIMATE_MODEL_TOKEN` and `ACCLIMATE_MODEL`, then restart the service. The loop's `optimizerConfigured` field shows the setting. |
+| `learning_conflict` | Another state conflict, such as an unverified provider or a missing task or judge model. The message names it. |
+
 The [TypeScript SDK reference](/docs/reference/typescript-sdk) lists public exports.
 
 Inspect `code` on an SDK error and include the service request ID when reporting an HTTP failure.

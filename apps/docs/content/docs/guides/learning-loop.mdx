@@ -7,11 +7,17 @@ An Acclimate executor must be running and connected to the service. It uses the 
 
 ## Set up a released bundle
 
-1. In workspace settings, save an OpenAI-compatible provider URL, an API key and at least two allowed models. Check each model’s verification result. Each must answer a chat request and report token usage.
+1. On the workspace's **Members** page, under **Model provider**, save an OpenAI-compatible provider URL, an API key and at least two allowed models. The executor verifies each model and shows the result. Each must answer a chat request and report token usage. CLIProxyAPI with a Codex sign-in is the reference setup.
 2. Open the bundle’s **Learning** tab. Choose the published channel to improve, a task model to answer tasks, a different judge model to grade answers, and a daily round limit. Save the settings.
 3. Import a spreadsheet, CSV, JSONL, or text file, paste conversations, or choose **Write a task**. Use an exact answer for a value that must match. For free text, write one criterion per line and optionally supply a reference answer.
 4. Review the cards and their source rows. Evolve tasks help the optimizer improve the bundle. Held-out tasks independently measure how the released bundle performs. Review and confirm unconfirmed held-out cards so they can be admitted.
 5. Choose **Try task** to run the current release on one card. Read the output, verdict, reasoning, and gateway log on that card. An executor error means the trial could not finish. Trials do not count toward round scores.
+
+## Import shapes
+
+A row with both `input` and `expected` fields becomes an exact-match task without a model call. Its answer must match exactly, so use this shape for short or structured answers. The judge model converts every other row and pasted conversation into a task. It keeps criteria already in the row and drafts criteria only for a row with an answer and none of its own.
+
+The service assigns each source group to evolve or held-out by its hash, so roughly half of your rows land on each side. For a first round, import about 50 rows so that each side reaches 20 admitted tasks after some are set aside.
 
 ## Admission and import results
 
@@ -20,6 +26,7 @@ A pending card awaits confirmation or a check by the executor. An admitted card 
 | Reason | What to do |
 | --- | --- |
 | No usable reference | Provide an example answer or explicit criteria for the source row. |
+| Not converted | The conversion could not map the row to a task. Edit the row and import it again. |
 | Row too large | Shorten the source example and import it again. |
 | Reference failed | Check that the reference answer meets every criterion. |
 | Empty answer passed | Tighten the expected answer or criteria so an empty answer fails. |
@@ -28,13 +35,15 @@ A pending card awaits confirmation or a check by the executor. An admitted card 
 
 ## Start and monitor
 
-Start requires a verified provider and at least **20 admitted evolve tasks and 20 admitted held-out tasks**. An adopted change is released to the chosen channel automatically, without an approval step. You can roll back the current release.
+Start requires a verified provider, an optimizer model configured on the service, and at least **20 admitted evolve tasks and 20 admitted held-out tasks**. Without an optimizer model, Start and Resume are refused with `optimizer-required`, and the loop reports `optimizerConfigured: false`. Ask the operator to set the [optimizer settings](/docs/reference/configuration#learning). An adopted change is released to the chosen channel automatically, without an approval step. You can roll back the current release.
+
+A round can keep the current version, and a first round often does. After a round that keeps it, the loop runs one more round. After two rounds in a row that adopt nothing, it waits for new evidence.
 
 The score chart follows each round. Use evolve scores to understand candidate selection and held-out scores to monitor regressions. Open a round to inspect its candidates, bundle changes, and evolve rollout evidence. Filter flagged cards to investigate repeated failures, executor errors, or inconsistent verdicts. Edit a card and try it again.
 
 | Waiting reason | What happens next |
 | --- | --- |
-| No new evidence | Add or revise tasks. The service wakes the loop when enough evidence changes. |
+| No new evidence | Add, edit or retire evolve tasks. The loop wakes when at least 5 evolve tasks, and at least 10 percent of the admitted evolve tasks, changed since the last round. |
 | Daily cap | The next round starts when the rolling 24-hour window has room. |
 | No executor | Ask the operator to start a connected executor. |
 | Models no longer allowed | Choose two currently allowed models in learning setup. |

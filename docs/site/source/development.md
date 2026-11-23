@@ -2,7 +2,7 @@
 
 If you already have a workspace, start with [Connect an existing agent](getting-started.md). This document covers developing and operating the service.
 
-The Rust service uses PostgreSQL. The TypeScript and Python SDKs deliver versioned content and report production outcomes. Start with the local stack and the delivery example. Configure an optimizer endpoint to run learning rounds.
+The Rust service uses PostgreSQL. The TypeScript and Python SDKs deliver versioned content and report production outcomes. Start with the local stack and the delivery example. Learning rounds need an optimizer endpoint, a workspace model provider and the rollout executor, which `npm run local:up` starts.
 
 ## Configure the app
 

@@ -11,7 +11,7 @@ Acclimate uses a shared `major.minor.patch` release version for the service, con
 
 ## Upgrade the deployment
 
-On startup the service runs the pending SQLx migrations for its checkout. Keep each database backup with its matching service build.
+On startup the service runs the pending SQLx migrations for its checkout. Keep each database backup with its matching service build. There is no downgrade: to roll back a release, restore the backup taken before it and run the matching build.
 
 <Steps>
 <Step>
@@ -47,6 +47,22 @@ docker compose up -d --no-build --wait service console
 
 Keep one Rust process per database. A normal `docker compose down` preserves volumes. The `--volumes` option deletes them.
 
+Upgrade the service before the executor. A newer service accepts the 1-or-0 judged scores of an executor built before partial credit, so rollouts in flight survive the service upgrade. An older service rejects a newer executor's fractional scores.
+
+</Step>
+<Step>
+
+### Upgrade the executor between rounds
+
+A round pins the executor build and runner image it started with. If no live executor matches them for five minutes, the round fails with `no-matching-executor`. That failure does not count toward the failed-rounds pause, and the next round uses the new executor. To avoid losing a round, upgrade while no round is running: pause the loops and wait for their active rounds to finish. The executor has no published image, so build it from the new checkout.
+
+```sh
+docker compose build acclimate-runner acclimate-executor
+docker compose up -d acclimate-executor
+```
+
+Stopping the old executor waits up to an hour for its leased rollouts to finish.
+
 </Step>
 <Step>
 
@@ -56,6 +72,17 @@ Check service and console readiness. Start the proxy with `docker compose up -d 
 
 </Step>
 </Steps>
+
+## Keep the provider encryption key
+
+`ACCLIMATE_PROVIDER_ENCRYPTION_KEY` encrypts the workspace provider keys stored in the database. Keep it with your database backups, but store it separately from them. If you restore a backup under a different key, no saved provider key can be read. Each workspace provider then fails verification with "Provider key unavailable", and a workspace administrator must enter its API key again.
+
+## Rotate the executor credential
+
+1. Create a new credential with `docker compose exec -T service /usr/local/bin/acclimate-service --create-executor-token`. It prints `{id, token}`.
+2. Replace the contents of the file that `ACCLIMATE_EXECUTOR_TOKEN_FILE` names with the new token.
+3. Restart the executor with `docker compose up -d --force-recreate acclimate-executor`. It reads the file only at startup.
+4. Revoke the old credential with `docker compose exec -T service /usr/local/bin/acclimate-service --revoke-executor-token <old id>`. Revoking requeues the rollouts it still held.
 
 ## Upgrade from migration 0015 or 0016
 
@@ -74,4 +101,17 @@ Migrations 0017 and 0018 permanently drop the old change and connection-learning
    ```
 
    Before upgrading, record the delivered version ID for each affected connection. After upgrading, you can release that version on the source channel with a reason. This also updates any other connection using that channel.
-4. `learn-<connectionId>` channels stay as ordinary channels with their release history.
+3. `learn-<connectionId>` channels stay as ordinary channels with their release history.
+
+## Upgrade from migration 0019, 0020 or 0021
+
+Migrations 0022 to 0024 move learning onto the service. Take a backup before you upgrade: these migrations cannot be undone, and rolling back means restoring that backup. An application no longer runs an evaluator, so stop any evaluator you ran for the earlier learning API. On startup, the migrations:
+
+- copy evolve cases into evolve tasks with an `exact` grader, and drop the old case table;
+- stop open rounds and cancel their queued rollouts and optimizer calls;
+- pause running loops with the reason `tasks-required`;
+- replace the `evaluate` right on machine tokens with `read`.
+
+The service starts with no held-out tasks. Import or write them in the console.
+
+Before resuming a loop, set up the executor and `ACCLIMATE_PROVIDER_ENCRYPTION_KEY`, configure the workspace model provider, and choose a task model and judge model on the bundle's **Learning** tab. Resume requires 20 admitted evolve tasks and 20 admitted held-out tasks. [Enable learning](/docs/operate/self-host#enable-learning)

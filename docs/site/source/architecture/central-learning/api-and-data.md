@@ -77,11 +77,11 @@ Bodies are JSON with camelCase fields. The lease route takes the executor token 
 }
 ```
 
-`bundle` is the bundle payload document that delivery serves today. `kind` is `rollout` for round and trial rollouts. `conversion` is added with material conversion.
+`bundle` is the bundle payload document that delivery serves today. `kind` is `rollout` for round and trial rollouts, `grade` for admission checks, `conversion` for material conversion and `probe` for provider verification.
 
-The judge has a separate 64,000-token allowance across its calls.
+The judge has a separate 64,000-token allowance for each judge run.
 
-**Provider probe.** Saving a provider queues a lease with `{kind:"probe",leaseId,leaseToken,expiresAt,heartbeatSeconds,provider:{baseUrl,apiKey},models:[string]}`. The executor skips the sandbox and makes a minimal chat completion for every listed model. It posts `{models:[{model,ok,usage,message}]}` to the result route. The boolean `usage` records whether the response included a usage object. The message is a brief diagnostic string or null. Verification succeeds when every allowed model answered and reported usage. The executor must check the resolved address at connection time, pin that address, and disable redirects. HTTPS is required except for exact hosts in the comma-separated `ACCLIMATE_PROVIDER_HTTP_HOSTS` setting. Link-local and metadata addresses are always forbidden. Loopback requires an allowlisted host.
+**Provider probe.** Saving a provider queues a lease with `{kind:"probe",leaseId,leaseToken,expiresAt,heartbeatSeconds,provider:{baseUrl,apiKey},models:[string]}`. The executor skips the sandbox and makes a minimal chat completion for every listed model. It posts `{models:[{model,ok,usage,message}]}` to the result route. The boolean `usage` records whether the response included a usage object. The message is a brief diagnostic string or null. Verification succeeds when every allowed model answered and reported usage. The executor must check the resolved address at connection time, pin that address, and disable redirects. HTTPS is required except for exact hosts in the comma-separated `ACCLIMATE_PROVIDER_HTTP_HOSTS` setting, which the service and the executor must both set to the same value. The URL may not carry a user name, password, query or fragment. Link-local, unspecified, multicast, broadcast and cloud metadata addresses, and the metadata hostnames, are always forbidden. Loopback, `localhost`, private IPv4, carrier-grade NAT and IPv6 unique-local addresses require an allowlisted host, even over HTTPS. The executor applies the same rules to every address a hostname resolves to.
 
 **Heartbeat.** The request is `{}` and the response is `{expiresAt}`. A lease the service has already expired answers 409, and the executor stops the rollout.
 
@@ -117,7 +117,7 @@ For a `criteria` grader the verdict carries `votes`, one per judge run, and `sco
  "tokens": {"judge": {"input": 0, "output": 0}}}
 ```
 
-A set-aside `reason` is `no-reference` or `not-converted`. A row can produce multiple cards. Rows whose compact JSON representation (including row number, source and material) exceeds 65,536 UTF-8 bytes are set aside with reason `too-large` before conversion. Every card names a source row, and the service rejects a card whose `row` was not in the material.
+A set-aside `reason` is `no-reference` (no usable answer and no criteria) or `not-converted` (no valid mapping after three attempts). A row can produce multiple cards. Rows whose compact JSON representation (including row number, source and material) exceeds 65,536 UTF-8 bytes are set aside with reason `too-large` before conversion. Every card names a source row, and the service rejects a card whose `row` was not in the material.
 
 **Gateway log.** `gatewayLog` and `judgeLog` are lists of `{at, route, model, status, request, response, usage}`, one entry per upstream call, with bodies as sent and received. The provider key is never in an entry.
 
@@ -158,7 +158,7 @@ The task schema and cutover migration preserve version and memory history.
 | `admission` | `pending`, `admitted` or `set-aside`, with `admission_reason` |
 | `added_revision`, `retired_revision` | The same revision scheme as today's evolve cases. An edit retires the old row's content at one revision and adds the new content at the next, under the same `task_id`. |
 
-**Input and expected values today are arbitrary JSON.** The `chat` harness sends a string input as the user message and a `{messages}` list as the conversation. Any other JSON is sent as its JSON text, which is what the `openai()` adapter does today. String expectations match the output text exactly. For other expectations the executor parses the output text as JSON and compares the resulting values recursively. Invalid JSON fails. Admission serializes non-string outputs to JSON text before applying the same comparison. [Tasks and grading](tasks-and-grading.md)
+**Input and expected values today are arbitrary JSON.** The `chat` harness sends a string input as the user message and a `{messages}` list as the conversation. Any other JSON is sent as its JSON text. String expectations match the output text exactly. For other expectations the executor parses the output text as JSON and compares the resulting values recursively. Invalid JSON fails. Admission serializes non-string outputs to JSON text before applying the same comparison. [Tasks and grading](tasks-and-grading.md)
 
 **`learning_rollouts`** is one row per rollout and is the unit the executor leases.
 

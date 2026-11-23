@@ -2897,7 +2897,7 @@
             }
           },
           "409": {
-            "description": "Learning state or idempotency conflict.",
+            "description": "Learning state or idempotency conflict. Too few admitted tasks returns tasks-required, and a service with no optimizer model returns optimizer-required.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4005,19 +4005,43 @@
                       "type": "string"
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "enum": ["pending", "scored", "failed"]
                     },
                     "output": {
-                      "type": "string"
+                      "type": ["string", "null"]
                     },
                     "gatewayLog": {
-                      "type": "array",
+                      "type": ["array", "null"],
                       "items": {
                         "type": "object"
                       }
                     },
                     "verdict": {
-                      "type": "object"
+                      "type": "object",
+                      "description": "A judged verdict's score is the share of criteria met, averaged over the judge runs. An exact-match score is 1 or 0.",
+                      "properties": {
+                        "passed": {
+                          "type": "boolean"
+                        },
+                        "score": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        "votes": {
+                          "type": ["array", "null"],
+                          "items": {
+                            "type": "boolean"
+                          }
+                        },
+                        "reasons": {
+                          "type": ["array", "null"],
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -4070,7 +4094,8 @@
                       "type": "string"
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "enum": ["pending", "completed", "failed"]
                     },
                     "rows": {
                       "type": "integer"
@@ -4094,7 +4119,8 @@
                             "type": "string"
                           },
                           "reason": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "no-reference (no usable answer or criteria), not-converted (the model could not map the row in three attempts) or too-large (the row exceeds 64 KiB)."
                           }
                         }
                       }
@@ -4722,7 +4748,7 @@
             }
           },
           "409": {
-            "description": "Learning state or idempotency conflict.",
+            "description": "Learning state or idempotency conflict. Too few admitted tasks returns tasks-required, and a service with no optimizer model returns optimizer-required.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6135,7 +6161,8 @@
           "admittedHeldOut",
           "admittedEvolve",
           "waiting",
-          "alert"
+          "alert",
+          "optimizerConfigured"
         ],
         "properties": {
           "channel": {
@@ -6231,6 +6258,10 @@
           "waiting": {
             "enum": [null, "daily-cap", "no-new-evidence", "no-executor", "models-not-allowed"]
           },
+          "optimizerConfigured": {
+            "type": "boolean",
+            "description": "Whether the service has an optimizer model. Start and resume return 409 optimizer-required without one."
+          },
           "alert": {
             "anyOf": [
               {
@@ -6258,6 +6289,12 @@
                     "type": "number"
                   },
                   "score": {
+                    "type": "number"
+                  },
+                  "previousPassRate": {
+                    "type": "number"
+                  },
+                  "passRate": {
                     "type": "number"
                   },
                   "flippedTasks": {

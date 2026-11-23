@@ -1,11 +1,12 @@
 # Acclimate console
 
-The TanStack Start console provides sign-in, workspace membership and invitations, machine tokens, bundles, releases, connections and delivery observations.
+The TanStack Start console provides sign-in, workspace membership and invitations, machine tokens, bundles, releases, connections, delivery observations and learning.
 
 - **Bundles** imports a payload and publishes the first release. **Content** reads, searches, copies and downloads verified files.
 - **Releases** shows channel history and lets an authorized editor release an earlier version again with a reason. If a response is lost, use the retained operation to confirm, retry or close that request.
 - **Connections** manages scoped content-read and reporting credentials. The setup recipe prepares a version in the application environment.
-- **Delivery** shows reported versions and receipt times. **Members** manages workspace access and machine credentials.
+- **Delivery** shows reported versions and receipt times. **Members** manages workspace access, the workspace model provider and machine credentials.
+- **Learning** on a bundle sets up the loop, imports and reviews tasks, runs trials, and shows rounds, usage, alerts and rollback.
 
 Bundle URLs name the workspace, bundle and channel. Mutations use explicit scope and the current verified session.
 
@@ -22,7 +23,7 @@ The console requires:
 - `CONSOLE_SERVICE_URL`: private API endpoint.
 - `CONSOLE_SERVICE_TOKEN` and `CONSOLE_LOGIN_TOKEN`: match the separate Rust credentials.
 - `CONSOLE_OIDC_ISSUER`, `CONSOLE_OIDC_CLIENT_ID`, `CONSOLE_OIDC_CLIENT_SECRET`: real identity provider configuration.
-- `CONSOLE_ALLOW_EDITS=true` to enable bundle creation, channel release and administrative writes.
+- `CONSOLE_ALLOW_EDITS=true` to enable bundle creation, channel release, learning and administrative writes.
 
 Remove `ACCLIMATE_MODE` and `CONSOLE_MODE`; they are rejected. Internal URLs and authority credentials never belong in SDK recipes. Forwarding headers do not establish identity or override the canonical public origin.
 

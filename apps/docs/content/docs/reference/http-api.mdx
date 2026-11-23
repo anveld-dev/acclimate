@@ -64,9 +64,9 @@ All bundle routes sit under `/v1/workspaces/{ws}/bundles/{b}/learning`.
 | Route | Purpose | Right |
 | --- | --- | --- |
 | `PUT` (root) | Turn learning on or change its settings: channel, `domain` and `benchmark`, task model, judge model, `maxRoundsPerDay` | promote |
-| `GET` (root) | Loop status, `waiting` reason, pause reason, split counts, active round, alert state | read |
-| `POST /start` | Start learning. Refused with `tasks-required` below the Start floor. | promote |
-| `POST /pause`, `/resume`, `/stop` | Unchanged | promote |
+| `GET` (root) | Loop status, `waiting` reason, pause reason, split counts, active round, alert state, and `optimizerConfigured` | read |
+| `POST /start` | Start learning. Refused with `tasks-required` below the Start floor, and with `optimizer-required` when the service has no optimizer model. | promote |
+| `POST /pause`, `/resume`, `/stop` | Pause, resume or stop learning. Resume is refused like Start. | promote |
 | `GET /tasks` | List tasks, paged. Filters: `split`, `source`, `admission`, `flagged` | read |
 | `POST /tasks` | Create one task | write |
 | `PATCH /tasks/{id}` | Edit a task. Bumps the task revision and re-runs admission. | write |
@@ -77,11 +77,13 @@ All bundle routes sit under `/v1/workspaces/{ws}/bundles/{b}/learning`.
 | `GET /trials/{id}` | A trial's status, gateway log, output and verdict | read |
 | `GET /held-out-tasks/export` | Download the held-out tasks | console session only |
 | `GET /rounds`, `GET /rounds/{id}` | Round timeline, and one round with its candidates, diffs, diagnoses and evolve results | read |
-| `POST /rollback` | Move the channel back to the version a named round replaced | promote |
+| `POST /rollback` | Move the channel back to the version a named round replaced. The removed version is blocked from adoption. | promote |
+| `GET /blocked-versions` | Versions blocked from adoption after a rollback or revert | read |
+| `DELETE /blocked-versions/{digest}` | Unblock a version | promote |
 | `GET /usage` | Rounds, rollouts and tokens per day | read |
 | `POST /outcomes` | A production outcome from `job.expect()` | write |
 | `GET /memory` | Improvement memory at a revision | read |
 
-One workspace route is added: `GET` and `PUT /v1/workspaces/{ws}/model-provider`. It holds the base URL, the key and the allowed models. `PUT` needs a signed-in administrator. The key is write-only: `GET` returns whether one is set and never its value.
+The workspace model provider is at `GET` and `PUT /v1/workspaces/{ws}/model-provider`. It holds an OpenAI-compatible base URL, the key and the allowed models. `PUT` needs a signed-in administrator. The key is write-only: `GET` returns whether one is set and the executor's verification result, never the key.
 
-As today, a signed-in caller needs the administrator role wherever a machine token needs `promote`.
+A signed-in caller needs the administrator role wherever a machine token needs `promote`.

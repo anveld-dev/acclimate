@@ -58,7 +58,7 @@ In this order. Each gets its own design note before work starts.
 
 ## The W1 experiment
 
-`examples/self-improvement-memory/` holds the driver for a paper-sized test of the SIM paper's transfer claim. Its full plan is [`experiment.md`](../../../examples/self-improvement-memory/experiment.md), next to the driver. `freeze.py` reads that file by path (`SPEC`) and hashes it. The plan describes the experiment on today's app-side loop, so the port rewrites it before any paid run.
+`examples/self-improvement-memory/` holds the driver for a paper-sized test of the SIM paper's transfer claim. Its full plan is [`experiment.md`](../../../examples/self-improvement-memory/experiment.md), next to the driver. `freeze.py` reads that file by path (`SPEC`) and hashes it. The plan describes the experiment on the removed app-side loop, so the port rewrites it before any paid run.
 
 What the experiment is:
 
@@ -69,7 +69,7 @@ What the experiment is:
 - **Secondary claims.** Harness Transfer beats Cold Start (T2), and Full SIM keeps its source-model performance within 3 points (T3).
 - **Shape.** Ten rounds and five candidates per run, five rollouts per task, every rollout scored. The plan sets n = 10 blocks, with a power analysis and a measured noise estimate.
 - **Statistics and stops.** Paired comparisons by block, descriptive mechanism metrics (predicted versus fixed tasks, memory reuse), integrity rules with SQL checks, and stop conditions. All were fixed before any run.
-- **Status.** Tooling and model-free tests are complete. The paid pilot and the paper-sized runs have not started.
+- **Status.** Tooling and model-free tests were completed on the app-side loop and do not run on this build. The paid pilot and the paper-sized runs have not started.
 
 What the port must preserve:
 

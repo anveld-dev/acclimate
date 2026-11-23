@@ -16,6 +16,8 @@ source .venv-bdd/bin/activate
 npm run test:bdd
 ```
 
+The central learning stories also need Docker: they build the runner and executor images and run a real executor.
+
 If PostgreSQL isn't found, pass `-- --pg-bin /path/to/postgresql/bin`. On Apple Silicon Homebrew, this is often `/opt/homebrew/opt/postgresql@17/bin`. Run as a regular user: PostgreSQL refuses to initialize a cluster as root.
 
 For a smaller development loop:
@@ -51,8 +53,9 @@ For local parallel runs, `npm run test:bdd -- --parallel` runs `console.feature`
 | [Local recovery](local_recovery.feature) | Real backend/console processes and private PostgreSQL: stalled/dropped ownership connection, exact release after restart, same console process and clean shutdown; real OIDC browser authentication through the private TLS proxy |
 | [Identity boundary](identity.feature) | Public callback handler against real Rust sessions; fixture external identity provider, transaction binding, expiry, logout and cookie flags |
 | [UX refinements](ux_refinement.feature) | Recover from a bookmarked content path and initial folder import |
+| [Central learning](central_learning.feature) | Console and API paths with a real executor and a scripted model endpoint: provider setup, import, admission, Try, Start, adoption, a confirmed held-out regression with its revert and alert email, usage, a production outcome, rollback and stop |
 
-The reviewed [inventory](../scripts/bdd/inventory.json) records 98 behaviors and 123 scenario variants. Every expected variant must run and pass. A missing, skipped, undefined or failing variant leaves that behavior uncovered. The coverage checker has its own regression tests.
+The reviewed [inventory](../scripts/bdd/inventory.json) records 100 behaviors and 125 scenario variants. Every expected variant must run and pass. A missing, skipped, undefined or failing variant leaves that behavior uncovered. The coverage checker has its own regression tests.
 
 After a run, open `artifacts/bdd/coverage.md`. Machine results are in `coverage.json`, `results.json` and `junit/`. Browser failures save screenshots and Playwright traces in `failures/`; these contain disposable fixture data and should still be treated as private. To inspect a trace: `.venv-bdd/bin/playwright show-trace artifacts/bdd/failures/<name>.zip`.
 

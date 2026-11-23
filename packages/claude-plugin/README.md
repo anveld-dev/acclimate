@@ -19,7 +19,7 @@ import { prepare } from '@acclimate/claude-plugin';
 import { claudeSessionOptions } from '@acclimate/claude-plugin/native';
 
 const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
-const prepared = await prepare(delivery); // or prepare(verifiedVersion) from resolveAndCache / the evaluator
+const prepared = await prepare(delivery); // or prepare(verifiedVersion) from resolveAndCache
 const abortController = new AbortController();
 try {
   for await (const message of query({

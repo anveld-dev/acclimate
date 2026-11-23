@@ -43,7 +43,7 @@ Edits and retirement are tracked by revision, the way evolve revisions work toda
 
 ## Turning material into tasks
 
-The console and API accept a spreadsheet, CSV, JSONL or pasted conversations, up to 64 MiB and 10,000 material rows. XLSX entries together can expand to 256 MiB. Conversion runs as an executor job that calls the bundle's judge model through the gateway. It turns each row or conversation into a task card. This is conversion, not invention:
+The console and API accept a spreadsheet, CSV, JSONL or pasted conversations, up to 64 MiB and 10,000 material rows. XLSX entries together can expand to 256 MiB. A row with both an `input` and an `expected` field becomes an `exact` task at once, with no model call. A row larger than 64 KiB is set aside with the reason `too-large`. Conversion of the other rows runs as an executor job that calls the bundle's judge model through the gateway. It turns each row or conversation into a task card. This is conversion, not invention:
 
 - The input and the reference answer are copied from the material. The model chooses where a conversation is cut and maps columns to fields.
 - The model may draft criteria from the reference answer. A person sees every card before Start and can edit or delete it.
@@ -90,9 +90,9 @@ Every task passes this check before it counts, whatever its source. The executor
 
 1. **The reference passes.** Grading the task's own reference gives a pass.
 2. **An empty answer fails.** Grading an empty output gives a fail.
-3. **The judge agrees with itself.** For `criteria` tasks, three judgments of the reference give the same verdict.
+3. **The judge agrees with itself.** For `criteria` tasks, the three judgments of the reference give the same verdict, and so do the three judgments of the empty answer.
 
-A task that fails is set aside with the reason shown: `reference-failed`, `empty-passed` or `judge-unstable`. Editing the task runs the check again. A `criteria` task with no reference skips step 1. It runs step 3 on an empty answer instead.
+A task that fails is set aside with the reason shown: `reference-failed`, `empty-passed` or `judge-unstable`. A check whose rollouts fail twice on infrastructure is set aside with `check-failed`. Editing the task runs the check again. A `criteria` task with no reference skips step 1, so step 3 judges only the empty answer.
 
 The check catches broken graders. It does not catch a task that is answerable but wrong, which is why a person reviews the cards before Start.
 
@@ -103,7 +103,7 @@ The service assigns the split. The developer never chooses it and can't move a t
 - **By group.** Tasks cut from the same conversation, the same imported row group or the same production job share a `group`, and the whole group lands on one side. Near-duplicate inputs found at import are merged into one group.
 - **By hash.** The service uses a stable hash of the group to assign its split.
 - **Permanent.** The group is derived from the source, not from a name the user can edit. Editing a task does not move it.
-- **Evidence rule.** A held-out task needs a reference that came from a person: an expected answer present in the source material or outcome, or criteria a person wrote or confirmed in review. A held-out task whose criteria were only drafted by conversion stays `pending` until a person confirms them. It does not move to evolve.
+- **Evidence rule.** A held-out task needs a reference that came from a person: an expected answer present in the source material or outcome, or criteria a person wrote or confirmed in review. Import confirms a held-out task on its own only when its expected answer or reference answer is found in the source row and conversion did not draft its criteria. Any other imported held-out task stays `pending` until a person confirms it. That includes a row that has its own criteria and no reference. It does not move to evolve.
 
 ## Held-out custody
 

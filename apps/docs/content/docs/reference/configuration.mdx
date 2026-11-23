@@ -39,9 +39,18 @@ Remove `ACCLIMATE_MODE` and `CONSOLE_MODE` from both the Rust and console enviro
 
 ### Learning
 
-Run the `acclimate-executor` container with a provisioned `ACCLIMATE_EXECUTOR_TOKEN` and access to the Docker socket. Build the chat runner image and configure gVisor (`runsc`) in production. Set `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` on the service to a 64-character hex key so workspace provider credentials can be encrypted at rest.
+Run the `acclimate-executor` container with a provisioned executor credential and access to the Docker socket. Create the credential with the service binary's `--create-executor-token` command, which prints it as JSON, save the token in a private file, and point `ACCLIMATE_EXECUTOR_TOKEN_FILE` at that file. Build the chat runner image and configure gVisor (`runsc`) in production. Set `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` on the service to a 64-character hex key so workspace provider credentials can be encrypted at rest. [Enable learning](/docs/operate/self-host#enable-learning) lists the steps in order.
 
-The failed-round threshold accept integers from 1 to 4,294,967,295. An unset or invalid value falls back to its default. Invalid optimizer timeout, token limit or reasoning effort settings prevent startup, even when the endpoint is unset.
+`ACCLIMATE_PROVIDER_HTTP_HOSTS` is a comma-separated list of exact hostnames or IP addresses, compared without case. It defaults to empty. Set it to the same value on the service and on the executor. The service checks a provider's base URL when it is saved, and the executor checks it again with the addresses the host resolves to.
+
+- The base URL must use HTTPS. Plain HTTP is allowed only for a listed host.
+- It must not contain a user name, password, query or fragment.
+- Link-local addresses, the unspecified address, multicast, broadcast, the cloud metadata addresses `100.100.100.200`, `168.63.129.16` and `fd00:ec2::254`, and the hostnames `metadata.google.internal` and `metadata.goog` are always refused.
+- Loopback, `localhost` and `*.localhost`, private IPv4, carrier-grade NAT (`100.64.0.0/10`) and IPv6 unique-local addresses need the host on the list, even over HTTPS.
+
+The settings below configure the optimizer. The task model and judge model come from the workspace model provider, which must be an OpenAI-compatible endpoint. Workspace administrators set it in the console.
+
+The failed-round threshold accepts integers from 1 to 4,294,967,295. An unset or invalid value falls back to its default. Invalid optimizer timeout, token limit or reasoning effort settings prevent startup, even when the endpoint is unset.
 
 | Learning setting | Purpose |
 | --- | --- |

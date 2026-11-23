@@ -1,6 +1,6 @@
 # Self-improvement memory experiment
 
-This experiment uses the removed application-side loop and is waiting to be ported to the executor.
+This experiment uses the removed application-side loop and is waiting to be ported to the executor. The commands below are kept for the port and do not run on this build. `npm run test:sim-experiment` is no longer a root script, and the SDK no longer ships the `openai()` adapter.
 
 This example runs the Acclimate learning loop on W1, an LLM CLI support workload. It compares Full SIM, Harness Transfer and Cold Start in 10 checkpoint-paired blocks. The primary outcome is the round-10 held-out score after the task model changes from `gpt-6-luna` to `gpt-6.2-sol`. The [experiment plan](experiment.md) defines the protocol and integrity gates.
 

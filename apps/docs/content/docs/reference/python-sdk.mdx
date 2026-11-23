@@ -7,7 +7,7 @@ The `acclimate-sdk` package needs Python 3.11 or later and has no third-party de
 
 ## Naming
 
-Python names are snake_case: method names, keyword arguments, and attributes such as `ApiError.request_id` and `ExecuteInput.case_id`. HTTP request and response dictionaries keep the wire contract's camelCase keys, such as `version["parentVersionId"]`, because they are the JSON the service sends and accepts. The TypedDicts in `acclimate.types` describe them. The root package also exports those types, `AcclimateClient`, `Acclimate`, `Job`, the delivery helpers `prepare_files`, `resolve_and_cache` and `validate_payload`, the `PreparedFiles` and `PreparedDelivery` types, and the receipt helpers `DeliveryReporter` and `BoundDeliveryReporter`.
+Python names are snake_case: method names, keyword arguments, and attributes such as `ApiError.request_id` and `TransportError.service_url`. HTTP request and response dictionaries keep the wire contract's camelCase keys, such as `version["parentVersionId"]`, because they are the JSON the service sends and accepts. The TypedDicts in `acclimate.types` describe them. The root package also exports those types, `AcclimateClient`, `Acclimate`, `Job`, the delivery helpers `prepare_files`, `resolve_and_cache` and `validate_payload`, the `PreparedFiles` and `PreparedDelivery` types, and the receipt helpers `DeliveryReporter` and `BoundDeliveryReporter`.
 
 ## Deliver a pinned version to a job
 
@@ -47,7 +47,7 @@ A denial, a missing resource or an integrity failure never falls back. `resolve_
 
 `scope` is a stable name for the authenticated application. It namespaces the cache and must never be a token. Set `connection_id` to the connection UUID when the application reads content for a connection. The client is synchronous, rejects redirects so the token never leaves the configured origin, and bounds every response.
 
-Content writes such as uploading a version take a required idempotency key of 1–128 printable ASCII characters. Learning enrollment, controls and evolve writes take optional keys. Outcome reporting defaults to the outcome ID as its key. Retry a lost write with the same key and the same request. Workspace, bundle, channel and connection listings take `cursor=` and `limit=` keyword arguments and return `{"items": [...], "nextCursor": ...}`; pass `nextCursor` back as `cursor` to read the next page.
+Content writes such as uploading a version take a required idempotency key of 1–128 printable ASCII characters. `enroll_learning_loop` and the pause, resume and stop calls take optional keys. Outcome reporting defaults to the outcome ID as its key. Retry a lost write with the same key and the same request. Workspace, bundle, channel and connection listings take `cursor=` and `limit=` keyword arguments and return `{"items": [...], "nextCursor": ...}`; pass `nextCursor` back as `cursor` to read the next page.
 
 The Python client uses snake_case equivalents of the shared TypeScript client methods.
 

@@ -40,7 +40,7 @@ One configured model makes the `propose`, `screen` and `select` calls. The servi
 
 The optimizer stays configured per deployment, and its credentials stay in the service. The executor and the gateway never hold them. The task model and judge model are chosen per loop from the workspace's model provider and are reached only through the [gateway](executor.md).
 
-Each call is a durable row keyed by round, kind and sample. A claim re-renders the input and checks it against the stored digests of the input, the memory and the history, then checks the pinned model and effort. Model I/O happens outside any transaction. An orphaned call is retried up to three claims. Within a claim the client retries 429, 5xx and timeouts, and allows one retry for malformed output.
+Each call is a durable row keyed by round, kind and sample. A claim re-renders the input and checks it against the stored digests of the input, the memory and the history, then checks the pinned model and effort. Model I/O happens outside any transaction. An orphaned call is retried up to three claims. Within a claim the client makes up to three attempts on 429, 5xx, connection errors and timeouts, waiting 5 and then 30 seconds, or the provider's `Retry-After` when that is longer, up to ten minutes. It allows one retry for malformed output.
 
 **Input.** One renderer builds all three inputs. The data sits inside `<untrusted-data>` with angle brackets escaped.
 
@@ -48,7 +48,7 @@ Each call is a durable row keyed by round, kind and sample. A claim re-renders t
 | --- | --- |
 | `setting` | Pinned `{domain, benchmark, policyModel}`. The service sets `policyModel` to the loop's task model. |
 | `harness` | The incumbent bundle payload, with its version and digest |
-| `feedback` | The incumbent's evolve score and, per task, the input, pass count, mean score and five rollouts with their gateway logs. A failed `exact` task also carries its expected answer, because an exact-match failure has no judge reasons to learn from. |
+| `feedback` | The incumbent's evolve score and, per task, the input, pass count, mean score and five rollouts with their gateway logs. An `exact` task with a failing rollout also carries its expected answer, because an exact-match failure has no judge reasons to learn from. |
 | `history` | Earlier rounds with the same setting, as summaries without raw rollouts |
 | `improvementMemory` | The full memory at the pinned revision |
 | `candidates` | Screen and select only |
@@ -116,7 +116,7 @@ The gateway log gives the tokens of every task-model and judge call, and each op
 
 ### Held-out drop alert
 
-For an adoption, the service compares the new held-out score with a measurement of the parent at the same task revision and runtime. It measures the parent when there is no matching score. A kept round clears the previous alert. Any drop raises an alert on the bundle, shown as a console banner. Only a clear drop emails workspace administrators, after confirmation settles. The email reports whether the service restored the previous version. The alert identifies the round and shows scores, flips and whether the parent was restored.
+For an adoption, the service compares the new held-out score with a measurement of the parent at the same task revision and runtime. It measures the parent when there is no matching score. A kept round clears the previous alert. A drop in either the score or the pass rate, the share of held-out rollouts that pass, raises an alert on the bundle, shown as a console banner. Only a clear drop emails workspace administrators, after confirmation settles. The email reports the pass rate and whether the service restored the previous version. The alert identifies the round and shows both scores, both pass rates, flips and whether the parent was restored.
 
 ### Rollback
 
@@ -128,9 +128,11 @@ With no approval gate, a person reading an alert would otherwise be the only reg
 
 Automatic revert requires all three conditions:
 
-1. The adopted version's held-out score is at least 0.10 below its parent's.
+1. The share of the adopted version's held-out rollouts that pass is at least 0.10 below its parent's.
 2. At least two held-out tasks went from pass to fail.
 3. A second, fresh held-out scoring of both versions shows the same.
+
+The revert judges on the pass rate, not the score. A judged rollout's score gives partial credit, so a task that starts missing one criterion moves the score a little and the pass rate a lot.
 
 On a clear drop the service restores the parent version, blocks the reverted version, and raises the alert. The loop does not pause. The next round runs from the restored version under the normal triggers.
 
@@ -142,7 +144,7 @@ History does not mark a round as reverted, and the optimizer is given no score, 
 
 A person who wants the optimizer to learn why a change was bad writes an evolve task for it. A held-out task rewritten that way is [retired from held-out](tasks-and-grading.md).
 
-If queued rollouts lack a matching live executor for five continuous minutes, the worker ends the round with `no-matching-executor`. This leaves the failed-round counter unchanged. The next round pins the available runtime.
+If queued rollouts lack a matching live executor for five continuous minutes, the worker ends the round with `no-matching-executor`. This leaves the failed-round counter unchanged. If the round had already adopted and was scoring held-out, its release stays, and the loop raises the `regression-check-incomplete` alert and emails administrators. The next round pins the identity that a live executor declared most recently.
 
 ## Compared with the paper and RRSI
 
@@ -159,6 +161,6 @@ The loop follows the SIM paper. [RRSI](https://github.com/google-research/rrsi) 
 | Screening | The selector screens before execution. Criteria not stated. | A critic rejects task-specific edits, grader gaming and unbounded work. | A scanner, then a screen call with the rules in [screening](#optimizer). |
 | A rollout lost to infrastructure | Stays in the denominator and scores zero. | Scores zero. An evaluation missing more than 10 to 15 percent of its trials is void. | Retried once. If it fails again the evaluation is void: a void incumbent fails the round and a void candidate is skipped. A lost rollout is never a score. |
 | After an adoption | Nothing. A later round may replace the change. | Nothing. | Held-out alert, and an automatic revert on a clear, confirmed drop. |
-| Noise | Not treated. Results are one run per condition outside coding. | The band is twice the standard deviation of the difference between two scorings of an unchanged harness. | The revert needs a drop of 0.10, two flipped tasks and the same result on a second scoring of both versions. |
+| Noise | Not treated. Results are one run per condition outside coding. | The band is twice the standard deviation of the difference between two scorings of an unchanged harness. | The revert needs a drop of 0.10 in the pass rate, two flipped tasks and the same result on a second scoring of both versions. |
 
-The three numbers Acclimate adds have no counterpart in the paper: the floor of 20 tasks, the 0.10 drop and the daily cap. They are starting values. The floor sits just under the paper's smallest split. At that floor a held-out score rests on 100 rollouts, so two scorings of an unchanged version can differ by several points by chance alone, which is why the revert also needs flipped tasks and a second scoring. RRSI's way of measuring the band, repeated scoring of an unchanged version, is the method to use if the 0.10 is tuned.
+The three numbers Acclimate adds have no counterpart in the paper: the floor of 20 tasks, the 0.10 pass-rate drop and the daily cap. They are starting values. The floor sits just under the paper's smallest split. At that floor a held-out score rests on 100 rollouts, so two scorings of an unchanged version can differ by several points by chance alone, which is why the revert also needs flipped tasks and a second scoring. RRSI's way of measuring the band, repeated scoring of an unchanged version, is the method to use if the 0.10 is tuned.

@@ -22,7 +22,7 @@ When the service queues an evaluation, it writes one `learning_rollouts` row per
 1. **Lease.** The executor asks for work. The service marks rows `running` with an owner, and returns the bundle payload, the task input, the harness, the pinned models, the limits, the provider endpoint and key, and a per-lease token.
 2. **Run.** The executor starts a fresh sandbox, runs the harness inside it and sends heartbeats. The sandbox receives the bundle payload and the task input, and nothing else. A lease whose heartbeats stop is expired.
 3. **Grade.** The row moves to `grading`. Grading is a separate step with its own inputs: the output, the gateway log, and the reference and criteria. Those grading inputs never enter the agent's sandbox.
-4. **Report.** The executor posts one result per rollout: output, verdict, judge reasons and the gateway log. The service records it and writes an audit entry, as it does for start and report today.
+4. **Report.** The executor posts the output and the gateway log, and then one result per rollout: the verdict, judge reasons, judge log and token counts. The service records it and writes an audit entry, as it does for each lease.
 5. **Assemble.** When all rollouts of an evaluation have results, the service scores it. Five rollouts per task and the scoring rule are unchanged. See [loop](loop.md).
 
 | Status | Meaning |
@@ -38,7 +38,7 @@ When the service queues an evaluation, it writes one `learning_rollouts` row per
 Rules:
 
 - An expired lease returns to `queued`. A crash therefore requeues one rollout, not a round.
-- Only infrastructure failures are retried, once. They are gateway upstream failures, executor crashes and sandbox start failures.
+- Only infrastructure failures are retried, once. They are gateway upstream failures, executor crashes, sandbox start failures, and a judge that runs out of budget or returns no valid judgment.
 - An agent that hits its token or time limit is not an infrastructure failure. The rollout is `scored` as a fail. A deadline reached while a gateway request is awaiting the upstream is a `gateway-upstream` infrastructure failure.
 - **Errors are never scores.** A rollout that fails twice makes its evaluation fail, and a failed incumbent evaluation fails the round. A failed candidate is skipped. A failed initial held-out evaluation completes the round with an error. The worker retries failed baseline and confirmation measurements. A `failed` rollout is never counted as a failed task and never dropped from the count.
 
@@ -66,13 +66,13 @@ The gateway is the only path from a rollout to a model. It runs inside the execu
 - **Pass-through.** It forwards request and response bodies unchanged apart from the rules below. It does not translate between APIs. Inspect's proxy translates, and that is where its message-corruption bugs came from.
 - **Routes.** The first release allows `POST /chat/completions` only. Anthropic Messages and OpenAI Responses are added later as more pass-through routes.
 - **Model list.** A request must name the task model or judge model the round pinned. Anything else is refused.
-- **Provider errors.** The gateway makes up to four attempts on transport errors, HTTP 429 and HTTP 5xx. Without Retry-After, delays start at one second and double, with jitter. When the provider sends Retry-After, the gateway waits that long, at most 30 seconds at a time, and keeps asking for up to seven minutes while the provider keeps sending it. A provider that reports itself overloaded can name a wait of five minutes and still answer the next request, so the gateway asks again sooner but does not give up early. The time limit of the rollout, judgment, conversion or probe still applies. A request that ran for the gateway's whole ten-minute request timeout is not sent again. A context overflow or missing or null reply content yields a failing task verdict.
+- **Provider errors.** The gateway makes up to four attempts on transport errors, HTTP 429 and HTTP 5xx. Without Retry-After, delays start at one second and double, with jitter. When the provider sends Retry-After, the gateway waits that long, at most 30 seconds at a time, and keeps asking for up to seven minutes while the provider keeps sending it. A provider that reports itself overloaded can name a wait of five minutes and still answer the next request, so the gateway asks again sooner but does not give up early. The time limit of the rollout, judgment or conversion still applies, and a probe gives up after 60 seconds. A request that ran for the gateway's whole ten-minute request timeout is not sent again. A context overflow or missing or null reply content yields a failing task verdict.
 - **Token caps.** It counts tokens per rollout and refuses requests past the cap. A capped rollout is scored as a fail.
 - **No hosted tools.** It refuses provider-hosted tools such as web search and code execution, because they run outside the sandbox. Function tools are allowed.
 - **No server-side state.** It forces `store: false` and refuses references to stored responses or conversations.
 - **Gateway log.** It writes every request and response. The judge reads the non-system messages from the final request and the final reply, and the optimizer reads it for evolve rollouts only. Neither reads a transcript the agent wrote.
 
-Inside the sandbox the gateway appears as a base URL on `localhost`, forwarded to a Unix socket the executor owns. Harnesses and agent CLIs expect a base URL, and the socket is the only way out of the sandbox.
+Inside the sandbox the gateway is a Unix socket the executor owns, mounted at `/lease/gateway`. The socket is the only way out of the sandbox. The chat runner sends its request straight to the socket with `node:http`.
 
 The upstream is an OpenAI-compatible endpoint, which today means Codex through CLIProxyAPI.
 
@@ -80,9 +80,9 @@ The upstream is an OpenAI-compatible endpoint, which today means Codex through C
 
 `chat` is the first harness and needs no code from the developer. It is a small built-in runner in the runner image, and it runs inside the rollout's sandbox.
 
-1. Render the bundle as the system prompt: instructions as `# path` followed by the text, then skills, then memory. This is the rendering the `openai()` adapter uses today.
+1. Render the bundle as the system prompt: instructions as `# path` followed by the text, then skills, then memory.
 2. Append the task input: a string as one user message, a `{messages}` list as given, and any other JSON as one user message holding the JSON text.
-3. Send one request to the gateway's `localhost` URL with the round's task model.
+3. Send one request to the gateway's Unix socket with the round's task model.
 4. Take the reply as the output.
 
 Grading follows [tasks and grading](tasks-and-grading.md). Both graders run in the executor, outside the sandbox. `exact` compares with no model. `criteria` calls the loop's judge model through the same gateway, three times.

@@ -47,6 +47,7 @@ export ACCLIMATE_CONSOLE_ENV="$private_dir/console.env"
 export ACCLIMATE_POSTGRES_PASSWORD_FILE="$private_dir/postgres-password"
 export ACCLIMATE_KEYCLOAK_ENV="$private_dir/keycloak.env"
 export ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE="$private_dir/keycloak-postgres-password"
+export ACCLIMATE_EXECUTOR_TOKEN_FILE="$private_dir/executor-token"
 ```
 
 Run the next block for a fresh installation. It creates independent secrets and writes each database password to its own file. PostgreSQL uses the raw password. Only the password component in `DATABASE_URL` is URL-encoded. The encoding command reads the password from stdin, so it works if you instead use a password with URL-reserved characters.
@@ -58,6 +59,7 @@ login_token=$(openssl rand -hex 32)
 transport_token=$(openssl rand -hex 32)
 oidc_client_secret=$(openssl rand -hex 32)
 bootstrap_password=$(openssl rand -hex 32)
+provider_key=$(openssl rand -hex 32)
 database_password_url=$(python3 -c 'import sys; from urllib.parse import quote; print(quote(sys.stdin.read().rstrip("\n"), safe=""))' < "$ACCLIMATE_POSTGRES_PASSWORD_FILE")
 issuer="https://$KEYCLOAK_HOST/realms/acclimate"
 
@@ -68,6 +70,7 @@ ACCLIMATE_LOGIN_TOKEN=$login_token
 ACCLIMATE_CONSOLE_TOKEN=$transport_token
 ACCLIMATE_OPERATORS=[{"issuer":"$issuer","subject":"REPLACE_WITH_USER_UUID"}]
 ACCLIMATE_AUTH=[]
+ACCLIMATE_PROVIDER_ENCRYPTION_KEY=$provider_key
 EOF_SERVICE
 
 cat > "$ACCLIMATE_CONSOLE_ENV" <<EOF_CONSOLE
@@ -90,11 +93,15 @@ ACCLIMATE_CONSOLE_ORIGIN=https://$CONSOLE_HOST
 ACCLIMATE_OIDC_CLIENT_SECRET=$oidc_client_secret
 EOF_KEYCLOAK
 
-unset login_token transport_token oidc_client_secret bootstrap_password database_password_url
+touch "$ACCLIMATE_EXECUTOR_TOKEN_FILE"
+
+unset login_token transport_token oidc_client_secret bootstrap_password database_password_url provider_key
 ```
 
 <Callout type="warn" title="Keep runtime files private">
 Keep the files outside the checkout with mode 0600. Avoid printing the Compose configuration or dumping container environments. Changing the password file later leaves an initialized PostgreSQL role's password as it was.
+
+`ACCLIMATE_PROVIDER_ENCRYPTION_KEY` encrypts workspace provider keys in the database. Store a copy of `service.env`, or of that key, separately from database backups. A backup restored under a different key cannot decrypt the saved provider keys.
 </Callout>
 
 </Step>
@@ -153,7 +160,7 @@ Set `ACCLIMATE_VERSION` to the exact GHCR tag for your checkout's release, witho
 ```sh
 export ACCLIMATE_VERSION=0.1.0
 docker compose pull postgres service console proxy
-docker compose up -d --no-build --wait
+docker compose up -d --no-build --wait postgres service console proxy
 ```
 
 </Tab>
@@ -163,11 +170,13 @@ Build with the checkout's Dockerfiles. Use a local image tag to keep locally bui
 
 ```sh
 export ACCLIMATE_VERSION=local
-docker compose up -d --build --wait
+docker compose up -d --build --wait postgres service console proxy
 ```
 
 </Tab>
 </Tabs>
+
+The service applies the database migrations when it starts. The runner and executor start later, in [Enable learning](#enable-learning). They have no published images, so do not run `up --no-build` without service names.
 
 Caddy obtains certificates for all three public names. Open your console URL, sign in as the realm user and change the temporary password. Choose **New workspace**, set a name and workspace ID, then choose **Create workspace**. Set up a permanent Keycloak administrator and retire the bootstrap account after confirming you can administer the realm.
 
@@ -176,7 +185,51 @@ Caddy obtains certificates for all three public names. Open your console URL, si
 
 ## Enable learning
 
-Set the optimizer options in the private service environment file and recreate the service container to load them. Run the `acclimate-executor` container with a provisioned `ACCLIMATE_EXECUTOR_TOKEN` and access to the Docker socket. Build the chat runner image and configure gVisor (`runsc`) in production. Set `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` on the service to a 64-character hex key so workspace provider credentials can be encrypted at rest. [Optimizer settings](/docs/reference/configuration#learning) · [Learning setup](/docs/guides/learning-loop)
+Learning needs the optimizer settings on the service and a running executor. Run these steps in order from the same deployment shell.
+
+1. Add the [optimizer settings](/docs/reference/configuration#learning) to `service.env`, then recreate the service with `docker compose up -d --wait service`. Without them, Start is refused with `optimizer-required`.
+2. Create the executor credential inside the service container. It prints `{id, token}`. The command saves only the token to the file that `ACCLIMATE_EXECUTOR_TOKEN_FILE` names, and prints the `id`. Keep the `id` with your deployment records: `--revoke-executor-token` takes it.
+
+   ```sh
+   docker compose exec -T service /usr/local/bin/acclimate-service --create-executor-token \
+     | python3 -c 'import json, sys; c = json.load(sys.stdin); print(c["token"], file=open(sys.argv[1], "w")); print("executor credential id:", c["id"])' "$ACCLIMATE_EXECUTOR_TOKEN_FILE"
+   ```
+
+3. Build the runner and executor images. They have no published images.
+
+   ```sh
+   docker compose build acclimate-runner acclimate-executor
+   ```
+
+4. Register gVisor (`runsc`) with the Docker daemon. Install `runsc`, then add it to `/etc/docker/daemon.json` with `--host-uds=open`, so the runner can reach the gateway socket:
+
+   ```json
+   {
+     "runtimes": {
+       "runsc": {
+         "path": "runsc",
+         "runtimeArgs": ["--host-uds=open"]
+       }
+     }
+   }
+   ```
+
+   Restart Docker. The running containers start again under their restart policy. Check that `docker info --format '{{json .Runtimes}}'` lists `runsc`.
+
+5. Start the executor and check that it stays running. It inspects the runner image when it starts.
+
+   ```sh
+   docker compose up -d acclimate-executor
+   docker compose ps acclimate-executor
+   ```
+
+Workspace administrators then configure the model provider in the console. [Learning setup](/docs/guides/learning-loop)
+
+<Callout type="warn" title="Without gVisor">
+Provider verification still passes, because it runs outside a sandbox. Every rollout fails with `sandbox-start`, rounds fail, and a loop pauses after three failed rounds in a row.
+</Callout>
+
+The executor mounts the Docker socket, which gives it administrator authority on the host. It runs as root, has outbound network access, and holds each leased workspace's provider key in memory. A provider on a private, carrier-grade NAT, unique-local or loopback address needs its host in `ACCLIMATE_PROVIDER_HTTP_HOSTS`, even over HTTPS. Set the same value in `service.env` and in the deployment shell for the executor. [Provider addresses](/docs/reference/configuration#learning)
 
 ## Deliver a bundle
 

@@ -30,6 +30,9 @@ pub enum ModelError {
     Format(String),
 }
 
+// Scoped to a durable call so parser retries are charged to the same bundle.
+tokio::task_local! { static RESPONSE_TOKENS: std::cell::Cell<i64>; }
+
 pub type ModelFuture<'a> = Pin<Box<dyn Future<Output = Result<String, ModelError>> + Send + 'a>>;
 
 pub trait OptimizerModel: Send + Sync {
@@ -625,6 +628,7 @@ pub(super) async fn run_call(s: &AppState, key: CallKey) -> Result<(), sqlx::Err
     let target = round.target(&mut tx).await?;
     tx.commit().await?;
     let data = &input.data;
+    let mut tokens = 0;
     let result = if digest(data) != input_digest
         || round.history_digest.as_deref() != Some(&digest(&data["history"]))
         || round.memory_digest.as_deref() != Some(&digest(&data["improvementMemory"]))
@@ -636,7 +640,13 @@ pub(super) async fn run_call(s: &AppState, key: CallKey) -> Result<(), sqlx::Err
         } else if model.reasoning_effort() != round.optimizer_reasoning_effort.as_deref() {
             Err(ModelError::Provider("reasoning effort changed".into()))
         } else {
-            request(model.as_ref(), key.kind, &input, &target).await
+            RESPONSE_TOKENS
+                .scope(std::cell::Cell::new(0), async {
+                    let result = request(model.as_ref(), key.kind, &input, &target).await;
+                    tokens = RESPONSE_TOKENS.with(|t| t.get());
+                    result
+                })
+                .await
         }
     } else {
         Err(ModelError::Provider("optimizer unavailable".into()))
@@ -662,6 +672,7 @@ pub(super) async fn run_call(s: &AppState, key: CallKey) -> Result<(), sqlx::Err
             )
         }
     };
+    let mut tx = s.db.begin().await?;
     sqlx::query(
         "UPDATE learning_optimizer_calls SET status=$4,output=$5,error_code=$6,error=$7
         WHERE (round_id,kind,sample)=($1,$2,$3) AND status='running' AND attempts=$8",
@@ -674,9 +685,10 @@ pub(super) async fn run_call(s: &AppState, key: CallKey) -> Result<(), sqlx::Err
     .bind(code)
     .bind(error)
     .bind(attempt)
-    .execute(&s.db)
+    .execute(&mut *tx)
     .await?;
-    Ok(())
+    sqlx::query("INSERT INTO learning_usage(project_id,bundle_id,day,optimizer_tokens) VALUES($1,$2,(now() AT TIME ZONE 'UTC')::date,$3) ON CONFLICT(project_id,bundle_id,day) DO UPDATE SET optimizer_tokens=learning_usage.optimizer_tokens+excluded.optimizer_tokens").bind(round.project_id).bind(round.bundle_id).bind(tokens).execute(&mut *tx).await?;
+    tx.commit().await
 }
 
 #[cfg(test)]

@@ -54,6 +54,8 @@ struct Evaluation {
     attempt_id: Option<String>,
     report: DbJson<Report>,
     held_out_reported_cases: Option<i32>,
+    #[sqlx(default)]
+    held_out_passed_cases: Option<i64>,
     created_at: DateTime<Utc>,
     started_at: Option<DateTime<Utc>>,
     deadline_at: DateTime<Utc>,
@@ -87,11 +89,7 @@ impl Evaluation {
 
     fn case_count(&self, cases: Option<&[evolve::EvolveCase]>) -> usize {
         cases.map_or_else(
-            || {
-                self.held_out["cases"]
-                    .as_u64()
-                    .expect("validated held-out count") as usize
-            },
+            || self.held_out["cases"].as_u64().unwrap_or(0) as usize,
             <[_]>::len,
         )
     }
@@ -104,6 +102,12 @@ impl Evaluation {
             "reportedCases":self.held_out_reported_cases.map_or_else(|| self.report.cases.len(), |count| count as usize), "createdAt":self.created_at, "startedAt":self.started_at,
             "deadlineAt":self.deadline_at, "error":self.error
         });
+        if self.split == "held_out" {
+            doc["passedCases"] = json!(self.held_out_passed_cases.unwrap_or_else(|| {
+                self.report.cases.iter().filter(|c| case_passes(c)).count() as i64
+            }));
+            doc["error"] = json!(self.error.as_deref().map(safe_held_out_error));
+        }
         if self.split == "evolve" {
             doc["caseSummaries"] = json!(self.report.cases.iter().map(|case| {
                 let passes = passed_rollouts(case);
@@ -118,7 +122,13 @@ impl Evaluation {
 
     fn assignment(&self, cases: Option<&[evolve::EvolveCase]>) -> Value {
         let held_out = (self.split == "held_out").then_some(&self.held_out);
-        let reported: Vec<_> = self.report.cases.iter().map(|c| &c.case_id).collect();
+        let reported: Vec<_> = self
+            .report
+            .cases
+            .iter()
+            .filter(|_| self.split == "evolve")
+            .map(|c| &c.case_id)
+            .collect();
         json!({
             "evaluation": self.document(self.case_count(cases),false), "cases":cases,
             "heldOut":held_out, "reportedCaseIds":reported
@@ -132,6 +142,15 @@ pub(super) fn mean_score(case: &CaseReport) -> f64 {
         .map(|r| r["score"].as_f64().expect("validated score"))
         .sum::<f64>()
         / ROLLOUTS_PER_CASE as f64
+}
+
+pub(super) fn safe_held_out_error(error: &str) -> &str {
+    match error {
+        "learning.held_out_mismatch"
+        | "Evaluation queue deadline passed"
+        | "Evaluation run deadline passed" => error,
+        _ => "held-out-evaluation-failed",
+    }
 }
 
 fn wire_split(split: &str) -> &str {
@@ -223,11 +242,13 @@ pub(super) async fn round_documents(
         "SELECT e.id,e.round_id,e.role,e.sample,e.split,e.version_id,e.digest,e.evolve_revision,
                 e.status,e.score,e.attempt_id,e.created_at,e.started_at,e.deadline_at,e.error,r.held_out,l.app_principal,
                 false AS expired,
+                CASE WHEN e.split='held_out' THEN (SELECT count(*) FROM jsonb_array_elements(e.report->'cases') c WHERE
+                (SELECT count(*) FROM jsonb_array_elements(c->'rollouts') v WHERE v->>'passed'='true')>=3) END AS held_out_passed_cases,
                 CASE WHEN e.split='evolve' THEN e.report ELSE '{{
                     \"cases\": []
                 }}'::jsonb END AS report,
                 CASE WHEN e.split='held_out' THEN jsonb_array_length(e.report->'cases') END AS held_out_reported_cases
-         {EVALUATION_SCOPE} AND e.round_id=$3 ORDER BY e.created_at,e.id"
+         {EVALUATION_SCOPE} AND e.round_id=$3 AND e.measurement='initial' ORDER BY e.created_at,e.id"
     ))
     .bind(project)
     .bind(bundle)
@@ -367,6 +388,7 @@ pub(super) async fn report(
     }
     let evolve_cases = row.evolve_cases(&mut cmd.tx, &project, bundle).await?;
     let count = row.case_count(evolve_cases.as_deref());
+    let previous_cases = row.report.cases.len();
     match (input.cases, input.error) {
         (Some(cases), None)
             if !cases.is_empty() && !request.as_object().unwrap().contains_key("error") =>
@@ -403,6 +425,8 @@ pub(super) async fn report(
     if saved.rows_affected() == 0 {
         return Err(conflict("Evaluation run deadline passed"));
     }
+    let rollouts = ((row.report.cases.len() - previous_cases) * ROLLOUTS_PER_CASE) as i64;
+    sqlx::query("INSERT INTO learning_usage(project_id,bundle_id,day,rollouts) VALUES($1,$2,(now() AT TIME ZONE 'UTC')::date,$3) ON CONFLICT(project_id,bundle_id,day) DO UPDATE SET rollouts=learning_usage.rollouts+excluded.rollouts").bind(&project).bind(bundle).bind(rollouts).execute(&mut *cmd.tx).await.map_err(db)?;
     commands::finish_mutation(cmd, StatusCode::OK, row.document(count, false)).await
 }
 

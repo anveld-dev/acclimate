@@ -32,6 +32,9 @@ impl Split {
 #[derive(FromRow, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Task {
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flag_reason: Option<String>,
     pub task_id: String,
     pub group: String,
     pub input: Value,
@@ -57,6 +60,7 @@ impl Task {
         author: &str,
     ) -> Self {
         Self {
+            flag_reason: None,
             task_id: Uuid::new_v4().to_string(),
             group,
             input,
@@ -231,13 +235,22 @@ async fn read(s: AppState, p: String, b: Uuid, h: HeaderMap, f: Filter, export: 
     let mut items = Vec::new();
     let mut held_out_count = 0i64;
     for split in [Split::Evolve, Split::HeldOut] {
-        if f.split.as_deref().is_some_and(|v| v != split.name()) || f.flagged == Some(true) {
+        if f.split.as_deref().is_some_and(|v| v != split.name()) {
             continue;
         }
-        let from = format!(
+        let mut from = format!(
             "FROM {} WHERE (project_id,bundle_id)=($1,$2) AND retired_revision IS NULL AND ($3::text IS NULL OR source=$3) AND ($4::text IS NULL OR admission=$4)",
             split.table()
         );
+        if let Some(flagged) = f.flagged {
+            if split == Split::HeldOut && flagged {
+                continue;
+            }
+            if split == Split::Evolve {
+                let op = if flagged { "EXISTS" } else { "NOT EXISTS" };
+                from.push_str(&format!(" AND {op} (SELECT 1 FROM learning_flagged_tasks flag WHERE (flag.project_id,flag.bundle_id,flag.task_id)=($1,$2,learning_tasks.task_id))"));
+            }
+        }
         if split == Split::HeldOut {
             held_out_count = sqlx::query_scalar(&format!("SELECT count(*) {from}"))
                 .bind(&p)
@@ -251,8 +264,13 @@ async fn read(s: AppState, p: String, b: Uuid, h: HeaderMap, f: Filter, export: 
                 continue;
             }
         }
+        let flag = if split == Split::Evolve {
+            "(SELECT reason FROM learning_flagged_tasks f WHERE (f.project_id,f.bundle_id,f.task_id)=($1,$2,learning_tasks.task_id))"
+        } else {
+            "NULL::text"
+        };
         let rows: Vec<Task> = sqlx::query_as(&format!(
-            "SELECT * {from} AND task_id COLLATE \"C\">$5 ORDER BY task_id COLLATE \"C\" LIMIT $6"
+            "SELECT *,{flag} AS flag_reason {from} AND task_id COLLATE \"C\">$5 ORDER BY task_id COLLATE \"C\" LIMIT $6"
         ))
         .bind(&p)
         .bind(b)

@@ -4787,6 +4787,521 @@
           }
         }
       }
+    },
+    "/v1/workspaces/{workspaceId}/model-provider": {
+      "get": {
+        "operationId": "getWorkspaceModelProvider",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["baseUrl", "allowedModels", "hasKey"],
+                  "properties": {
+                    "baseUrl": {
+                      "type": ["string", "null"]
+                    },
+                    "allowedModels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "hasKey": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks authority for this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested learning resource was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "setWorkspaceModelProvider",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["baseUrl", "allowedModels", "hasKey"],
+                  "properties": {
+                    "baseUrl": {
+                      "type": ["string", "null"]
+                    },
+                    "allowedModels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "hasKey": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid learning request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks authority for this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested learning resource was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Learning state or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request exceeds 2 MiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["baseUrl", "allowedModels", "apiKey"],
+                "properties": {
+                  "baseUrl": {
+                    "type": "string"
+                  },
+                  "allowedModels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "apiKey": {
+                    "type": "string",
+                    "writeOnly": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/start": {
+      "post": {
+        "operationId": "startLearningLoop",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningLoop"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid learning request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks authority for this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested learning resource was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Learning state or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/rollback": {
+      "post": {
+        "operationId": "rollbackLearningRound",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningLoop"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid learning request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks authority for this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested learning resource was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Learning state or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["roundId"],
+                "properties": {
+                  "roundId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/usage": {
+      "get": {
+        "operationId": "getLearningUsage",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bundleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["items"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "day",
+                          "rounds",
+                          "rollouts",
+                          "optimizerTokens",
+                          "taskTokens",
+                          "judgeTokens"
+                        ],
+                        "properties": {
+                          "day": {
+                            "type": "string",
+                            "format": "date"
+                          },
+                          "rounds": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "rollouts": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "optimizerTokens": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "taskTokens": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "judgeTokens": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks authority for this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested learning resource was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5520,7 +6035,7 @@
       "LearningLoopRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["channel", "appPrincipalId", "setting", "heldOut"],
+        "required": ["channel", "setting"],
         "properties": {
           "channel": {
             "type": "string",
@@ -5532,11 +6047,55 @@
             "maxLength": 1024
           },
           "setting": {
-            "$ref": "#/components/schemas/LearningSetting"
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["domain", "benchmark"],
+            "properties": {
+              "domain": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "At most 256 UTF-8 bytes with no control characters."
+              },
+              "benchmark": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "At most 256 UTF-8 bytes with no control characters."
+              },
+              "policyModel": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "At most 256 UTF-8 bytes with no control characters."
+              }
+            }
           },
           "heldOut": {
             "$ref": "#/components/schemas/LearningHeldOut"
+          },
+          "taskModel": {
+            "type": "string"
+          },
+          "judgeModel": {
+            "type": "string"
+          },
+          "maxRoundsPerDay": {
+            "type": "integer",
+            "minimum": 1
           }
+        },
+        "anyOf": [
+          {
+            "required": ["taskModel", "judgeModel"]
+          },
+          {
+            "required": ["heldOut", "appPrincipalId"]
+          }
+        ],
+        "dependentRequired": {
+          "taskModel": ["judgeModel"],
+          "judgeModel": ["taskModel"]
         }
       },
       "LearningRoundSummary": {
@@ -5555,7 +6114,15 @@
           "heldOutScore",
           "heldOutError",
           "createdAt",
-          "endedAt"
+          "endedAt",
+          "taskModel",
+          "judgeModel",
+          "taskRevision",
+          "trigger",
+          "incumbentReused",
+          "diff",
+          "diagnosis",
+          "evolveScore"
         ],
         "properties": {
           "id": {
@@ -5675,6 +6242,45 @@
                 "type": "null"
               }
             ]
+          },
+          "taskModel": {
+            "type": ["string", "null"]
+          },
+          "judgeModel": {
+            "type": ["string", "null"]
+          },
+          "taskRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "trigger": {
+            "enum": ["start", "resume", "adoption", "task-change", "retry"]
+          },
+          "incumbentReused": {
+            "type": "boolean"
+          },
+          "diff": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LearningChanges"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnosis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LearningDiagnosis"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evolveScore": {
+            "type": ["number", "null"]
           }
         }
       },
@@ -5699,7 +6305,15 @@
           "createdAt",
           "updatedAt",
           "activeRound",
-          "rounds"
+          "rounds",
+          "taskModel",
+          "judgeModel",
+          "taskRevision",
+          "maxRoundsPerDay",
+          "admittedHeldOut",
+          "admittedEvolve",
+          "waiting",
+          "alert"
         ],
         "properties": {
           "channel": {
@@ -5707,15 +6321,21 @@
             "minLength": 1
           },
           "appPrincipalId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1024
+            "type": "string"
           },
           "setting": {
             "$ref": "#/components/schemas/LearningSetting"
           },
           "heldOut": {
-            "$ref": "#/components/schemas/LearningHeldOut"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LearningHeldOut"
+              },
+              {
+                "type": "object",
+                "maxProperties": 0
+              }
+            ]
           },
           "workspaceId": {
             "type": "string"
@@ -5730,7 +6350,13 @@
           },
           "pauseReason": {
             "type": ["string", "null"],
-            "enum": ["operator", "failed-rounds", "optimizer-context-too-large", null]
+            "enum": [
+              "operator",
+              "failed-rounds",
+              "optimizer-context-too-large",
+              null,
+              "tasks-required"
+            ]
           },
           "evolveRevision": {
             "type": "integer",
@@ -5779,6 +6405,58 @@
               "$ref": "#/components/schemas/LearningRoundSummary"
             },
             "maxItems": 10
+          },
+          "taskModel": {
+            "type": ["string", "null"]
+          },
+          "judgeModel": {
+            "type": ["string", "null"]
+          },
+          "taskRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxRoundsPerDay": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "admittedHeldOut": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "admittedEvolve": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "waiting": {
+            "enum": [null, "daily-cap", "no-new-evidence"]
+          },
+          "alert": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["roundId", "previousScore", "score", "flippedTasks"],
+                "properties": {
+                  "roundId": {
+                    "type": "string"
+                  },
+                  "previousScore": {
+                    "type": "number"
+                  },
+                  "score": {
+                    "type": "number"
+                  },
+                  "flippedTasks": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            ]
           }
         }
       },
@@ -5811,7 +6489,15 @@
           "optimizerReasoningEffort",
           "selection",
           "candidates",
-          "evaluations"
+          "evaluations",
+          "taskModel",
+          "judgeModel",
+          "taskRevision",
+          "trigger",
+          "incumbentReused",
+          "diff",
+          "diagnosis",
+          "evolveScore"
         ],
         "properties": {
           "id": {
@@ -5974,7 +6660,15 @@
             "$ref": "#/components/schemas/LearningSetting"
           },
           "heldOut": {
-            "$ref": "#/components/schemas/LearningHeldOut"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LearningHeldOut"
+              },
+              {
+                "type": "object",
+                "maxProperties": 0
+              }
+            ]
           },
           "optimizerReasoningEffort": {
             "type": ["string", "null"],
@@ -6011,6 +6705,45 @@
             "items": {
               "$ref": "#/components/schemas/LearningEvaluation"
             }
+          },
+          "taskModel": {
+            "type": ["string", "null"]
+          },
+          "judgeModel": {
+            "type": ["string", "null"]
+          },
+          "taskRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "trigger": {
+            "enum": ["start", "resume", "adoption", "task-change", "retry"]
+          },
+          "incumbentReused": {
+            "type": "boolean"
+          },
+          "diff": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LearningChanges"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnosis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LearningDiagnosis"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evolveScore": {
+            "type": ["number", "null"]
           }
         }
       },
@@ -6147,7 +6880,14 @@
           },
           "dropReason": {
             "type": ["string", "null"],
-            "enum": ["provider-failed", "format-rejected", "scanner-rejected", "no-change", null]
+            "enum": [
+              "provider-failed",
+              "format-rejected",
+              "scanner-rejected",
+              "no-change",
+              null,
+              "blocked-version"
+            ]
           },
           "rationale": {
             "anyOf": [
@@ -6838,6 +7578,10 @@
           },
           "report": {
             "$ref": "#/components/schemas/LearningEvaluationReport"
+          },
+          "passedCases": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "allOf": [
@@ -7173,6 +7917,7 @@
       "LearningTask": {
         "type": "object",
         "properties": {
+          "flagReason": {"enum": ["rollout-error", "split-rollouts", "persistent-failure"]},
           "input": {},
           "grader": {
             "oneOf": [
@@ -7181,25 +7926,18 @@
                 "properties": {
                   "type": {
                     "type": "string",
-                    "enum": [
-                      "exact"
-                    ]
+                    "enum": ["exact"]
                   },
                   "expected": {}
                 },
-                "required": [
-                  "type",
-                  "expected"
-                ]
+                "required": ["type", "expected"]
               },
               {
                 "type": "object",
                 "properties": {
                   "type": {
                     "type": "string",
-                    "enum": [
-                      "criteria"
-                    ]
+                    "enum": ["criteria"]
                   },
                   "criteria": {
                     "type": "array",
@@ -7211,10 +7949,7 @@
                   },
                   "reference": {}
                 },
-                "required": [
-                  "type",
-                  "criteria"
-                ]
+                "required": ["type", "criteria"]
               }
             ]
           },
@@ -7226,71 +7961,39 @@
           },
           "split": {
             "type": "string",
-            "enum": [
-              "evolve",
-              "held-out"
-            ]
+            "enum": ["evolve", "held-out"]
           },
           "source": {
             "type": "string",
-            "enum": [
-              "console",
-              "outcome",
-              "import"
-            ]
+            "enum": ["console", "outcome", "import"]
           },
           "admission": {
             "type": "string",
-            "enum": [
-              "pending",
-              "admitted",
-              "set-aside"
-            ]
+            "enum": ["pending", "admitted", "set-aside"]
           },
           "addedRevision": {
             "type": "integer"
           },
           "author": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "confirmedBy": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "sourceFile": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "admissionReason": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "outcomeId": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "versionId": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "sourceRow": {
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": ["integer", "null"]
           },
           "output": {}
         },

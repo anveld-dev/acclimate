@@ -39,7 +39,16 @@ What the run changed:
 - **Provider errors.** The provider answers an overloaded model with HTTP 502 and a Retry-After of about five minutes, and CLIProxyAPI then refuses that model with HTTP 503 for as long. The gateway now asks again every 30 seconds for up to seven minutes, and the [operator guide](../../../deploy/README.md) says how to turn the proxy's cooldown off.
 - **Feedback for exact-match tasks.** A first run on a build that withheld the expected answer adopted nothing: every candidate scored 0, because the optimizer was told that an extraction failed and not what it should have been. With the expected answer in the feedback, every candidate fixed all 14 extraction tasks.
 
-- **Partial credit for judged tasks.** In round 1 every candidate met three of the four criteria on the judged replies and failed the fourth. A judged rollout then scored 1 or 0, so all 85 scored 0 and the score showed no progress. The loop was not stuck: the selector read the judge's reasons and round 2 fixed the fourth. A judged rollout now scores the share of its criteria met, as the paper and RRSI score Harvey LAB, while a pass still needs every criterion. The run above predates this change. Scored again with it, the starting bundle got 0.16 on evolve where it had 0: its judged replies met one or two of the four criteria.
+- **Partial credit for judged tasks.** In round 1 every candidate met three of the four criteria on the judged replies and failed the fourth. A judged rollout then scored 1 or 0, so all 85 scored 0 and the score showed no progress. The loop was not stuck: the selector read the judge's reasons and round 2 fixed the fourth. A judged rollout now scores the share of its criteria met, as the paper and RRSI score Harvey LAB, while a pass still needs every criterion. The run above predates this change.
+
+A third run used the new scoring, on a fresh bundle with the same 56 tasks:
+
+| | Evolve score | Held-out score |
+| --- | --- | --- |
+| Starting bundle | 0.157 | 0.141 |
+| After round 1 (adopted) | 1.000 | 1.000 |
+
+The starting bundle's judged replies met one or two of their four criteria, which the old scoring showed as 0. The five candidates scored 1.000, 0.997, 0.982, 0.990 and 0.979, and the selector adopted the first, citing the ticket number the others dropped in at least one reply. Under the old scoring the first round fixed only the extraction tasks. The round ran 1,180 rollouts. None failed, and five were retried after the provider reported itself overloaded.
 
 What it left open:
 

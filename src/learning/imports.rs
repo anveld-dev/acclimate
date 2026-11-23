@@ -526,6 +526,19 @@ async fn apply_conversion(
         ));
     }
     let material: std::collections::HashMap<_, _> = available.into_iter().collect();
+    // A row that carried its own input and expected answer keeps them. Only the criteria come
+    // from the conversion, whatever input or reference the model returned.
+    for c in &mut result.cards {
+        let row = &material[&c.row];
+        if let (Some(input), Some(expected)) = (row.get("input"), row.get("expected")) {
+            c.grader = if c.grader["type"] == "criteria" {
+                json!({"type":"criteria","criteria":c.grader["criteria"],"reference":expected})
+            } else {
+                json!({"type":"exact","expected":expected})
+            };
+            c.input = input.clone();
+        }
+    }
     let mut cards = Vec::new();
     // The loop lock serializes duplicate checks and alias assignments across concurrent imports.
     if !result.cards.is_empty() && outcome.is_none() {
@@ -559,16 +572,11 @@ async fn apply_conversion(
         // criteria come from the conversion.
         let outcome_id: Uuid = serde_json::from_value(outcome["outcomeId"].clone())
             .map_err(|_| invalid("Invalid outcome conversion"))?;
+        let set_aside = !result.set_aside.is_empty();
         for c in result.cards {
-            let row = &material[&c.row];
-            let grader = if c.grader["type"] == "criteria" {
-                json!({"type":"criteria","criteria":c.grader["criteria"],"reference":row["expected"]})
-            } else {
-                json!({"type":"exact","expected":row["expected"]})
-            };
             let group = outcome_id.to_string();
             let split = Split::of(&group);
-            let mut task = Task::pending(row["input"].clone(), grader, group, "outcome", &author);
+            let mut task = Task::pending(c.input, c.grader, group, "outcome", &author);
             task.task_id = format!("outcome:{outcome_id}");
             task.outcome_id = Some(outcome_id);
             task.version_id = serde_json::from_value(outcome["versionId"].clone()).ok();
@@ -581,6 +589,9 @@ async fn apply_conversion(
             let mut card = json!(task);
             card["split"] = json!(split.name());
             cards.push(card);
+        }
+        if set_aside {
+            keep_outcome(tx, id).await?;
         }
     } else {
         let assignments = import_groups(tx, &p, b, &digest, &result.cards).await?;
@@ -676,6 +687,63 @@ pub(super) async fn queue_outcome(
     .map_err(db)?;
     Ok(())
 }
+
+/// An outcome is never lost. When its conversion fails for good or sets its row aside, the
+/// outcome becomes an `exact` task from its own values, set aside as `not-converted`, so a
+/// person can add criteria to it. Does nothing for another import, or when the task exists.
+pub(crate) async fn keep_outcome(tx: &mut Tx<'_>, id: Uuid) -> ApiResult<()> {
+    let row: Option<(String, Uuid, String, Value, Value)> = sqlx::query_as(
+        "SELECT i.project_id,i.bundle_id,i.author,i.outcome,r.material FROM learning_task_imports i
+        JOIN learning_task_import_rows r ON r.import_id=i.id AND r.row_number=1
+        WHERE i.id=$1 AND i.outcome IS NOT NULL FOR UPDATE OF i",
+    )
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(db)?;
+    let Some((p, b, author, outcome, material)) = row else {
+        return Ok(());
+    };
+    let outcome_id: Uuid = serde_json::from_value(outcome["outcomeId"].clone())
+        .map_err(|_| invalid("Invalid outcome conversion"))?;
+    let task_id = format!("outcome:{outcome_id}");
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT FROM learning_tasks WHERE (project_id,bundle_id,task_id)=($1,$2,$3)) OR EXISTS(SELECT FROM learning_held_out_tasks WHERE (project_id,bundle_id,task_id)=($1,$2,$3))")
+        .bind(&p).bind(b).bind(&task_id).fetch_one(&mut **tx).await.map_err(db)?;
+    if exists {
+        return Ok(());
+    }
+    let group = outcome_id.to_string();
+    let split = Split::of(&group);
+    let mut task = Task::pending(
+        material["input"].clone(),
+        json!({"type":"exact","expected":material["expected"]}),
+        group,
+        "outcome",
+        &author,
+    );
+    task.task_id = task_id;
+    task.outcome_id = Some(outcome_id);
+    task.version_id = serde_json::from_value(outcome["versionId"].clone()).ok();
+    task.output = outcome.get("output").cloned();
+    task.confirmed_by = Some(author);
+    let revision = tasks::revision(tx, &p, b).await?;
+    tasks::insert(tx, &p, b, split, &task, revision).await?;
+    tasks::set_admission(
+        tx,
+        &p,
+        b,
+        split,
+        &task.task_id,
+        revision,
+        "set-aside",
+        Some(NOT_CONVERTED),
+    )
+    .await?;
+    Ok(())
+}
+
+/// The admission reason of an outcome task kept after its conversion failed or set it aside.
+pub(crate) const NOT_CONVERTED: &str = "not-converted";
 
 /// The fifty most recent imports, each shaped like the single-import response plus its
 /// creation time and source. Set-aside rows are listed only to signed-in people.

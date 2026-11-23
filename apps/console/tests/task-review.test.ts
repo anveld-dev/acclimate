@@ -6,6 +6,7 @@ import { TaskEditor } from '../src/components/learning-tasks';
 import { ImportList } from '../src/components/task-review';
 import {
   confirmationSummary,
+  describeAdmissionReason,
   describeImportReason,
   describeTrialError,
   filterCards,
@@ -15,6 +16,7 @@ import {
   type ImportSummary,
 } from '../src/lib/task-review';
 import { taskReviewRequest } from '../src/server/task-review-core';
+import { describeLearning } from '../src/lib/central-learning';
 import { consoleEnvironment } from './console-fixture';
 
 const env = { ...consoleEnvironment, CONSOLE_ALLOW_EDITS: 'true' };
@@ -96,6 +98,7 @@ test('trial results show the score and the cause of a failure', () => {
   assert.match(failed, /Error code: sandbox-start\./);
   assert.match(render({ status: 'failed' }), /The trial did not finish\. Try again\./);
   assert.equal(describeTrialError('new-code'), 'The trial failed (new-code). Try again.');
+  assert.match(describeTrialError('provider-rejected'), /key was revoked.*Check the provider settings\./);
   assert.equal(scoreText(1), 'Score 1.000');
 });
 
@@ -194,5 +197,8 @@ test('past imports are listed from the service with their set-aside rows', async
   assert.match(html, /Conversion failed Fix the material and import it again\./);
   assert.doesNotMatch(html, /Set-aside rows/);
   assert.equal(describeImportReason('no-reference').startsWith('No usable reference'), true);
+  // An outcome kept after its conversion failed is a task to edit, not a row to import again.
+  assert.match(describeAdmissionReason('not-converted'), /Edit it to add grading criteria/);
+  assert.equal(describeAdmissionReason('check-failed'), describeLearning('check-failed'));
   assert.match(renderToStaticMarkup(createElement(ImportList, { imports: [] })), /No imports yet/);
 });

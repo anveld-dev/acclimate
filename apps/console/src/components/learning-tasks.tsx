@@ -23,6 +23,7 @@ import {
   checkFailed,
   confirmAllDescription,
   confirmationSummary,
+  describeAdmissionReason,
   describeTrialError,
   emptyListText,
   filterCards,
@@ -80,7 +81,7 @@ export function TaskEditor({
         {needsConfirmation ? 'Needs your confirmation' : describeLearning(card.admission)}
       </p>
       {card.flagReason && <p>{describeLearning(card.flagReason)}</p>}
-      {card.admissionReason && <p>{describeLearning(card.admissionReason)}</p>}
+      {card.admissionReason && <p>{describeAdmissionReason(card.admissionReason)}</p>}
       <h4>Input</h4>
       <pre className="whitespace-pre-wrap break-words">{fieldText(card.input)}</pre>
       <h4>{card.grader.type === 'exact' ? 'Expected answer' : 'Criteria'}</h4>

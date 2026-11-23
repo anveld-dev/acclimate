@@ -88,6 +88,8 @@ export const recheckQueued =
 const trialErrors: Record<string, string> = {
   'gateway-upstream':
     'The model provider returned an error. Check the provider in workspace settings and try again.',
+  'provider-rejected':
+    'The model provider rejected the request, for example because the key was revoked or the model is not available. Check the provider settings.',
   'judge-budget':
     'The judge ran out of its token budget. Shorten the criteria or the reference answer and try again.',
   'judge-invalid-reply':
@@ -110,6 +112,14 @@ export const scoreText = (score?: number) =>
 export function describeImportReason(reason: string) {
   return reason === 'duplicate'
     ? 'This row matches a task that already exists.'
+    : describeLearning(reason);
+}
+
+// A task card's admission reason. An outcome whose criteria could not be drafted is kept as an
+// exact-match task, set aside with `not-converted`, so the import text does not fit it.
+export function describeAdmissionReason(reason: string) {
+  return reason === 'not-converted'
+    ? 'Grading criteria could not be drafted from this outcome, so it was kept as an exact-match task and set aside. Edit it to add grading criteria.'
     : describeLearning(reason);
 }
 

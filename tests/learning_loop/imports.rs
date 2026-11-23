@@ -376,3 +376,162 @@ async fn imports_are_listed_and_rows_matching_live_tasks_are_set_aside() {
     let (_, again) = import(&f, &person, "d.jsonl", "application/jsonl", &fourth).await;
     assert_eq!(again["converted"], 1);
 }
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn an_outcome_is_kept_when_its_conversion_fails_or_sets_it_aside() {
+    let f = Fixture::new().await;
+    f.enroll().await;
+    let person = format!("console/{}", session(&f, "editor").await);
+    let find = |held_out: bool| {
+        (0..200)
+            .map(Uuid::from_u128)
+            .find(|id| (Sha256::digest(id.to_string())[0] < 128) == held_out)
+            .unwrap()
+    };
+    let (evolve, held_out) = (find(false), find(true));
+    let outcome = |job: Uuid| json!({"outcomeId":job,"versionId":f.version,"digest":DIGEST,"input":format!("Why was I charged twice? {job}"),"expected":PROSE,"output":"wrong"});
+    let receipt = f
+        .ok("POST", "/outcomes", "app", None, outcome(evolve))
+        .await;
+    // The conversion fails on both attempts.
+    for _ in 0..2 {
+        let lease = conversion_lease(&f).await;
+        let error = json!({"error":{"code":"provider-rejected","message":"HTTP 401"}});
+        assert_eq!(act(&f.internal(), &lease, "result", error).await.0, 204);
+    }
+    let page = f
+        .ok("GET", "/tasks?source=outcome", &person, None, Value::Null)
+        .await;
+    let task = &page["items"][0];
+    assert_eq!(
+        (&task["taskId"], &task["group"], &task["input"]),
+        (
+            &json!(format!("outcome:{evolve}")),
+            &json!(evolve.to_string()),
+            &outcome(evolve)["input"]
+        )
+    );
+    assert_eq!(task["grader"], json!({"type":"exact","expected":PROSE}));
+    assert_eq!(
+        (&task["output"], &task["versionId"], &task["author"]),
+        (
+            &json!("wrong"),
+            &json!(f.version.to_string()),
+            &json!("app")
+        )
+    );
+    assert_eq!(
+        (&task["admission"], &task["admissionReason"]),
+        (&json!("set-aside"), &json!("not-converted"))
+    );
+    // Neither a later dispatch nor a repeated call writes it again.
+    post(
+        &f.internal(),
+        "",
+        &f.token,
+        json!({"executor":Fixture::identity()}),
+    )
+    .await;
+    assert_eq!(
+        f.ok("POST", "/outcomes", "app", None, outcome(evolve))
+            .await,
+        receipt
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_tasks WHERE task_id=$1")
+        .bind(format!("outcome:{evolve}"))
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+
+    // A held-out outcome whose row the conversion sets aside stays in held-out custody.
+    let receipt = f
+        .ok("POST", "/outcomes", "app", None, outcome(held_out))
+        .await;
+    assert_eq!(receipt["heldOutCount"], 1);
+    let lease = conversion_lease(&f).await;
+    let report = json!({"cards":[],"setAside":[{"row":1,"reason":"no-reference"}],"judgeLog":[],"tokens":{"judge":{"input":1,"output":1}}});
+    assert_eq!(act(&f.internal(), &lease, "result", report).await.0, 204);
+    let page = f
+        .ok("GET", "/tasks?source=outcome", "writer", None, Value::Null)
+        .await;
+    assert_eq!(page["heldOutCount"], 1);
+    let export = f
+        .ok("GET", "/held-out-tasks/export", &person, None, Value::Null)
+        .await;
+    let task = &export["items"][0];
+    assert_eq!(task["taskId"], format!("outcome:{held_out}"));
+    assert_eq!(task["grader"], json!({"type":"exact","expected":PROSE}));
+    assert_eq!(task["confirmedBy"], "app");
+    assert_eq!(
+        (&task["admission"], &task["admissionReason"]),
+        (&json!("set-aside"), &json!("not-converted"))
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn a_converted_import_row_keeps_its_own_input_and_expected_answer() {
+    let f = Fixture::new().await;
+    f.enroll().await;
+    let person = format!("console/{}", session(&f, "editor").await);
+    let rows = [
+        json!({"input":"first question","expected":PROSE}),
+        json!({"input":"second question","expected":format!("{PROSE} Again.")}),
+    ];
+    let (status, receipt) = import(
+        &f,
+        &person,
+        "rows.jsonl",
+        "application/jsonl",
+        &jsonl(&rows),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    let lease = conversion_lease(&f).await;
+    // The model returns other input and another reference for both rows.
+    let cards: Vec<_> = lease["material"]["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| json!({"row":r["row"],"group":r["source"],"input":"tampered","criteriaDrafted":true,"grader":{"type":"criteria","criteria":["Says the charge is refunded"],"reference":"tampered reference"}}))
+        .collect();
+    let report = json!({"cards":cards,"setAside":[],"judgeLog":[],"tokens":{"judge":{"input":1,"output":1}}});
+    assert_eq!(act(&f.internal(), &lease, "result", report).await.0, 204);
+    let page = f
+        .ok(
+            "GET",
+            "/tasks?source=import&limit=100",
+            &person,
+            None,
+            Value::Null,
+        )
+        .await;
+    let mut kept: Vec<_> = page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| {
+            (
+                t["sourceRow"].as_i64().unwrap(),
+                t["input"].clone(),
+                t["grader"].clone(),
+            )
+        })
+        .collect();
+    // A person's list holds both splits.
+    kept.sort_by_key(|k| k.0);
+    let expected: Vec<_> = rows
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            (
+                i as i64 + 1,
+                r["input"].clone(),
+                json!({"type":"criteria","criteria":["Says the charge is refunded"],"reference":r["expected"]}),
+            )
+        })
+        .collect();
+    assert_eq!(kept, expected);
+}

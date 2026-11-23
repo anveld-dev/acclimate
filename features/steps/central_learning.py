@@ -230,6 +230,17 @@ def evidence(context):
     assert len(case["rollouts"]) == 5
     assert all(r["gatewayLog"] and "Compared the response to the reference." in r["reasons"]
                for r in case["rollouts"])
+    if "browser" in context.scenario.effective_tags:
+        browser = w.browser()
+        browser.visit(w.learning_page + "?round=" + w.adoption)
+        browser.page.get_by_role("button", name="Show per-task results").click()
+        summary = browser.page.locator("summary").filter(has_text=w.card["taskId"])
+        summary.click()
+        card = summary.locator("..")
+        expect(card.get_by_text("Compared the response to the reference.", exact=True).first).to_be_visible()
+        gateway = card.locator("details").first
+        gateway.locator("summary").click()
+        expect(gateway.locator("pre")).to_contain_text("checked")
     assert w.call("GET", w.learning + "/usage")["items"][0]["taskTokens"] > 0
     refusal = session(w, "POST", w.learning + "/rollback", {"roundId": w.stale_round}, expected=409)
     assert refusal["error"]["code"] == "round-not-at-head"

@@ -1,7 +1,7 @@
 use super::{
     Tx,
     evaluations::{CaseReport, Report, case_passes, mean_score, passed_rollouts},
-    evolve, history, memory,
+    history, memory,
 };
 use crate::{
     AppState, BundlePayload,
@@ -203,17 +203,10 @@ async fn render_feedback(
     round: &Pins,
     incumbent: &EvolveEvaluation,
 ) -> Result<Value, sqlx::Error> {
-    let cases = evolve::cases_at(
-        tx,
-        &round.project_id,
-        round.bundle_id,
-        round.evolve_revision,
-    )
-    .await?;
-    let inputs: BTreeMap<_, _> = cases
-        .into_iter()
-        .map(|case| (case.case_id, case.input))
-        .collect();
+    let inputs: BTreeMap<String,Value> = sqlx::query_as("SELECT task_id,input FROM learning_tasks
+        WHERE (project_id,bundle_id)=($1,$2) AND added_revision <= $3 AND (retired_revision IS NULL OR retired_revision > $3)")
+        .bind(&round.project_id).bind(round.bundle_id).bind(round.evolve_revision)
+        .fetch_all(&mut **tx).await?.into_iter().collect();
     let mut doc = incumbent.summary(true);
     doc["versionId"] = json!(incumbent.version_id);
     doc["evolveRevision"] = json!(incumbent.evolve_revision);

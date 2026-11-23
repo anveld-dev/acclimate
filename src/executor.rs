@@ -2,7 +2,8 @@ mod provider;
 pub use provider::ProviderKey;
 mod queue;
 pub mod trials;
-pub use queue::{assemble, queue_evaluation};
+pub use queue::queue_evaluation;
+pub(crate) use queue::settle_round;
 
 use crate::{ApiResult, commands, db, digest, err};
 use axum::{
@@ -119,6 +120,18 @@ async fn lease(
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     }
 }
+pub(crate) async fn expire_leases<'a>(
+    executor: impl sqlx::PgExecutor<'a>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE learning_rollouts SET status=CASE attempts WHEN 2 THEN 'failed' ELSE 'queued' END,
+        error_code=CASE attempts WHEN 2 THEN 'executor' END,lease_token_hash=NULL
+        WHERE status IN ('running','grading') AND lease_expires_at<=clock_timestamp()",
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
+}
 async fn claim(s: &Service, hash: &str, executor: &Value) -> ApiResult<Option<Value>> {
     let _permit = s
         .runtime
@@ -127,18 +140,22 @@ async fn claim(s: &Service, hash: &str, executor: &Value) -> ApiResult<Option<Va
         .ok_or_else(|| db("ownership unavailable"))?;
     let mut tx = s.pool.begin().await.map_err(db)?;
     let owner: Uuid = sqlx::query_scalar(
-        "SELECT id FROM executor_credentials WHERE token_hash=$1 AND revoked_at IS NULL FOR SHARE",
+        "SELECT id FROM executor_credentials WHERE token_hash=$1 AND revoked_at IS NULL FOR UPDATE",
     )
     .bind(hash)
     .fetch_optional(&mut *tx)
     .await
     .map_err(db)?
     .ok_or_else(unauthorized)?;
-    sqlx::query("UPDATE learning_rollouts SET status=CASE attempts WHEN 2 THEN 'failed' ELSE 'queued' END,error_code=CASE attempts WHEN 2 THEN 'executor' END,lease_token_hash=NULL
-        WHERE status IN ('running','grading') AND lease_expires_at<=clock_timestamp()")
-        .execute(&mut *tx)
-        .await
-        .map_err(db)?;
+    expire_leases(&mut *tx).await.map_err(db)?;
+    sqlx::query(
+        "UPDATE executor_credentials SET runtime=$2,last_seen_at=clock_timestamp() WHERE id=$1",
+    )
+    .bind(owner)
+    .bind(executor)
+    .execute(&mut *tx)
+    .await
+    .map_err(db)?;
     crate::learning::trial_work::dispatch(&mut tx, executor).await?;
     let row = sqlx::query("SELECT l.id,l.input,l.grader,t.kind,v.project_id,convert_from(v.payload,'UTF8')::jsonb AS bundle,p.base_url,p.encrypted_key,coalesce(r.runtime,t.runtime) AS runtime
         FROM learning_rollouts l LEFT JOIN learning_evaluations e ON e.id=l.evaluation_id LEFT JOIN learning_rounds r ON r.id=e.round_id

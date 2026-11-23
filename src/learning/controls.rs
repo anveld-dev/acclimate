@@ -21,10 +21,9 @@ pub(super) async fn schedule(
         decision: Option<String>,
         trigger: String,
         task_revision: i64,
-        evolve_revision: i64,
         created_at: chrono::DateTime<chrono::Utc>,
     }
-    let previous:Option<PreviousRound>=sqlx::query_as("SELECT state,decision,trigger,task_revision,evolve_revision,created_at FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) ORDER BY number DESC LIMIT 1")
+    let previous:Option<PreviousRound>=sqlx::query_as("SELECT state,decision,trigger,task_revision,created_at FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) ORDER BY number DESC LIMIT 1")
         .bind(&row.project_id).bind(row.bundle_id).fetch_optional(&mut **tx).await?;
     let trigger = if let Some(previous) = previous {
         if row.started_at.is_some_and(|t| {
@@ -36,12 +35,10 @@ pub(super) async fn schedule(
         } else if previous.decision.as_deref() == Some("adopted") {
             Some("adoption")
         } else {
-            let (changes, live): (i64, i64) = if row.started_at.is_some() {
+            let (changes, live): (i64, i64) = {
                 sqlx::query_as("SELECT count(DISTINCT task_id) FILTER(WHERE admission_revision>$3 OR (admission='admitted' AND (added_revision>$3 OR retired_revision>$3))),
                     count(*) FILTER(WHERE retired_revision IS NULL AND admission='admitted')
                     FROM learning_tasks WHERE (project_id,bundle_id)=($1,$2)").bind(&row.project_id).bind(row.bundle_id).bind(previous.task_revision).fetch_one(&mut **tx).await?
-            } else {
-                sqlx::query_as("SELECT count(*) FILTER(WHERE added_revision>$3 OR retired_revision>$3),count(*) FILTER(WHERE retired_revision IS NULL) FROM learning_evolve_cases WHERE (project_id,bundle_id)=($1,$2)").bind(&row.project_id).bind(row.bundle_id).bind(previous.evolve_revision).fetch_one(&mut **tx).await?
             };
             if changes >= MIN_CHANGED && changes * 100 >= live * CHANGE_PERCENT {
                 Some("task-change")
@@ -263,7 +260,7 @@ pub(super) async fn monitor(
         "SELECT e.version_id,e.score,e.report FROM learning_evaluations e
          JOIN learning_rounds r ON r.id=e.round_id JOIN learning_rounds current ON current.id=$1
          WHERE (r.project_id,r.bundle_id)=(current.project_id,current.bundle_id)
-           AND r.number<current.number AND r.held_out=current.held_out
+           AND r.number<current.number AND r.task_revision=current.task_revision AND r.runtime=current.runtime
            AND e.role='retained' AND e.measurement='initial' AND e.status='scored'
          ORDER BY r.number DESC LIMIT 1",
     )
@@ -282,10 +279,11 @@ pub(super) async fn monitor(
     let alert = json!({"roundId":round.id,"previousScore":parent.score,"score":child.score,"flippedTasks":flips});
     let changed=sqlx::query("UPDATE learning_loops SET alert=$3 WHERE (project_id,bundle_id)=($1,$2) AND alert IS DISTINCT FROM $3").bind(&row.project_id).bind(row.bundle_id).bind(alert).execute(&mut **tx).await?;
     if changed.rows_affected() > 0 {
-        sqlx::query("SELECT pg_notify('learning_alert',$1)")
-            .bind(round.id.to_string())
-            .execute(&mut **tx)
-            .await?;
+        sqlx::query("INSERT INTO learning_alert_deliveries(round_id,user_id,previous_score,score,flipped_tasks)
+            SELECT $1,u.id,$2,$3,$4 FROM project_memberships m JOIN users u ON u.id=m.user_id
+            WHERE m.project_id=$5 AND m.role='admin' AND u.email_verified ON CONFLICT DO NOTHING")
+            .bind(round.id).bind(parent.score).bind(child.score).bind(flips as i32).bind(&row.project_id)
+            .execute(&mut **tx).await?;
     }
     let Some(adopted) = round
         .adopted_version_id
@@ -303,11 +301,14 @@ pub(super) async fn monitor(
             Some((_, Some(score), report)) => measurements.push(Measurement { score, report }),
             Some((status, ..)) => return Ok(matches!(status.as_str(), "queued" | "running")),
             None => {
-                sqlx::query("INSERT INTO learning_evaluations(id,round_id,role,split,version_id,digest,deadline_at,measurement) SELECT gen_random_uuid(),$1,'retained','held_out',id,digest,now()+make_interval(secs=>$4),$2 FROM versions WHERE id=$3").bind(round.id).bind(kind).bind(version).bind(f64::from(positive_setting("ACCLIMATE_LEARNING_EVALUATION_QUEUE_SECONDS",604800))).execute(&mut **tx).await?;
+                let id = sqlx::query_scalar("INSERT INTO learning_evaluations(id,round_id,role,split,version_id,digest,measurement) SELECT gen_random_uuid(),$1,'retained','held_out',id,digest,$2 FROM versions WHERE id=$3 RETURNING id").bind(round.id).bind(kind).bind(version).fetch_one(&mut **tx).await?;
+                crate::executor::queue_evaluation(tx, id).await?;
                 return Ok(true);
             }
         }
     }
+    sqlx::query("UPDATE learning_rounds SET confirmed_parent_score=$2,confirmed_adoption_score=$3 WHERE id=$1")
+        .bind(round.id).bind(measurements[0].score).bind(measurements[1].score).execute(&mut **tx).await?;
     if regression(&measurements[0], &measurements[1]).0 {
         restore(tx, row, round.id, "service:learning-loop", None, true)
             .await

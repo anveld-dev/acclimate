@@ -516,7 +516,7 @@ mod tests {
         .bind(id)
         .execute(&mut *tx)
         .await.unwrap();
-        sqlx::query("INSERT INTO learning_loops(project_id,bundle_id,channel,app_principal,setting,held_out,enrolled_by) VALUES('p',$1,'stable','app','{}','{}','test')")
+        sqlx::query("INSERT INTO learning_loops(project_id,bundle_id,channel,setting,enrolled_by) VALUES('p',$1,'stable','{}','test')")
         .bind(b)
         .execute(&mut *tx)
         .await.unwrap();

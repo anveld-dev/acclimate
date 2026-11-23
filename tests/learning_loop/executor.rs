@@ -1,7 +1,7 @@
 use super::*;
 use acclimate_service::executor;
 
-async fn post(app: &axum::Router, path: &str, token: &str, body: Value) -> (u16, Value) {
+pub(super) async fn post(app: &axum::Router, path: &str, token: &str, body: Value) -> (u16, Value) {
     let response = app
         .clone()
         .oneshot(
@@ -22,7 +22,12 @@ async fn post(app: &axum::Router, path: &str, token: &str, body: Value) -> (u16,
         serde_json::from_slice(&bytes).unwrap_or(Value::Null),
     )
 }
-async fn act(app: &axum::Router, lease: &Value, action: &str, body: Value) -> (u16, Value) {
+pub(super) async fn act(
+    app: &axum::Router,
+    lease: &Value,
+    action: &str,
+    body: Value,
+) -> (u16, Value) {
     post(
         app,
         &format!("/{}/{action}", lease["leaseId"].as_str().unwrap()),
@@ -57,13 +62,6 @@ async fn executor_leases_recover_and_keep_secrets_out_of_storage() {
     )
     .await
     .unwrap();
-    let mut tx = pool.begin().await.unwrap();
-    sqlx::query("UPDATE learning_rounds SET runtime=$1 WHERE id=(SELECT round_id FROM learning_evaluations WHERE id=$2)")
-        .bind(json!({"executor":identity,"taskModel":"task","judgeModel":"judge","baseUrl":endpoint}))
-        .bind(eval)
-        .execute(&mut *tx).await.unwrap();
-    assert_eq!(executor::queue_evaluation(&mut tx, eval).await.unwrap(), 10);
-    tx.commit().await.unwrap();
     let app = executor::router(pool.clone(), Some(key), f.state.runtime.clone());
     let (id, token) = executor::create_credential(pool).await.unwrap();
     assert_eq!(post(&f.app, "", &token, acquire.clone()).await.0, 404);
@@ -114,10 +112,7 @@ async fn executor_leases_recover_and_keep_secrets_out_of_storage() {
     let last = post(&app, "", &token, acquire.clone()).await.1;
     assert_eq!(last["rolloutId"], other["rolloutId"]);
     assert_eq!(act(&app, &last, "result", error).await.0, 204);
-    assert_eq!(
-        executor::assemble(pool, eval).await.unwrap(),
-        json!({"status":"failed"})
-    );
+
     let failed:bool= sqlx::query_scalar("SELECT attempts=2 AND score IS NULL AND passed IS NULL AND error_code='sandbox-start' FROM learning_rollouts WHERE status='failed'")
         .fetch_one(pool).await.unwrap();
     assert!(failed);
@@ -148,50 +143,6 @@ async fn executor_leases_recover_and_keep_secrets_out_of_storage() {
             .await
             .unwrap();
     assert_eq!(entries, 8);
-}
-
-#[tokio::test]
-#[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
-async fn evaluation_assembly_uses_all_five_scores_per_task() {
-    let mut f = Fixture::new().await;
-    f.enroll().await;
-    f.seed().await;
-    f.spawn_worker();
-    let item = f.item("evolve", 1).await;
-    f.crash_worker().await;
-    let pool = &f.state.db;
-    let evaluation = item["evaluationId"].as_str().unwrap().parse().unwrap();
-    let mut tx = pool.begin().await.unwrap();
-    sqlx::query("UPDATE learning_rounds SET runtime=jsonb_build_object('taskModel','task','judgeModel','judge') WHERE id=(SELECT round_id FROM learning_evaluations WHERE id=$1)")
-        .bind(evaluation).execute(&mut *tx).await.unwrap();
-    executor::queue_evaluation(&mut tx, evaluation)
-        .await
-        .unwrap();
-    tx.commit().await.unwrap();
-    assert_eq!(
-        executor::assemble(pool, evaluation).await.unwrap()["status"],
-        "pending"
-    );
-    sqlx::query(
-        "UPDATE learning_rollouts SET status='scored',
-        score=CASE WHEN task_id='a' THEN 0.8 ELSE 0.4 END,
-        passed=rollout<=CASE WHEN task_id='a' THEN 3 ELSE 2 END WHERE evaluation_id=$1",
-    )
-    .bind(evaluation)
-    .execute(pool)
-    .await
-    .unwrap();
-    let result = executor::assemble(pool, evaluation).await.unwrap();
-    assert_eq!(result["status"], "scored");
-    assert!((result["score"].as_f64().unwrap() - 0.6).abs() < 1e-9);
-    assert_eq!(
-        result["tasks"][0],
-        json!({"taskId":"a","passed":true,"score":0.8})
-    );
-    assert_eq!(
-        result["tasks"][1],
-        json!({"taskId":"b","passed":false,"score":0.4})
-    );
 }
 
 /// Fixture bridge for the real-process Docker gate. Runs in its disposable cluster.
@@ -257,40 +208,21 @@ async fn combined_gate_fixture() {
         std::fs::write(path, json!(results).to_string()).unwrap();
         return;
     }
-    if let Ok(id) = std::env::var("ACCLIMATE_GATE_EVALUATION") {
-        let pool = sqlx::PgPool::connect(&common::database_url())
-            .await
-            .unwrap();
-        let result = executor::assemble(&pool, id.parse().unwrap())
-            .await
-            .unwrap();
-        std::fs::write(path, result.to_string()).unwrap();
-        return;
-    }
-    let mut f = Fixture::new().await;
+    let f = Fixture::new().await;
     f.enroll().await;
     let answer = std::env::var("ACCLIMATE_GATE_ANSWER").unwrap();
-    f.ok(
-        "POST",
-        "/evolve-cases",
-        "app",
-        None,
-        json!({"cases":[
-            {"caseId":"a","input":"a","expected":answer},
-            {"caseId":"b","input":"b","expected":answer}
-        ]}),
-    )
-    .await;
-    f.spawn_worker();
-    let item = f.item("evolve", 1).await;
-    f.crash_worker().await;
-    let id: Uuid = item["evaluationId"].as_str().unwrap().parse().unwrap();
     let runtime: Value =
         serde_json::from_str(&std::env::var("ACCLIMATE_GATE_RUNTIME").unwrap()).unwrap();
+    let round = Uuid::new_v4();
+    let id = Uuid::new_v4();
     let mut tx = f.state.db.begin().await.unwrap();
-    sqlx::query("UPDATE learning_rounds SET runtime=$1 WHERE id=(SELECT round_id FROM learning_evaluations WHERE id=$2)")
-        .bind(runtime).bind(id).execute(&mut *tx).await.unwrap();
-    assert_eq!(executor::queue_evaluation(&mut tx, id).await.unwrap(), 10);
+    sqlx::query("INSERT INTO learning_rounds(id,project_id,bundle_id,number,state,parent_version_id,channel,channel_revision,evolve_revision,memory_revision,setting,runtime,task_revision) VALUES($1,$2,$3,1,'scoring_incumbent',$4,'stable',7,1,0,'{}',$5,1)").bind(round).bind(&f.project).bind(f.bundle).bind(f.version).bind(runtime).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO learning_evaluations(id,round_id,role,split,version_id,digest,evolve_revision) VALUES($1,$2,'incumbent','evolve',$3,$4,1)").bind(id).bind(round).bind(f.version).bind(DIGEST).execute(&mut *tx).await.unwrap();
+    for task in ["a", "b"] {
+        sqlx::query(r#"INSERT INTO learning_tasks(project_id,bundle_id,task_id,"group",input,grader,source,added_revision,admission) VALUES($1,$2,$3,$3,to_jsonb($3::text),$4,'console',1,'admitted')"#)
+            .bind(&f.project).bind(f.bundle).bind(task).bind(json!({"type":"exact","expected":answer})).execute(&mut *tx).await.unwrap();
+    }
+    executor::queue_evaluation(&mut tx, id).await.unwrap();
     tx.commit().await.unwrap();
     let schema: String = sqlx::query_scalar("SELECT current_schema()")
         .fetch_one(&f.state.db)
@@ -357,7 +289,7 @@ async fn trial_leases_resolve_admission_and_validate_material() {
         .unwrap();
     assert_eq!(result["output"], "answer");
     assert_eq!(result["verdict"]["passed"], true);
-    f.enroll().await;
+    f.ok("PUT", "", "admin", None, enrollment()).await;
     let browser = format!("console/{}", session(&f, "admin").await);
     sqlx::query("UPDATE learning_loops SET task_model='task',judge_model='judge'")
         .execute(pool)

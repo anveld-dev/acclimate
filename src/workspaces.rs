@@ -15,7 +15,6 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/v1/workspaces/{project}/users/{user}", get(verified_user))
         .route("/v1/workspaces/{project}/memberships", get(memberships))
         .route("/v1/workspaces", get(projects).post(create_project))
-        .route("/v1/workspaces/{project}/principal", get(principal))
         .route("/v1/workspaces/{project}/bundles", get(bundles))
         .route(
             "/v1/workspaces/{project}/bundles/{bundle}/channels",
@@ -29,44 +28,6 @@ pub(crate) fn routes() -> Router<AppState> {
             put(membership).delete(remove_membership),
         )
 }
-/// The caller's own identity in a workspace, so a CLI holding an opaque machine
-/// token can enroll a learning loop as itself.
-async fn principal(
-    State(s): State<AppState>,
-    Path(project): Path<String>,
-    h: HeaderMap,
-) -> ApiResult<Json<Value>> {
-    let actor = auth::actor(&h, &s, &project, "read")?;
-    let mut tx = s.db.begin().await.map_err(db)?;
-    auth::authorize_transaction(&mut tx, &actor, &project, "read").await?;
-    let mut rights = Vec::new();
-    for right in auth::RIGHTS {
-        if auth::actor(&h, &s, &project, right).is_err() {
-            continue;
-        }
-        // Signed-in members need the admin role for `promote`, as learning enrollment does.
-        let effective = if right == "promote" && actor.user_id.is_some() {
-            "admin"
-        } else {
-            right
-        };
-        if auth::authorize_transaction(&mut tx, &actor, &project, effective)
-            .await
-            .is_ok()
-        {
-            rights.push(right);
-        }
-    }
-    let kind = if actor.user_id.is_some() {
-        "user"
-    } else {
-        "machine"
-    };
-    Ok(Json(
-        json!({"principalId": actor.principal, "kind": kind, "rights": rights}),
-    ))
-}
-
 pub async fn backfill_projects(s: &AppState) -> Result<(), sqlx::Error> {
     for g in s.grants.iter() {
         sqlx::query("INSERT INTO projects(id,name) VALUES($1,$1) ON CONFLICT DO NOTHING")

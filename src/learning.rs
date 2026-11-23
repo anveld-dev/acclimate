@@ -16,11 +16,11 @@ use uuid::Uuid;
 
 mod controls;
 mod evaluations;
-mod evolve;
 mod history;
 pub(crate) mod imports;
 mod memory;
 pub(super) mod optimizer;
+mod outcomes;
 pub(crate) mod tasks;
 pub(crate) mod trial_work;
 pub(crate) mod worker;
@@ -78,20 +78,10 @@ pub(crate) fn routes() -> Router<AppState> {
         .route(&format!("{PREFIX}/rounds"), get(list_rounds))
         .route(&format!("{PREFIX}/rounds/{{round}}"), get(get_round))
         .route(
-            &format!("{PREFIX}/evolve-cases"),
-            get(evolve::list_cases).post(evolve::submit_cases),
+            &format!("{PREFIX}/outcomes"),
+            post(outcomes::submit_outcome),
         )
-        .route(&format!("{PREFIX}/outcomes"), post(evolve::submit_outcome))
         .route(&format!("{PREFIX}/memory"), get(memory::get))
-        .route(&format!("{PREFIX}/work"), get(evaluations::work))
-        .route(
-            &format!("{PREFIX}/evaluations/{{evaluation}}/start"),
-            post(evaluations::start),
-        )
-        .route(
-            &format!("{PREFIX}/evaluations/{{evaluation}}/report"),
-            post(evaluations::report),
-        )
 }
 
 fn invalid(message: impl Into<String>) -> crate::ApiErr {
@@ -107,7 +97,7 @@ fn denied() -> crate::ApiErr {
     err(
         StatusCode::FORBIDDEN,
         "denied",
-        "This operation requires a different learning principal",
+        "This operation requires a signed-in workspace member",
     )
 }
 fn body(raw: Body) -> ApiResult<Value> {
@@ -130,14 +120,6 @@ fn parse<T: serde::de::DeserializeOwned>(value: &Value) -> ApiResult<T> {
     }
     serde_json::from_value(value.clone()).map_err(|_| invalid("Invalid learning request fields"))
 }
-fn valid_digest(digest: &str) -> bool {
-    digest.strip_prefix("sha256:").is_some_and(|hex| {
-        hex.len() == 64
-            && hex
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-    })
-}
 fn positive_setting(name: &str, default: u32) -> u32 {
     std::env::var(name)
         .ok()
@@ -153,10 +135,7 @@ struct LoopRow {
     status: String,
     pause_reason: Option<String>,
     channel: String,
-    app_principal: String,
     setting: Value,
-    held_out: Value,
-    evolve_revision: i64,
     memory_revision: i64,
     task_revision: i64,
     task_model: Option<String>,
@@ -217,12 +196,6 @@ async fn actor_tx<'a>(
     auth::authorize_transaction(&mut tx, &actor, project, right).await?;
     Ok((tx, actor))
 }
-fn require_app(actor: &auth::Actor, principal: &str) -> ApiResult<()> {
-    if actor.user_id.is_some() || actor.principal != principal {
-        return Err(denied());
-    }
-    Ok(())
-}
 async fn audit(
     tx: &mut Tx<'_>,
     actor: &auth::Actor,
@@ -242,13 +215,10 @@ async fn audit(
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Enrollment {
     channel: String,
-    #[serde(default)]
-    app_principal_id: String,
-    task_model: Option<String>,
-    judge_model: Option<String>,
+    task_model: String,
+    judge_model: String,
     max_rounds_per_day: Option<i32>,
     setting: Setting,
-    held_out: Option<HeldOut>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -258,13 +228,6 @@ struct Setting {
     #[serde(default)]
     policy_model: String,
 }
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct HeldOut {
-    digest: String,
-    cases: i32,
-}
-
 async fn enroll(
     State(s): State<AppState>,
     Path((project, bundle)): Path<(String, String)>,
@@ -275,34 +238,26 @@ async fn enroll(
     let (mut tx, actor) = actor_tx(&s, &h, &project, "promote").await?;
     let mut request = body(raw)?;
     let mut input: Enrollment = parse(&request)?;
-    let central = input.task_model.is_some();
-    if input.task_model.is_some() != input.judge_model.is_some()
-        || input.max_rounds_per_day.is_some_and(|v| v < 1)
+
+    if input.max_rounds_per_day.is_some_and(|v| v < 1) {
+        return Err(invalid("Daily round cap must be positive"));
+    }
+    let allowed: Option<Vec<String>> = sqlx::query_scalar(
+        "SELECT allowed_models FROM workspace_model_providers WHERE project_id=$1 FOR SHARE",
+    )
+    .bind(&project)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(db)?;
+    if input.task_model == input.judge_model
+        || !allowed.is_some_and(|m| m.contains(&input.task_model) && m.contains(&input.judge_model))
     {
-        return Err(invalid("Supply both models and a positive daily cap"));
+        return Err(invalid("Choose two different allowed provider models"));
     }
-    if let (Some(task), Some(judge)) = (&input.task_model, &input.judge_model) {
-        let allowed: Option<Vec<String>> = sqlx::query_scalar(
-            "SELECT allowed_models FROM workspace_model_providers WHERE project_id=$1 FOR SHARE",
-        )
-        .bind(&project)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(db)?;
-        if task == judge || !allowed.is_some_and(|m| m.contains(task) && m.contains(judge)) {
-            return Err(invalid("Choose two different allowed provider models"));
-        }
-        input.setting.policy_model = task.clone();
-        request["setting"]["policyModel"] = json!(task);
-    }
-    if input.held_out.is_none() && central {
-        request["heldOut"] = json!({});
-    }
+    input.setting.policy_model.clone_from(&input.task_model);
+    request["setting"]["policyModel"] = json!(input.task_model);
     if !request["setting"].is_object()
-        || !request["heldOut"].is_object()
         || !crate::channels::valid_channel(&input.channel)
-        || (!central && input.app_principal_id.is_empty())
-        || input.app_principal_id.len() > 1024
         || [
             &input.setting.domain,
             &input.setting.benchmark,
@@ -310,9 +265,6 @@ async fn enroll(
         ]
         .iter()
         .any(|s| s.trim().is_empty() || s.len() > 256 || s.chars().any(char::is_control))
-        || input.held_out.as_ref().map_or(!central, |held| {
-            !valid_digest(&held.digest) || !(1..=10_000).contains(&held.cases)
-        })
     {
         return Err(invalid("Invalid learning enrollment"));
     }
@@ -335,21 +287,6 @@ async fn enroll(
         return Err(missing("Bundle not found"));
     }
 
-    // Check machine authority before acquiring the loop lock, in the same order as app mutations.
-    let grant = s.grants.iter().any(|g| {
-        g.project_id == project
-            && g.principal_id == input.app_principal_id
-            && auth::rights_allow(&g.rights, "evaluate")
-    });
-    if !grant && !input.app_principal_id.is_empty() {
-        let machine: Option<Vec<String>> = sqlx::query_scalar("SELECT rights FROM machine_tokens WHERE (project_id,principal_id)=($1,$2) AND revoked_at IS NULL AND expires_at>now() FOR SHARE")
-            .bind(&project).bind(&input.app_principal_id).fetch_optional(&mut *tx).await.map_err(db)?;
-        if !machine.is_some_and(|rights| auth::rights_allow(&rights, "evaluate")) {
-            return Err(invalid(
-                "The app principal requires evaluate on this workspace",
-            ));
-        }
-    }
     let existing = find_loop(&mut tx, &project, bundle, true)
         .await
         .map_err(db)?;
@@ -366,10 +303,9 @@ async fn enroll(
         return Err(invalid("Release a version on the learning channel first"));
     }
     if existing.is_none() {
-        sqlx::query("INSERT INTO learning_loops(project_id,bundle_id,channel,app_principal,setting,held_out,enrolled_by,status,pause_reason)
-                     VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $8 THEN 'paused' ELSE 'running' END,CASE WHEN $8 THEN 'operator' END) ON CONFLICT(project_id,bundle_id) DO NOTHING")
-            .bind(&project).bind(bundle).bind(&input.channel).bind(&input.app_principal_id)
-            .bind(&request["setting"]).bind(&request["heldOut"]).bind(&actor.principal).bind(central)
+        sqlx::query("INSERT INTO learning_loops(project_id,bundle_id,channel,setting,enrolled_by,status,pause_reason)
+                     VALUES($1,$2,$3,$4,$5,'paused','operator') ON CONFLICT DO NOTHING")
+            .bind(&project).bind(bundle).bind(&input.channel).bind(&request["setting"]).bind(&actor.principal)
             .execute(&mut *tx).await.map_err(db)?;
     }
     let row = match existing {
@@ -383,18 +319,7 @@ async fn enroll(
     {
         return Ok(Json(receipt));
     }
-    if let Some(task) = row.task_model.as_ref().filter(|_| !central) {
-        request["setting"]["policyModel"] = json!(task)
-    }
-    if central && request.get("appPrincipalId").is_none() {
-        input.app_principal_id.clone_from(&row.app_principal);
-    }
-    if central && input.held_out.is_none() {
-        request["heldOut"] = row.held_out.clone();
-    }
-    let moves_work = row.channel != input.channel
-        || row.app_principal != input.app_principal_id
-        || row.held_out != request["heldOut"];
+    let moves_work = row.channel != input.channel;
     if moves_work
         && active_round(&mut tx, &project, bundle)
             .await
@@ -404,15 +329,11 @@ async fn enroll(
         return Err(conflict("Pause the loop and let the round end first"));
     }
     if moves_work || row.setting != request["setting"] || row.status == "stopped" {
-        sqlx::query("UPDATE learning_loops SET channel=$3, app_principal=$4, setting=$5, held_out=$6,
-                      enrolled_by=$7, resumed_at=CASE WHEN status='stopped' AND $8=false AND started_at IS NULL THEN now() ELSE resumed_at END,
-                      status=CASE WHEN status='stopped' AND $8=false AND started_at IS NULL THEN 'running' ELSE status END, updated_at=now()
-                     WHERE (project_id,bundle_id)=($1,$2)")
-            .bind(&project).bind(bundle).bind(&input.channel).bind(&input.app_principal_id)
-            .bind(&request["setting"]).bind(&request["heldOut"]).bind(&actor.principal).bind(central)
+        sqlx::query("UPDATE learning_loops SET channel=$3,setting=$4,enrolled_by=$5,updated_at=now() WHERE (project_id,bundle_id)=($1,$2)")
+            .bind(&project).bind(bundle).bind(&input.channel).bind(&request["setting"]).bind(&actor.principal)
             .execute(&mut *tx).await.map_err(db)?;
     }
-    sqlx::query("UPDATE learning_loops SET task_model=coalesce($3,task_model),judge_model=coalesce($4,judge_model),max_rounds_per_day=coalesce($5,max_rounds_per_day) WHERE (project_id,bundle_id)=($1,$2)")
+    sqlx::query("UPDATE learning_loops SET task_model=$3,judge_model=$4,max_rounds_per_day=coalesce($5,max_rounds_per_day) WHERE (project_id,bundle_id)=($1,$2)")
         .bind(&project).bind(bundle).bind(input.task_model).bind(input.judge_model).bind(input.max_rounds_per_day).execute(&mut *tx).await.map_err(db)?;
     let row = require_loop(&mut tx, &project, bundle, false).await?;
     let result = loop_document(&mut tx, row).await?;
@@ -462,9 +383,12 @@ async fn change_status(
     {
         return Ok(Json(receipt));
     }
-    if operation == "start"
-        || (operation == "resume" && (row.started_at.is_some() || row.task_model.is_some()))
+    if operation == "resume"
+        && (row.started_at.is_none() || row.pause_reason.as_deref() == Some("tasks-required"))
     {
+        return Err(conflict("Use Start after adding admitted tasks"));
+    }
+    if operation == "start" || operation == "resume" {
         if !controls::ready(&mut tx, &row).await.map_err(db)? {
             return Err(err(
                 StatusCode::CONFLICT,
@@ -472,11 +396,16 @@ async fn change_status(
                 "At least 20 admitted tasks in each split are required",
             ));
         }
+        if row.task_model.is_none() || row.judge_model.is_none() {
+            return Err(conflict(
+                "Configure the task and judge models before starting",
+            ));
+        }
         sqlx::query("UPDATE learning_loops SET started_at=coalesce(started_at,now()) WHERE (project_id,bundle_id)=($1,$2)").bind(project).bind(bundle).execute(&mut *tx).await.map_err(db)?;
     }
     let (status, reason) = match (operation, row.status.as_str()) {
         ("pause" | "resume", "stopped") => {
-            return Err(conflict("Use PUT to restart a stopped loop"));
+            return Err(conflict("Use Start to restart a stopped loop"));
         }
         ("pause", "running") => ("paused", Some("operator")),
         ("start", _) | ("resume", "paused") => ("running", None),
@@ -581,9 +510,6 @@ async fn summaries(
 async fn loop_document(tx: &mut Tx<'_>, row: LoopRow) -> ApiResult<Value> {
     let project = &row.project_id;
     let bundle = row.bundle_id;
-    let live = evolve::live_count(tx, project, bundle, row.evolve_revision)
-        .await
-        .map_err(db)?;
     let active = active_round(tx, project, bundle).await.map_err(db)?;
     let recent = summaries(tx, project, bundle, None, 10).await?;
     let (e, h) = controls::counts(tx, project, bundle).await.map_err(db)?;
@@ -592,8 +518,8 @@ async fn loop_document(tx: &mut Tx<'_>, row: LoopRow) -> ApiResult<Value> {
         "maxRoundsPerDay":row.max_rounds_per_day,"waiting":row.waiting,"alert":row.alert,
         "admittedEvolve":e,"admittedHeldOut":h,
         "workspaceId": project, "bundleId": bundle, "status": row.status, "pauseReason": row.pause_reason,
-        "channel": row.channel, "appPrincipalId": row.app_principal, "setting": row.setting, "heldOut": row.held_out,
-        "evolveRevision": row.evolve_revision, "liveCases": live, "memoryRevision": row.memory_revision,
+        "channel": row.channel, "setting": row.setting,
+        "memoryRevision": row.memory_revision,
         "nextRound": row.next_round, "failedRounds": row.failed_rounds, "enrolledBy": row.enrolled_by,
         "createdAt": row.created_at, "updatedAt": row.updated_at, "activeRound": active, "rounds": recent
     }))
@@ -667,7 +593,7 @@ async fn get_round(
         "channel": row.get::<String,_>("channel"), "channelRevision": row.get::<i64,_>("channel_revision").to_string(),
         "evolveRevision": row.get::<i64,_>("evolve_revision"), "memoryRevision": row.get::<i64,_>("memory_revision"),
         "memoryDigest": row.get::<Option<String>,_>("memory_digest"), "historyDigest": row.get::<Option<String>,_>("history_digest"),
-        "setting": row.get::<Value,_>("setting"), "heldOut": row.get::<Value,_>("held_out"),
+        "setting": row.get::<Value,_>("setting"),
         "optimizerModel": row.get::<Option<String>,_>("optimizer_model"),
         "optimizerReasoningEffort": row.get::<Option<String>,_>("optimizer_reasoning_effort"), "selection": row.get::<Option<Value>,_>("selection"),
         "candidates": optimizer::candidates(&mut tx, round).await.map_err(db)?, "evaluations": evals

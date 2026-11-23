@@ -10,6 +10,8 @@ struct Outcome {
     digest: String,
     input: Value,
     expected: Value,
+    #[serde(default)]
+    grading: Option<Value>,
 }
 
 // Preserve an explicitly reported JSON null as a delivered output.
@@ -39,6 +41,7 @@ pub(super) async fn submit_outcome(
     let request = body(raw)?;
     let outcome: Outcome = parse(&request)?;
     validate_example(&outcome.input, &outcome.expected)?;
+    let grading = imports::grading(outcome.grading.as_ref(), &outcome.expected).map_err(invalid)?;
     if let Some(output) = &outcome.output {
         let equal: bool = sqlx::query_scalar("SELECT $1::jsonb=$2::jsonb")
             .bind(output)
@@ -75,20 +78,47 @@ pub(super) async fn submit_outcome(
     let case_id = format!("outcome:{}", outcome.outcome_id);
     let group = outcome.outcome_id.to_string();
     let split = tasks::Split::of(&group);
-    let mut task = tasks::Task::pending(
-        outcome.input.clone(),
-        json!({"type":"exact","expected":outcome.expected}),
-        group,
-        "outcome",
-        &actor.principal,
-    );
-    task.task_id = case_id.clone();
-    task.outcome_id = Some(outcome.outcome_id);
-    task.version_id = Some(outcome.version_id);
-    task.output = outcome.output;
-    task.confirmed_by = Some(actor.principal.clone());
-    let rev = tasks::revision(&mut tx, &project, bundle).await?;
-    tasks::insert(&mut tx, &project, bundle, split, &task, rev).await?;
+    let rev = if grading == "criteria" {
+        // The task is written once conversion drafts its criteria from the expected answer.
+        let mut source = json!({"outcomeId":outcome.outcome_id,"versionId":outcome.version_id});
+        if let Some(output) = outcome.output {
+            source["output"] = output;
+        }
+        imports::queue_outcome(
+            &mut tx,
+            &project,
+            bundle,
+            &actor.principal,
+            source,
+            &outcome.input,
+            &outcome.expected,
+        )
+        .await?;
+        sqlx::query_scalar(
+            "SELECT task_revision FROM learning_loops WHERE (project_id,bundle_id)=($1,$2)",
+        )
+        .bind(&project)
+        .bind(bundle)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(db)?
+    } else {
+        let mut task = tasks::Task::pending(
+            outcome.input.clone(),
+            json!({"type":"exact","expected":outcome.expected}),
+            group,
+            "outcome",
+            &actor.principal,
+        );
+        task.task_id = case_id.clone();
+        task.outcome_id = Some(outcome.outcome_id);
+        task.version_id = Some(outcome.version_id);
+        task.output = outcome.output;
+        task.confirmed_by = Some(actor.principal.clone());
+        let rev = tasks::revision(&mut tx, &project, bundle).await?;
+        tasks::insert(&mut tx, &project, bundle, split, &task, rev).await?;
+        rev
+    };
     let receipt = if split == tasks::Split::Evolve {
         json!({"outcomeId":outcome.outcome_id,"taskId":case_id,"taskRevision":rev})
     } else {

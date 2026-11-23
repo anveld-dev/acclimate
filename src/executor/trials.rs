@@ -149,6 +149,7 @@ pub(super) fn valid_conversion(material: &Value, cards: &[Value], aside: &[Value
         }
         covered.insert(n);
     }
+    // The service itself assigns `too-large` and `duplicate`. An executor never reports them.
     aside.iter().all(|s| {
         matches!(s["reason"].as_str(), Some("no-reference" | "not-converted"))
             && s["row"]
@@ -223,6 +224,8 @@ mod tests {
             ("no-reference", true),
             ("not-converted", true),
             ("invented", false),
+            ("duplicate", false),
+            ("too-large", false),
         ] {
             let aside = [
                 json!({"row":1,"reason":"no-reference"}),

@@ -61,6 +61,7 @@ pub(crate) fn routes() -> Router<AppState> {
             post(trial_work::try_task),
         )
         .route(&format!("{PREFIX}/trials/{{id}}"), get(trial_work::read))
+        .route(&format!("{PREFIX}/tasks/imports"), get(imports::list))
         .route(
             &format!("{PREFIX}/tasks/imports/{{id}}"),
             get(trial_work::import_status),

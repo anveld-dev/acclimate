@@ -66,3 +66,44 @@ test('a job refuses an ambiguous bundle name before resolving a version', async 
   });
   await assert.rejects(acclimate.job('support', { channel: 'stable' }), /Multiple bundles share that name/);
 });
+
+test('expect sends an explicit grading choice and refuses unknown ones', async () => {
+  const cacheDir = await mkdtemp(join(await realpath(tmpdir()), 'acclimate-job-test-'));
+  const bytes = JSON.stringify({ schemaVersion: 1, files: [{ kind: 'instruction', path: 'AGENTS.md', text: 'Do the job.' }] });
+  const version = {
+    id: 'version', bundleId: 'bundle', parentVersionId: null, createdAt: 'now',
+    digest: 'sha256:' + createHash('sha256').update(bytes).digest('hex'),
+  };
+  const bodies: LearningOutcomeRequest[] = [];
+  try {
+    const acclimate = createAcclimate({
+      baseUrl: 'http://localhost', token: 'fake', workspaceId: 'test', cacheDir, retries: 0,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname.endsWith('/bundles'))
+          return Response.json({ items: [{ id: 'bundle', name: 'support' }], nextCursor: null });
+        if (url.pathname.endsWith('/channels/stable'))
+          return Response.json({ channel: 'stable', revision: '1', version });
+        if (url.pathname.endsWith('/versions/version')) return Response.json(version);
+        if (url.pathname.endsWith('/payload')) return new Response(bytes);
+        const body = JSON.parse(String(init?.body)) as LearningOutcomeRequest;
+        bodies.push(body);
+        return Response.json({ outcomeId: body.outcomeId, taskRevision: 1 });
+      },
+    });
+    const refused = await acclimate.job('support', { channel: 'stable', input: 'q' });
+    await assert.rejects(
+      refused.expect('a', { grading: 'fuzzy' as 'exact' }),
+      /grading must be "exact" or "criteria"/,
+    );
+    const job = await acclimate.job('support', { channel: 'stable', input: 'q' });
+    await job.expect('Two short paragraphs.', { grading: 'criteria' });
+    const plain = await acclimate.job('support', { channel: 'stable', input: 'q' });
+    await plain.expect('a');
+    assert.equal(bodies.length, 2);
+    assert.equal(bodies[0].grading, 'criteria');
+    assert.equal('grading' in bodies[1], false);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});

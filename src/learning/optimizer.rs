@@ -204,19 +204,26 @@ async fn render_feedback(
     round: &Pins,
     incumbent: &EvolveEvaluation,
 ) -> Result<Value, sqlx::Error> {
-    let inputs: BTreeMap<String,Value> = sqlx::query_as("SELECT task_id,input FROM learning_tasks
+    let tasks: BTreeMap<String,(Value,Value)> = sqlx::query_as::<_,(String,Value,Value)>("SELECT task_id,input,grader FROM learning_tasks
         WHERE (project_id,bundle_id)=($1,$2) AND added_revision <= $3 AND (retired_revision IS NULL OR retired_revision > $3)")
         .bind(&round.project_id).bind(round.bundle_id).bind(round.evolve_revision)
-        .fetch_all(&mut **tx).await?.into_iter().collect();
+        .fetch_all(&mut **tx).await?.into_iter().map(|(id,input,grader)| (id,(input,grader))).collect();
     let mut doc = incumbent.summary(true);
     doc["versionId"] = json!(incumbent.version_id);
     doc["evolveRevision"] = json!(incumbent.evolve_revision);
     for case in doc["cases"].as_array_mut().expect("case array") {
         let id = case["caseId"].as_str().expect("case id");
-        case["input"] = inputs
+        let (input, grader) = tasks
             .get(id)
-            .cloned()
             .ok_or_else(|| invariant("Missing pinned case"))?;
+        // An exact-match failure has no judge reasons. Without the expected answer the optimizer
+        // would know only that the case failed. This is the evolve split; held-out is never read here.
+        let failed =
+            case["passedRollouts"].as_u64() < case["rollouts"].as_array().map(|r| r.len() as u64);
+        if grader["type"] == "exact" && failed {
+            case["expected"] = grader["expected"].clone();
+        }
+        case["input"] = input.clone();
     }
     Ok(doc)
 }

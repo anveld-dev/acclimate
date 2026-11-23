@@ -354,6 +354,7 @@ async fn adoption_releases_only_selected_sample_and_merges_memory_across_rounds(
                 .all(|data| *data == calls[offset])
         );
     }
+    let mut saw_failed_case = false;
     for (i, request) in calls.iter().enumerate() {
         if i < 7 {
             assert_eq!(
@@ -365,9 +366,22 @@ async fn adoption_releases_only_selected_sample_and_merges_memory_across_rounds(
                 "evolve trace"
             );
         }
-        assert!(request["feedback"]["cases"][0].get("expected").is_none());
+        // The expected answer is given only for an exact-match case with a failed rollout.
+        // Case a is graded by criteria, so its judge reasons are the feedback.
+        for case in request["feedback"]["cases"].as_array().unwrap() {
+            let failed = case["caseId"] != "a"
+                && case["passedRollouts"].as_u64().unwrap()
+                    < case["rollouts"].as_array().unwrap().len() as u64;
+            assert_eq!(
+                case.get("expected"),
+                failed.then_some(&json!("fixture answer")),
+                "{case}"
+            );
+            saw_failed_case |= failed;
+        }
         assert!(request.get("heldOut").is_none());
     }
+    assert!(saw_failed_case);
     assert!(calls[0]["history"].as_array().unwrap().is_empty());
     assert_eq!(
         calls[7]["history"][0]["candidates"]
@@ -1190,7 +1204,11 @@ async fn monitor_scenario(scenario: &str) {
     let cases = |passed| json!({"cases":[result("held-out-sentinel-1",passed),result("held-out-sentinel-2",passed)]});
     sqlx::query("INSERT INTO learning_evaluations(id,round_id,role,split,version_id,digest,status,started_at,score,report) SELECT gen_random_uuid(),$1,'retained','held_out',id,digest,'scored',now(),0,$3 FROM versions WHERE id=$2")
         .bind(round).bind(if kept{f.version}else{child}).bind(cases(0.0)).execute(&f.state.db).await.unwrap();
-    if matches!(scenario, "initial-failed" | "persistent-failure") {
+    let incomplete = matches!(
+        scenario,
+        "initial-failed" | "persistent-failure" | "executor-lost"
+    );
+    if incomplete {
         session(&f, "admin").await;
         sqlx::query("UPDATE users SET email='admin@example.test',email_verified=true WHERE issuer='https://fixture.example'").execute(&f.state.db).await.unwrap();
     }
@@ -1214,12 +1232,26 @@ async fn monitor_scenario(scenario: &str) {
         .unwrap();
     f.spawn_worker();
     let route = format!("/rounds/{round}");
-    if matches!(scenario, "initial-failed" | "persistent-failure") {
+    if incomplete {
+        let lost = scenario == "executor-lost";
         tokio::time::timeout(Duration::from_secs(12),async {
             loop {
-                sqlx::query("UPDATE learning_rollouts l SET status='failed',error_code='executor' FROM learning_evaluations e WHERE l.evaluation_id=e.id AND e.round_id=$1 AND e.measurement='baseline-parent' AND l.status='queued'").bind(round).execute(&f.state.db).await.unwrap();
+                if lost {
+                    // No executor matches this round. Age the wait past its five-minute bound.
+                    sqlx::query("UPDATE learning_rounds SET unmatched_since=now()-interval '6 minutes' WHERE id=$1 AND unmatched_since IS NOT NULL").bind(round).execute(&f.state.db).await.unwrap();
+                } else {
+                    sqlx::query("UPDATE learning_rollouts l SET status='failed',error_code='executor' FROM learning_evaluations e WHERE l.evaluation_id=e.id AND e.round_id=$1 AND e.measurement='baseline-parent' AND l.status='queued'").bind(round).execute(&f.state.db).await.unwrap();
+                }
                 let state=f.ok("GET",&route,"reader",None,Value::Null).await;
-                if state["state"]=="completed" {assert!(state["heldOutError"].is_string());assert_eq!(state["reverted"],false);break;}
+                if state["state"]==if lost {"failed"} else {"completed"} {
+                    assert_eq!(state["reverted"],false);
+                    assert!(state["heldOutError"].is_string());
+                    if lost {
+                        let stored: String = sqlx::query_scalar("SELECT held_out_error FROM learning_rounds WHERE id=$1").bind(round).fetch_one(&f.state.db).await.unwrap();
+                        assert_eq!(stored, "no-matching-executor");
+                    }
+                    break;
+                }
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
         }).await.unwrap();
@@ -1237,6 +1269,17 @@ async fn monitor_scenario(scenario: &str) {
         .await
         .unwrap();
         assert_eq!(emails, 1);
+        if scenario == "persistent-failure" {
+            // One first run and two retries, then the check is abandoned.
+            let retries: Vec<i32> = sqlx::query_scalar(
+                "SELECT measurement_retries FROM learning_evaluations WHERE round_id=$1 AND measurement='baseline-parent'",
+            )
+            .bind(round)
+            .fetch_all(&f.state.db)
+            .await
+            .unwrap();
+            assert_eq!(retries, [2]);
+        }
         return;
     }
     let state=tokio::time::timeout(Duration::from_secs(10),async {
@@ -1344,4 +1387,5 @@ async fn prompt_size_at_task_floor() {
 async fn incomplete_regression_checks_end_and_alert() {
     monitor_scenario("initial-failed").await;
     monitor_scenario("persistent-failure").await;
+    monitor_scenario("executor-lost").await;
 }

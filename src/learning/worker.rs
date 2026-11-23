@@ -176,6 +176,12 @@ async fn advance_locked(
         WHERE id=$1 AND (unmatched_since IS NOT NULL OR missing) RETURNING coalesce(unmatched_since<=now()-make_interval(secs=>$2::int),false)")
         .bind(round.id).bind(UNMATCHED_TIMEOUT_SECONDS).fetch_optional(&mut **tx).await?;
     if expired == Some(true) {
+        // The release already happened, so an unfinished check must still reach the administrators.
+        if round.state == "scoring_held_out"
+            && let Some(version) = round.adopted_version_id
+        {
+            alert_incomplete_check(tx, row, round.id, version).await?;
+        }
         return fail_round(tx, row, round.id, "no-matching-executor").await;
     }
     crate::executor::settle_round(tx, round.id).await?;
@@ -224,16 +230,7 @@ async fn advance_locked(
             if (exhausted || status == "failed")
                 && let Some(version) = round.adopted_version_id
             {
-                let alert = serde_json::json!({"kind":"regression-check-incomplete","roundId":round.id,"versionId":version});
-                sqlx::query(
-                    "UPDATE learning_loops SET alert=$3 WHERE (project_id,bundle_id)=($1,$2)",
-                )
-                .bind(&row.project_id)
-                .bind(row.bundle_id)
-                .bind(alert)
-                .execute(&mut **tx)
-                .await?;
-                sqlx::query("INSERT INTO learning_alert_deliveries(round_id,user_id) SELECT $1,u.id FROM project_memberships m JOIN users u ON u.id=m.user_id WHERE m.project_id=$2 AND m.role='admin' AND u.email_verified ON CONFLICT DO NOTHING").bind(round.id).bind(&row.project_id).execute(&mut **tx).await?;
+                alert_incomplete_check(tx, row, round.id, version).await?;
             }
             if !exhausted && score.is_some() && super::controls::monitor(tx, row, &round).await? {
                 return Ok(());
@@ -271,9 +268,12 @@ pub(super) async fn available_runtime(
     row: &LoopRow,
 ) -> Result<Option<serde_json::Value>, sqlx::Error> {
     sqlx::query_scalar(
+        // Pin the identity an executor last declared. A lease it took before a restart can still
+        // be unexpired, and the view would also offer that lease's older identity.
         "SELECT jsonb_build_object('executor',c.runtime,'taskModel',$2::text,'judgeModel',$3::text,'baseUrl',p.base_url)
-         FROM present_executors c CROSS JOIN workspace_model_providers p
+         FROM executor_credentials c CROSS JOIN workspace_model_providers p
          WHERE p.project_id=$1 AND p.verification->>'status'='verified' AND c.runtime IS NOT NULL
+           AND c.revoked_at IS NULL AND c.id IN (SELECT id FROM present_executors)
            AND $2=ANY(p.allowed_models) AND $3=ANY(p.allowed_models)
          ORDER BY c.last_seen_at DESC,c.id LIMIT 1")
         .bind(&row.project_id).bind(&row.task_model).bind(&row.judge_model).fetch_optional(&mut **tx).await
@@ -355,6 +355,23 @@ async fn queue(
         crate::executor::queue_evaluation(tx, id).await?;
     }
     Ok(id)
+}
+
+async fn alert_incomplete_check(
+    tx: &mut Tx<'_>,
+    row: &LoopRow,
+    round: Uuid,
+    version: Uuid,
+) -> Result<(), sqlx::Error> {
+    let alert = serde_json::json!({"kind":"regression-check-incomplete","roundId":round,"versionId":version});
+    sqlx::query("UPDATE learning_loops SET alert=$3 WHERE (project_id,bundle_id)=($1,$2)")
+        .bind(&row.project_id)
+        .bind(row.bundle_id)
+        .bind(alert)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query("INSERT INTO learning_alert_deliveries(round_id,user_id) SELECT $1,u.id FROM project_memberships m JOIN users u ON u.id=m.user_id WHERE m.project_id=$2 AND m.role='admin' AND u.email_verified ON CONFLICT DO NOTHING").bind(round).bind(&row.project_id).execute(&mut **tx).await?;
+    Ok(())
 }
 
 async fn fail_round(

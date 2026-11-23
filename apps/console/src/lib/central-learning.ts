@@ -127,6 +127,7 @@ const descriptions: Record<string, string> = {
   'split-rollouts': 'Repeated runs gave different verdicts.',
   'persistent-failure': 'Candidates repeatedly failed this task.',
   'no-reference': 'No usable reference answer or grading criteria.',
+  'not-converted': 'The conversion could not turn this row into a task. Edit the row and import it again.',
   'too-large': 'The row exceeds the size limit.',
   'reference-failed': 'The reference answer failed grading.',
   'empty-passed': 'An empty answer passed grading.',

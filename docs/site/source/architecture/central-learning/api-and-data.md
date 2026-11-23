@@ -117,7 +117,7 @@ Each judge run receives its own `judgeMaxTokens` allowance. Error codes are `jud
  "tokens": {"judge": {"input": 0, "output": 0}}}
 ```
 
-A row can produce multiple cards. Rows whose compact JSON representation (including row number, source and material) exceeds 65,536 UTF-8 bytes are set aside with reason `too-large` before conversion. Every card names a source row, and the service rejects a card whose `row` was not in the material.
+A set-aside `reason` is `no-reference` or `not-converted`. A row can produce multiple cards. Rows whose compact JSON representation (including row number, source and material) exceeds 65,536 UTF-8 bytes are set aside with reason `too-large` before conversion. Every card names a source row, and the service rejects a card whose `row` was not in the material.
 
 **Gateway log.** `gatewayLog` and `judgeLog` are lists of `{at, route, model, status, request, response, usage}`, one entry per upstream call, with bodies as sent and received. The provider key is never in an entry.
 

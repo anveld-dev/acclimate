@@ -7,6 +7,8 @@
 | Risk | Exposure |
 | --- | --- |
 | A machine writer can import a known input and inspect the evolve listing to confirm held-out membership. | The public group hash already lets a writer predict its own new groups. The inference exposes no held-out reference, criteria, ID, log or result. |
+| Text in an agent's output can address the judge. | The judge receives the output as data under a separate instruction, the candidate screen skips edits that address the grader, and three votes are taken. In [calibration](tasks-and-grading.md#where-the-judge-comes-from) no such text changed a verdict. A model judge can still be misled. |
+| The optimizer can infer that an adoption was reverted. | A later round's history can show a candidate dropped as `blocked-version`. The optimizer gets no held-out score, task or count. |
 
 ## First release
 
@@ -16,6 +18,29 @@
 4. Start learning once at least 20 evolve tasks and 20 held-out tasks pass admission. The same floor applies on resume.
 
 The executor runs each rollout in a fresh sandbox. The service scores candidates on evolve tasks and automatically releases the selected version to the channel. Held-out scores monitor regressions. Inspect the round, usage and release history in the console or roll back an adopted round.
+
+## Checked on a real provider
+
+On 23 November 2026 the loop ran on the local Compose stack against Codex models through CLIProxyAPI 8.1.1: `gpt-6-luna` for tasks, `gpt-6.2-sol` for the judge and `gpt-6.2-astra` at high effort for the optimizer. The workload was 56 support-desk tasks. Half were JSON extraction graded by exact match, and half were replies judged on four criteria each.
+
+| Step | Result |
+| --- | --- |
+| Provider verification | Both models answered and reported token usage. |
+| Import | 28 rows with an expected answer became `exact` tasks. 28 rows with their own criteria were converted by the judge model, none set aside. |
+| Admission | All 56 tasks were admitted, 31 evolve and 25 held-out. The judge's three votes agreed on every check. |
+| Round 1 | 1,180 rollouts, none failed and none retried. The starting bundle scored 0 of 155 on evolve. All five candidates scored 70 of 155, and the selector adopted the shortest and released it. |
+| Regression check | The adopted version scored 0.56 on held-out and its parent 0.00, measured in the same round. No alert was raised. |
+
+What the run changed:
+
+- **Conversion.** The first import failed. The model returned the row's own criteria and also drafted more, which the executor rejected, and one rejected row failed the whole import. Existing criteria now win, and a row that cannot be mapped is set aside as `not-converted`.
+- **Provider errors.** The provider answers an overloaded model with HTTP 502 and a Retry-After of about five minutes, and CLIProxyAPI then refuses that model with HTTP 503 for as long. The gateway now asks again every 30 seconds for up to seven minutes, and the [operator guide](../../../deploy/README.md) says how to turn the proxy's cooldown off.
+- **Feedback for exact-match tasks.** A first run on a build that withheld the expected answer adopted nothing: every candidate scored 0, because the optimizer was told that an extraction failed and not what it should have been. With the expected answer in the feedback, every candidate fixed all 14 extraction tasks.
+
+What it left open:
+
+- **Judged tasks give no partial credit.** Every candidate met three of the four criteria on the judged replies and failed the fourth, so all 85 judged rollouts still scored 0 and the score shows no progress on them. The paper and RRSI score Harvey LAB by the fraction of criteria met. Changing a judged rollout's score to that fraction, while a pass still needs every criterion, is a decision for the maintainer.
+- **Held-out regression.** No adoption regressed, so the revert was not exercised with real models. The behavior scenarios cover it with a scripted provider, including the alert email through Mailpit.
 
 ## After the first release
 

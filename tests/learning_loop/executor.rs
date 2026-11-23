@@ -122,7 +122,10 @@ async fn executor_leases_recover_and_keep_secrets_out_of_storage() {
     )
     .await;
     assert_eq!(status, 200);
-    assert_eq!(grade["grader"], json!({"type":"exact","expected":null}));
+    assert_eq!(
+        grade["grader"],
+        json!({"type":"exact","expected":"fixture answer"})
+    );
     let counts = json!({"input":1,"output":2});
     let verdict = json!({"verdict":{"passed":false,"score":0,"reasons":["Invalid provider output"]},"judgeLog":[],"tokens":{"task":counts,"judge":counts}});
     assert_eq!(act(&app, &retry, "result", verdict).await.0, 204);

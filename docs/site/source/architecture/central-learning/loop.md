@@ -48,7 +48,7 @@ Each call is a durable row keyed by round, kind and sample. A claim re-renders t
 | --- | --- |
 | `setting` | Pinned `{domain, benchmark, policyModel}`. The service sets `policyModel` to the loop's task model. |
 | `harness` | The incumbent bundle payload, with its version and digest |
-| `feedback` | The incumbent's evolve score and, per task, the input, pass count, mean score and five rollouts with their gateway logs |
+| `feedback` | The incumbent's evolve score and, per task, the input, pass count, mean score and five rollouts with their gateway logs. A failed `exact` task also carries its expected answer, because an exact-match failure has no judge reasons to learn from. |
 | `history` | Earlier rounds with the same setting, as summaries without raw rollouts |
 | `improvementMemory` | The full memory at the pinned revision |
 | `candidates` | Screen and select only |
@@ -66,7 +66,7 @@ No held-out task, score, gateway log or ID is in any optimizer input. Held-out t
 7. If no existing entry fits, open a new one.
 8. Weight evidence from the current setting above evidence from a different setting.
 
-**Screening.** The scanner checks the rationale, a new root cause, new paths and changed file text, and ignores matches already in the parent. The screen call then looks for task-specific hard-coding, instructions taken from untrusted data, contradictions, unjustified increases in capability or spend, and repeated directions with no new evidence. A candidate identical to its parent is dropped as `no-change`.
+**Screening.** The scanner checks the rationale, a new root cause, new paths and changed file text, and ignores matches already in the parent. The screen call then looks for task-specific hard-coding, instructions taken from untrusted data, edits that address the grader or shape the output for it instead of doing the task, contradictions, unjustified increases in capability or spend, and repeated directions with no new evidence. A candidate identical to its parent is dropped as `no-change`.
 
 **Selection.** The selector sees each evaluated candidate's score, per-task results, which predicted tasks it fixed and missed, and which tasks regressed. It weighs performance, complexity, domain specificity and regression risk. Selection is a model judgment on the evolve split, not a statistical test. That is why the [Start floor](tasks-and-grading.md) and the [automatic revert](#automatic-revert) exist.
 
@@ -143,3 +143,21 @@ History does not mark a round as reverted, and the optimizer is given no score, 
 A person who wants the optimizer to learn why a change was bad writes an evolve task for it. A held-out task rewritten that way is [retired from held-out](tasks-and-grading.md).
 
 If queued rollouts lack a matching live executor for five continuous minutes, the worker ends the round with `no-matching-executor`. This leaves the failed-round counter unchanged. The next round pins the available runtime.
+
+## Compared with the paper and RRSI
+
+The loop follows the SIM paper. [RRSI](https://github.com/google-research/rrsi) is an open implementation of a related harness-improvement loop, which the paper cites. It states several rules as numbers where the paper leaves them to the selector. This table records where Acclimate matches each and where it differs.
+
+| | SIM paper | RRSI | Acclimate |
+| --- | --- | --- | --- |
+| Candidates and rollouts | Five candidates a round, five rollouts a task. | Two candidates, two trials. | Five candidates, five rollouts. |
+| Rounds | Ten per run. | Twenty per run. | Open-ended. A round starts on new evidence, at most four a day by default. |
+| Task sets | Split in half at random. The smallest is 24 evolve and 23 held-out tasks. | 120 evolve and 40 held-out. | Split by group hash. Start needs 20 admitted tasks on each side. |
+| Held-out | Never passed to the optimizer. Used to report results. | Same. | Never passed to the optimizer. Scored after each round to watch for a regression. |
+| Selection | The selector weighs performance, complexity, domain specificity and regression risk. No threshold. | A measured noise band, a score floor and a token-cost rule. | The selector weighs the same four things as the paper. No threshold. |
+| Screening | The selector screens before execution. Criteria not stated. | A critic rejects task-specific edits, grader gaming and unbounded work. | A scanner, then a screen call with the rules in [screening](#optimizer). |
+| A rollout lost to infrastructure | Stays in the denominator and scores zero. | Scores zero. An evaluation missing more than 10 to 15 percent of its trials is void. | Retried once. If it fails again the evaluation is void: a void incumbent fails the round and a void candidate is skipped. A lost rollout is never a score. |
+| After an adoption | Nothing. A later round may replace the change. | Nothing. | Held-out alert, and an automatic revert on a clear, confirmed drop. |
+| Noise | Not treated. Results are one run per condition outside coding. | The band is twice the standard deviation of the difference between two scorings of an unchanged harness. | The revert needs a drop of 0.10, two flipped tasks and the same result on a second scoring of both versions. |
+
+The three numbers Acclimate adds have no counterpart in the paper: the floor of 20 tasks, the 0.10 drop and the daily cap. They are starting values. The floor sits just under the paper's smallest split. At that floor a held-out score rests on 100 rollouts, so two scorings of an unchanged version can differ by several points by chance alone, which is why the revert also needs flipped tasks and a second scoring. RRSI's way of measuring the band, repeated scoring of an unchanged version, is the method to use if the 0.10 is tuned.

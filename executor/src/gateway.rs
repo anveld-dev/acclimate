@@ -204,24 +204,29 @@ fn context_overflow(status: StatusCode, data: &Value) -> bool {
 }
 
 const UPSTREAM_ATTEMPTS: u32 = 4;
+const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+// A provider that sends Retry-After is asked again for as long as it keeps saying so, within
+// this window. One overloaded reply can come with a wait of five minutes while the next request
+// succeeds at once, so no single wait is longer than MAX_RETRY_AFTER_SECONDS. The window is
+// longer than that five minutes and shorter than a rollout's time limit.
 const MAX_RETRY_AFTER_SECONDS: u64 = 30;
+const RETRY_AFTER_WINDOW: std::time::Duration = std::time::Duration::from_secs(420);
 async fn retry_delay(attempt: u32, retry_after: Option<&str>) {
     use std::time::Duration;
-    let seconds = retry_after
-        .and_then(|s| {
-            s.parse::<u64>().ok().or_else(|| {
-                chrono::DateTime::parse_from_rfc2822(s)
-                    .ok()
-                    .map(|date| (date.to_utc() - chrono::Utc::now()).num_seconds().max(0) as u64)
-            })
+    let asked = retry_after.and_then(|s| {
+        s.parse::<u64>().ok().or_else(|| {
+            chrono::DateTime::parse_from_rfc2822(s)
+                .ok()
+                .map(|date| (date.to_utc() - chrono::Utc::now()).num_seconds().max(0) as u64)
         })
-        .unwrap_or(0);
+    });
+    let wait = match asked {
+        Some(seconds) => Duration::from_secs(seconds.clamp(1, MAX_RETRY_AFTER_SECONDS)),
+        None => Duration::from_millis(1000 << attempt.min(4)),
+    };
+    // Jitter keeps rollouts that were told to wait the same time from returning together.
     let jitter = uuid::Uuid::new_v4().as_u128() as u64 % 500;
-    tokio::time::sleep(
-        Duration::from_millis((1000 << attempt) + jitter)
-            .max(Duration::from_secs(seconds.min(MAX_RETRY_AFTER_SECONDS))),
-    )
-    .await;
+    tokio::time::sleep(wait + Duration::from_millis(jitter)).await;
 }
 async fn upstream(g: &Gateway, body: &Value) -> Result<(StatusCode, Vec<u8>, Value), String> {
     use acclimate_provider_address::{host_allowed, validate_endpoint};
@@ -232,7 +237,11 @@ async fn upstream(g: &Gateway, body: &Value) -> Result<(StatusCode, Vec<u8>, Val
         .ok_or("Missing provider host")?
         .trim_matches(['[', ']']);
     let port = url.port_or_known_default().ok_or("Missing provider port")?;
-    'attempts: for attempt in 0..UPSTREAM_ATTEMPTS {
+    let started = tokio::time::Instant::now();
+    // Retries the provider did not ask for: transport errors and errors without Retry-After.
+    let mut unprompted = 0;
+    let mut attempt = 0;
+    'attempts: loop {
         let addresses: Vec<_> = tokio::time::timeout(
             std::time::Duration::from_secs(30),
             tokio::net::lookup_host((host, port)),
@@ -245,6 +254,7 @@ async fn upstream(g: &Gateway, body: &Value) -> Result<(StatusCode, Vec<u8>, Val
         let client = reqwest::Client::builder()
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(std::time::Duration::from_secs(10))
             .timeout(std::time::Duration::from_secs(600))
             .resolve_to_addrs(host, &addresses)
             .build()
@@ -257,33 +267,41 @@ async fn upstream(g: &Gateway, body: &Value) -> Result<(StatusCode, Vec<u8>, Val
             .await;
         let mut response = match result {
             Ok(response) => response,
-            Err(_) if attempt + 1 < UPSTREAM_ATTEMPTS => {
+            // A request that already ran for the full timeout is not sent again.
+            Err(e) if retryable(&e) && unprompted + 1 < UPSTREAM_ATTEMPTS => {
                 retry_delay(attempt, None).await;
+                unprompted += 1;
+                attempt += 1;
                 continue;
             }
             Err(e) => return Err(transport_error(e)),
         };
         let status = response.status();
-        if attempt + 1 < UPSTREAM_ATTEMPTS
-            && (status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error())
-        {
-            retry_delay(
-                attempt,
-                response
-                    .headers()
-                    .get("retry-after")
-                    .and_then(|v| v.to_str().ok()),
-            )
-            .await;
-            continue;
+        if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+            let retry_after = response
+                .headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok());
+            let again = match retry_after {
+                Some(_) => started.elapsed() < RETRY_AFTER_WINDOW,
+                None => unprompted + 1 < UPSTREAM_ATTEMPTS,
+            };
+            if again {
+                retry_delay(attempt, retry_after).await;
+                unprompted += u32::from(retry_after.is_none());
+                attempt += 1;
+                continue;
+            }
         }
         let mut raw = Vec::new();
         loop {
             let chunk = match response.chunk().await {
                 Ok(Some(chunk)) => chunk,
                 Ok(None) => break,
-                Err(_) if attempt + 1 < UPSTREAM_ATTEMPTS => {
+                Err(e) if retryable(&e) && unprompted + 1 < UPSTREAM_ATTEMPTS => {
                     retry_delay(attempt, None).await;
+                    unprompted += 1;
+                    attempt += 1;
                     continue 'attempts;
                 }
                 Err(e) => return Err(transport_error(e)),
@@ -297,7 +315,10 @@ async fn upstream(g: &Gateway, body: &Value) -> Result<(StatusCode, Vec<u8>, Val
             serde_json::from_slice(&raw).unwrap_or_else(|_| json!(String::from_utf8_lossy(&raw)));
         return Ok((status, raw, data));
     }
-    unreachable!("the final attempt returns its response")
+}
+
+fn retryable(error: &reqwest::Error) -> bool {
+    error.is_connect() || !error.is_timeout()
 }
 
 fn transport_error(error: reqwest::Error) -> String {
@@ -349,7 +370,10 @@ impl Gateway {
     pub async fn probe(&self) -> Value {
         let mut body = json!({"model":self.model,"messages":[{"role":"user","content":"Hi"}],"max_completion_tokens":1});
         let reply = if self.prepare_request(&mut body) {
-            upstream(self, &body).await
+            // Retries could otherwise hold an executor slot on a provider that never answers.
+            tokio::time::timeout(PROBE_TIMEOUT, upstream(self, &body))
+                .await
+                .unwrap_or_else(|_| Err("Provider did not answer within 60 seconds. It may be rate limited or overloaded".into()))
         } else {
             Err("Invalid provider probe request".into())
         };
@@ -686,6 +710,49 @@ mod tests {
         let record = gateway.record.lock().unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 3);
         assert!(record.invalid.is_some() && record.failure.is_none() && !record.pending);
+        server.abort();
+    }
+    #[tokio::test]
+    async fn keeps_asking_while_the_provider_sends_retry_after() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let count = calls.clone();
+        // Five overloaded replies outlast the four attempts given to an unprompted failure.
+        let app = Router::new().route(
+            "/",
+            post(move || {
+                let n = count.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    match n {
+                        0..=4 => (StatusCode::SERVICE_UNAVAILABLE, [("retry-after", "1")])
+                            .into_response(),
+                        5 => Json(json!({"ok":true})).into_response(),
+                        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                    }
+                }
+            }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let g = Gateway {
+            model: "model".into(),
+            url: format!("http://{addr}"),
+            key: "key".into(),
+            cap: 10,
+            allowlist: "127.0.0.1".into(),
+            record: Default::default(),
+            serial: Default::default(),
+            closed: watch::channel(()).1,
+        };
+        assert_eq!(upstream(&g, &json!({})).await.unwrap().0, StatusCode::OK);
+        assert_eq!(calls.load(Ordering::SeqCst), 6);
+        // A failure with no Retry-After still stops after four attempts.
+        assert_eq!(
+            upstream(&g, &json!({})).await.unwrap().0,
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 10);
         server.abort();
     }
     #[tokio::test]

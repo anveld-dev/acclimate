@@ -150,7 +150,7 @@ pub(super) fn valid_conversion(material: &Value, cards: &[Value], aside: &[Value
         covered.insert(n);
     }
     aside.iter().all(|s| {
-        s["reason"] == "no-reference"
+        matches!(s["reason"].as_str(), Some("no-reference" | "not-converted"))
             && s["row"]
                 .as_u64()
                 .is_some_and(|n| known.contains(&n) && covered.insert(n))
@@ -210,4 +210,25 @@ pub async fn read_trial(pool: &PgPool, project: &str, bundle: Uuid, id: Uuid) ->
         }
     }
     Ok(doc)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn conversion_accepts_only_the_known_set_aside_reasons() {
+        let material = json!({"rows":[{"row":1},{"row":2}]});
+        for (reason, valid) in [
+            ("no-reference", true),
+            ("not-converted", true),
+            ("invented", false),
+        ] {
+            let aside = [
+                json!({"row":1,"reason":"no-reference"}),
+                json!({"row":2,"reason":reason}),
+            ];
+            assert_eq!(valid_conversion(&material, &[], &aside), valid, "{reason}");
+        }
+    }
 }

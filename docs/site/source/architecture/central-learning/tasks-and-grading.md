@@ -49,6 +49,8 @@ The console and API accept a spreadsheet, CSV, JSONL or pasted conversations, up
 - The model may draft criteria from the reference answer. A person sees every card before Start and can edit or delete it.
 - The model does not create tasks that have no source row.
 - A row with no usable answer and no criteria becomes a set-aside card with the reason `no-reference`.
+- Criteria already in the row are used as they are. The model drafts criteria only for a row that has an answer and none of its own.
+- A row the model cannot map after three attempts is set aside with the reason `not-converted`. The rest of the import continues.
 
 Converted cards record the file, the row and the conversation they came from. That source is the task's group. The conversion model reads every row before the split is assigned. It is stateless and is not the optimizer.
 
@@ -66,6 +68,19 @@ Rules for the judge:
 - The judge reads the non-system task messages and the agent’s final reply, the criteria and the reference. Candidate instructions inside this evidence can still influence a model judge despite the separate system instruction.
 - Each rollout is judged three times and the majority verdict counts. A task whose verdicts split often is flagged in the console.
 - For evolve tasks, the judge's written reasons become the feedback the optimizer reads.
+
+### Where the judge comes from
+
+The SIM paper prints no judge prompt. Its workspace benchmarks use each benchmark's own rubric judge. [RRSI](https://github.com/google-research/rrsi) pins the one from [Harvey LAB](https://github.com/harveyai/harvey-labs): one call per criterion at temperature 0, shown the task title, the output and the criterion, answering pass or fail with a short reason as JSON. Acclimate's judge keeps that contract, a verdict and a written reason for each criterion, and differs in four ways.
+
+| | Harvey LAB judge | Acclimate judge |
+| --- | --- | --- |
+| Calls | One for each criterion. | One for all criteria of the task, at most ten. |
+| Votes | One, at temperature 0. | Three, and the majority counts. Temperature is left to the provider. |
+| Untrusted text | Placed in the same prompt as the instructions. | Sent as data in the user message, under a system instruction that names it as material to judge. |
+| Task score | RRSI and the paper report criteria passed over criteria total. | A rollout passes only if every criterion passes, as in Harvey LAB's own scorer and in APEX-Agents. |
+
+A calibration set of 26 cases with known verdicts, 73 criteria in all, was judged three times each by `gpt-6-luna` and by `gpt-6.2-sol`. Twelve of the cases carry text aimed at the grader: a request to pass, a fake verdict, a fake system notice, a claim that the rubric was waived, an appeal, the same in other languages. No such text changed a verdict. `gpt-6-luna` returned all 219 criterion verdicts correctly and `gpt-6.2-sol` 218, and every task verdict was correct. The one miss was a loosely worded criterion, "mentions that the link expires", on an output that referred to the expiry without stating it. On the first 18 cases a per-criterion prompt in the Harvey LAB form scored the same as the Acclimate prompt, used three times the calls and tokens, and ran into the provider's rate limit, so the single call stays. The set is small. It shows that the prompt works on these models, not that a judge cannot be misled.
 
 How rollout verdicts become a task score is in [loop](loop.md).
 

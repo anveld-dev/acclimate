@@ -245,7 +245,7 @@ impl Fixture {
             ("learning_held_out_tasks", "'held-out-sentinel-'||i"),
         ] {
             sqlx::query(&format!(r#"INSERT INTO {table}(project_id,bundle_id,task_id,"group",input,grader,source,confirmed_by,admission,added_revision)
-              SELECT $1,$2,{identifier},i::text,to_jsonb({identifier}), '{{"type":"exact","expected":null}}','console','operator','admitted',1 FROM generate_series(1,20) i"#))
+              SELECT $1,$2,{identifier},i::text,to_jsonb({identifier}), '{{"type":"exact","expected":"fixture answer"}}','console','operator','admitted',1 FROM generate_series(1,20) i"#))
               .bind(&self.project).bind(self.bundle).execute(&self.state.db).await.unwrap();
         }
         sqlx::query("UPDATE learning_loops SET task_revision=1")
@@ -637,20 +637,27 @@ async fn retry_idles_then_task_change_wakes_after_rolling_cap() {
         .execute(&f.state.db)
         .await
         .unwrap();
+    // Task revisions that change while the loop is idle must not re-score the channel head.
+    let measured =
+        "SELECT (SELECT count(*) FROM learning_evaluations)+(SELECT count(*) FROM learning_trials)";
+    let before: i64 = sqlx::query_scalar(measured)
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap();
     for revision in 3..8 {
         sqlx::query("UPDATE learning_loops SET task_revision=$1")
             .bind(i64::from(revision))
             .execute(&f.state.db)
             .await
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // The worker ticks every 500 ms, so the window covers several ticks.
+        tokio::time::sleep(Duration::from_millis(400)).await;
     }
-    let queued: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM learning_trials WHERE kind='head-monitor'")
-            .fetch_one(&f.state.db)
-            .await
-            .unwrap();
-    assert_eq!(queued, 0);
+    let after: i64 = sqlx::query_scalar(measured)
+        .fetch_one(&f.state.db)
+        .await
+        .unwrap();
+    assert_eq!(after, before);
     assert_eq!(
         f.ok("GET", "", "reader", None, Value::Null).await["rounds"]
             .as_array()
@@ -995,6 +1002,50 @@ async fn provider_probe_supersedes_old_leases_and_requires_usage() {
             );
         }
     }
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn next_round_pins_the_identity_the_executor_last_declared() {
+    let mut f = Fixture::new().await;
+    f.enroll().await;
+    f.seed().await;
+    f.spawn_worker();
+    f.item("evolve", 1).await;
+    let app = f.internal();
+    let lease = executor_tests::post(&app, "", &f.token, json!({"executor":Fixture::identity()}))
+        .await
+        .1;
+    assert_eq!(lease["kind"], "rollout");
+    // The executor restarts on a new build while the lease it took before is still unexpired.
+    let mut restarted = Fixture::identity();
+    restarted["build"] = json!("restarted");
+    sqlx::query("UPDATE executor_credentials SET runtime=$1,last_seen_at=now()")
+        .bind(&restarted)
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE learning_rounds SET state='failed',reason='incumbent-evaluation-failed',ended_at=now()")
+        .execute(&f.state.db)
+        .await
+        .unwrap();
+    let pinned = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let next: Option<Value> = sqlx::query_scalar(
+                "SELECT runtime->'executor' FROM learning_rounds WHERE number=2",
+            )
+            .fetch_optional(&f.state.db)
+            .await
+            .unwrap();
+            if let Some(next) = next {
+                break next;
+            }
+            tokio::time::sleep(Duration::from_millis(40)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(pinned, restarted);
 }
 
 #[tokio::test]

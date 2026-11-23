@@ -3,7 +3,7 @@ title: Run Acclimate locally
 description: Start the service, console, and sign-in on your laptop, with a ready workspace and example bundle for your first delivery.
 ---
 
-The local stack runs the Acclimate service and console, PostgreSQL 16, Keycloak sign-in, a Mailpit inbox, and a Caddy HTTPS proxy on one laptop. Use it for local integration and development. The console uses the same HTTPS sign-in as a production deployment.
+The local stack runs the Acclimate service, console and rollout executor, PostgreSQL 16, Keycloak sign-in, a Mailpit inbox, and a Caddy HTTPS proxy on one laptop. Use it for local integration and development. The console uses the same HTTPS sign-in as a production deployment.
 
 ## Prerequisites
 
@@ -34,6 +34,7 @@ When the stack is ready, `local:up`:
 - Creates a verified Keycloak login and prints its initial password once. The password is also stored in the `operator` field of `.local/stack/credentials.json`.
 - Makes that login the administrator of the `local-demo` workspace. It uses the service's audited adoption route with the reason "local stack bootstrap".
 - Publishes an example bundle named **Example agent** on the `stable` channel.
+- Starts the rollout executor with its own credential. The executor image is always built from the checkout, which takes a few minutes the first time.
 - Writes client settings to `.local/stack/env.sh` and prints them.
 
 ```text
@@ -83,6 +84,30 @@ Prefer to do it by hand? Import `.local/stack/root.crt` as a trusted certificate
 Open the printed console URL and sign in with the printed login. The `local-demo` workspace is already yours. Self-registration is on in the local realm so you can test invitations through Mailpit. A new account has no workspace access until an administrator invites it.
 
 Open the example bundle on `stable` and follow [the delivery quickstart](/docs/get-started/quickstart#connect-your-application).
+
+## Run learning rounds
+
+The executor is already running, so the **Learning** tab works as it does in a deployment. The local stack runs each rollout in a plain Docker sandbox, which isolates less than the gVisor runtime a deployment uses. Two model settings have no default.
+
+**The optimizer** proposes and selects changes. It is set on the service. Export its settings in the shell before you run `local:up`. The stack saves them in `.local/stack/service.env` and reuses them on later starts.
+
+```sh
+export ACCLIMATE_MODEL_ENDPOINT=http://host.docker.internal:8317/v1/chat/completions
+export ACCLIMATE_MODEL_TOKEN=your-provider-key
+export ACCLIMATE_MODEL=gpt-6.2-astra
+npm run local:up
+```
+
+**The workspace model provider** runs the tasks and the judge. Set it in the console under workspace settings, with its base URL, key and allowed models.
+
+A proxy on your laptop, such as CLIProxyAPI, is reached over plain HTTP at `host.docker.internal`. The service and the executor refuse that address unless you allow its hostname. Export the allowlist before `local:up`, and enter `http://host.docker.internal:8317/v1` as the provider's base URL.
+
+```sh
+export ACCLIMATE_PROVIDER_HTTP_HOSTS=host.docker.internal
+npm run local:up
+```
+
+Alert email for a held-out regression arrives in Mailpit.
 
 ## Stop or reset
 

@@ -17,6 +17,7 @@ from scripts.productization.qualify import ROOT, port
 
 MODELS = ["task", "judge"]
 MATERIAL = ("input,expected\n" + "".join(f"Review request {i},checked\n" for i in range(43))).encode()
+ALERT_RECIPIENT = "operator@example.test"
 CONVERSION = b"question,answer\nReview one more request,checked\nMissing reference,\n"
 
 
@@ -89,6 +90,7 @@ def workspace(context):
     context.add_cleanup(server.shutdown)
     internal = port()
     w.provider_url = f"http://host.docker.internal:{server.server_port}/v1"
+    w.enable_email()
     w.h.env.update(ACCLIMATE_INTERNAL_BIND=f"0.0.0.0:{internal}",
                    ACCLIMATE_PROVIDER_HTTP_HOSTS="host.docker.internal",
                    ACCLIMATE_PROVIDER_ENCRYPTION_KEY=secrets.token_hex(32),
@@ -198,6 +200,10 @@ def start_ui(context):
 @when("the service releases an adoption and confirms a held-out regression")
 def finished(context):
     w = context.world
+    # Alert email goes to workspace administrators with a verified address. Every sign-in rewrites
+    # the address from its claims, so record it after the console's own sign-in.
+    w.call("POST", "/v1/auth/sessions", dict(issuer=w.issuer, subject="operator", email=ALERT_RECIPIENT,
+                                               emailVerified=True), actor="login-authority")
 
     def rounds():
         if w.errors:
@@ -216,6 +222,17 @@ def finished(context):
     assert version["digest"] in [entry["digest"] for entry in blocked]
     w.adoption = first["id"]
     w.stale_round = second["id"]
+
+    def alert_mail():
+        with urlopen(w.mailpit.base + "/api/v1/messages", timeout=5) as response:
+            return [m for m in json.load(response)["messages"] if m["Subject"] == "Acclimate held-out score decreased"]
+
+    (message,) = wait_for(alert_mail, bool, timeout=90)
+    assert [to["Address"] for to in message["To"]] == [ALERT_RECIPIENT]
+    with urlopen(w.mailpit.base + "/api/v1/message/" + message["ID"], timeout=5) as response:
+        body = json.load(response)
+    for part in (body["Text"], body["HTML"]):
+        assert "The service restored the previous version." in part and "pass to fail" in part, part
 
 
 @when("I inspect the round evidence and token usage")

@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::types::Json as DbJson;
 
-pub(super) const ROLLOUTS_PER_CASE: usize = 5;
+pub(super) const PASS_COUNT: usize = 3;
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -72,7 +72,7 @@ pub(super) fn mean_score(case: &CaseReport) -> f64 {
         .iter()
         .map(|r| r["score"].as_f64().expect("validated score"))
         .sum::<f64>()
-        / ROLLOUTS_PER_CASE as f64
+        / case.rollouts.len().max(1) as f64
 }
 
 pub(super) fn safe_held_out_error(_: &str) -> &str {
@@ -104,7 +104,7 @@ pub(super) async fn round_documents(
                 e.status,e.score,e.created_at,e.started_at,e.error,
                 greatest(jsonb_array_length(e.report->'cases'),(SELECT count(DISTINCT task_id) FROM learning_rollouts WHERE evaluation_id=e.id)) AS case_count,
                 CASE WHEN e.split='held_out' THEN (SELECT count(*) FROM jsonb_array_elements(e.report->'cases') c WHERE
-                (SELECT count(*) FROM jsonb_array_elements(c->'rollouts') v WHERE v->>'passed'='true')>=3) END AS held_out_passed_cases,
+                (SELECT count(*) FROM jsonb_array_elements(c->'rollouts') v WHERE v->>'passed'='true')>={PASS_COUNT}) END AS held_out_passed_cases,
                 CASE WHEN e.split='evolve' THEN e.report ELSE '{{
                     \"cases\": []
                 }}'::jsonb END AS report,
@@ -141,5 +141,5 @@ pub(super) fn passed_rollouts(case: &CaseReport) -> usize {
 }
 
 pub(super) fn case_passes(case: &CaseReport) -> bool {
-    passed_rollouts(case) >= 3
+    passed_rollouts(case) >= PASS_COUNT
 }

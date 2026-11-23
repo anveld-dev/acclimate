@@ -40,7 +40,7 @@ Rules:
 - An expired lease returns to `queued`. A crash therefore requeues one rollout, not a round.
 - Only infrastructure failures are retried, once. They are gateway upstream failures, executor crashes and sandbox start failures.
 - An agent that hits its token or time limit is not an infrastructure failure. The rollout is `scored` as a fail. A deadline reached while a gateway request is awaiting the upstream is a `gateway-upstream` infrastructure failure.
-- **Errors are never scores.** A rollout that fails twice makes its evaluation fail, and a failed evaluation fails the round as it does today. A `failed` rollout is never counted as a failed task and never dropped from the count.
+- **Errors are never scores.** A rollout that fails twice makes its evaluation fail, and a failed incumbent evaluation fails the round. A failed candidate is skipped. A failed initial held-out evaluation completes the round with an error. The worker retries failed baseline and confirmation measurements. A `failed` rollout is never counted as a failed task and never dropped from the count.
 
 Prior art behind these rules: Harbor deleted unfinished runs on resume, so a sleeping laptop lost hours of work. Inspect dropped errored samples from the denominator without saying so.
 

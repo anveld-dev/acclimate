@@ -9,7 +9,7 @@ pub(super) async fn render_history(tx: &mut Tx<'_>, round: &Pins) -> Result<Valu
     let rows: Vec<(Uuid, Option<String>, Value)> = sqlx::query_as(
         "SELECT id,optimizer_reasoning_effort,jsonb_build_object('round',number,'state',state,'decision',decision,'reason',reason,
             'parentVersionId',parent_version_id,'adoptedVersionId',adopted_version_id,
-            'setting',setting,'evolveRevision',evolve_revision,'optimizerModel',optimizer_model,
+            'setting',setting,'evolveRevision',task_revision,'optimizerModel',optimizer_model,
             'selection',selection - ARRAY['versionId','digest','model','inputDigest','reasoningEffort'])
          FROM learning_rounds WHERE (project_id,bundle_id)=($1,$2) AND number<$3 AND setting=$4
          ORDER BY number")

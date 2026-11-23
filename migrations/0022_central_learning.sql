@@ -27,19 +27,22 @@ CREATE TABLE learning_trials (
     project_id text NOT NULL,
     bundle_id uuid NOT NULL,
     version_id uuid NOT NULL,
-    kind text NOT NULL DEFAULT 'try' CHECK (kind IN ('try','admission','conversion')),
+    kind text NOT NULL DEFAULT 'try' CHECK (kind IN ('try','admission','conversion','head-monitor')),
+    task_revision bigint,
     held_out boolean NOT NULL DEFAULT true,
     runtime jsonb NOT NULL CHECK (runtime IS NULL OR (coalesce(jsonb_typeof(runtime->'judgeModel') = 'string' AND jsonb_typeof(runtime->'taskModel') = 'string', false) AND runtime->>'judgeModel' <> runtime->>'taskModel')),
     created_at timestamptz NOT NULL DEFAULT now(),
     FOREIGN KEY (project_id,bundle_id,version_id) REFERENCES versions(project_id,bundle_id,id)
 );
 
+CREATE FUNCTION learning_rollouts_per_task() RETURNS integer LANGUAGE sql IMMUTABLE AS $$ SELECT 5 $$;
+
 CREATE TABLE learning_rollouts (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     evaluation_id uuid REFERENCES learning_evaluations(id),
     trial_id uuid REFERENCES learning_trials(id),
     task_id text NOT NULL,
-    rollout smallint NOT NULL CHECK (rollout BETWEEN 1 AND 5),
+    rollout smallint NOT NULL CHECK (rollout BETWEEN 1 AND learning_rollouts_per_task()),
     input jsonb NOT NULL,
     grader jsonb NOT NULL,
     votes jsonb,
@@ -55,7 +58,7 @@ CREATE TABLE learning_rollouts (
     reasons jsonb,
     gateway_log jsonb,
     output text,
-    stop text CHECK (stop IN ('completed','token-limit','time-limit')),
+    stop text CHECK (stop IN ('completed','token-limit','time-limit','invalid-output')),
     judge_log jsonb,
     error_code text,
     tokens jsonb,
@@ -159,7 +162,7 @@ ALTER TABLE learning_loops
     ADD COLUMN max_rounds_per_day integer NOT NULL DEFAULT 4 CHECK (max_rounds_per_day > 0),
     ADD COLUMN started_at timestamptz,
     ADD COLUMN resumed_at timestamptz,
-    ADD COLUMN waiting text CHECK (waiting IN ('no-new-evidence','daily-cap')),
+    ADD COLUMN waiting text CHECK (waiting IN ('no-new-evidence','daily-cap','no-executor','models-not-allowed')),
     ADD COLUMN alert jsonb,
     DROP CONSTRAINT learning_loops_pause_reason_check,
     ADD CHECK (pause_reason IN ('operator','failed-rounds','optimizer-context-too-large','tasks-required'));
@@ -199,7 +202,7 @@ END $$;
 CREATE TRIGGER learning_rollout_usage AFTER UPDATE OF status ON learning_rollouts FOR EACH ROW
     WHEN (OLD.status IN ('running','grading') AND NEW.status IN ('queued','failed','scored','converted')) EXECUTE FUNCTION learning_record_rollout_usage();
 ALTER TABLE learning_evaluations ADD COLUMN measurement text NOT NULL DEFAULT 'initial'
-    CHECK (measurement IN ('initial','confirm-parent','confirm-adoption')),
+    CHECK (measurement IN ('initial','baseline-parent','confirm-parent','confirm-adoption')),
     DROP CONSTRAINT learning_evaluations_round_id_role_sample_key,
     ADD UNIQUE NULLS NOT DISTINCT (round_id,role,sample,measurement),
     ADD CHECK (measurement='initial' OR role='retained');

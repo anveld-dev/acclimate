@@ -228,6 +228,7 @@ async fn read(s: AppState, p: String, b: Uuid, h: HeaderMap, f: Filter, export: 
         if f.split.as_deref().is_some_and(|v| v != split.name()) {
             continue;
         }
+        let min_passes = super::evaluations::PASS_COUNT;
         let mut from = format!(
             "FROM {} WHERE (project_id,bundle_id)=($1,$2) AND retired_revision IS NULL AND ($3::text IS NULL OR source=$3) AND ($4::text IS NULL OR admission=$4)",
             split.table()
@@ -238,7 +239,7 @@ async fn read(s: AppState, p: String, b: Uuid, h: HeaderMap, f: Filter, export: 
             }
             if split == Split::Evolve {
                 let op = if flagged { "EXISTS" } else { "NOT EXISTS" };
-                from.push_str(&format!(" AND {op} (SELECT 1 FROM learning_flagged_tasks flag WHERE (flag.project_id,flag.bundle_id,flag.task_id)=($1,$2,learning_tasks.task_id))"));
+                from.push_str(&format!(" AND {op} (SELECT 1 FROM learning_flagged_tasks({min_passes}) flag WHERE (flag.project_id,flag.bundle_id,flag.task_id)=($1,$2,learning_tasks.task_id))"));
             }
         }
         if split == Split::HeldOut {
@@ -255,9 +256,11 @@ async fn read(s: AppState, p: String, b: Uuid, h: HeaderMap, f: Filter, export: 
             }
         }
         let flag = if split == Split::Evolve {
-            "(SELECT reason FROM learning_flagged_tasks f WHERE (f.project_id,f.bundle_id,f.task_id)=($1,$2,learning_tasks.task_id))"
+            format!(
+                "(SELECT reason FROM learning_flagged_tasks({min_passes}) f WHERE (f.project_id,f.bundle_id,f.task_id)=($1,$2,learning_tasks.task_id))"
+            )
         } else {
-            "NULL::text"
+            "NULL::text".to_owned()
         };
         let rows: Vec<Task> = sqlx::query_as(&format!(
             "SELECT *,{flag} AS flag_reason {from} AND task_id COLLATE \"C\">$5 ORDER BY task_id COLLATE \"C\" LIMIT $6"

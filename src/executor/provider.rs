@@ -26,7 +26,7 @@ impl ProviderKey {
         secret: &str,
     ) -> Result<()> {
         let mut tx = pool.begin().await.map_err(Error::other)?;
-        self.store_in(&mut tx, project, endpoint, models, secret)
+        self.store_in(&mut tx, project, endpoint, models, Some(secret))
             .await?;
         tx.commit().await.map_err(Error::other)
     }
@@ -37,13 +37,13 @@ impl ProviderKey {
         project: &str,
         endpoint: &str,
         models: &[String],
-        secret: &str,
+        secret: Option<&str>,
     ) -> Result<()> {
         validate_endpoint(
             endpoint,
             &std::env::var("ACCLIMATE_PROVIDER_HTTP_HOSTS").unwrap_or_default(),
         )?;
-        if secret.trim().is_empty()
+        if secret.is_some_and(|s| s.trim().is_empty())
             || models.is_empty()
             || models
                 .iter()
@@ -57,6 +57,16 @@ impl ProviderKey {
                 "provider requires a key and distinct allowed models",
             ));
         }
+        let Some(secret) = secret else {
+            let updated=sqlx::query("UPDATE workspace_model_providers SET allowed_models=$3,verification=DEFAULT,probe_attempts=0,probe_id=NULL,probe_token=NULL,probe_owner=NULL,probe_expires=NULL WHERE project_id=$1 AND base_url=$2").bind(project).bind(endpoint).bind(models).execute(&mut **tx).await.map_err(Error::other)?;
+            if updated.rows_affected() == 0 {
+                return Err(Error::new(
+                    ErrorKind::InvalidInput,
+                    "A key is required for a new provider URL",
+                ));
+            }
+            return Ok(());
+        };
         let mut nonce = [0; 12];
         SystemRandom::new()
             .fill(&mut nonce)

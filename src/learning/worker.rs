@@ -152,34 +152,33 @@ async fn advance_locked(
     let below_floor = row.status == "running"
         && row.started_at.is_some()
         && !super::controls::ready(tx, row).await?;
-    if below_floor {
+    if below_floor && !super::controls::pending_edits_cover_floor(tx, row).await? {
         sqlx::query("UPDATE learning_loops SET status='paused',pause_reason='tasks-required',waiting=NULL,updated_at=now() WHERE (project_id,bundle_id)=($1,$2)").bind(&row.project_id).bind(row.bundle_id).execute(&mut **tx).await?;
     }
     let Some(round) = active_round(tx, &row.project_id, row.bundle_id).await? else {
-        if row.status == "running"
-            && !below_floor
-            && row.started_at.is_some()
-            && let Some(trigger) = super::controls::schedule(tx, row).await?
-        {
-            start_round(tx, row, optimizer, trigger).await?;
+        if row.status == "running" && !below_floor && row.started_at.is_some() {
+            if let Some(trigger) = super::controls::schedule(tx, row).await? {
+                start_round(tx, row, optimizer, trigger).await?;
+            } else {
+                super::controls::refresh_head(tx, row).await?;
+            }
         }
         return Ok(());
     };
-    crate::executor::settle_round(tx, round.id).await?;
-    let failure: Option<String> = sqlx::query_scalar(
-        "SELECT role FROM learning_evaluations WHERE round_id=$1 AND status='failed' LIMIT 1",
-    )
-    .bind(round.id)
-    .fetch_optional(&mut **tx)
-    .await?;
-    if let Some(role) = failure {
-        let reason = match role.as_str() {
-            "retained" => "held-out-evaluation-failed",
-            "candidate" => "candidate-evaluation-failed",
-            _ => "incumbent-evaluation-failed",
-        };
-        return fail_round(tx, row, round.id, reason).await;
+    const UNMATCHED_TIMEOUT_SECONDS: i32 = 300;
+    let expired:Option<bool>=sqlx::query_scalar("WITH availability AS (
+        SELECT EXISTS(SELECT FROM learning_evaluations e JOIN learning_rollouts l ON l.evaluation_id=e.id WHERE e.round_id=r.id AND l.status='queued') AND NOT EXISTS(
+          SELECT FROM executor_credentials c JOIN workspace_model_providers p ON p.project_id=r.project_id
+          WHERE c.revoked_at IS NULL AND c.runtime=r.runtime->'executor' AND c.last_seen_at>now()-interval '1 minute'
+          AND p.verification->>'status'='verified' AND p.base_url=r.runtime->>'baseUrl' AND r.task_model=ANY(p.allowed_models) AND r.judge_model=ANY(p.allowed_models)) AS missing
+        FROM learning_rounds r WHERE r.id=$1)
+        UPDATE learning_rounds SET unmatched_since=CASE WHEN missing THEN coalesce(unmatched_since,now()) END FROM availability
+        WHERE id=$1 AND (unmatched_since IS NOT NULL OR missing) RETURNING coalesce(unmatched_since<=now()-make_interval(secs=>$2::int),false)")
+        .bind(round.id).bind(UNMATCHED_TIMEOUT_SECONDS).fetch_optional(&mut **tx).await?;
+    if expired == Some(true) {
+        return fail_round(tx, row, round.id, "no-matching-executor").await;
     }
+    crate::executor::settle_round(tx, round.id).await?;
     let role = match round.state.as_str() {
         "scoring_incumbent" => "incumbent",
         "scoring_held_out" => "retained",
@@ -196,6 +195,9 @@ async fn advance_locked(
     .fetch_one(&mut **tx)
     .await?;
     match (role, status.as_str()) {
+        ("incumbent", "failed") => {
+            return fail_round(tx, row, round.id, "incumbent-evaluation-failed").await;
+        }
         ("incumbent", "scored") => {
             let pins = Pins::load(tx, round.id).await?;
             optimizer::enqueue(tx, &pins, Kind::Propose, 1).await?;
@@ -207,7 +209,7 @@ async fn advance_locked(
             .execute(&mut **tx)
             .await?;
         }
-        ("retained", "scored") => {
+        ("retained", "scored" | "failed") => {
             if score.is_some() && super::controls::monitor(tx, row, &round).await? {
                 return Ok(());
             }
@@ -222,7 +224,7 @@ async fn advance_locked(
     Ok(())
 }
 
-async fn channel_head(
+pub(super) async fn channel_head(
     tx: &mut Tx<'_>,
     row: &LoopRow,
     channel: &str,
@@ -239,6 +241,19 @@ async fn channel_head(
     .await
 }
 
+pub(super) async fn available_runtime(
+    tx: &mut Tx<'_>,
+    row: &LoopRow,
+) -> Result<Option<serde_json::Value>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT jsonb_build_object('executor',c.runtime,'taskModel',$2::text,'judgeModel',$3::text,'baseUrl',p.base_url)
+         FROM executor_credentials c CROSS JOIN workspace_model_providers p
+         WHERE p.project_id=$1 AND p.verification->>'status'='verified' AND c.revoked_at IS NULL AND c.runtime IS NOT NULL
+           AND c.last_seen_at > now()-interval '1 minute' AND $2=ANY(p.allowed_models) AND $3=ANY(p.allowed_models)
+         ORDER BY c.last_seen_at DESC,c.id LIMIT 1")
+        .bind(&row.project_id).bind(&row.task_model).bind(&row.judge_model).fetch_optional(&mut **tx).await
+}
+
 async fn start_round(
     tx: &mut Tx<'_>,
     row: &LoopRow,
@@ -246,23 +261,18 @@ async fn start_round(
     trigger: &str,
 ) -> Result<(), sqlx::Error> {
     let (version, revision, digest) = channel_head(tx, row, &row.channel).await?;
-    let runtime: Option<serde_json::Value> = sqlx::query_scalar(
-        "SELECT jsonb_build_object('executor',c.runtime,'taskModel',$2::text,'judgeModel',$3::text,'baseUrl',p.base_url)
-         FROM executor_credentials c CROSS JOIN workspace_model_providers p
-         WHERE p.project_id=$1 AND p.verification->>'status'='verified' AND c.revoked_at IS NULL AND c.runtime IS NOT NULL
-           AND c.last_seen_at > now()-interval '1 minute' AND $2=ANY(p.allowed_models) AND $3=ANY(p.allowed_models)
-         ORDER BY c.last_seen_at DESC,c.id LIMIT 1")
-        .bind(&row.project_id).bind(&row.task_model).bind(&row.judge_model).fetch_optional(&mut **tx).await?;
+    let runtime = available_runtime(tx, row).await?;
     let Some(runtime) = runtime else {
+        sqlx::query("UPDATE learning_loops SET waiting=CASE WHEN EXISTS(SELECT FROM workspace_model_providers WHERE project_id=$1 AND NOT ($3=ANY(allowed_models) AND $4=ANY(allowed_models))) THEN 'models-not-allowed' ELSE 'no-executor' END WHERE (project_id,bundle_id)=($1,$2)").bind(&row.project_id).bind(row.bundle_id).bind(&row.task_model).bind(&row.judge_model).execute(&mut **tx).await?;
         return Ok(());
     };
     let round = Uuid::new_v4();
     sqlx::query("INSERT INTO learning_rounds(id,project_id,bundle_id,number,state,parent_version_id,channel,
-                   channel_revision,evolve_revision,memory_revision,setting,runtime,optimizer_model,optimizer_reasoning_effort,trigger,task_revision,task_model,judge_model)
-                 VALUES($1,$2,$3,$4,'scoring_incumbent',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)")
+                   channel_revision,task_revision,memory_revision,setting,runtime,optimizer_model,optimizer_reasoning_effort,trigger,task_model,judge_model)
+                 VALUES($1,$2,$3,$4,'scoring_incumbent',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)")
         .bind(round).bind(&row.project_id).bind(row.bundle_id).bind(row.next_round).bind(version).bind(&row.channel)
         .bind(revision).bind(row.task_revision).bind(row.memory_revision).bind(&row.setting).bind(&runtime).bind(optimizer.map(OptimizerModel::model))
-        .bind(optimizer.and_then(OptimizerModel::reasoning_effort)).bind(trigger).bind(row.task_revision).bind(&row.task_model).bind(&row.judge_model)
+        .bind(optimizer.and_then(OptimizerModel::reasoning_effort)).bind(trigger).bind(&row.task_model).bind(&row.judge_model)
         .execute(&mut **tx).await?;
     let incumbent = queue(tx, round, version, &digest, Some((row.task_revision, None))).await?;
     if reuse_score(tx, incumbent).await? {
@@ -338,6 +348,9 @@ async fn fail_round(
     .bind(reason)
     .execute(&mut **tx)
     .await?;
+    if reason == "no-matching-executor" {
+        return Ok(());
+    }
     let max = positive_setting("ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS", 3);
     let pause = if reason == "optimizer-context-too-large" {
         Some(reason)

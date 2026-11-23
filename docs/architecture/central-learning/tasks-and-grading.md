@@ -105,7 +105,7 @@ Held-out content is not encrypted. The paper requires that the optimizer never s
 
 ## The Start floor
 
-Start and resume are refused until the loop has 20 admitted evolve tasks and 20 admitted held-out tasks. With a handful of held-out tasks, one flip swamps any real drop. If admitted tasks later fall below the floor, the loop pauses with the reason `tasks-required`.
+Start and resume are refused until the loop has 20 admitted evolve tasks and 20 admitted held-out tasks. With a handful of held-out tasks, one flip swamps any real drop. While an edit to a previously admitted task is pending, the service waits for its admission result if that edit could restore the floor. Active rounds finish on their pinned revisions. If admitted tasks otherwise fall below the floor, the loop pauses with the reason `tasks-required`.
 
 ## Production outcomes
 

@@ -24,7 +24,9 @@ All bundle routes sit under `/v1/workspaces/{ws}/bundles/{b}/learning`.
 | `GET /trials/{id}` | A trial's status, gateway log, output and verdict | read |
 | `GET /held-out-tasks/export` | Download the held-out tasks | console session only |
 | `GET /rounds`, `GET /rounds/{id}` | Round timeline, and one round with its candidates, diffs, diagnoses and evolve results | read |
-| `POST /rollback` | Move the channel back to the version a named round replaced | promote |
+| `POST /rollback` | Restore the parent of the adoption at the channel head | promote |
+| `GET /blocked-versions` | List blocked digests, actors, notes and timestamps | read |
+| `DELETE /blocked-versions/{digest}` | Remove a block and record the action | promote |
 | `GET /usage` | Rounds, rollouts and tokens per day | read |
 | `POST /outcomes` | A production outcome from `job.expect()` | write |
 | `GET /memory` | Improvement memory at a revision | read |
@@ -191,10 +193,12 @@ Rollout rows are inserted in the same transaction that queues their evaluation. 
 
 ### Cutover
 
-Migration 0023 cancels active round work, pauses running loops and copies any remaining live cases into the task tables. The service preserves round history and memory. It removes the application principal, held-out commitment, evaluation attempt ID and evaluation deadline. Rollout leases govern retries. Multiple candidate evaluations may be open in a round.
+Migration 0023 cancels active round work, pauses running loops and copies live and retired cases into the task tables. The service preserves round history and memory. It removes the application principal, held-out commitment, evaluation attempt ID and evaluation deadline. Rollout leases govern retries. Multiple candidate evaluations may be open in a round.
 
-The migration removes the Evaluate right from stored machine grants. A token with no other right receives read access. Set explicit write access on tokens that report outcomes and update static grants before restarting.
+The migration removes the Evaluate right from stored machine grants. Each evaluate grant becomes read and duplicate rights are removed. Set explicit write access on tokens that report outcomes and update static grants before restarting.
 
 ## SDK
 
 Use the TypeScript or Python client for loop controls, tasks, trials, provider settings and usage. Production applications can report the expected answer and optional actual output for a pinned job with `job.expect()`.
+
+Round summaries and detail include rollout progress, the revert outcome and both confirmed scores. Reading blocked digests uses `GET /blocked-versions`. Administrators or tokens with promote can remove a block with `DELETE /blocked-versions/{digest}`. Rollback requires the named adoption at the channel head and supports idempotent replay. Both mutations are audited. Provider updates can omit the stored key when keeping the same URL.

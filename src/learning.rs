@@ -69,6 +69,14 @@ pub(crate) fn routes() -> Router<AppState> {
             get(controls::provider).put(controls::set_provider),
         )
         .route(&format!("{PREFIX}/usage"), get(controls::usage))
+        .route(
+            &format!("{PREFIX}/blocked-versions"),
+            get(controls::blocked),
+        )
+        .route(
+            &format!("{PREFIX}/blocked-versions/{{digest}}"),
+            axum::routing::delete(controls::unblock),
+        )
         .route(&format!("{PREFIX}/rollback"), post(controls::rollback))
         .route(&format!("{PREFIX}/start"), post(start))
         .route(PREFIX, get(inspect).put(enroll))
@@ -451,6 +459,7 @@ struct RoundSummary {
     number: i32,
     state: String,
     decision: Option<String>,
+    #[sqlx(rename = "public_reason")]
     reason: Option<String>,
     parent_version_id: Uuid,
     diff: Option<Value>,
@@ -460,6 +469,10 @@ struct RoundSummary {
     adopted_version_id: Option<Uuid>,
     incumbent_score: Option<f64>,
     held_out_score: Option<f64>,
+    confirmed_parent_score: Option<f64>,
+    confirmed_adoption_score: Option<f64>,
+    reverted: bool,
+    progress: Value,
     #[serde(serialize_with = "serialize_held_out_error")]
     held_out_error: Option<String>,
     trigger: String,
@@ -481,7 +494,7 @@ fn serialize_held_out_error<S: serde::Serializer>(
     )
 }
 
-const ROUND_SELECT:&str="SELECT r.*,c.changes AS diff,c.diagnosis,coalesce(c.evolve_score,r.incumbent_score) AS evolve_score
+const ROUND_SELECT:&str="SELECT r.*,CASE WHEN r.held_out_error='no-matching-executor' THEN r.held_out_error ELSE r.reason END AS public_reason,(SELECT jsonb_build_object('scored',count(*) FILTER(WHERE l.status='scored'),'total',count(*)) FROM learning_evaluations e JOIN learning_rollouts l ON l.evaluation_id=e.id WHERE e.round_id=r.id) AS progress,c.changes AS diff,c.diagnosis,coalesce(c.evolve_score,r.incumbent_score) AS evolve_score
     FROM learning_rounds r LEFT JOIN learning_candidates c ON (c.round_id,c.sample)=(r.id,r.adopted_sample)";
 async fn active_round(
     tx: &mut Tx<'_>,
@@ -599,7 +612,7 @@ async fn get_round(
     let mut result = serde_json::to_value(RoundSummary::from_row(&row).map_err(db)?).map_err(db)?;
     let pins = json!({
         "channel": row.get::<String,_>("channel"), "channelRevision": row.get::<i64,_>("channel_revision").to_string(),
-        "evolveRevision": row.get::<i64,_>("evolve_revision"), "memoryRevision": row.get::<i64,_>("memory_revision"),
+        "evolveRevision": row.get::<i64,_>("task_revision"), "memoryRevision": row.get::<i64,_>("memory_revision"),
         "memoryDigest": row.get::<Option<String>,_>("memory_digest"), "historyDigest": row.get::<Option<String>,_>("history_digest"),
         "setting": row.get::<Value,_>("setting"),
         "optimizerModel": row.get::<Option<String>,_>("optimizer_model"),

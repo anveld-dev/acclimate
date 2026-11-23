@@ -47,15 +47,17 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
         INSERT INTO learning_evolve_cases(project_id,bundle_id,case_id,input,expected,source,added_revision)
         SELECT project_id,id,'old-task','1','2','setup',1 FROM bundles;")
         .execute(&mut connection).await.unwrap();
-    sqlx::raw_sql("UPDATE machine_tokens SET rights=CASE name WHEN 'Reader' THEN ARRAY['read','evaluate','read'] ELSE ARRAY['evaluate'] END;
+    sqlx::raw_sql("UPDATE machine_tokens SET rights=CASE name WHEN 'Reader' THEN ARRAY['evaluate','read','promote'] ELSE ARRAY['evaluate'] END;
         INSERT INTO machine_tokens(id,project_id,principal_id,name,secret_hash,secret_prefix,rights,created_by,expires_at)
-        VALUES(gen_random_uuid(),'test','machine:writer','Writer','test-key-hash','test',ARRAY['write','evaluate','write'],'fixture',now()+interval '1 day');
+        VALUES(gen_random_uuid(),'test','machine:writer','Writer','test-key-hash','test',ARRAY['evaluate','write'],'fixture',now()+interval '1 day');
         INSERT INTO learning_rounds(id,project_id,bundle_id,number,state,parent_version_id,channel,channel_revision,evolve_revision,memory_revision,setting,held_out)
         SELECT gen_random_uuid(),project_id,bundle_id,1,'scoring_incumbent',version_id,name,revision,1,0,'{}','{}'
           FROM channels WHERE name='stable';
         INSERT INTO learning_evaluations(id,round_id,role,split,version_id,digest,evolve_revision,deadline_at)
         SELECT gen_random_uuid(),r.id,'incumbent','evolve',v.id,v.digest,1,now()+interval '1 day' FROM learning_rounds r JOIN versions v ON v.id=r.parent_version_id;
         UPDATE learning_loops SET evolve_revision=2;
+        INSERT INTO learning_evolve_cases(project_id,bundle_id,case_id,input,expected,source,added_revision,retired_revision)
+        SELECT project_id,id,'retired','1','2','setup',1,2 FROM bundles;
         WITH outcome AS (SELECT gen_random_uuid() AS id)
         INSERT INTO learning_evolve_cases(project_id,bundle_id,case_id,input,expected,source,outcome_id,version_id,added_revision)
         SELECT c.project_id,c.bundle_id,'outcome:'||o.id,'1','2','outcome',o.id,c.version_id,2 FROM channels c CROSS JOIN outcome o WHERE c.name='stable';")
@@ -68,8 +70,17 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
     migrator.run(&mut connection).await.unwrap();
     let cutover:(String,i64,i64)=sqlx::query_as("SELECT pause_reason,task_revision,(SELECT count(*) FROM learning_tasks) FROM learning_loops")
         .fetch_one(&mut connection).await.unwrap();
-    assert_eq!(cutover, ("tasks-required".into(), 2, 2));
+    assert_eq!(cutover, ("tasks-required".into(), 2, 3));
 
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT retired_revision FROM learning_tasks WHERE task_id='retired'"
+        )
+        .fetch_one(&mut connection)
+        .await
+        .unwrap(),
+        2
+    );
     let cancelled:(String,String,String)=sqlx::query_as("SELECT r.state,e.status,l.status FROM learning_rounds r JOIN learning_evaluations e ON e.round_id=r.id JOIN learning_rollouts l ON l.evaluation_id=e.id")
         .fetch_one(&mut connection).await.unwrap();
     assert_eq!(
@@ -158,7 +169,6 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
         views,
         [
             "learning_admission_results",
-            "learning_flagged_tasks",
             "learning_round_held_out_tasks",
             "learning_round_tasks"
         ]
@@ -169,8 +179,11 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
     assert_eq!(
         functions,
         [
+            "learning_feedback_log",
+            "learning_flagged_tasks",
             "learning_memory_append_only",
             "learning_record_rollout_usage",
+            "learning_rollouts_per_task",
             "machine_token_events_append_only"
         ]
     );
@@ -227,8 +240,12 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
         tokens,
         [
             ("Old".into(), vec!["read".into()], true),
-            ("Reader".into(), vec!["read".into()], false),
-            ("Writer".into(), vec!["write".into()], false),
+            (
+                "Reader".into(),
+                vec!["read".into(), "promote".into()],
+                false
+            ),
+            ("Writer".into(), vec!["read".into(), "write".into()], false),
         ]
     );
     let events: Vec<(String, String, String)> = sqlx::query_as(

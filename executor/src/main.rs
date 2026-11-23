@@ -27,14 +27,19 @@ struct Lease {
     kind: String,
     #[serde(default)]
     harness: String,
+    #[serde(default)]
     bundle: Value,
+    #[serde(default)]
     input: Value,
     #[serde(default)]
     task_model: String,
     judge_model: Option<String>,
     judge_runs: Option<u64>,
+    #[serde(default)]
     grader: Value,
+    #[serde(default)]
     output: Value,
+    #[serde(default)]
     material: Value,
     limits: Limits,
     provider: Provider,

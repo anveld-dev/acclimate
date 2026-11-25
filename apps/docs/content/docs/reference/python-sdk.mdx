@@ -62,7 +62,7 @@ On each call, `job()`, `release()` and `rollback()` list the workspace's bundles
 `AcclimateClient` calls the workspace API directly. It is synchronous, and keeps no state between requests, so one client can be shared across threads, as the receipt reporter does from its own thread. For an asyncio application, see [Deliver content to jobs](/docs/guides/deliver-content).
 
 ```python
-AcclimateClient(base_url, token, scope, *, retries=2, timeout=30, max_payload_bytes=1048576,
+AcclimateClient(base_url, token, scope=None, *, retries=2, timeout=30, max_payload_bytes=1048576,
                 max_json_response_bytes=4194304, connection_id=None, session_token=None)
 ```
 

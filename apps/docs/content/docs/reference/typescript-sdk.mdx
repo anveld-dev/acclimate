@@ -38,7 +38,7 @@ await job.expect(correctedReply, { output: reply });
 
 Send `systemPrompt(job.version.payload)` as your system message: it is the message a [learning rollout](/docs#how-a-rollout-runs-your-bundle) sends, so the loop scores the prompt your jobs run with.
 
-`createAcclimate` ignores `ACCLIMATE_SCOPE` and `ACCLIMATE_CONNECTION` and sends no delivery receipts. Use a machine token with read, plus write if you call `expect`, and write and promote if you call `release` or `rollback`. `createAcclimate(options?)` takes these options:
+`createAcclimate` ignores `ACCLIMATE_CONNECTION` and sends no delivery receipts. Use a machine token with read, plus write if you call `expect`, and write and promote if you call `release` or `rollback`. `createAcclimate(options?)` takes these options:
 
 | Option | Default | Value |
 | --- | --- | --- |
@@ -80,7 +80,7 @@ On each call, `acclimate.job(bundleName, options)` lists every bundle in the wor
 | --- | --- | --- |
 | `baseUrl` | Required | HTTP or HTTPS base URL of the API, with no credentials, query or fragment |
 | `token` | Required | The credential, sent as a bearer token |
-| `scope` | Required | Stable application name that separates cache entries. Never use a token. |
+| `scope` | `connectionId` | Stable application name that separates cache entries. Required without `connectionId`. Never use a token. |
 | `connectionId` | None | The connection's UUID, when reading for a connection |
 | `retries` | `2` | 0 to 3 resends of a write with an idempotency key after a transport failure or HTTP 5xx. Reads are not retried. |
 | `timeoutMs` | `30000` | Timeout of each request, up to 120,000 |

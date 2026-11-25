@@ -101,7 +101,6 @@ def run_agent(*, instruction, skill_files, approved_memory, task):
         ...process.env,
         ACCLIMATE_URL: 'https://api.example.test',
         ACCLIMATE_TOKEN: 'test-only',
-        ACCLIMATE_SCOPE: 'app',
         ACCLIMATE_CONNECTION: 'a7100000-0000-4000-8000-000000000001',
         ACCLIMATE_CACHE: join(root, 'cache'),
         ACCLIMATE_JOB_DIR: job,

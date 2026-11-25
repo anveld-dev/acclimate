@@ -42,6 +42,8 @@ Other behavior to know:
 - A receipt needs only `eventId`, `versionId`, `stage`, `source` and `occurredAt`. The service fills `workspaceId`, `connectionId`, `bundleId`, `digest` and, with `revision`, `channel`. Explicit values must still match.
 - `npm run local:up` takes one model provider (`ACCLIMATE_PROVIDER_URL`, `ACCLIMATE_PROVIDER_KEY`, `ACCLIMATE_PROVIDER_MODELS`) and sets both the optimizer and the `local-demo` workspace's model provider. `env.sh` exports `ACCLIMATE_BUNDLE` instead of `BUNDLE_ID`.
 - The console's credential dialog has **Copy as shell exports**.
+- In both SDKs, `AcclimateClient`'s `scope` is optional when you pass a connection ID, and defaults to it. The console's **App setup** code no longer reads `ACCLIMATE_SCOPE`.
+- CI runs `scripts/productization/container_check.py`, which builds the Compose stack and runs the documented backup, restore, upgrade and rollback commands.
 
 All notable changes to Acclimate will be documented in this file.
 

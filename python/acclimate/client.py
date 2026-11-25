@@ -45,7 +45,7 @@ class AcclimateClient:
         self,
         base_url: str,
         token: str,
-        scope: str,
+        scope: str | None = None,
         *,
         retries: int = 2,
         timeout: float = 30,
@@ -57,8 +57,9 @@ class AcclimateClient:
         """Create a client for one authenticated principal.
 
         ``scope`` is a stable application identity that namespaces the local
-        cache; it is never a token. Set ``connection_id`` to the connection UUID
-        when this application reads content for a connection.
+        cache; it is never a token. It defaults to ``connection_id``, the
+        connection UUID, which you set when this application reads content for
+        a connection.
         """
         u = urllib.parse.urlsplit(base_url)
         if (
@@ -69,12 +70,13 @@ class AcclimateClient:
             or u.query
             or u.fragment
             or not token
-            or not scope
         ):
             raise UsageError(
-                "base_url, token and scope are required; base_url must be an HTTP(S) URL without credentials, query or fragment",
-                "base_url" if token and scope else "token" if scope else "scope",
+                "base_url and token are required; base_url must be an HTTP(S) URL without credentials, query or fragment",
+                "token" if not token else "base_url",
             )
+        if not scope and not connection_id:
+            raise UsageError("scope is required when there is no connection_id", "scope")
         if (
             not isinstance(retries, int)
             or not 0 <= retries <= 3
@@ -91,7 +93,7 @@ class AcclimateClient:
             raise UsageError("connection_id must be a UUID", "connection_id")
         self.connection_id = connection_id.lower() if connection_id is not None else None
         self._session_token = session_token
-        self.base_url, self.scope, self._token = base_url.rstrip("/"), scope, token
+        self.base_url, self.scope, self._token = base_url.rstrip("/"), scope or self.connection_id, token
         self.retries, self.timeout, self.max_payload_bytes = (
             retries,
             timeout,

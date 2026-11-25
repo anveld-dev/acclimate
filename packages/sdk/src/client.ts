@@ -71,7 +71,8 @@ export interface ClientOptions {
   token: string;
   /** Trusted console-server session only; never populate from browser state automatically. */
   sessionToken?: string;
-  scope: string;
+  /** Stable application name that separates cache entries. Defaults to `connectionId`. */
+  scope?: string;
   /** ID of the connection (application installation) that consumes content. A UUID. */
   connectionId?: string;
   fetch?: typeof fetch;
@@ -107,9 +108,11 @@ export class AcclimateClient {
     return prepareDelivery(this, options);
   }
   constructor(options: ClientOptions) {
-    for (const field of ['baseUrl', 'token', 'scope'] as const)
+    for (const field of ['baseUrl', 'token'] as const)
       if (!options?.[field])
-        throw new AcclimateUsageError(`${field} is required. Pass baseUrl, token and scope.`, field);
+        throw new AcclimateUsageError(`${field} is required. Pass baseUrl and token.`, field);
+    if (!options.scope && !options.connectionId)
+      throw new AcclimateUsageError('scope is required when there is no connectionId.', 'scope');
     let url: URL;
     try {
       url = new URL(options.baseUrl);
@@ -128,13 +131,13 @@ export class AcclimateClient {
         'baseUrl',
       );
     this.baseUrl = url.toString().replace(/\/$/, '');
-    this.scope = options.scope;
     if (
       options.connectionId !== undefined &&
       !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(options.connectionId)
     )
       throw new AcclimateUsageError('connectionId must be a UUID', 'connectionId');
     this.connectionId = options.connectionId?.toLowerCase();
+    this.scope = options.scope || this.connectionId!;
     this.token = options.token;
     this.sessionToken = options.sessionToken;
     this.fetcher = options.fetch ?? fetch;

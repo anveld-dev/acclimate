@@ -1,8 +1,9 @@
-"""Opt-in isolated full-stack qualification using the canonical deployment manifest.
+"""Isolated full-stack qualification using the canonical deployment manifest.
 
-Never imported by application runtime. Only external.py --execute --gate container
-calls qualify(); source/manifest tests must not claim container execution evidence.
-It also runs the documented backup, restore, upgrade and rollback commands verbatim.
+Never imported by application runtime. CI runs this file directly, and
+external.py --execute --gate container calls qualify(); source/manifest tests
+must not claim container execution evidence. It also runs the documented backup,
+restore, upgrade and rollback commands verbatim.
 """
 import json
 import os
@@ -323,3 +324,9 @@ https://127.0.0.1 {
             'SIGTERM exited zero within deployment grace', 'fresh start preserved release',
             'documented backup, restore, undo, upgrade and rollback commands kept the right data',
             'owned random project/volume removed']
+
+
+if __name__ == '__main__':
+    # Failures name the step and the command, never the captured output, which may hold secrets.
+    for passed in qualify():
+        print('passed:', passed)

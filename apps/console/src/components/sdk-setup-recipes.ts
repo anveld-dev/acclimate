@@ -7,11 +7,11 @@ export function basicDeliveryRecipes(selection: {
   const typescript = `import { readFile } from 'node:fs/promises';
 import { AcclimateClient } from '@acclimate/sdk';
 
-for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE', 'ACCLIMATE_CONNECTION']) {
+for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_CONNECTION']) {
   if (!process.env[key]) throw new Error('Set ' + key);
 }
 const client = new AcclimateClient({ baseUrl: process.env.ACCLIMATE_URL,
-  token: process.env.ACCLIMATE_TOKEN, scope: process.env.ACCLIMATE_SCOPE, connectionId: process.env.ACCLIMATE_CONNECTION });
+  token: process.env.ACCLIMATE_TOKEN, connectionId: process.env.ACCLIMATE_CONNECTION });
 const selection = ${JSON.stringify(selection, null, 2)};
 const prepared = await client.prepare({ ...selection, cacheDir: process.env.ACCLIMATE_CACHE,
   destination: process.env.ACCLIMATE_JOB_DIR });
@@ -26,11 +26,11 @@ try {
 from pathlib import Path
 from acclimate import AcclimateClient
 
-for key in ('ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE', 'ACCLIMATE_CONNECTION'):
+for key in ('ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_CONNECTION'):
     if not os.environ.get(key):
         raise ValueError('Set ' + key)
 client = AcclimateClient(os.environ['ACCLIMATE_URL'], os.environ['ACCLIMATE_TOKEN'],
-                         os.environ['ACCLIMATE_SCOPE'], connection_id=os.environ['ACCLIMATE_CONNECTION'])
+                         connection_id=os.environ['ACCLIMATE_CONNECTION'])
 workspace_id, bundle_id, channel = ${JSON.stringify(selection.workspaceId)}, ${JSON.stringify(selection.bundleId)}, ${JSON.stringify(selection.channel)}
 with client.prepare(workspace_id, bundle_id, channel=channel, cache_dir=os.getenv('ACCLIMATE_CACHE'),
                     destination=os.getenv('ACCLIMATE_JOB_DIR')) as prepared:
@@ -54,13 +54,12 @@ import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AcclimateClient } from '@acclimate/sdk';
 
-for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE', 'ACCLIMATE_CONNECTION',
+for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_CONNECTION',
   'ACCLIMATE_JOB_DIR', 'AGENT_TASK']) {
   if (!process.env[key]) throw new Error('Set ' + key);
 }
 const client = new AcclimateClient({ baseUrl: process.env.ACCLIMATE_URL,
-  token: process.env.ACCLIMATE_TOKEN, scope: process.env.ACCLIMATE_SCOPE,
-  connectionId: process.env.ACCLIMATE_CONNECTION });
+  token: process.env.ACCLIMATE_TOKEN, connectionId: process.env.ACCLIMATE_CONNECTION });
 const prepared = await client.prepare({ ...${JSON.stringify(selection, null, 2)},
   cacheDir: process.env.ACCLIMATE_CACHE, destination: process.env.ACCLIMATE_JOB_DIR });
 const { instructions: instruction, skillFiles } = prepared;
@@ -90,10 +89,9 @@ from acclimate import AcclimateClient
 # application.py defines run_agent, which runs your agent loop on one job.
 from application import run_agent
 
-for key in ('ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE', 'ACCLIMATE_CONNECTION',
-            'ACCLIMATE_JOB_DIR', 'AGENT_TASK'):
+for key in ('ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_CONNECTION', 'ACCLIMATE_JOB_DIR', 'AGENT_TASK'):
     if not os.environ.get(key): raise ValueError('Set ' + key)
-client = AcclimateClient(os.environ['ACCLIMATE_URL'], os.environ['ACCLIMATE_TOKEN'], os.environ['ACCLIMATE_SCOPE'],
+client = AcclimateClient(os.environ['ACCLIMATE_URL'], os.environ['ACCLIMATE_TOKEN'],
                          connection_id=os.environ['ACCLIMATE_CONNECTION'])
 prepared = client.prepare(${JSON.stringify(selection.workspaceId)}, ${JSON.stringify(selection.bundleId)},
     channel=${JSON.stringify(selection.channel)}, cache_dir=os.getenv('ACCLIMATE_CACHE'),
@@ -151,7 +149,7 @@ export function createAppReporter() {
     return createReceiptReporter({
       workspaceId: ${JSON.stringify(selection.workspaceId)}, connectionId,
       client: new AcclimateClient({ baseUrl: process.env.ACCLIMATE_URL, token,
-        scope: process.env.ACCLIMATE_SCOPE + ':receipts', timeoutMs: 1000, retries: 0 }),
+        scope: connectionId + ':receipts', timeoutMs: 1000, retries: 0 }),
     });
   } catch { return undefined; }
 }
@@ -170,7 +168,7 @@ def create_app_reporter():
         return None
     try:
         client = AcclimateClient(os.environ["ACCLIMATE_URL"], token,
-            os.environ["ACCLIMATE_SCOPE"] + ":receipts", timeout=1, retries=0)
+            connection_id + ":receipts", timeout=1, retries=0)
         return DeliveryReporter(client, ${JSON.stringify(selection.workspaceId)}, connection_id)
     except Exception:
         return None
@@ -190,13 +188,12 @@ export function nativeDeliveryRecipe(
   return `import { AcclimateClient } from '@acclimate/sdk';
 import { prepare } from '@acclimate/${runtime}-plugin';
 
-for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE', 'ACCLIMATE_CONNECTION']) {
+for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_CONNECTION']) {
   if (!process.env[key]) throw new Error('Set ' + key);
 }
 const client = new AcclimateClient({
   baseUrl: process.env.ACCLIMATE_URL,
   token: process.env.ACCLIMATE_TOKEN,
-  scope: process.env.ACCLIMATE_SCOPE,
   connectionId: process.env.ACCLIMATE_CONNECTION,
 });
 const selection = ${JSON.stringify(selection, null, 2)};

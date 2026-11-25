@@ -57,7 +57,6 @@ The checkout's delivery check prints the pinned version, digest and staged files
 ```sh
 export ACCLIMATE_URL=http://127.0.0.1:3000
 export ACCLIMATE_WORKSPACE=YOUR_WORKSPACE ACCLIMATE_BUNDLE=YOUR_BUNDLE
-export ACCLIMATE_SCOPE=your-stable-app-identity
 # Set ACCLIMATE_TOKEN privately to your content-read credential.
 export ACCLIMATE_CONNECTION=YOUR_CONNECTION_ID
 # Optional: set ACCLIMATE_RECEIPT_TOKEN privately to report delivery.

@@ -13,7 +13,7 @@ For Codex, the Claude Agent SDK, Pi or Cursor, see [Use a coding agent](/docs/gu
 - Create a connection for the bundle and channel, and issue its connection credential. See [Connect your application](/docs/get-started/quickstart#connect-your-application) and [Credentials and rights](/docs/reference/credentials).
 - Run the delivery check in the **First delivery** step of the connection's **Setup** tab. Then choose **Bundle & channel** and **Full setup guide** to open **App setup**.
 
-The snippets take the API URL and the workspace, bundle and connection IDs from **App setup**, and read the connection credential from `ACCLIMATE_TOKEN`. The scope is any stable name for your application.
+The snippets take the API URL and the workspace, bundle and connection IDs from **App setup**, and read the connection credential from `ACCLIMATE_TOKEN`.
 
 ## Prepare a job
 
@@ -28,7 +28,6 @@ import { AcclimateClient } from '@acclimate/sdk';
 const client = new AcclimateClient({
   baseUrl: 'https://api.acclimate.example.com',
   token: process.env.ACCLIMATE_TOKEN!,
-  scope: 'support-app',
   connectionId: CONNECTION_ID,
 });
 
@@ -55,7 +54,6 @@ from acclimate import AcclimateClient
 client = AcclimateClient(
     "https://api.acclimate.example.com",
     os.environ["ACCLIMATE_TOKEN"],
-    "support-app",
     connection_id=CONNECTION_ID,
 )
 

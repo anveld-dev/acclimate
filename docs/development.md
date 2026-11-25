@@ -111,12 +111,14 @@ python3 scripts/productization/rust_tests.py --pg-bin /path/to/postgresql/bin
 PG_BIN=/path/to/postgresql/bin python3 executor/tests/central_learning.py -v
 cargo build
 npm run test:e2e -- --pg-bin /path/to/postgresql/bin
+python3 scripts/productization/container_check.py
 ```
 
 Plain `cargo test` reports tests that need PostgreSQL as ignored. The Rust test runner above provisions an isolated database and executes the full suite, including those tests.
 
 The central learning gate starts a private PostgreSQL cluster, the service, an executor container, and a scripted model endpoint. It kills and restarts the executor during a live sandbox run and waits for lease expiry. Set `ACCLIMATE_SANDBOX_RUNTIME=runsc` to exercise gVisor on a configured Linux host. Docker Desktop uses plain Docker by default.
 
+The container check builds the Compose stack in a disposable project, signs in through a fixture identity provider, and runs the documented backup, restore, upgrade and rollback commands word for word. It needs Docker and the Playwright Chromium from `scripts/bdd/requirements.txt`, and removes its project, volumes and images when it finishes.
 
 The process-level test checks publication, cache and preparation, release, authorization, rollback and restart persistence. `npm run test:codex` is the separate live Luna-only check: it asks for random values stored only in prepared resources. It does not claim a direct SDK discovery event or cover resumed sessions.
 

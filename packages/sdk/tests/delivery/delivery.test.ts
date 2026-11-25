@@ -391,3 +391,17 @@ test('client.prepare pins a real selection, owns per-job files and reports obser
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('scope defaults to the connection ID and is required without one', () => {
+  const connectionId = 'A7100000-0000-4000-8000-000000000001';
+  const client = new AcclimateClient({ baseUrl: 'https://api.example.test', token: 't', connectionId });
+  assert.equal(client.scope, connectionId.toLowerCase());
+  assert.equal(
+    new AcclimateClient({ baseUrl: 'https://api.example.test', token: 't', scope: 'app', connectionId }).scope,
+    'app',
+  );
+  assert.throws(
+    () => new AcclimateClient({ baseUrl: 'https://api.example.test', token: 't' }),
+    (error: unknown) => error instanceof AcclimateUsageError && error.field === 'scope',
+  );
+});

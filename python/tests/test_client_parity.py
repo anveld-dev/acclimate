@@ -87,6 +87,14 @@ class ParityTest(unittest.TestCase):
     def last(self):
         return Recorder.calls[-1]
 
+    def test_scope_defaults_to_the_connection_id(self):
+        connection = "A7100000-0000-4000-8000-000000000001"
+        self.assertEqual(AcclimateClient(self.url, "token", connection_id=connection).scope, connection.lower())
+        self.assertEqual(AcclimateClient(self.url, "token", "app", connection_id=connection).scope, "app")
+        with self.assertRaises(acclimate.UsageError) as raised:
+            AcclimateClient(self.url, "token")
+        self.assertEqual(raised.exception.field, "scope")
+
     def test_every_typescript_client_method_has_a_python_counterpart(self):
         missing = sorted(
             name for name in typescript_client_methods() - DELIBERATE_OMISSIONS

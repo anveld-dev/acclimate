@@ -78,7 +78,7 @@ def shoot_box(page: Page, path: Path, top, bottom) -> None:
 
 def model_provider(page, base, ids, path):
     open_page(page, f"{base}/w/{WORKSPACE}/settings/model-provider")
-    panel(page, "Connection").screenshot(path=str(path))
+    shoot_box(page, path, panel(page, "Connection"), panel(page, "Model checks"))
 
 
 def issue_token(page, base, ids, path):

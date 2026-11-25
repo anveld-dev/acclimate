@@ -1,0 +1,239 @@
+/*
+ * The workspace Settings pages (Members, Model provider, Machine tokens) share one narrow
+ * column, quieter cards and tables, and the same header, count and empty-state styles.
+ */
+.workspace-main > .settings-page.settings-page {
+  display: grid;
+  gap: 20px;
+  max-width: 50rem;
+  margin-inline: 0;
+}
+
+.settings-page .workspace-panel {
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgb(26 42 30 / 5%);
+}
+.settings-page .panel-heading {
+  align-items: flex-start;
+  gap: 8px 16px;
+  padding: 18px 20px 14px;
+  border-bottom: 0;
+}
+.settings-page .panel-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--type-16);
+  line-height: 1.35;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.settings-page .panel-heading p {
+  margin-top: 2px;
+  font-size: var(--type-13);
+  line-height: 1.5;
+}
+.settings-page .panel-heading > div:first-child {
+  flex-basis: 18rem;
+}
+.settings-page .panel-actions {
+  min-height: 24px;
+}
+.settings-page .panel-body {
+  gap: 18px;
+  padding: 2px 20px 20px;
+}
+.settings-page .panel-body-flush {
+  gap: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+.settings-page .panel-footer {
+  padding: 12px 20px;
+  background: color-mix(in oklab, var(--muted) 55%, var(--card));
+}
+.settings-page .form-grid {
+  max-width: none;
+  gap: 18px;
+}
+.settings-page .list-toolbar {
+  padding: 12px 20px;
+}
+
+/* Tables: no filled header band, generous rows and aligned outer padding. */
+.settings-page [data-slot='table-header'] [data-slot='table-head'] {
+  height: 34px;
+  padding-inline: 12px;
+  background: color-mix(in oklab, var(--muted) 40%, var(--card));
+  color: var(--muted-foreground);
+  font-size: var(--type-12);
+  font-weight: 550;
+  letter-spacing: 0.02em;
+}
+.settings-page [data-slot='table-body'] [data-slot='table-cell'] {
+  height: 56px;
+  padding: 10px 12px;
+}
+.settings-page [data-slot='table-row'] > :first-child {
+  padding-left: 20px;
+}
+.settings-page [data-slot='table-row'] > :last-child {
+  padding-right: 14px;
+}
+.settings-page [data-slot='table-body'] [data-slot='table-row']:last-child {
+  border-bottom: 0;
+}
+.settings-page [data-slot='table-body'] [data-slot='table-row']:hover {
+  background: color-mix(in oklab, var(--muted) 45%, transparent);
+}
+
+/* Members: the avatar sits level with the name. */
+.settings-page .member-account-line {
+  align-items: center;
+}
+.settings-page .member-identity-meta:empty {
+  display: none;
+}
+
+/* A count beside a panel title, such as the number of members. */
+.settings-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: var(--type-12);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* An empty list: an icon, one line of text and room to breathe. */
+.settings-empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 28px 20px 30px;
+  color: var(--muted-foreground);
+  font-size: var(--type-14);
+  text-align: center;
+}
+.settings-empty > svg {
+  width: 20px;
+  height: 20px;
+  opacity: 0.7;
+}
+
+/* A stored secret reads like a locked field, with its replace action inside it. */
+.secret-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 3px 4px 3px 12px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in oklab, var(--muted) 60%, var(--card));
+  font-size: var(--type-14);
+}
+.secret-field > svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.secret-field-dots {
+  color: var(--muted-foreground);
+  letter-spacing: 0.12em;
+}
+.secret-field > p {
+  margin-right: auto;
+}
+
+/* A list of rows inside a flush panel: model checks and token activity. */
+.settings-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 16px;
+  min-height: 52px;
+  padding: 10px 20px;
+  font-size: var(--type-14);
+}
+.settings-list > li + li {
+  border-top: 1px solid var(--border);
+}
+.settings-list-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.settings-list-main > svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.settings-list-meta {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-13);
+  white-space: nowrap;
+}
+.settings-list-more {
+  padding: 10px 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* Machine tokens: name over the secret prefix. */
+.token-identity {
+  display: grid;
+  gap: 2px;
+  min-width: 9rem;
+}
+.token-identity code {
+  color: var(--muted-foreground);
+  font-size: var(--type-12);
+  font-weight: 400;
+}
+
+@media (max-width: 640px) {
+  .settings-page .panel-heading {
+    padding: 14px 16px 12px;
+  }
+  .settings-page .panel-body {
+    padding: 2px 16px 16px;
+  }
+  .settings-page .panel-body-flush {
+    padding: 0;
+  }
+  .settings-page .panel-footer,
+  .settings-page .list-toolbar,
+  .settings-list > li,
+  .settings-list-more {
+    padding-inline: 16px;
+  }
+  .settings-page [data-slot='table-row'] > :first-child {
+    padding-left: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .secret-field-dots {
+    display: none;
+  }
+}
+
+/* Members turns rows into stacked cards in a narrow column; keep that layout's spacing. */
+@container members (max-width: 600px) {
+  .settings-page.workspace-members [data-slot='table-body'] [data-slot='table-cell'] {
+    height: auto;
+    padding: 0.25rem 0;
+  }
+  .settings-page.workspace-members .workspace-member-row > [data-slot='table-cell'] {
+    padding: 0;
+  }
+}

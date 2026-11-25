@@ -24,6 +24,7 @@ import pageHeaderStyles from '../components/page-header.css?url';
 import workspacePageStyles from '../components/workspace-pages.css?url';
 import workspaceMemberStyles from '../components/workspace-members.css?url';
 import bundleLibraryStyles from '../components/bundle-library.css?url';
+import settingsPageStyles from '../components/settings-pages.css?url';
 import changesReleasesStyles from '../components/changes-releases.css?url';
 import versionInspectorStyles from '../components/version-inspector.css?url';
 
@@ -64,6 +65,7 @@ export const Route = createRootRoute({
       { rel: 'stylesheet', href: workspacePageStyles },
       { rel: 'stylesheet', href: workspaceMemberStyles },
       { rel: 'stylesheet', href: bundleLibraryStyles },
+      { rel: 'stylesheet', href: settingsPageStyles },
       { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
     ],
   }),

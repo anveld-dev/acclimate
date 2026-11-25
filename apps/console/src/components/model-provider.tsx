@@ -1,5 +1,6 @@
 import { useModelProvider } from './use-model-provider';
 import { useState } from 'react';
+import { CircleCheck, CircleX, LockKeyhole } from 'lucide-react';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Field, FieldGrid } from './ui/field';
@@ -28,7 +29,7 @@ export function ModelProvider({ workspaceId }: { workspaceId: string }) {
   const status = verification && VERIFICATION[verification.status];
   const askForKey = provider && (!provider.hasKey || replacingKey);
   return (
-    <div className="space-y-4">
+    <div className="settings-page">
       <PageTitle
         title="Model provider"
         description="The OpenAI-compatible endpoint that runs task and judge models for learning in this workspace."
@@ -134,8 +135,12 @@ export function ModelProvider({ workspaceId }: { workspaceId: string }) {
               ) : (
                 <div className="form-field">
                   <span className="form-field-label">API key</span>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <p className="text-sm">A key is stored.</p>
+                  <div className="secret-field">
+                    <LockKeyhole aria-hidden="true" />
+                    <span className="secret-field-dots" aria-hidden="true">
+                      ••••••••••••
+                    </span>
+                    <p>A key is stored.</p>
                     <Button
                       type="button"
                       variant="outline"
@@ -163,37 +168,43 @@ export function ModelProvider({ workspaceId }: { workspaceId: string }) {
             </FieldGrid>
           </form>
         )}
-        {verification && (
-          <section aria-labelledby="model-checks-heading" className="space-y-2 border-t pt-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3 id="model-checks-heading" className="text-sm font-medium">
-                Model checks
-              </h3>
-              {verification.checkedAt && (
-                <span className="text-xs text-muted-foreground">
-                  Checked <ReceiptTime value={verification.checkedAt} relative />
-                </span>
-              )}
-            </div>
-            <div aria-live="polite">
-              {verification.models.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  {verification.status === 'pending'
-                    ? 'Checking each allowed model…'
-                    : 'No model results yet.'}
-                </p>
-              ) : (
-                <ul className="divide-y rounded-md border">
-                  {verification.models.map((result) => {
-                    const ok = result.ok && result.usage;
-                    const usageNote =
-                      !result.usage && (result.ok || /usage/i.test(result.message ?? ''));
-                    return (
-                      <li
-                        key={result.model}
-                        className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-3 py-2 text-sm"
-                      >
-                        <div className="min-w-0 flex-1">
+      </Panel>
+      {verification && (
+        <Panel
+          title="Model checks"
+          description={
+            verification.checkedAt ? (
+              <>
+                Checked <ReceiptTime value={verification.checkedAt} relative />
+              </>
+            ) : (
+              'Each allowed model is asked for a short answer with usage numbers.'
+            )
+          }
+          flush
+        >
+          <div aria-live="polite">
+            {verification.models.length === 0 ? (
+              <p className="settings-empty">
+                {verification.status === 'pending'
+                  ? 'Checking each allowed model…'
+                  : 'No model results yet.'}
+              </p>
+            ) : (
+              <ul className="settings-list">
+                {verification.models.map((result) => {
+                  const ok = result.ok && result.usage;
+                  const usageNote =
+                    !result.usage && (result.ok || /usage/i.test(result.message ?? ''));
+                  const Icon = ok ? CircleCheck : CircleX;
+                  return (
+                    <li key={result.model}>
+                      <div className="settings-list-main">
+                        <Icon
+                          aria-hidden="true"
+                          className={ok ? 'text-[var(--tone-success-fg)]' : 'text-destructive'}
+                        />
+                        <div className="min-w-0">
                           <code className="font-medium break-all">{result.model}</code>
                           {(result.message || usageNote) && (
                             <p className="text-muted-foreground">
@@ -204,18 +215,18 @@ export function ModelProvider({ workspaceId }: { workspaceId: string }) {
                             </p>
                           )}
                         </div>
-                        <StatusBadge tone={ok ? 'success' : 'danger'}>
-                          {ok ? 'Verified' : 'Failed'}
-                        </StatusBadge>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-          </section>
-        )}
-      </Panel>
+                      </div>
+                      <StatusBadge tone={ok ? 'success' : 'danger'}>
+                        {ok ? 'Verified' : 'Failed'}
+                      </StatusBadge>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </Panel>
+      )}
     </div>
   );
 }

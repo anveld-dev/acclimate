@@ -3,7 +3,7 @@ import { ListToolbar } from './list-toolbar';
 import { StatusBadge } from './status-badge';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
-import { ChevronDown, MoreHorizontal, UserRoundPlus, ShieldCheck } from 'lucide-react';
+import { ChevronDown, MailOpen, MoreHorizontal, UserRoundPlus, ShieldCheck } from 'lucide-react';
 import { PageTitle } from './shared';
 import { Panel } from './panel';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
@@ -393,7 +393,7 @@ export function WorkspaceMembers({
     seenNames.add(name);
   }
   return (
-    <div className="workspace-members space-y-4">
+    <div className="workspace-members settings-page">
       <PageTitle
         title="Members"
         description="Choose who can view, edit, and manage this workspace."
@@ -434,7 +434,12 @@ export function WorkspaceMembers({
       ) : (
         <Panel
           className="workspace-members-panel"
-          title="Current members"
+          title={
+            <>
+              Current members
+              {access.ok && <span className="settings-count">{members.length}</span>}
+            </>
+          }
           description="People with access to this workspace and their roles."
           actions={
             <Popover>
@@ -719,18 +724,21 @@ export function WorkspaceMembers({
         <Panel
           className="members-invitations"
           title={
-            <span className="inline-flex items-center gap-2">
+            <>
               Pending invitations
               {mailAvailable !== undefined && !invitationError && (
-                <span className="members-directory-count">{invitations.length}</span>
+                <span className="settings-count">{invitations.length}</span>
               )}
-            </span>
+            </>
           }
           description="People invited by email who have not joined yet."
           flush
         >
           {mailAvailable !== undefined && !invitationError && invitations.length === 0 && (
-            <p className="members-empty">No pending invitations.</p>
+            <div className="settings-empty">
+              <MailOpen aria-hidden="true" />
+              <p>No pending invitations.</p>
+            </div>
           )}
           {invitations.length > 0 && (
             <Table>
@@ -757,16 +765,32 @@ export function WorkspaceMembers({
                     </TableCell>
                     <TableCell>
                       <span className="members-cell-label">Delivery</span>
-                      {Date.parse(invitation.expiresAt) <= Date.now()
-                        ? 'Expired'
-                        : {
-                            queued: 'Queued',
-                            sending: 'Sending…',
-                            sent: 'Sent',
-                            failed: 'Could not send',
-                          }[invitation.deliveryStatus]}
-                      <div>
-                        Expires: <ReceiptTime value={invitation.expiresAt} />
+                      <div className="grid justify-items-start gap-1">
+                        {Date.parse(invitation.expiresAt) <= Date.now() ? (
+                          <StatusBadge tone="warning">Expired</StatusBadge>
+                        ) : (
+                          <StatusBadge
+                            tone={
+                              invitation.deliveryStatus === 'sent'
+                                ? 'success'
+                                : invitation.deliveryStatus === 'failed'
+                                  ? 'danger'
+                                  : 'info'
+                            }
+                          >
+                            {
+                              {
+                                queued: 'Queued',
+                                sending: 'Sending…',
+                                sent: 'Sent',
+                                failed: 'Could not send',
+                              }[invitation.deliveryStatus]
+                            }
+                          </StatusBadge>
+                        )}
+                        <span className="text-xs whitespace-nowrap text-muted-foreground">
+                          Expires <ReceiptTime value={invitation.expiresAt} relative />
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell className="text-right">

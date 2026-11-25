@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { KeyRound, MoreHorizontal, RotateCw, ShieldOff } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { History, KeyRound, MoreHorizontal, RotateCw, ShieldOff } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Field } from './ui/field';
@@ -23,7 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from './ui/disclosure';
+import { shortId } from '../lib/format';
 import { CopyButton } from './copy-button';
 import { ReceiptTime } from './receipt-time';
 import { StatusBadge } from './status-badge';
@@ -63,6 +63,7 @@ type Issued = { secret: string; token: MachineToken };
 export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string }) {
   const [tokens, setTokens] = useState<MachineToken[]>();
   const [events, setEvents] = useState<MachineTokenEvent[]>([]);
+  const [showAllEvents, setShowAllEvents] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [message, setMessage] = useState('');
   const [pending, setPending] = useState(false);
@@ -130,16 +131,17 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
     }
   }
 
-  const title = (
+  const title = (actions?: ReactNode) => (
     <PageTitle
       title="Machine tokens"
       description="Credentials for applications and automation that call the API for this workspace."
+      actions={actions}
     />
   );
   if (hidden)
     return (
-      <div className="space-y-4">
-        {title}
+      <div className="settings-page">
+        {title()}
         <p role="alert" className="rounded-lg border p-4">
           Machine token management requires a workspace administrator.
         </p>
@@ -148,8 +150,22 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
   const validIssue =
     NAME.test(name) && rights.length > 0 && Number(days) >= 1 && Number(days) <= 365;
   return (
-    <div className="machine-tokens space-y-4">
-      {title}
+    <div className="machine-tokens settings-page">
+      {title(
+        <Button
+          ref={issueTrigger}
+          disabled={pending}
+          onClick={() => {
+            setName('delivery-client');
+            setRights(['read']);
+            setDays('90');
+            setReason('');
+            setIssuing(true);
+          }}
+        >
+          <KeyRound aria-hidden="true" /> Issue token
+        </Button>,
+      )}
       {message && (
         <p role="status" className="text-sm">
           {message}
@@ -157,32 +173,24 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
       )}
       {issued && <IssuedSecret issued={issued} onDone={() => setIssued(undefined)} />}
       <Panel
-        title="Issued tokens"
-        description="Rotate or revoke a token without restarting the service. Each secret is shown once."
-        actions={
-          <Button
-            ref={issueTrigger}
-            size="sm"
-            disabled={pending}
-            onClick={() => {
-              setName('delivery-client');
-              setRights(['read']);
-              setDays('90');
-              setReason('');
-              setIssuing(true);
-            }}
-          >
-            <KeyRound aria-hidden="true" /> Issue token
-          </Button>
+        title={
+          <>
+            Issued tokens
+            {tokens && <span className="settings-count">{tokens.length}</span>}
+          </>
         }
+        description="Rotate or revoke a token without restarting the service. Each secret is shown once."
         flush
       >
         {!tokens ? (
-          <p role="status" className="p-4 text-sm">
+          <p role="status" className="settings-empty">
             Loading machine tokens…
           </p>
         ) : tokens.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">No machine tokens yet.</p>
+          <div className="settings-empty">
+            <KeyRound aria-hidden="true" />
+            <p>No machine tokens yet.</p>
+          </div>
         ) : (
           <Table>
             <TableHeader>
@@ -201,9 +209,9 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
               {tokens.map((token) => (
                 <TableRow key={token.id}>
                   <TableCell>
-                    <div className="font-medium">{token.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      <code>{token.principalId}</code> · <code>{token.secretPrefix}…</code>
+                    <div className="token-identity">
+                      <span className="font-medium break-all">{token.name}</span>
+                      <code title={`Principal ${token.principalId}`}>{token.secretPrefix}…</code>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -292,23 +300,44 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
             </TableBody>
           </Table>
         )}
-        {events.length > 0 && (
-          <Disclosure className="border-t px-4 py-3">
-            <DisclosureTrigger>Token audit trail</DisclosureTrigger>
-            <DisclosureContent>
-              <ul className="space-y-1 pt-2 text-sm">
-                {events.slice(0, 50).map((event, index) => (
-                  <li key={`${event.tokenId}-${event.createdAt}-${index}`}>
-                    <ReceiptTime value={event.createdAt} /> · {event.action}{' '}
-                    <strong>{event.tokenName}</strong> by <code>{event.actorPrincipal}</code>
-                    {event.reason ? ` — ${event.reason}` : ''}
-                  </li>
-                ))}
-              </ul>
-            </DisclosureContent>
-          </Disclosure>
-        )}
       </Panel>
+      {events.length > 0 && (
+        <Panel
+          title="Token activity"
+          description="Who issued, rotated or revoked each token, newest first."
+          flush
+        >
+          <ul className="settings-list">
+            {events.slice(0, showAllEvents ? 50 : 5).map((event, index) => (
+              <li key={`${event.tokenId}-${event.createdAt}-${index}`}>
+                <div className="settings-list-main">
+                  <History aria-hidden="true" className="text-muted-foreground" />
+                  <p className="min-w-0">
+                    <strong className="font-medium">{event.tokenName}</strong>{' '}
+                    {event.action} by{' '}
+                    <code className="text-xs" title={event.actorPrincipal}>
+                      {actorLabel(event.actorPrincipal)}
+                    </code>
+                    {event.reason && (
+                      <span className="block text-muted-foreground">{event.reason}</span>
+                    )}
+                  </p>
+                </div>
+                <span className="settings-list-meta">
+                  <ReceiptTime value={event.createdAt} relative />
+                </span>
+              </li>
+            ))}
+          </ul>
+          {events.length > 5 && (
+            <div className="settings-list-more">
+              <Button variant="ghost" size="sm" onClick={() => setShowAllEvents((all) => !all)}>
+                {showAllEvents ? 'Show recent only' : `Show all ${Math.min(events.length, 50)} events`}
+              </Button>
+            </div>
+          )}
+        </Panel>
+      )}
       <Dialog open={issuing} onOpenChange={(open) => !pending && setIssuing(open)}>
         <DialogContent returnFocusRef={issueTrigger}>
           <form
@@ -459,20 +488,33 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
   );
 }
 
+/** A principal such as user:<uuid> with the ID shortened; the full value is in its title. */
+function actorLabel(principal: string) {
+  const split = principal.indexOf(':');
+  return split < 0 ? principal : `${principal.slice(0, split)}:${shortId(principal.slice(split + 1))}`;
+}
+
 /** Shown once after issue or rotation. The secret never reaches a URL or local storage. */
 function IssuedSecret({ issued, onDone }: { issued: Issued; onDone: () => void }) {
   return (
-    <div role="region" aria-label="New token secret" className="space-y-3 rounded-lg border p-4">
+    <div
+      role="region"
+      aria-label="New token secret"
+      className="grid gap-3 rounded-[10px] border bg-card p-5 shadow-xs"
+    >
       <p className="text-sm font-medium">
         Copy the secret for <code>{issued.token.name}</code> now. It is not shown again.
       </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <code className="break-all rounded bg-muted px-2 py-1 text-xs">{issued.secret}</code>
+      <div className="secret-field">
+        <KeyRound aria-hidden="true" />
+        <code className="mr-auto min-w-0 break-all text-xs">{issued.secret}</code>
         <CopyButton value={issued.secret} label="Copy secret" />
       </div>
-      <Button type="button" variant="outline" onClick={onDone}>
-        Done
-      </Button>
+      <div className="flex justify-end">
+        <Button type="button" variant="outline" onClick={onDone}>
+          Done
+        </Button>
+      </div>
     </div>
   );
 }

@@ -1,0 +1,31 @@
+name: Bug report
+description: Report an issue with Acclimate.
+body:
+  - type: markdown
+    attributes:
+      value: This issue is public. Remove secrets and private data. Use the [security policy](https://github.com/anveld-dev/acclimate/blob/main/SECURITY.md) to report vulnerabilities privately.
+  - type: input
+    id: version
+    attributes:
+      label: Acclimate version
+      description: Include the affected component and its version or commit.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the relevant deployment method, operating system and runtime versions.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: Include relevant redacted errors or logs.
+    validations:
+      required: true

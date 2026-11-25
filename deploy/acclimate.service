@@ -1,0 +1,21 @@
+[Unit]
+Description=Acclimate API only (requires separately deployed authenticated console and TLS proxy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=acclimate
+Group=acclimate
+EnvironmentFile=/etc/acclimate/service.env
+ExecStart=/usr/local/bin/acclimate-service
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=90s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

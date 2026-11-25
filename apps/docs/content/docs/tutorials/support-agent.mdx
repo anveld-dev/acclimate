@@ -1,0 +1,207 @@
+---
+title: Improve a support agent
+description: Answer support requests with a released bundle, improve the bundle with sample tasks and turn a person's correction into a learning task.
+---
+
+In this tutorial you run a support agent on the version released on a channel, improve its bundle with 60 sample tasks until its replies state the company's facts, and turn a support lead's correction into a learning task. The application is `examples/support-agent/agent.ts` or `agent.py`.
+
+## Before you start
+
+Follow [Connect a model provider](/docs/tutorials/first-learning-round#connect-a-model-provider) in the first tutorial, but give the machine token only **Read content** and **Write content**. From the root of the checkout:
+
+```sh
+export ACCLIMATE_PROVIDER_URL='<provider-base-url>'
+export ACCLIMATE_PROVIDER_KEY='<provider-api-key>'
+export ACCLIMATE_PROVIDER_MODELS='<task-model-id>,<judge-model-id>'
+export ACCLIMATE_MODEL='<optimizer-model-id>'
+npm run local:up
+npm run local:trust
+source .local/stack/env.sh
+export ACCLIMATE_TOKEN='<machine-token>'
+npm ci --ignore-scripts
+```
+
+For Python, run `python3.11 -m venv .venv` and `.venv/bin/python -m pip install ./python` instead of `npm ci`.
+
+The application calls the model provider itself. `env.sh` sets `OPENAI_BASE_URL` and `OPENAI_API_KEY` to the provider's address and key, and `AGENT_MODEL` to the first allowed model, which is also the task model.
+
+## Answer a request
+
+It runs on the **Example agent** bundle the local stack publishes on `stable`, whose instructions are two sentences:
+
+```text
+You are a support agent for a small software company.
+
+Answer in two short paragraphs. Ask one clarifying question when the request is ambiguous.
+```
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
+npx tsx examples/support-agent/agent.ts "I was charged twice this month."
+```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+.venv/bin/python examples/support-agent/agent.py "I was charged twice this month."
+```
+
+</Tab>
+</Tabs>
+
+```text
+I’m sorry—that’s frustrating. I can help investigate the duplicate charge, but I can’t view your billing details from here.
+
+Could you share the dates and amounts of both charges, and the email address on your account? Please don’t send your full card number or security code.
+
+Answered with version 9ba17a2e-307b-41b4-8171-4d870b10c715 (sha256:10f60b34…).
+```
+
+The reply follows the instructions but cannot state the company's policy on duplicate charges, because the bundle has none. The Acclimate part is short:
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```ts title="agent.ts"
+// Reads ACCLIMATE_URL, ACCLIMATE_WORKSPACE and ACCLIMATE_TOKEN.
+const acclimate = createAcclimate();
+
+// Pin the released version for this job. Every job re-reads the channel, so a release made by
+// the learning loop reaches the next job without a deploy.
+const job = await acclimate.job('Example agent', { channel: 'stable', input: request });
+const reply = await complete(systemPrompt(job.version.payload), request);
+console.log(reply);
+// Keep the version with the result, so you can tell later which instructions produced it.
+console.error(`\nAnswered with version ${job.version.version.id} (${job.version.version.digest}).`);
+```
+
+</Tab>
+<Tab value="Python">
+
+```python title="agent.py"
+# Reads ACCLIMATE_URL, ACCLIMATE_WORKSPACE and ACCLIMATE_TOKEN.
+acclimate = Acclimate.from_env()
+
+# Pin the released version for this job. Every job re-reads the channel, so a release made by
+# the learning loop reaches the next job without a deploy.
+job = acclimate.job("Example agent", channel="stable", input=args.request)
+version = job.version
+reply = complete(system_prompt(version["payload"]), args.request)
+print(reply, flush=True)
+# Keep the version with the result, so you can tell later which instructions produced it.
+print(f"\nAnswered with version {version['version']['id']} ({version['version']['digest']}).", file=sys.stderr)
+```
+
+</Tab>
+</Tabs>
+
+`job()` finds the bundle by name, resolves the channel, downloads the version unless cached and verifies its digest. The SDK's `systemPrompt` (`system_prompt` in Python) renders the bundle as the exact system message a [learning rollout](/docs#how-a-rollout-runs-your-bundle) sends, so the loop scores the prompt your jobs run with.
+
+## Improve the bundle with the sample tasks
+
+[`examples/learning/example-agent-tasks.jsonl`](https://github.com/anveld-dev/acclimate/blob/main/examples/learning/example-agent-tasks.jsonl) holds 60 support requests, one row per line. Each has the request, a reference reply and four pass-or-fail criteria:
+
+```json
+{
+  "request": "I was charged twice for my March subscription. Can you fix this?",
+  "ideal_reply": "Sorry about the double charge. I can see why that is worrying, and a duplicate payment for the same month is always refunded in full. …",
+  "rubric": [
+    "Answers in at most two short paragraphs",
+    "Does not ask a clarifying question about the request",
+    "States that the duplicate charge will be refunded",
+    "Gives a refund timeframe of five business days"
+  ]
+}
+```
+
+The loop has to learn company facts, such as the refund timeframe, from the tasks the agent fails.
+
+1. In the console, open the **Example agent** bundle's **Learning** tab, then **Settings**. Set **Task model** to your `AGENT_MODEL`, pick a different **Judge model** and choose **Save learning settings**.
+2. On the **Tasks** page, under **Import material**, choose `example-agent-tasks.jsonl`, then choose **Import tasks**.
+3. Wait while the executor checks each task. The file splits into 34 evolve and 26 held-out tasks, and in the run below all 60 were admitted.
+4. On the **Overview**, choose **Start**.
+
+[Run a learning loop](/docs/guides/learning-loop) explains each step.
+
+### What the first round changed
+
+A real first round, with `gpt-6-luna` as task model, `gpt-6.2-sol` as judge model, `gpt-6.2-astra` as optimizer and five rollouts per task:
+
+| | Evolve tasks | Held-out tasks |
+| --- | --- | --- |
+| Version before the round | 0.43, 5 of 170 rollouts passing (3%) | 0.41, 3 of 130 rollouts passing (2%) |
+| Adopted version | 0.99, 161 of 170 rollouts passing (95%) | 0.53, 10 of 130 rollouts passing (8%) |
+
+A score gives partial credit for each criterion met, and a rollout passes only when it meets all four ([how answers are scored](/docs#how-answers-are-scored)). The console shows the score, 53.2% held out here, but the automatic revert compares the pass rate.
+
+The five candidates scored between 0.95 and 0.99. The adopted one replaced the two sentences with a product guide of about 5,800 characters that begins:
+
+```text
+You provide first-party support for our workspace web app. Unless the customer explicitly names another product, their account, documents, subscription, and integrations are in this workspace. Use the product guide below. State documented facts directly; don't substitute generic industry practices or ask the customer to identify our product.
+…
+- Each upload is limited to 100 MB. Compress a larger file or split it into parts within that limit.
+- Full workspace exports start at Settings → Workspace → Export data. The download link is emailed and is valid for 7 days; after expiry, start a new export to get a fresh link.
+```
+
+The held-out results moved much less. A 95% evolve and 8% held-out pass rate is overfitting: the change fits the tasks the optimizer saw, so this round is no evidence that the loop's changes generalize. Most requests turn on a company fact of their own, and the guide lacks the facts held-out tasks ask about. To close the gap, add tasks or [corrections](#report-a-correction) that cover them, or write the facts into the bundle.
+
+The round ran 1,280 rollouts in about 95 minutes with four rollouts at a time, while another example was also running.
+
+### Run the application again
+
+It now answers with the adopted version:
+
+```text
+Duplicate subscription charges are refunded within five business days. Check Settings → Billing → Invoices to confirm both charges; select a month to view or download its invoice PDF.
+
+Answered with version 7073d86d-e5f1-4560-8fe6-8ca5a36512fd (sha256:24e2ca1f…).
+```
+
+## Report a correction
+
+Report a support lead's rewrite of a reply and the request becomes a learning task. Until you save the bundle's learning settings, the service answers 404 and the example prints `Learning is not set up for this bundle`.
+
+Pass the rewrite in a file with `--expected`:
+
+```sh
+cat > corrected.txt <<'EOF'
+Yes, you can pause a subscription for up to three months. Your data stays in place and you are not billed while it is paused.
+
+An account owner can pause it under Settings, then Billing, then Pause subscription. It resumes by itself on the date you choose.
+EOF
+```
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
+npx tsx examples/support-agent/agent.ts "Can I pause my subscription for a while?" --expected corrected.txt
+```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+.venv/bin/python examples/support-agent/agent.py "Can I pause my subscription for a while?" --expected corrected.txt
+```
+
+</Tab>
+</Tabs>
+
+```text
+There isn’t a subscription-pause option documented. To stop renewal, go to **Settings → Billing**, select **Cancel subscription**, and confirm; your paid access continues through the end of the paid period. You can subscribe again later if you want to resume.
+
+Answered with version 7073d86d-e5f1-4560-8fe6-8ca5a36512fd (sha256:24e2ca1f…).
+Recorded the correction as outcome 512d1634-cd27-41a4-bbf2-78733548383e. It becomes an evolve task.
+```
+
+It reports on the same job with `receipt = await job.expect(expected, { output: reply, grading: 'criteria' })`, or `receipt = job.expect(expected, output=reply, grading="criteria")` in Python.
+
+The example prints the split from the receipt. The judge model drafted six criteria from the corrected reply, such as "Confirms that a subscription can be paused for up to three months." The request appears on the **Learning** tab as a card marked **Production outcome**, and a held-out one waits under **Needs confirmation**. One correction does not start a round. See [Report production outcomes](/docs/guides/learning-loop#report-production-outcomes).
+
+## Use your own bundle
+
+Set `ACCLIMATE_BUNDLE_NAME` and `ACCLIMATE_CHANNEL` to run on another bundle. Without the example bundle, create one under **Bundles** in the console or [publish one from a file](/docs/guides/release-and-roll-back#publish-a-bundle-from-a-file).

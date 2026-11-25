@@ -1,0 +1,125 @@
+---
+title: Error codes
+description: Look up an SDK or service error code, what causes it and what to do about it.
+---
+
+Every error the SDKs raise on purpose has a stable `code`. Catch `AcclimateError`, branch on `code`, and quote the request ID (`requestId`, or `request_id` in Python) when you report a failed HTTP request.
+
+## Error classes
+
+| TypeScript | Python | Raised when | Extra fields |
+| --- | --- | --- | --- |
+| `AcclimateError` | `acclimate.AcclimateError` | Base class of every error below | `code` |
+| `AcclimateUsageError` | `acclimate.UsageError` | An argument is invalid, a bug in the calling code | `field` |
+| `TransportError` | `acclimate.TransportError` | The service could not be reached, or the connection failed before a complete response | `serviceUrl` (`service_url`) |
+| `ApiError` | `acclimate.ApiError` | The service answered with an error status | `status`, `requestId`, `details` |
+| `DeliveryError` | `acclimate.DeliveryError` | A bundle version could not be resolved, verified, cached or written safely | None |
+
+- The Python `UsageError` is also a `ValueError`. The TypeScript `TransportError` keeps the underlying error as `cause`.
+- TypeScript also exports `TaskExecutionError` (`task.failed`) and `InfrastructureError` (`infrastructure.failed`) for your own code to throw. No SDK function throws or catches them.
+
+## Usage and transport codes
+
+| Code | Class | Cause |
+| --- | --- | --- |
+| `usage.invalid_argument` | Usage error | An SDK function or constructor received an invalid argument, named by `field` |
+| `transport.unreachable` | `TransportError` | The request failed before a response arrived. Check that the service is running and reachable. |
+| `transport.timeout` | `TransportError` | TypeScript only. The request passed the client's timeout. Python reports it as `transport.unreachable`. |
+
+Only a `TransportError` or an HTTP 502, 503 or 504 allows the [offline fallback](/docs/reference/typescript-sdk#cache-and-offline-fallback) for a job with an exact version.
+
+## Delivery codes
+
+None of these `DeliveryError` codes triggers the offline fallback. [Rules for bundle files](/docs/guides/coding-agents#rules-for-bundle-files) lists the rules behind `invalid_payload`.
+
+| Code | Cause | What to do |
+| --- | --- | --- |
+| `cache_miss` | The offline fallback found no cached copy of the pinned version, or the service answered "not modified" for a channel the cache lacks. | Prepare once while the service is reachable, with the same cache directory and `scope`. |
+| `collision` | A file to write already exists in the destination, or differs from an existing name only by case. | Use an empty destination. |
+| `digest_mismatch` | The payload's SHA-256 digest does not match the version's metadata. | Discard the bytes and try again. Report a repeat with the version ID. |
+| `invalid_cache` | Python only. A cache entry or cached payload is malformed. | Remove or replace the cache directory, then prepare again. |
+| `invalid_overlay` | Claude plugin only. `baseDir` is not absolute, or a file to copy is a symlink, a special file or over the file or size limit. | Fix `baseDir` or the file the message names. |
+| `invalid_payload` | The payload breaks a rule for bundle files, or does not fit a plugin's agent SDK layout. | Fix the bundle. The message names the rule. |
+| `invalid_response` | The service's version metadata or channel resolution is malformed, or names another bundle or version. | Check both IDs, and report it with them if they are right. |
+| `stale_resolution` | Declared in both SDKs but never raised in this release. | Nothing |
+| `unsafe_cache` | The cache directory holds a symlink or non-directory, or is not private to the current user. | Use one only the current user owns and can read. |
+| `unsafe_destination` | The destination holds a symlink or non-directory, or is not private to the current user. | Use one only the current user owns and can read. |
+| `unsafe_path` | TypeScript only. A file path in the bundle would leave the destination. | Fix the path in the bundle. |
+| `unsupported_platform` | File preparation ran without POSIX file permissions, such as on Windows. | Run on Linux or macOS. |
+| `unsupported_schema` | The payload's `schemaVersion` is unknown, or its top-level shape is wrong. | Upgrade the SDK, or fix the payload. |
+
+## Service codes
+
+Every service error has this JSON body, with `details` only for some codes. An `ApiError` carries the `code`, the HTTP `status`, the `requestId` and any `details`.
+
+```json
+{
+  "error": {
+    "code": "credential_already_issued",
+    "message": "The credential was already issued. Confirm its revocation before issuing a replacement.",
+    "requestId": "0b6f3c2e-6a43-4c0e-9f57-2d1f0d4f8a31",
+    "details": { "credentialId": "5d1c7a8e-2f4b-4c39-9a61-0e8b7d3f2c14", "kind": "content-read", "revokedAt": null }
+  }
+}
+```
+
+| Code | Status | Cause | What to do |
+| --- | --- | --- | --- |
+| `unauthenticated` | 401 | No bearer token, an unknown, expired or revoked one, or a credential the route does not accept. See [Authentication](/docs/reference/http-api#authentication). | Check that the token is current and belongs to this service. |
+| `denied` | 403 | The credential lacks the workspace grant or the route's right, or asks for something outside its connection. A machine token gets it on routes for signed-in people. | Use a credential with the needed [right](/docs/reference/credentials#rights). |
+| `not_found` | 404 | The route, bundle, version or other resource does not exist in this workspace | Check the IDs and the workspace. |
+| `invalid_content` | 400 or 415 | The request is malformed, such as an ID that is not a UUID or a body with missing fields. A receipt, credential issue or operation close without `Content-Type: application/json` gets 415. | Fix the request. The message names the problem. |
+| `invalid_compatibility` | 400 | A new version's payload does not fit the bundle's compatibility target | Fix the files in `details.issues`. |
+| `revision_conflict` | 409 | A release's `expectedRevision` is not the channel's current revision | Read the channel again, then submit a new release. |
+| `idempotency_conflict` | 409 | The idempotency key or receipt event ID was already used with a different request | Use a new key. To retry, send the same bytes. |
+| `operation_closed` | 409 | The retained result for this key was closed | Send a new request with a new key. |
+| `credential_already_issued` | 409 | The key already issued a credential, whose `credentialId`, `kind` and `revokedAt` are in `details` | Revoke it, then issue a replacement with a new key. |
+| `payload_too_large` | 413 | A bundle payload is over 1 MiB, a request over 2 MiB or an import over 64 MiB | Send less in one request. |
+| `unavailable` | 503 | The service is busy, a database operation failed, or the request passed 30 seconds (600 for a task import) | Try again later. |
+
+The SDKs assign three codes themselves:
+
+| Code | Cause |
+| --- | --- |
+| `http_error` | An error response had no Acclimate error body, such as one from a proxy. Read `status`. |
+| `payload_too_large` | A downloaded payload is larger than the client's payload limit. |
+| `response_too_large` | A JSON response is larger than the client's response limit. Ask for a smaller page, or raise the limit. |
+
+- Console codes such as `invalid_session` and `last_admin` are listed only in [`contracts/openapi.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/openapi.json).
+- The TypeScript `ApiErrorCode` type also names `parent_conflict`, `invalid_cursor`, `base_conflict` and `machine_principal_required`, which the service does not return in this release.
+- A newer service can return a code this page does not list. Treat it as unknown instead of failing.
+
+## Learning codes
+
+Codes that only learning uses are written with hyphens, except `learning_conflict`.
+
+### Refused requests
+
+The SDKs raise these as `ApiError`.
+
+| Route | Status | Code | Cause |
+| --- | --- | --- | --- |
+| `POST /start`, `POST /resume` | 409 | `tasks-required` | A split has fewer than 20 admitted tasks. |
+| `POST /start`, `POST /resume` | 409 | `optimizer-required` | The service has no optimizer (`optimizerConfigured` is `false`). The operator sets the [optimizer variables](/docs/reference/configuration#optimizer) and restarts the service. |
+| `POST /start`, `POST /resume` | 409 | `learning_conflict` | Another state conflict, such as an unverified model provider or a missing task or judge model. The message names it. |
+| `POST /tasks/{id}/recheck` | 409 | `learning_conflict` | The task was not set aside with `check-failed`. Edit and save the task to check a new revision. |
+| `POST /tasks/confirm` | 403 | `denied` | The caller is a machine token. Only a signed-in person can confirm held-out tasks. |
+
+### Round and trial failures
+
+These are not raised. A failed round's `failureCause.code` and a failed trial's `error.code` name what stopped the rollout.
+
+| Code | Cause |
+| --- | --- |
+| `gateway-upstream` | The model provider was unavailable, rate limited or overloaded. |
+| `provider-rejected` | The model provider refused the request or sent an unusable reply. Check its settings. |
+| `sandbox-start` | The executor could not start a sandbox. |
+| `executor` | The executor stopped or reported an error during the rollout, or its credential was revoked. |
+| `judge-budget` | The judge request or reply exceeded its token budget or the judge model's context. |
+| `judge-invalid-reply` | The judge model's reply had no text. |
+| `cancelled` | Trials only. The model provider's settings or the executor changed during the trial. |
+
+- When every failed rollout of the current version's evaluation has `gateway-upstream`, the round fails with `provider-unavailable` and the loop [retries by itself](/docs/guides/learning-loop#when-the-loop-waits).
+- A `provider-rejected` failure, such as a revoked provider API key or an unavailable model, does not clear by waiting. It counts toward the [pause after repeated failures](/docs/guides/learning-loop#when-a-round-fails).
+
+The [learning contract](https://github.com/anveld-dev/acclimate/blob/main/contracts/learning.md#codes-a-script-reads) lists the other values a script can branch on: admission and set-aside reasons, round reasons, waiting reasons and pause reasons.

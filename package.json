@@ -1,0 +1,106 @@
+{
+  "name": "acclimate",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "lint": "npm run lint:js && npm run lint:python && npm run lint:workflows && npm run lint:format && npm run lint:docs && npm run lint:rust",
+    "lint:js": "oxlint --report-unused-disable-directives-severity error",
+    "lint:python": "ruff check",
+    "lint:workflows": "actionlint && git ls-files --cached --others --exclude-standard -z -- '*.sh' | xargs -0 sh -c 'for file do [ ! -f \"$file\" ] || shellcheck \"$file\" || exit; done' sh",
+    "lint:format": "prettier --check .oxlintrc.json .prettierrc.json package.json 'apps/*/package.json' 'packages/*/package.json' 'tsconfig*.json' 'apps/*/tsconfig.json' '.github/workflows/*.{yaml,yml}'",
+    "lint:docs": "python3 scripts/check_docs.py",
+    "lint:rust": "cargo fmt --all --check && cargo clippy --workspace --locked --all-targets -- -D warnings",
+    "test": "npm run test:packages && npm run test:console",
+    "typecheck": "npm run typecheck:packages && npm run typecheck --workspace @acclimate/console && npm run typecheck --workspace @acclimate/keycloak-theme && npm run typecheck:docs",
+    "test:codex": "tsx examples/codex-smoke.ts",
+    "test:e2e": "python3 scripts/productization/service_e2e.py",
+    "test:learning-e2e": "python3 executor/tests/central_learning.py",
+    "build": "npm run build:packages && npm run build:console",
+    "example:codex": "tsx examples/codex-agent.ts",
+    "pack:verify": "node scripts/packaging/verify.mjs",
+    "test:codex-session": "tsx examples/codex-session-check.ts",
+    "build:packages": "node scripts/build-packages.mjs",
+    "typecheck:packages": "tsc --noEmit",
+    "test:packages": "tsx --test packages/*/tests/**/*.test.ts scripts/*.test.ts",
+    "dev": "tsx scripts/start-production.ts dev",
+    "local:up": "python3 -m scripts.local.stack up",
+    "local:down": "python3 -m scripts.local.stack down",
+    "local:reset": "python3 -m scripts.local.stack reset",
+    "local:trust": "python3 -m scripts.local.trust",
+    "test:local": "python3 -m unittest scripts.local.test_stack scripts.local.test_trust -v",
+    "build:console": "npm run build --workspace @acclimate/console",
+    "test:console": "npm test --workspace @acclimate/console",
+    "dev:docs": "npm run dev --workspace @acclimate/docs",
+    "build:docs": "npm run build --workspace @acclimate/docs",
+    "deploy:docs": "npm run build:docs && npx --yes wrangler@4.168.0 deploy --config apps/docs/wrangler.jsonc",
+    "typecheck:docs": "npm run typecheck --workspace @acclimate/docs",
+    "start:console": "tsx scripts/start-production.ts console",
+    "qualify:productization": "python3 scripts/productization/qualify.py",
+    "test:bdd": "python3 scripts/bdd/run.py",
+    "qualify:local-recovery": "python3 scripts/productization/local_recovery.py",
+    "example:delivery": "tsx examples/delivery-check.ts",
+    "example:delivery:python": "python3 python/examples/delivery_check.py",
+    "start": "tsx scripts/start-production.ts service",
+    "check:console-config": "tsx scripts/start-production.ts check",
+    "test:console:entrypoints": "npm run build:console && tsx --tsconfig apps/console/tsconfig.json --test apps/console/tests/console-entrypoints.integration.ts",
+    "test:identity:protocol": "python3 scripts/testing/console_protocol.py",
+    "test:identity:contracts": "python3 -m unittest scripts.productization.test_keycloak scripts.productization.test_deployment scripts.testing.test_identity scripts.testing.test_world_identity -v",
+    "test:identity:keycloak": "python3 scripts/testing/keycloak_protocol.py",
+    "build:theme": "npm run build --workspace @acclimate/keycloak-theme",
+    "mail:start": "python3 scripts/mailpit.py start",
+    "mail:status": "python3 scripts/mailpit.py status",
+    "mail:stop": "python3 scripts/mailpit.py stop",
+    "test:email": "python3 scripts/testing/email_invitations.py",
+    "test:starters": "node --test scripts/packaging/starter-artifacts.test.mjs"
+  },
+  "devDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.325",
+    "@cursor/sdk": "1.3.1",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@types/node": "^22.0.0",
+    "oxlint": "1.94.0",
+    "oxlint-tsgolint": "7.0.2007",
+    "prettier": "3.6.2",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@openai/codex-sdk": "0.169.0"
+  },
+  "overrides": {
+    "micromatch": {
+      "picomatch": "file:packages/vendor/picomatch/picomatch-2.3.2-acclimate.1.tgz"
+    },
+    "picomatch@^3 || ^4": "file:packages/vendor/picomatch/picomatch-4.0.7-acclimate.1.tgz"
+  },
+  "exports": {
+    "./sdk": {
+      "types": "./dist/packages/sdk/src/index.d.ts",
+      "import": "./dist/packages/sdk/src/index.js"
+    },
+    "./codex-plugin": {
+      "types": "./dist/packages/codex-plugin/src/index.d.ts",
+      "import": "./dist/packages/codex-plugin/src/index.js"
+    },
+    "./claude-plugin": {
+      "types": "./dist/packages/claude-plugin/src/index.d.ts",
+      "import": "./dist/packages/claude-plugin/src/index.js"
+    },
+    "./pi-plugin": {
+      "types": "./dist/packages/pi-plugin/src/index.d.ts",
+      "import": "./dist/packages/pi-plugin/src/index.js"
+    },
+    "./cursor-plugin": {
+      "types": "./dist/packages/cursor-plugin/src/index.d.ts",
+      "import": "./dist/packages/cursor-plugin/src/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "version": "0.1.0"
+}

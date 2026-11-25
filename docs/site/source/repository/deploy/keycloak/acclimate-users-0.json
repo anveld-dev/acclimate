@@ -1,0 +1,24 @@
+{
+  "realm": "acclimate",
+  "users": [
+    {
+      "id": "${ACCLIMATE_FIRST_USER_ID}",
+      "username": "${ACCLIMATE_FIRST_USER_EMAIL}",
+      "email": "${ACCLIMATE_FIRST_USER_EMAIL}",
+      "emailVerified": true,
+      "enabled": true,
+      "requiredActions": ["UPDATE_PASSWORD"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${ACCLIMATE_FIRST_USER_PASSWORD}",
+          "temporary": true
+        }
+      ],
+      "realmRoles": ["default-roles-acclimate"],
+      "clientRoles": {
+        "realm-management": ["realm-admin"]
+      }
+    }
+  ]
+}

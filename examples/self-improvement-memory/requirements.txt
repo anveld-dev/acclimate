@@ -1,0 +1,4 @@
+click==8.5.1
+llm @ git+https://github.com/simonw/llm.git@46f0461d9b1ea9e898cac8a1d7333ab9bc6c8f7f
+scipy==1.18.1
+pytest==9.2.0

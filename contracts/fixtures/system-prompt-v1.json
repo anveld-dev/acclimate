@@ -1,0 +1,33 @@
+{
+  "payload": {
+    "schemaVersion": 1,
+    "files": [
+      {
+        "path": "memory/facts.md",
+        "kind": "memory",
+        "text": "Refunds take five days.\n"
+      },
+      {
+        "path": "skills/refunds/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: refunds\n---\nRefund steps.\n"
+      },
+      {
+        "path": "instructions.md",
+        "kind": "instruction",
+        "text": "Answer briefly.\n"
+      },
+      {
+        "path": "memory/tone.md",
+        "kind": "memory",
+        "text": "Say \"sorry\" once. Café hours: 9–5."
+      },
+      {
+        "path": "AGENTS.md",
+        "kind": "instruction",
+        "text": "Never promise a refund date."
+      }
+    ]
+  },
+  "systemPrompt": "# instructions.md\nAnswer briefly.\n\n\n# AGENTS.md\nNever promise a refund date.\n\n# skills/refunds/SKILL.md\n---\nname: refunds\n---\nRefund steps.\n\n\n# memory/facts.md\nRefunds take five days.\n\n\n# memory/tone.md\nSay \"sorry\" once. Café hours: 9–5."
+}

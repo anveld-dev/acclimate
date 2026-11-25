@@ -1,0 +1,748 @@
+{
+  "ACCESS-01": {
+    "name": "Console transport alone does not identify a signed-in person",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-02": {
+    "name": "Machine SDK grants still work without browser sessions in hosted mode",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-03": {
+    "name": "An allowlisted operator creates a project and becomes its administrator",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-04": {
+    "name": "The first signed-in visitor does not become an operator",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-05": {
+    "name": "Membership controls access to current content",
+    "source": "features/access.feature",
+    "cases": 3,
+    "lane": "service",
+    "examples": [
+      {
+        "role": "viewer",
+        "decision": "denied"
+      },
+      {
+        "role": "editor",
+        "decision": "allowed"
+      },
+      {
+        "role": "admin",
+        "decision": "allowed"
+      }
+    ]
+  },
+  "ACCESS-06": {
+    "name": "Downgrading a member blocks a later write from the same session",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-07": {
+    "name": "Removing membership blocks a stale browser session",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-08": {
+    "name": "A viewer cannot grant themselves administration",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-09": {
+    "name": "An administrator confirms an already verified identity before adding it",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-10": {
+    "name": "Signing out revokes the session and a later sign-in replaces it",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-11": {
+    "name": "The final administrator cannot remove their own membership",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-12": {
+    "name": "A current administrator can inspect existing membership and nullable lookup roles",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-13": {
+    "name": "Machine startup registration never creates human ownership",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-14": {
+    "name": "Explicit operator adoption preserves the registered workspace and its content",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-15": {
+    "name": "Retrying historical adoption never restores a removed membership",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-16": {
+    "name": "An operator cannot adopt an already owned workspace",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "ACCESS-17": {
+    "name": "Machine credentials cannot become a browser identity",
+    "source": "features/access.feature",
+    "cases": 2,
+    "lane": "service",
+    "examples": [
+      {
+        "session": "a live session"
+      },
+      {
+        "session": "no session"
+      }
+    ]
+  },
+  "ACCESS-18": {
+    "name": "The login authority cannot assert another issuer",
+    "source": "features/access.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "UI-SETUP-01": {
+    "name": "Create content only after an explicit action",
+    "source": "features/console.feature",
+    "cases": 3,
+    "lane": "browser",
+    "examples": [
+      {
+        "source": "Write instructions",
+        "origin": "created"
+      },
+      {
+        "source": "Import JSON",
+        "origin": "imported"
+      },
+      {
+        "source": "Import files",
+        "origin": "imported"
+      }
+    ]
+  },
+  "UI-SETUP-02": {
+    "name": "Correct a rejected setup without getting stuck on a pending operation",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-CONTENT-01": {
+    "name": "Browse, filter and download published content",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-RECOVERY-02": {
+    "name": "Authorization loss cannot settle an uncertain restore",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-RELEASE-01": {
+    "name": "Inspect, download and restore a historical release with a reason",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-RELEASE-03": {
+    "name": "Review the new current release before retrying a stale restore",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-INTEGRATION-01": {
+    "name": "Issue a one-time credential and revoke it through the console",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-STATUS-01": {
+    "name": "A failed refresh shows the last observation without displaying stale content as current",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-NAV-01": {
+    "name": "Main routes remain readable and navigable on desktop and mobile",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-SETUP-03": {
+    "name": "Source changes preview real content and cannot conceal an unresolved publication",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-NAV-02": {
+    "name": "App setup and a scoped connection preserve bundle and channel ownership",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-KEYBOARD-01": {
+    "name": "Search, inspect and change tabs using the keyboard",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-POLL-01": {
+    "name": "Published content updates without a refresh button",
+    "source": "features/console.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-ACCESS-01": {
+    "name": "A workspace member can read published content and delivery",
+    "source": "features/console_access.feature",
+    "cases": 2,
+    "lane": "browser",
+    "examples": [
+      {
+        "role": "viewer"
+      },
+      {
+        "role": "editor"
+      }
+    ]
+  },
+  "UI-ACCESS-02": {
+    "name": "Confirm a verified person before granting and removing membership",
+    "source": "features/console_access.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-ACCESS-03": {
+    "name": "Create a workspace from the console",
+    "source": "features/console_access.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-ACCESS-04": {
+    "name": "Existing member roles are visible before identity confirmation",
+    "source": "features/console_access.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-ACCESS-05": {
+    "name": "A lost issuance is reconciled before confirmed revocation and replacement",
+    "source": "features/console_access.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UI-ACCESS-06": {
+    "name": "A storage cleanup failure cannot hide a successfully issued one-time credential",
+    "source": "features/console_access.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "IDENTITY-01": {
+    "name": "A verified callback creates a private bounded browser session",
+    "source": "features/identity.feature",
+    "cases": 1,
+    "lane": "identity"
+  },
+  "IDENTITY-02": {
+    "name": "Invalid callback transactions cannot mint browser sessions",
+    "source": "features/identity.feature",
+    "cases": 4,
+    "lane": "identity",
+    "examples": [
+      {
+        "invalid": "a different browser"
+      },
+      {
+        "invalid": "an unknown state"
+      },
+      {
+        "invalid": "an expired transaction"
+      },
+      {
+        "invalid": "rejected provider claims"
+      }
+    ]
+  },
+  "IDENTITY-03": {
+    "name": "A cross-site logout request cannot revoke a valid session",
+    "source": "features/identity.feature",
+    "cases": 1,
+    "lane": "identity"
+  },
+  "IDENTITY-04": {
+    "name": "Same-origin logout revokes the Rust session",
+    "source": "features/identity.feature",
+    "cases": 1,
+    "lane": "identity"
+  },
+  "IDENTITY-05": {
+    "name": "A revoked old cookie does not prevent signing in again",
+    "source": "features/identity.feature",
+    "cases": 1,
+    "lane": "identity"
+  },
+  "INTEGRATION-01": {
+    "name": "New integrations have unknown delivery rather than invented success",
+    "source": "features/integrations.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "INTEGRATION-02": {
+    "name": "A content-read credential can fetch the released bytes",
+    "source": "features/integrations.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "INTEGRATION-03": {
+    "name": "A content-read credential cannot fetch unreleased versions",
+    "source": "features/integrations.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "INTEGRATION-04": {
+    "name": "Integration credentials are not console or publishing authority",
+    "source": "features/integrations.feature",
+    "cases": 4,
+    "lane": "service",
+    "examples": [
+      {
+        "kind": "content-read",
+        "resource": "receipt history"
+      },
+      {
+        "kind": "receipt-write",
+        "resource": "content bytes"
+      },
+      {
+        "kind": "receipt-write",
+        "resource": "publish"
+      },
+      {
+        "kind": "content-read",
+        "resource": "publish"
+      }
+    ]
+  },
+  "INTEGRATION-05": {
+    "name": "An app reports the exact version it verified",
+    "source": "features/integrations.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "INTEGRATION-06": {
+    "name": "Retrying an observation does not duplicate it",
+    "source": "features/integrations.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "INTEGRATION-07": {
+    "name": "Reusing an event ID with changed facts is rejected",
+    "source": "features/integrations.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "INTEGRATION-08": {
+    "name": "Reporting for another integration in the same project is denied",
+    "source": "features/integrations.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "INTEGRATION-09": {
+    "name": "Impossible or expired observations are rejected",
+    "source": "features/integrations.feature",
+    "cases": 4,
+    "lane": "service",
+    "examples": [
+      {
+        "invalid": "an old occurrence time"
+      },
+      {
+        "invalid": "a mismatched digest"
+      },
+      {
+        "invalid": "a download from cache"
+      },
+      {
+        "invalid": "a partial channel mapping"
+      }
+    ]
+  },
+  "INTEGRATION-10": {
+    "name": "Revoking a read credential blocks its next fetch",
+    "source": "features/integrations.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "INTEGRATION-11": {
+    "name": "Revoking an integration disables both credential kinds",
+    "source": "features/integrations.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "INTEGRATION-12": {
+    "name": "A lost credential response cannot create another secret on retry",
+    "source": "features/integrations.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "RUNTIME-01": {
+    "name": "Recover from a temporary database stall and a dropped ownership connection",
+    "source": "features/local_recovery.feature",
+    "cases": 1,
+    "lane": "runtime"
+  },
+  "NATIVE-WALK-01": {
+    "name": "Repair, release, deliver and roll back one native-target bundle",
+    "source": "features/native_walk.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "NAV-01": {
+    "name": "Workspace navigation and bundle tabs have different jobs",
+    "source": "features/navigation.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "NAV-04": {
+    "name": "Release history cannot bleed between bundles with matching revisions",
+    "source": "features/navigation.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "NAV-05": {
+    "name": "Another tab cannot retarget a displayed connection creation form",
+    "source": "features/navigation.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "NAV-06": {
+    "name": "An unauthorized scoped URL never substitutes another workspace",
+    "source": "features/navigation.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "NAV-07": {
+    "name": "Readers can find SDK setup without connection administration",
+    "source": "features/navigation.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "NAV-08": {
+    "name": "Workspace administration does not grant deployment-operator powers",
+    "source": "features/navigation.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "NAV-09": {
+    "name": "Recover a previous browser's unconfirmed bundle creation without duplicating it",
+    "source": "features/navigation.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "NAV-10": {
+    "name": "Browser Back restores the published entry and its search",
+    "source": "features/navigation.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "NAV-11": {
+    "name": "Switching workspace asks before discarding browser edits",
+    "source": "features/navigation.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "NAV-12": {
+    "name": "A role downgrade clears a stale membership-management form",
+    "source": "features/navigation.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "NAV-13": {
+    "name": "Bundle creation asks before discarding browser-only instructions",
+    "source": "features/navigation.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "PYTHON-01": {
+    "name": "Resolve and materialize a verified release through the Python SDK",
+    "source": "features/python_sdk.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "PYTHON-02": {
+    "name": "Python channel delivery requires online confirmation for each new job",
+    "source": "features/python_sdk.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "PYTHON-03": {
+    "name": "Upload and release an immutable version through the Python client",
+    "source": "features/python_sdk.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "PYTHON-04": {
+    "name": "Python reporting records only the stages the application observed",
+    "source": "features/python_sdk.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "PYTHON-05": {
+    "name": "Optional Python receipt denial leaves delivery and app start successful",
+    "source": "features/python_sdk.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "RELEASE-05": {
+    "name": "A release requires a reason",
+    "source": "features/releases.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "RELEASE-06": {
+    "name": "Roll back through another recorded channel revision",
+    "source": "features/releases.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "RELEASE-07": {
+    "name": "History pagination exposes every release once",
+    "source": "features/releases.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "RELEASE-08": {
+    "name": "A reader cannot publish content",
+    "source": "features/releases.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "SDK-01": {
+    "name": "Resolve and prepare real files from a verified release",
+    "source": "features/sdk_delivery.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "SDK-02": {
+    "name": "A fresh job can request the original version by ID after publication",
+    "source": "features/sdk_delivery.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "SDK-03": {
+    "name": "An unavailable service does not silently enable offline delivery",
+    "source": "features/sdk_delivery.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "SDK-04": {
+    "name": "A channel job requires online confirmation even with offline permission",
+    "source": "features/sdk_delivery.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "SDK-05": {
+    "name": "Another SDK identity cannot reuse the first identity's offline version",
+    "source": "features/sdk_delivery.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "SDK-06": {
+    "name": "Known revocation is not treated as an offline outage",
+    "source": "features/sdk_delivery.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "SDK-07": {
+    "name": "Job-local edits do not contaminate the immutable cache",
+    "source": "features/sdk_delivery.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "SDK-08": {
+    "name": "Preparation cannot overwrite an application's existing file",
+    "source": "features/sdk_delivery.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "SDK-09": {
+    "name": "Cleanup removes prepared files but keeps application-owned files",
+    "source": "features/sdk_delivery.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "SDK-10": {
+    "name": "Native plugins stage the supported resources without a model call",
+    "source": "features/sdk_delivery.feature",
+    "cases": 4,
+    "lane": "sdk",
+    "examples": [
+      {
+        "plugin": "codex",
+        "instruction": "AGENTS.md"
+      },
+      {
+        "plugin": "claude",
+        "instruction": "CLAUDE.md"
+      },
+      {
+        "plugin": "pi",
+        "instruction": "AGENTS.md"
+      },
+      {
+        "plugin": "cursor",
+        "instruction": "AGENTS.md"
+      }
+    ]
+  },
+  "SDK-11": {
+    "name": "Cursor memory staging requires explicit path approval",
+    "source": "features/sdk_delivery.feature",
+    "cases": 2,
+    "lane": "sdk",
+    "examples": [
+      {
+        "approval": "no",
+        "count": "0"
+      },
+      {
+        "approval": "explicit",
+        "count": "1"
+      }
+    ]
+  },
+  "SDK-12": {
+    "name": "A temporary reporting outage preserves the original prepared receipt",
+    "source": "features/sdk_delivery.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "SDK-13": {
+    "name": "Reporter stages reflect explicit application actions",
+    "source": "features/sdk_delivery.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "SDK-14": {
+    "name": "Expired queued observations are dropped instead of reminted",
+    "source": "features/sdk_delivery.feature",
+    "cases": 1,
+    "lane": "sdk"
+  },
+  "SETUP-01": {
+    "name": "A fresh workspace has no invented content",
+    "source": "features/setup.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "SETUP-02": {
+    "name": "Record where explicitly created content came from",
+    "source": "features/setup.feature",
+    "cases": 3,
+    "lane": "service",
+    "examples": [
+      {
+        "origin": "created"
+      },
+      {
+        "origin": "imported"
+      },
+      {
+        "origin": "example"
+      }
+    ]
+  },
+  "SETUP-03": {
+    "name": "A rejected import creates no partial workspace content",
+    "source": "features/setup.feature",
+    "cases": 5,
+    "lane": "service",
+    "examples": [
+      {
+        "invalid": "path traversal"
+      },
+      {
+        "invalid": "colliding paths"
+      },
+      {
+        "invalid": "unsupported schema"
+      },
+      {
+        "invalid": "no entries"
+      },
+      {
+        "invalid": "an oversized entry"
+      }
+    ]
+  },
+  "SETUP-04": {
+    "name": "Retrying initial setup returns the same bundle and seed release",
+    "source": "features/setup.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "SETUP-05": {
+    "name": "Selecting another project cannot disclose the first project's content",
+    "source": "features/setup.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "SETUP-06": {
+    "name": "An optional human source label survives restart",
+    "source": "features/setup.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "UX-03": {
+    "name": "Recover from a bookmarked content path that does not exist",
+    "source": "features/ux_refinement.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "UX-05": {
+    "name": "Create an imported bundle from real instruction and skill files",
+    "source": "features/ux_refinement.feature",
+    "cases": 1,
+    "lane": "browser"
+  },
+  "LEARNING-01": {
+    "name": "Configure and operate a bundle learning loop through the API",
+    "source": "features/central_learning.feature",
+    "cases": 1,
+    "lane": "service"
+  },
+  "UI-LEARNING-01": {
+    "name": "Configure and operate a bundle learning loop in the console",
+    "source": "features/central_learning.feature",
+    "cases": 1,
+    "lane": "browser"
+  }
+}

@@ -1,0 +1,150 @@
+[
+  {
+    "source": "CONTEXT.md",
+    "route": "glossary.html",
+    "group": "Start here",
+    "title": "Glossary"
+  },
+  {
+    "source": "docs/design/README.md",
+    "route": "index.html",
+    "group": "Start here",
+    "title": "Design guide"
+  },
+  {
+    "source": "docs/design/overview.md",
+    "route": "overview.html",
+    "group": "Start here",
+    "title": "Overview and ownership"
+  },
+  {
+    "source": "docs/design/bundles-and-cache.md",
+    "route": "bundles.html",
+    "group": "Service design",
+    "title": "Bundles and local cache"
+  },
+  {
+    "source": "docs/design/sdk-and-plugins.md",
+    "route": "sdk.html",
+    "group": "Service design",
+    "title": "SDKs and plugins"
+  },
+  {
+    "source": "docs/design/improvement.md",
+    "route": "improvement.html",
+    "group": "Service design",
+    "title": "How improvement works"
+  },
+  {
+    "source": "docs/design/service.md",
+    "route": "service.html",
+    "group": "Service design",
+    "title": "Service interface"
+  },
+  {
+    "source": "docs/getting-started.md",
+    "route": "getting-started.html",
+    "group": "Start here",
+    "title": "Deliver a bundle"
+  },
+  {
+    "source": "docs/development.md",
+    "route": "development.html",
+    "group": "Start here",
+    "title": "Local development"
+  },
+  {
+    "source": "docs/architecture/README.md",
+    "route": "architecture/index.html",
+    "group": "Architecture",
+    "title": "Code architecture"
+  },
+  {
+    "source": "docs/architecture/contracts.md",
+    "route": "architecture/contracts.html",
+    "group": "Architecture",
+    "title": "Shared contracts"
+  },
+  {
+    "source": "docs/architecture/server.md",
+    "route": "architecture/server.html",
+    "group": "Architecture",
+    "title": "Rust server modules"
+  },
+  {
+    "source": "docs/architecture/sdk.md",
+    "route": "architecture/sdk.html",
+    "group": "Architecture",
+    "title": "SDK and native plugins"
+  },
+  {
+    "source": "docs/releasing.md",
+    "route": "operate/releasing.html",
+    "group": "Operate",
+    "title": "Publish a release"
+  },
+  {
+    "source": "apps/console/README.md",
+    "route": "operate/console.html",
+    "group": "Operate",
+    "title": "Web console"
+  },
+  {
+    "source": "deploy/README.md",
+    "route": "operate/deploy.html",
+    "group": "Operate",
+    "title": "Deploy and restore"
+  },
+  {
+    "source": "deploy/sign-in.md",
+    "route": "operate/sign-in.html",
+    "group": "Operate",
+    "title": "Production sign-in"
+  },
+  {
+    "source": "deploy/keycloak/README.md",
+    "route": "operate/keycloak.html",
+    "group": "Operate",
+    "title": "Keycloak setup"
+  },
+  {
+    "source": "docs/architecture/central-learning/README.md",
+    "route": "source/architecture/central-learning/README.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/central-learning/api-and-data.md",
+    "route": "source/architecture/central-learning/api-and-data.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/central-learning/executor.md",
+    "route": "source/architecture/central-learning/executor.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/central-learning/experience.md",
+    "route": "source/architecture/central-learning/experience.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/central-learning/loop.md",
+    "route": "source/architecture/central-learning/loop.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/central-learning/plan.md",
+    "route": "source/architecture/central-learning/plan.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/central-learning/removal.md",
+    "route": "source/architecture/central-learning/removal.md",
+    "kind": "source"
+  },
+  {
+    "source": "docs/architecture/central-learning/tasks-and-grading.md",
+    "route": "source/architecture/central-learning/tasks-and-grading.md",
+    "kind": "source"
+  }
+]

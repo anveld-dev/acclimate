@@ -1,0 +1,37 @@
+{
+	auto_https disable_redirects
+	skip_install_trust
+	# Clients send no SNI for IP addresses. Serve the API and Keycloak certificate.
+	default_sni 127.0.0.1
+}
+
+(local_proxy) {
+	tls internal
+	reverse_proxy {args[0]} {
+		header_up Host {args[1]}:{args[2]}
+		header_up -Forwarded
+		header_up -X-Forwarded-*
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {args[1]}:{args[2]}
+		header_up X-Forwarded-Port {args[2]}
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+
+# The console and service share this network namespace, including loopback.
+https://localhost:{$ACCLIMATE_LOCAL_CONSOLE_PORT} {
+	import local_proxy 127.0.0.1:3100 localhost {$ACCLIMATE_LOCAL_CONSOLE_PORT}
+}
+
+https://127.0.0.1:{$ACCLIMATE_LOCAL_API_PORT} {
+	@task_import path /v1/workspaces/*/bundles/*/learning/tasks/import
+	request_body @task_import {
+		max_size 67108864
+	}
+	import local_proxy 127.0.0.1:3000 127.0.0.1 {$ACCLIMATE_LOCAL_API_PORT}
+}
+
+# Keycloak applies its own authentication to admin endpoints on this local listener.
+https://127.0.0.1:{$ACCLIMATE_LOCAL_KEYCLOAK_PORT} {
+	import local_proxy keycloak:8080 127.0.0.1 {$ACCLIMATE_LOCAL_KEYCLOAK_PORT}
+}

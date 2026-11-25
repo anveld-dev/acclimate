@@ -1,0 +1,49 @@
+{
+  "name": "@acclimate/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for delivering versioned agent instructions, skills and memory.",
+  "keywords": [
+    "agents",
+    "evaluation",
+    "prompts",
+    "llm",
+    "release-management"
+  ],
+  "homepage": "https://github.com/anveld-dev/acclimate/tree/main/packages/sdk#readme",
+  "bugs": "https://github.com/anveld-dev/acclimate/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anveld-dev/acclimate.git",
+    "directory": "packages/sdk"
+  },
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./validation": {
+      "types": "./dist/validation.d.ts",
+      "import": "./dist/validation.js"
+    },
+    "./native-files": {
+      "types": "./dist/native-files.d.ts",
+      "import": "./dist/native-files.js"
+    }
+  },
+  "bin": {
+    "acclimate": "./dist/cli-bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

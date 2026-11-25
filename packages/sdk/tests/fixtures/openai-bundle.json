@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "files": [
+    { "kind": "memory", "path": "memory/café.md", "text": "Remember the résumé." },
+    { "kind": "skill", "path": "skills/lookup/SKILL.md", "text": "Look up values." },
+    { "kind": "instruction", "path": "instructions/main.md", "text": "Return JSON.\nUse the schema." },
+    { "kind": "skill", "path": "skills/lookup/schema.json", "text": "{}\n" }
+  ]
+}

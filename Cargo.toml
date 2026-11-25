@@ -1,0 +1,43 @@
+[package]
+name = "acclimate-service"
+version = "0.1.0"
+license = "Apache-2.0"
+edition = "2024"
+rust-version = "1.89"
+
+[dependencies]
+acclimate-provider-address = { path = "executor/provider-address" }
+libm = "0.2"
+regex = "1"
+ring = "0.17"
+axum = { version = "0.8", features = ["macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time", "sync", "fs", "io-util"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+hex = "0.4"
+thiserror = "2"
+tower-http = { version = "0.6", features = ["limit", "trace"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
+statrs = { version = "0.18", default-features = false }
+csv = "1.4"
+calamine = "0.32"
+zip = { version = "4.6", default-features = false }
+futures-util = "0.3"
+tempfile = "3"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[workspace]
+members = ["executor"]
+resolver = "3"

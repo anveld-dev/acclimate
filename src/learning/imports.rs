@@ -1,0 +1,967 @@
+use super::tasks::{self, Split, Task};
+use super::*;
+use calamine::{Reader, Xlsx};
+use futures_util::StreamExt;
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+use std::io::{BufRead, BufReader, Read, Seek};
+use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+
+const LIMIT: usize = 64 * 1024 * 1024;
+#[derive(Serialize)]
+struct Row {
+    row: i64,
+    material: Value,
+}
+fn fields(headers: &[String], values: impl Iterator<Item = Value>) -> Value {
+    Value::Object(headers.iter().cloned().zip(values).collect())
+}
+/// Pasted text holds one item per chunk, separated by lines of three or more dashes.
+/// Blank chunks are dropped, and text with no separator stays one chunk.
+fn split_paste(text: &str) -> Vec<&str> {
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    let mut offset = 0;
+    for line in text.split_inclusive('\n') {
+        let bare = line.trim();
+        if bare.len() >= 3 && bare.bytes().all(|c| c == b'-') {
+            chunks.push(&text[start..offset]);
+            start = offset + line.len();
+        }
+        offset += line.len();
+    }
+    chunks.push(&text[start..]);
+    if chunks.len() == 1 {
+        return chunks
+            .into_iter()
+            .filter(|c| !c.trim().is_empty())
+            .collect();
+    }
+    chunks
+        .into_iter()
+        .map(|c| c.trim_matches(['\r', '\n']))
+        .filter(|c| !c.trim().is_empty())
+        .collect()
+}
+
+/// How an expected answer is graded. An explicit `grading` of `exact` or `criteria` wins.
+/// Otherwise an answer that is not a string, or is a string of at most 80 characters on one
+/// line, is compared exactly, and a longer or multi-line answer is judged against criteria.
+pub(super) fn grading(explicit: Option<&Value>, expected: &Value) -> Result<&'static str, String> {
+    match explicit {
+        None | Some(Value::Null) => {}
+        Some(Value::String(s)) if s.trim().is_empty() => {}
+        Some(Value::String(s)) if s == "exact" => return Ok("exact"),
+        Some(Value::String(s)) if s == "criteria" => return Ok("criteria"),
+        Some(_) => return Err(r#"grading must be "exact" or "criteria""#.into()),
+    }
+    Ok(match expected.as_str() {
+        Some(s) if s.chars().count() > 80 || s.contains(['\n', '\r']) => "criteria",
+        _ => "exact",
+    })
+}
+
+/// Validate each row's grading choice and mark answer rows that need criteria, so the
+/// conversion drafts criteria from the expected answer instead of comparing it exactly.
+fn choose_grading(rows: &mut [Row]) -> ApiResult<()> {
+    for r in rows {
+        let Value::Object(fields) = &mut r.material else {
+            continue;
+        };
+        let expected = fields.get("expected").cloned().unwrap_or(Value::Null);
+        let choice = grading(fields.get("grading"), &expected)
+            .map_err(|e| invalid(format!("Row {}: {e}", r.row)))?;
+        if fields.contains_key("input") && fields.contains_key("expected") && choice == "criteria" {
+            fields.insert("grading".into(), json!("criteria"));
+        }
+    }
+    Ok(())
+}
+
+fn parse_rows(format: &str, mut file: impl Read + Seek) -> ApiResult<Vec<Row>> {
+    const MAX_ROWS: usize = 10_000;
+    let limit_error = || invalid("Import exceeds 10,000 rows");
+    let mut rows = Vec::new();
+    match format {
+        "csv" => {
+            let mut csv = csv::Reader::from_reader(file);
+            let headers = csv
+                .headers()
+                .map_err(|_| invalid("Invalid CSV header"))?
+                .iter()
+                .map(String::from)
+                .collect::<Vec<_>>();
+            for record in csv.records() {
+                if rows.len() >= MAX_ROWS {
+                    return Err(limit_error());
+                }
+                let r = record.map_err(|e| {
+                    invalid(format!(
+                        "Invalid CSV on line {}",
+                        e.position().map_or(1, |p| p.line())
+                    ))
+                })?;
+                rows.push(Row {
+                    row: r.position().unwrap().line() as i64,
+                    material: fields(&headers, r.iter().map(|v| json!(v))),
+                });
+            }
+        }
+        "xlsx" => {
+            // Bound expanded XML and use sparse cells so a distant cell cannot allocate a dense sheet.
+            let mut archive = zip::ZipArchive::new(&mut file)
+                .map_err(|_| invalid("Invalid spreadsheet archive"))?;
+            let mut remaining = 256 * 1024 * 1024u64;
+            for i in 0..archive.len() {
+                let entry = archive
+                    .by_index(i)
+                    .map_err(|_| invalid("Invalid spreadsheet entry"))?;
+                let count = std::io::copy(&mut entry.take(remaining + 1), &mut std::io::sink())
+                    .map_err(|_| invalid("Invalid spreadsheet entry"))?;
+                remaining = remaining
+                    .checked_sub(count)
+                    .ok_or_else(|| invalid("Spreadsheet exceeds expanded size limit"))?;
+            }
+            drop(archive);
+            file.rewind()
+                .map_err(|_| invalid("Unreadable spreadsheet"))?;
+            let mut book: Xlsx<_> = Xlsx::new(file).map_err(|_| invalid("Invalid spreadsheet"))?;
+            let names = book.sheet_names();
+            for (index, name) in names.iter().enumerate() {
+                let mut reader = book
+                    .worksheet_cells_reader(name)
+                    .map_err(|_| invalid("Invalid worksheet"))?;
+                let mut headers = std::collections::HashMap::new();
+                let mut header_row = None;
+                let mut material =
+                    std::collections::BTreeMap::<u32, serde_json::Map<String, Value>>::new();
+                while let Some(cell) = reader
+                    .next_cell()
+                    .map_err(|_| invalid("Invalid spreadsheet cell"))?
+                {
+                    let (row, col) = cell.get_position();
+                    let value = calamine::Data::from(cell.get_value().clone());
+                    if row == *header_row.get_or_insert(row) {
+                        headers.insert(col, value.to_string());
+                    } else if let Some(key) = headers.get(&col) {
+                        let v = match value {
+                            calamine::Data::Int(v) => json!(v),
+                            calamine::Data::Float(v) => json!(v),
+                            calamine::Data::Bool(v) => json!(v),
+                            calamine::Data::Empty => Value::Null,
+                            v => json!(v.to_string()),
+                        };
+                        if !material.contains_key(&row) && rows.len() + material.len() >= MAX_ROWS {
+                            return Err(limit_error());
+                        }
+                        material.entry(row).or_default().insert(key.clone(), v);
+                    }
+                }
+                for (row, obj) in material {
+                    // Excel worksheets have at most 1,048,576 rows.
+                    rows.push(Row {
+                        row: (index as i64) * 1_048_576 + i64::from(row) + 1,
+                        material: Value::Object(obj),
+                    });
+                }
+            }
+        }
+        "jsonl" => {
+            for (i, line) in BufReader::new(file).lines().enumerate() {
+                let line = line.map_err(|_| invalid("Expected UTF-8 JSONL"))?;
+                if line.trim().is_empty() {
+                    continue;
+                }
+                if rows.len() >= MAX_ROWS {
+                    return Err(limit_error());
+                }
+                let line = if i == 0 {
+                    line.trim_start_matches('\u{feff}')
+                } else {
+                    &line
+                };
+                rows.push(Row {
+                    row: i as i64 + 1,
+                    material: serde_json::from_str(line)
+                        .map_err(|_| invalid(format!("Invalid JSON on line {}", i + 1)))?,
+                });
+            }
+        }
+        "text" => {
+            let mut text = String::new();
+            file.read_to_string(&mut text)
+                .map_err(|_| invalid("Expected UTF-8 text"))?;
+            let text = text.trim_start_matches('\u{feff}');
+            for chunk in split_paste(text) {
+                if rows.len() >= MAX_ROWS {
+                    return Err(limit_error());
+                }
+                rows.push(Row {
+                    row: rows.len() as i64 + 1,
+                    material: json!(chunk),
+                });
+            }
+        }
+        _ => return Err(invalid("Unsupported import format")),
+    }
+    if rows.is_empty() {
+        return Err(invalid("Import contains no rows"));
+    }
+    Ok(rows)
+}
+#[derive(Deserialize)]
+pub(super) struct Upload {
+    filename: Option<String>,
+}
+pub(super) async fn upload(
+    State(s): State<AppState>,
+    Path((p, b)): Path<(String, String)>,
+    Query(q): Query<Upload>,
+    h: HeaderMap,
+    body: axum::body::Body,
+) -> Reply {
+    let b = path(&b)?;
+    let (mut tx, _) = actor_tx(&s, &h, &p, "write").await?;
+    require_loop(&mut tx, &p, b, false).await?;
+    let media = h
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .split(';')
+        .next()
+        .unwrap_or("");
+    let source = q.filename.unwrap_or_else(|| "paste".into());
+    let format = match media {
+        "text/plain" => "text",
+        "text/csv" => "csv",
+        "application/x-ndjson" | "application/jsonl" => "jsonl",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "xlsx",
+        _ => source.rsplit_once('.').map_or("text", |(_, ext)| ext),
+    }
+    .to_ascii_lowercase();
+    // Release the authorization transaction while the client streams its body.
+    tx.commit().await.map_err(db)?;
+    let mut file = tokio::fs::File::from_std(tempfile::tempfile().map_err(db)?);
+    let mut stream = body.into_data_stream();
+    let mut size = 0usize;
+    let mut digest = Sha256::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|_| invalid("Incomplete import body"))?;
+        size = size.saturating_add(chunk.len());
+        if size > LIMIT {
+            return Err(err(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "payload_too_large",
+                "Import exceeds 64 MiB",
+            ));
+        }
+        digest.update(&chunk);
+        file.write_all(&chunk).await.map_err(db)?;
+    }
+    file.rewind().await.map_err(db)?;
+    let file = file.into_std().await;
+    let material_format = if format == "text" {
+        "conversations"
+    } else {
+        "rows"
+    };
+    let mut rows = tokio::task::spawn_blocking(move || parse_rows(&format, file))
+        .await
+        .map_err(|_| invalid("Import parser failed"))??;
+    choose_grading(&mut rows)?;
+    let (mut tx, a) = actor_tx(&s, &h, &p, "write").await?;
+    let id = Uuid::new_v4();
+    let total = rows.len();
+    let digest = hex::encode(digest.finalize());
+    let receipt:Value=sqlx::query_scalar("INSERT INTO learning_task_imports(id,project_id,bundle_id,author,source,format,row_count,digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(project_id,bundle_id,digest) WHERE failure IS NULL DO UPDATE SET digest=excluded.digest RETURNING jsonb_build_object('importId',id,'rows',row_count,'converted',converted_rows,'setAsideCount',set_aside_rows,'pending',row_count-converted_rows-set_aside_rows)")
+        .bind(id)
+        .bind(&p)
+        .bind(b)
+        .bind(&a.principal)
+        .bind(&source)
+        .bind(material_format)
+        .bind(total as i64)
+        .bind(&digest)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(db)?;
+    if receipt["importId"] != json!(id) {
+        return Ok(Json(receipt));
+    }
+    let mut cards = Vec::new();
+    let mut set_aside = Vec::new();
+    for r in rows.chunks(512) {
+        sqlx::query("INSERT INTO learning_task_import_rows(import_id,row_number,material) SELECT $1,(r->>'row')::bigint,r->'material' FROM jsonb_array_elements($2) r")
+        .bind(id)
+        .bind(json!(r))
+        .execute(&mut *tx)
+        .await
+        .map_err(db)?;
+        for r in r {
+            let exact = r.material.get("grading") != Some(&json!("criteria"));
+            if let (Some(input), Some(expected), true) =
+                (r.material.get("input"), r.material.get("expected"), exact)
+            {
+                cards.push(ConvertedCard {
+                    row: r.row,
+                    group: format!("row:{}", r.row),
+                    input: input.clone(),
+                    grader: json!({"type":"exact","expected":expected}),
+                    criteria_drafted: false,
+                });
+            } else if json!({"row":r.row,"source":format!("row:{}",r.row),"material":r.material})
+                .to_string()
+                .len()
+                > crate::executor::trials::CONVERSION_BYTES
+            {
+                set_aside.push(SetAside {
+                    row: r.row,
+                    reason: "too-large".into(),
+                });
+            }
+        }
+    }
+    let direct = cards.len() + set_aside.len();
+    let created =
+        write_conversion_output(&mut tx, id, ConversionOutput { cards, set_aside }).await?;
+    // Rows that duplicate a live task are set aside while the cards are written.
+    let converted = created.len();
+    let aside_count = direct - converted;
+    audit(&mut tx, &a, &p, b, "/tasks/import", None).await?;
+    tx.commit().await.map_err(db)?;
+    let mut receipt = json!({"importId":id,"rows":total,"converted":converted,"setAsideCount":aside_count,"pending":total-converted-aside_count});
+    if a.user_id.is_some() {
+        receipt["cards"] = json!(created);
+    }
+    Ok(Json(receipt))
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConvertedCard {
+    row: i64,
+    group: String,
+    input: Value,
+    grader: Value,
+    criteria_drafted: bool,
+}
+#[derive(Deserialize, Serialize)]
+pub(crate) struct SetAside {
+    row: i64,
+    reason: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConversionOutput {
+    cards: Vec<ConvertedCard>,
+    set_aside: Vec<SetAside>,
+}
+pub(crate) async fn rows_awaiting_conversion(tx: &mut Tx<'_>, id: Uuid) -> ApiResult<Value> {
+    sqlx::query_scalar("SELECT jsonb_build_object('format',i.format,'rows',coalesce((SELECT jsonb_agg(jsonb_build_object('row',r.row_number,'source','row:' || r.row_number,'material',r.material) ORDER BY r.row_number) FROM learning_task_import_rows r WHERE r.import_id=i.id AND r.status='pending'),'[]')) FROM learning_task_imports i WHERE id=$1")
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(db)?
+        .ok_or_else(||missing("Import not found"))
+}
+fn contains_reference(material: &Value, reference: &Value) -> bool {
+    material == reference
+        || match material {
+            Value::Array(items) => items.iter().any(|v| contains_reference(v, reference)),
+            Value::Object(fields) => fields.values().any(|v| contains_reference(v, reference)),
+            Value::String(text) => reference
+                .as_str()
+                .is_some_and(|r| !r.is_empty() && text.contains(r)),
+            _ => false,
+        }
+}
+
+pub(crate) async fn write_conversion_output(
+    tx: &mut Tx<'_>,
+    id: Uuid,
+    result: ConversionOutput,
+) -> ApiResult<Vec<Value>> {
+    // Isolate partial writes so the result handler can commit a terminal rejection.
+    use sqlx::Acquire;
+    let mut savepoint = tx.begin().await.map_err(db)?;
+    let cards = apply_conversion(&mut savepoint, id, result).await?;
+    savepoint.commit().await.map_err(db)?;
+    Ok(cards)
+}
+fn input_alias(input: &Value) -> String {
+    let normalized = input.as_str().map_or_else(
+        || input.to_string(),
+        |text| {
+            json!(
+                text.split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .to_lowercase()
+            )
+            .to_string()
+        },
+    );
+    format!("input:{}", hex::encode(Sha256::digest(normalized)))
+}
+
+/// A shared source or normalized input connects cards. Resolve the entire batch before
+/// writing any cards so the result also handles chains of matches across several rows.
+async fn import_groups(
+    tx: &mut Tx<'_>,
+    project: &str,
+    bundle: Uuid,
+    digest: &str,
+    cards: &[ConvertedCard],
+) -> ApiResult<std::collections::HashMap<String, String>> {
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
+    let mut edges = BTreeMap::<String, Vec<String>>::new();
+    for c in cards {
+        let source = format!("import:{digest}:{}", c.group);
+        let input = input_alias(&c.input);
+        edges.entry(source.clone()).or_default().push(input.clone());
+        edges.entry(input).or_default().push(source);
+    }
+    let known: Vec<(String, String)> = sqlx::query_as(
+        r#"SELECT alias,"group" FROM learning_task_groups
+        WHERE (project_id,bundle_id)=($1,$2) AND alias=ANY($3)"#,
+    )
+    .bind(project)
+    .bind(bundle)
+    .bind(edges.keys().cloned().collect::<Vec<_>>())
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(db)?;
+    let known: HashMap<_, _> = known.into_iter().collect();
+    let mut assignments = HashMap::new();
+    while let Some((root, _)) = edges.first_key_value() {
+        let root = root.clone();
+        let mut stack = vec![root.clone()];
+        let mut members = Vec::new();
+        let mut assigned = BTreeSet::new();
+        while let Some(alias) = stack.pop() {
+            if let Some(neighbors) = edges.remove(&alias) {
+                stack.extend(neighbors);
+                if let Some(group) = known.get(&alias) {
+                    assigned.insert(group);
+                }
+                members.push(alias);
+            }
+        }
+        if assigned.len() > 1 {
+            return Err(conflict("Import joins previously assigned task groups"));
+        }
+        let group = assigned.first().copied().unwrap_or(&root);
+        for alias in members {
+            assignments.insert(alias, group.clone());
+        }
+    }
+    sqlx::query(r#"INSERT INTO learning_task_groups(project_id,bundle_id,alias,"group") SELECT $1,$2,key,value FROM jsonb_each_text($3) ON CONFLICT DO NOTHING"#)
+        .bind(project).bind(bundle).bind(json!(assignments)).execute(&mut **tx).await.map_err(db)?;
+    Ok(assignments)
+}
+
+/// Indexes of cards whose input equals the input of a live task in either split, or of an
+/// earlier card in the same batch. The caller holds the loop lock.
+async fn duplicate_cards(
+    tx: &mut Tx<'_>,
+    project: &str,
+    bundle: Uuid,
+    cards: &[ConvertedCard],
+) -> ApiResult<std::collections::HashSet<usize>> {
+    let inputs: Vec<&Value> = cards.iter().map(|c| &c.input).collect();
+    let found: Vec<i64> = sqlx::query_scalar(
+        r#"SELECT c.i-1 FROM (SELECT input,i,row_number() OVER (PARTITION BY input ORDER BY i) n
+            FROM jsonb_array_elements($3) WITH ORDINALITY c(input,i)) c
+        WHERE c.n>1
+           OR EXISTS(SELECT FROM learning_tasks t WHERE (t.project_id,t.bundle_id)=($1,$2) AND t.retired_revision IS NULL AND t.input=c.input)
+           OR EXISTS(SELECT FROM learning_held_out_tasks t WHERE (t.project_id,t.bundle_id)=($1,$2) AND t.retired_revision IS NULL AND t.input=c.input)"#,
+    )
+    .bind(project)
+    .bind(bundle)
+    .bind(json!(inputs))
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(db)?;
+    Ok(found.into_iter().map(|i| i as usize).collect())
+}
+
+/// The reason the service gives a row whose input already belongs to a live task.
+pub(crate) const DUPLICATE: &str = "duplicate";
+
+async fn apply_conversion(
+    tx: &mut Tx<'_>,
+    id: Uuid,
+    mut result: ConversionOutput,
+) -> ApiResult<Vec<Value>> {
+    let (p,b,source,author,digest,outcome):(String,Uuid,String,String,String,Option<Value>)=sqlx::query_as("SELECT project_id,bundle_id,source,author,digest,outcome FROM learning_task_imports WHERE id=$1 FOR UPDATE")
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(db)?
+        .ok_or_else(||missing("Import not found"))?;
+    let mut states = std::collections::BTreeMap::new();
+    for c in &result.cards {
+        if c.group.trim().is_empty() || c.group.len() > 1024 {
+            return Err(invalid("Invalid conversion group"));
+        }
+        states.insert(c.row, None);
+    }
+    for aside in &result.set_aside {
+        if aside.reason.trim().is_empty()
+            || states
+                .insert(aside.row, Some(aside.reason.clone()))
+                .is_some()
+        {
+            return Err(invalid("Conflicting conversion result"));
+        }
+    }
+    let available: Vec<(i64,Value)>=sqlx::query_as("SELECT row_number,material FROM learning_task_import_rows WHERE import_id=$1 AND status='pending' AND row_number=ANY($2)")
+        .bind(id)
+        .bind(states.keys().copied().collect::<Vec<_>>())
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(db)?;
+    if available.len() != states.len() {
+        return Err(invalid(
+            "Conversion refers to a row outside pending material",
+        ));
+    }
+    let material: std::collections::HashMap<_, _> = available.into_iter().collect();
+    // A row that carried its own input and expected answer keeps them. Only the criteria come
+    // from the conversion, whatever input or reference the model returned.
+    for c in &mut result.cards {
+        let row = &material[&c.row];
+        if let (Some(input), Some(expected)) = (row.get("input"), row.get("expected")) {
+            c.grader = if c.grader["type"] == "criteria" {
+                json!({"type":"criteria","criteria":c.grader["criteria"],"reference":expected})
+            } else {
+                json!({"type":"exact","expected":expected})
+            };
+            c.input = input.clone();
+        }
+    }
+    let mut cards = Vec::new();
+    // The loop lock serializes duplicate checks and alias assignments across concurrent imports.
+    if !result.cards.is_empty() && outcome.is_none() {
+        sqlx::query("SELECT FROM learning_loops WHERE (project_id,bundle_id)=($1,$2) FOR UPDATE")
+            .bind(&p)
+            .bind(b)
+            .execute(&mut **tx)
+            .await
+            .map_err(db)?;
+        let duplicates = duplicate_cards(tx, &p, b, &result.cards).await?;
+        let (kept, repeated): (Vec<_>, Vec<_>) = std::mem::take(&mut result.cards)
+            .into_iter()
+            .enumerate()
+            .partition(|(i, _)| !duplicates.contains(i));
+        result.cards = kept.into_iter().map(|(_, c)| c).collect();
+        for (_, c) in repeated {
+            states.insert(c.row, Some(DUPLICATE.into()));
+            result.set_aside.push(SetAside {
+                row: c.row,
+                reason: DUPLICATE.into(),
+            });
+        }
+    }
+    let revision = if result.cards.is_empty() {
+        0
+    } else {
+        tasks::revision(tx, &p, b).await?
+    };
+    if let Some(outcome) = outcome {
+        // An outcome keeps its own input, expected answer, group and provenance. Only the
+        // criteria come from the conversion.
+        let outcome_id: Uuid = serde_json::from_value(outcome["outcomeId"].clone())
+            .map_err(|_| invalid("Invalid outcome conversion"))?;
+        let set_aside = !result.set_aside.is_empty();
+        for c in result.cards {
+            let group = outcome_id.to_string();
+            let split = Split::of(&group);
+            let mut task = Task::pending(c.input, c.grader, group, "outcome", &author);
+            task.task_id = format!("outcome:{outcome_id}");
+            task.outcome_id = Some(outcome_id);
+            task.version_id = serde_json::from_value(outcome["versionId"].clone()).ok();
+            task.output = outcome.get("output").cloned();
+            if !c.criteria_drafted {
+                task.confirmed_by = Some(author.clone());
+            }
+            task.added_revision = revision;
+            tasks::insert(tx, &p, b, split, &task, revision).await?;
+            let mut card = json!(task);
+            card["split"] = json!(split.name());
+            cards.push(card);
+        }
+        if set_aside {
+            keep_outcome(tx, id).await?;
+        }
+    } else {
+        let assignments = import_groups(tx, &p, b, &digest, &result.cards).await?;
+        for c in result.cards {
+            let group = assignments[&format!("import:{digest}:{}", c.group)].clone();
+            let mut task = Task::pending(c.input, c.grader, group, "import", &author);
+            task.source_file = Some(source.clone());
+            task.source_row = Some(c.row);
+            if !c.criteria_drafted
+                && task
+                    .grader
+                    .get("expected")
+                    .or_else(|| task.grader.get("reference"))
+                    .is_some_and(|r| contains_reference(&material[&c.row], r))
+            {
+                task.confirmed_by = Some(author.clone());
+            }
+            let split = Split::of(&task.group);
+            task.added_revision = revision;
+            tasks::validate(&task)?;
+            let mut card = json!(task);
+            card["split"] = json!(split.name());
+            cards.push(card);
+        }
+        for split in [Split::Evolve, Split::HeldOut] {
+            let batch: Vec<_> = cards
+                .iter()
+                .filter(|c| c["split"] == split.name())
+                .collect();
+            if !batch.is_empty() {
+                sqlx::query(&format!(r#"INSERT INTO {}(project_id,bundle_id,task_id,"group",input,grader,source,author,source_file,source_row,confirmed_by,added_revision)
+                    SELECT $1,$2,c->>'taskId',c->>'group',c->'input',c->'grader','import',c->>'author',c->>'sourceFile',(c->>'sourceRow')::bigint,c->>'confirmedBy',$3 FROM jsonb_array_elements($4) c"#,split.table()))
+                    .bind(&p).bind(b).bind(revision).bind(json!(batch)).execute(&mut **tx).await.map_err(db)?;
+            }
+        }
+    }
+    let set_aside_count = result.set_aside.len() as i64;
+    sqlx::query("UPDATE learning_task_imports SET converted_rows=converted_rows+$2,set_aside_rows=set_aside_rows+$3 WHERE id=$1")
+        .bind(id).bind(states.len() as i64-set_aside_count).bind(set_aside_count).execute(&mut **tx).await.map_err(db)?;
+    let updates: Vec<_> = states
+        .into_iter()
+        .map(|(row, reason)| json!({"row":row,"reason":reason}))
+        .collect();
+    sqlx::query("UPDATE learning_task_import_rows r SET status=CASE WHEN u.reason IS NULL THEN 'converted' ELSE 'set-aside' END,reason=u.reason FROM jsonb_to_recordset($2) AS u(row bigint,reason text) WHERE import_id=$1 AND row_number=u.row")
+        .bind(id).bind(json!(updates)).execute(&mut **tx).await.map_err(db)?;
+    Ok(cards)
+}
+
+/// Queue a one-row conversion for an outcome whose expected answer is judged against
+/// criteria. The conversion drafts the criteria, and the task is written when its result is
+/// applied, with the outcome's own input, expected answer, group and provenance.
+pub(super) async fn queue_outcome(
+    tx: &mut Tx<'_>,
+    project: &str,
+    bundle: Uuid,
+    author: &str,
+    outcome: Value,
+    input: &Value,
+    expected: &Value,
+) -> ApiResult<()> {
+    let material = json!({"input":input,"expected":expected,"grading":"criteria"});
+    if json!({"row":1,"source":"row:1","material":material})
+        .to_string()
+        .len()
+        > crate::executor::trials::CONVERSION_BYTES
+    {
+        return Err(invalid(
+            "Input and expected together must fit in 64 KiB when graded with criteria",
+        ));
+    }
+    let id = Uuid::new_v4();
+    let digest = format!(
+        "outcome:{}",
+        outcome["outcomeId"].as_str().unwrap_or_default()
+    );
+    sqlx::query("INSERT INTO learning_task_imports(id,project_id,bundle_id,author,source,format,row_count,digest,outcome) VALUES($1,$2,$3,$4,'outcome','rows',1,$5,$6)")
+        .bind(id)
+        .bind(project)
+        .bind(bundle)
+        .bind(author)
+        .bind(digest)
+        .bind(&outcome)
+        .execute(&mut **tx)
+        .await
+        .map_err(db)?;
+    sqlx::query(
+        "INSERT INTO learning_task_import_rows(import_id,row_number,material) VALUES($1,1,$2)",
+    )
+    .bind(id)
+    .bind(material)
+    .execute(&mut **tx)
+    .await
+    .map_err(db)?;
+    Ok(())
+}
+
+/// An outcome is never lost. When its conversion fails for good or sets its row aside, the
+/// outcome becomes an `exact` task from its own values, set aside as `not-converted`, so a
+/// person can add criteria to it. Does nothing for another import, or when the task exists.
+pub(crate) async fn keep_outcome(tx: &mut Tx<'_>, id: Uuid) -> ApiResult<()> {
+    let row: Option<(String, Uuid, String, Value, Value)> = sqlx::query_as(
+        "SELECT i.project_id,i.bundle_id,i.author,i.outcome,r.material FROM learning_task_imports i
+        JOIN learning_task_import_rows r ON r.import_id=i.id AND r.row_number=1
+        WHERE i.id=$1 AND i.outcome IS NOT NULL FOR UPDATE OF i",
+    )
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(db)?;
+    let Some((p, b, author, outcome, material)) = row else {
+        return Ok(());
+    };
+    let outcome_id: Uuid = serde_json::from_value(outcome["outcomeId"].clone())
+        .map_err(|_| invalid("Invalid outcome conversion"))?;
+    let task_id = format!("outcome:{outcome_id}");
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT FROM learning_tasks WHERE (project_id,bundle_id,task_id)=($1,$2,$3)) OR EXISTS(SELECT FROM learning_held_out_tasks WHERE (project_id,bundle_id,task_id)=($1,$2,$3))")
+        .bind(&p).bind(b).bind(&task_id).fetch_one(&mut **tx).await.map_err(db)?;
+    if exists {
+        return Ok(());
+    }
+    let group = outcome_id.to_string();
+    let split = Split::of(&group);
+    let mut task = Task::pending(
+        material["input"].clone(),
+        json!({"type":"exact","expected":material["expected"]}),
+        group,
+        "outcome",
+        &author,
+    );
+    task.task_id = task_id;
+    task.outcome_id = Some(outcome_id);
+    task.version_id = serde_json::from_value(outcome["versionId"].clone()).ok();
+    task.output = outcome.get("output").cloned();
+    task.confirmed_by = Some(author);
+    let revision = tasks::revision(tx, &p, b).await?;
+    tasks::insert(tx, &p, b, split, &task, revision).await?;
+    tasks::set_admission(
+        tx,
+        &p,
+        b,
+        split,
+        &task.task_id,
+        revision,
+        "set-aside",
+        Some(NOT_CONVERTED),
+    )
+    .await?;
+    Ok(())
+}
+
+/// The admission reason of an outcome task kept after its conversion failed or set it aside.
+pub(crate) const NOT_CONVERTED: &str = "not-converted";
+
+/// The fifty most recent imports, each shaped like the single-import response plus its
+/// creation time and source. Set-aside rows are listed only to signed-in people.
+pub(super) async fn list(
+    State(s): State<AppState>,
+    Path((p, b)): Path<(String, String)>,
+    h: HeaderMap,
+) -> Reply {
+    let b = path(&b)?;
+    let (mut tx, actor) = actor_tx(&s, &h, &p, "read").await?;
+    let items: Value = sqlx::query_scalar("SELECT coalesce(jsonb_agg(doc ORDER BY created_at DESC,id),'[]') FROM (SELECT i.id,i.created_at,jsonb_build_object('importId',id,'rows',row_count,'converted',converted_rows,'setAsideCount',set_aside_rows,'setAside',CASE WHEN $3 THEN (SELECT coalesce(jsonb_agg(jsonb_build_object('row',row_number,'source',i.source,'reason',reason) ORDER BY row_number),'[]') FROM learning_task_import_rows WHERE import_id=i.id AND status='set-aside') ELSE '[]'::jsonb END,'message',failure,'pending',row_count-converted_rows-set_aside_rows,'status',CASE WHEN failure IS NOT NULL THEN 'failed' WHEN row_count=converted_rows+set_aside_rows THEN 'completed' ELSE 'pending' END,'createdAt',created_at,'source',source) doc FROM learning_task_imports i WHERE (project_id,bundle_id)=($1,$2) AND outcome IS NULL ORDER BY created_at DESC,id LIMIT 50) recent")
+        .bind(&p)
+        .bind(b)
+        .bind(actor.user_id.is_some())
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(db)?;
+    Ok(Json(json!({ "items": items })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn parses_csv_jsonl_and_paste() {
+        let csv = parse_rows(
+            "csv",
+            Cursor::new(b"input,expected\n\"multi\nline\",answer\nnext,ok\n"),
+        )
+        .unwrap();
+        assert_eq!(csv[0].row, 2);
+        assert_eq!(csv[1].row, 4);
+        assert_eq!(csv[0].material["input"], "multi\nline");
+        let rows = parse_rows(
+            "jsonl",
+            Cursor::new(b"\n{\"input\":null,\"expected\":false}\n"),
+        )
+        .unwrap();
+        assert_eq!(rows[0].row, 2);
+        assert_eq!(rows[0].material["expected"], false);
+        assert_eq!(
+            parse_rows("text", Cursor::new(b"two\nturns")).unwrap()[0].material,
+            "two\nturns"
+        );
+    }
+    #[test]
+    fn paste_splits_on_dash_lines() {
+        let rows = parse_rows("text", Cursor::new("a\n---\n\n ----- \r\nb\nc\n---\n")).unwrap();
+        let chunks: Vec<_> = rows.iter().map(|r| (r.row, r.material.clone())).collect();
+        assert_eq!(chunks, [(1, json!("a")), (2, json!("b\nc"))]);
+        // Two dashes or dashes inside a line are content, not separators.
+        assert_eq!(split_paste("x\n--\ny --- z"), ["x\n--\ny --- z"]);
+        assert!(parse_rows("text", Cursor::new("---\n \n---")).is_err());
+        let many = "q\n---\n".repeat(10_001);
+        assert!(parse_rows("text", Cursor::new(many)).is_err());
+    }
+    #[test]
+    fn grading_follows_shape_unless_chosen() {
+        let long = json!("x".repeat(81));
+        for (explicit, expected, choice) in [
+            (None, json!("x".repeat(80)), "exact"),
+            (None, long.clone(), "criteria"),
+            (None, json!("two\nlines"), "criteria"),
+            (None, json!(42), "exact"),
+            (None, json!({"a":"x".repeat(200)}), "exact"),
+            (None, Value::Null, "exact"),
+            (Some(json!("")), long.clone(), "criteria"),
+            (Some(json!("exact")), long.clone(), "exact"),
+            (Some(json!("criteria")), json!(true), "criteria"),
+        ] {
+            assert_eq!(grading(explicit.as_ref(), &expected).unwrap(), choice);
+        }
+        for bad in [json!("Exact"), json!(1), json!(["exact"])] {
+            assert!(grading(Some(&bad), &long).is_err());
+        }
+        let mut rows = vec![
+            Row {
+                row: 1,
+                material: json!({"input":"q","expected":long}),
+            },
+            Row {
+                row: 2,
+                material: json!({"input":"q","expected":"a"}),
+            },
+            Row {
+                row: 3,
+                material: json!({"question":"q","answer":long}),
+            },
+        ];
+        choose_grading(&mut rows).unwrap();
+        assert_eq!(rows[0].material["grading"], "criteria");
+        assert!(rows[1].material.get("grading").is_none());
+        assert!(rows[2].material.get("grading").is_none());
+        let mut bad = vec![Row {
+            row: 9,
+            material: json!({"grading":"fuzzy"}),
+        }];
+        assert!(
+            choose_grading(&mut bad)
+                .err()
+                .unwrap()
+                .2
+                .starts_with("Row 9:")
+        );
+    }
+    #[test]
+    fn parse_limits_and_bom() {
+        assert!(parse_rows("jsonl", Cursor::new("0\n".repeat(10001))).is_err());
+        assert_eq!(
+            parse_rows("jsonl", Cursor::new("\u{feff}42")).unwrap()[0].material,
+            42
+        );
+        let err = parse_rows("csv", Cursor::new("one,two\n1,2\n3\n"))
+            .err()
+            .unwrap();
+        assert!(err.2.contains("line 3"));
+    }
+
+    #[test]
+    fn spreadsheet_preserves_cell_types_and_source_rows() {
+        let rows = parse_rows(
+            "xlsx",
+            Cursor::new(include_bytes!(
+                "../../contracts/fixtures/learning-task-import.xlsx"
+            )),
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].row, 5);
+        assert_eq!(rows[0].material["input"].as_f64(), Some(42.0));
+        assert_eq!(rows[0].material["expected"], true);
+    }
+    use std::io::Cursor;
+
+    #[sqlx::test(migrations = "./migrations")]
+    #[ignore = "requires isolated PostgreSQL"]
+    async fn conversion_material_and_revision_checked_admission(pool: sqlx::PgPool) {
+        let mut tx = pool.begin().await.unwrap();
+        let b = Uuid::new_v4();
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO projects(id,name) VALUES('p','p')")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO bundles(id,project_id,name) VALUES($1,'p','b')")
+            .bind(b)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO versions(id,project_id,bundle_id,digest,payload,created_by) VALUES($1,'p',$2,$3,$4,'test')")
+            .bind(id).bind(b).bind(format!("sha256:{}","a".repeat(64))).bind(&include_bytes!("../../contracts/fixtures/bundle-v1.json")[..]).execute(&mut *tx).await.unwrap();
+        sqlx::query("INSERT INTO channels(project_id,bundle_id,name,revision,version_id) VALUES('p',$1,'stable',1,$2)")
+        .bind(b)
+        .bind(id)
+        .execute(&mut *tx)
+        .await.unwrap();
+        sqlx::query("INSERT INTO learning_loops(project_id,bundle_id,channel,setting,enrolled_by) VALUES('p',$1,'stable','{}','test')")
+        .bind(b)
+        .execute(&mut *tx)
+        .await.unwrap();
+        sqlx::query("INSERT INTO learning_task_imports(id,project_id,bundle_id,source,digest,author,format,row_count) VALUES($1,'p',$2,'tickets.csv','digest','author','rows',2)")
+        .bind(id)
+        .bind(b)
+        .execute(&mut *tx)
+        .await.unwrap();
+        sqlx::query("INSERT INTO learning_task_import_rows(import_id,row_number,material) VALUES($1,1,'{}'),($1,2,'{}')")
+        .bind(id)
+        .execute(&mut *tx)
+        .await.unwrap();
+        let material = rows_awaiting_conversion(&mut tx, id).await.unwrap();
+        assert_eq!(material["rows"][1]["source"], "row:2");
+        assert_eq!(material["rows"][1]["row"], 2);
+        let group = (1..)
+            .map(|i| i.to_string())
+            .find(|g| Split::of(&format!("import:digest:{g}")) == Split::HeldOut)
+            .unwrap();
+        let result = |row| {
+            serde_json::from_value(json!({"cards":[{"row":row,"input":"a","group":group,"criteriaDrafted":true,"grader":{"type":"criteria","criteria":["a"]}}],"setAside":[{"row":2,"reason":"no-reference"}]})).unwrap()
+        };
+        assert!(
+            write_conversion_output(&mut tx, id, result(3))
+                .await
+                .is_err()
+        );
+        let cards = write_conversion_output(&mut tx, id, result(1))
+            .await
+            .unwrap();
+        assert_eq!(cards[0]["split"], "held-out");
+        assert_eq!(
+            rows_awaiting_conversion(&mut tx, id).await.unwrap()["rows"],
+            json!([])
+        );
+        let task = cards[0]["taskId"].as_str().unwrap();
+        assert!(
+            !tasks::set_admission(&mut tx, "p", b, Split::HeldOut, task, 1, "admitted", None)
+                .await
+                .unwrap()
+        );
+        sqlx::query("UPDATE learning_held_out_tasks SET confirmed_by='user'")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(
+            !tasks::set_admission(&mut tx, "p", b, Split::HeldOut, task, 2, "admitted", None)
+                .await
+                .unwrap()
+        );
+        assert!(
+            tasks::set_admission(&mut tx, "p", b, Split::HeldOut, task, 1, "admitted", None)
+                .await
+                .unwrap()
+        );
+        let stamp:(i64,i64)=sqlx::query_as("SELECT t.admission_revision,l.task_revision FROM learning_round_held_out_tasks t JOIN learning_loops l USING(project_id,bundle_id)").fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(stamp, (2, 2));
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_round_held_out_tasks")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+}

@@ -1,0 +1,121 @@
+---
+title: Install the SDKs
+description: Install the TypeScript or Python SDK from a source checkout, or from its registry or verified release files once an Acclimate release is published.
+---
+
+Install the SDK where your agent runs. The SDKs are not on npm or PyPI yet. Build them from a source checkout, or use the package files attached to each [GitHub Release](https://github.com/anveld-dev/acclimate/releases). Use the SDK version that matches your service's ([Versioning and compatibility](/docs/reference/versioning)).
+
+## Prerequisites
+
+| To use | You need |
+| --- | --- |
+| The TypeScript SDK and its `acclimate` command | Node.js 22.22 or later |
+| The Python SDK | Python 3.11 or later |
+| Preparing files for a job | Linux or macOS, and a private local directory to stage the files in |
+
+`@acclimate/sdk` is an ES module only. CommonJS code loads it with `await import('@acclimate/sdk')`.
+
+## Build from a source checkout
+
+```sh
+git clone https://github.com/anveld-dev/acclimate.git
+cd acclimate
+```
+
+### Build every artifact
+
+```sh
+npm ci --ignore-scripts
+npm run pack:verify
+```
+
+This writes the SDK and plugin tarballs, the Python wheel, the starter archives, the manifest and the checksums to `artifacts/releases/<version>/`, and checks them against isolated consumers. To build the same version again, add `-- --output /path/to/new-release`.
+
+### Build only the Python wheel
+
+This needs only Python. Write the output outside the checkout:
+
+```sh
+python3.11 -m pip wheel --no-deps --wheel-dir /tmp/acclimate-wheel ./python
+```
+
+The build downloads the `flit_core` build backend unless your index or cache has it. You can also install straight from the checkout with `pip install ./python`.
+
+### Install the files
+
+Run this from your application's directory. `/absolute/path/to/release` is `artifacts/releases/<version>/` in your checkout, or the directory holding downloaded release files. A source build produces version 0.1.0 today.
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+The SDK tarball has no npm runtime dependencies.
+
+```sh
+npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz
+./node_modules/.bin/acclimate --help
+```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+python3.11 -m venv .venv
+.venv/bin/python -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
+.venv/bin/python -m acclimate pull --help
+```
+
+</Tab>
+</Tabs>
+
+## Install from the registry
+
+Once an Acclimate release is on npm and PyPI:
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
+npm install @acclimate/sdk
+npx acclimate --help
+```
+
+To run Codex, the Claude Agent SDK, Pi or Cursor on the delivered files, also install the matching plugin, such as `@acclimate/codex-plugin` ([Choose a native integration](/docs/guides/coding-agents#choose-a-native-integration)).
+
+</Tab>
+<Tab value="Python">
+
+The SDK uses only the standard library and needs no Node.js.
+
+```sh
+python3.11 -m venv .venv
+.venv/bin/python -m pip install acclimate-sdk
+.venv/bin/python -m acclimate pull --help
+```
+
+The distribution is `acclimate-sdk`, imported as `acclimate`. On Python 3.10 or earlier, the import fails with a message that names the version it found.
+
+</Tab>
+</Tabs>
+
+An Acclimate release can reach GitHub Releases before the registries. Until it does, install from the release files.
+
+## Install from verified release files
+
+Once an Acclimate release is published:
+
+1. Choose a version on the [GitHub Releases page](https://github.com/anveld-dev/acclimate/releases).
+2. Download `manifest.json`, `SHA256SUMS` and every file that `SHA256SUMS` lists into one directory.
+3. From that directory, verify the files.
+
+   ```sh
+   sha256sum --check SHA256SUMS        # Linux
+   shasum -a 256 --check SHA256SUMS    # macOS
+   ```
+
+4. Install the file for your language as in [Install the files](#install-the-files).
+
+## Next steps
+
+- [Connect your application](/docs/get-started/quickstart#connect-your-application)
+- [Deliver content to jobs](/docs/guides/deliver-content)
+- [TypeScript SDK](/docs/reference/typescript-sdk) and [Python SDK](/docs/reference/python-sdk)

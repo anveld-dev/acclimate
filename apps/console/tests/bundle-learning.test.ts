@@ -1,0 +1,765 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { test } from 'node:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterContextProvider,
+} from '@tanstack/react-router';
+import type {
+  LearningCandidate,
+  LearningLoop,
+  LearningLoopRequest,
+  LearningMemory,
+  LearningRound,
+  LearningRoundSummary,
+} from '@acclimate/sdk';
+import { BundleLearning, learningTab, type LearningTab } from '../src/components/bundle-learning';
+import { TooltipProvider } from '../src/components/ui/tooltip';
+import { activeRoundStates } from '../src/lib/learning';
+import { readLearningState, type LearningState } from '../src/server/learning-core';
+import { consoleEnvironment } from './console-fixture';
+
+const scope = { workspaceId: 'acme', bundleId: '00000000-0000-4000-8000-000000000001' };
+const base = `/v1/workspaces/acme/bundles/${scope.bundleId}`;
+const path = base + '/learning';
+const env = { ...consoleEnvironment, CONSOLE_ALLOW_EDITS: 'true' };
+const body: LearningLoopRequest = {
+  channel: 'canary',
+  taskModel: 'task',
+  judgeModel: 'judge',
+  setting: { domain: 'support', benchmark: 'refunds' },
+};
+const timestamp = '2026-11-20T12:00:00Z';
+const round: LearningRoundSummary = {
+  id: '00000000-0000-4000-8000-000000000002',
+  number: 1,
+  diff: null,
+  diagnosis: null,
+  evolveScore: 0.9,
+  trigger: 'start',
+  incumbentReused: false,
+  taskModel: 'task',
+  judgeModel: 'judge',
+  taskRevision: 2,
+  state: 'completed',
+  decision: 'adopted',
+  reason: null,
+  parentVersionId: scope.bundleId,
+  adoptedSample: 2,
+  adoptedVersionId: scope.bundleId,
+  incumbentScore: 0.9,
+  heldOutScore: 0.8,
+  heldOutError: null,
+  createdAt: timestamp,
+  endedAt: timestamp,
+};
+const loop: LearningLoop = {
+  ...scope,
+  ...body,
+  status: 'running',
+  pauseReason: null,
+  taskRevision: 2,
+  setting: { ...body.setting, policyModel: body.taskModel },
+  admittedEvolve: 0,
+  admittedHeldOut: 0,
+  maxRoundsPerDay: 4,
+  waiting: null,
+  alert: null,
+  memoryRevision: 0,
+  nextRound: 2,
+  failedRounds: 0,
+  enrolledBy: 'user:admin',
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  activeRound: null,
+  rounds: [round],
+};
+const empty: Extract<LearningState, { ok: true }> = {
+  ok: true,
+  bundleName: 'Support',
+  loop: null,
+  channels: ['canary'],
+
+  rounds: [],
+  activeEvaluation: null,
+  history: [],
+  blocked: [],
+  channelHead: null,
+  progress: null,
+  canManage: true,
+  canEditCases: true,
+  detail: null,
+  memory: null,
+};
+const router = createRouter({
+  routeTree: createRootRoute(),
+  history: createMemoryHistory({ initialEntries: ['/'] }),
+});
+const markup = (state: LearningState, tab: LearningTab = 'overview') =>
+  renderToStaticMarkup(
+    createElement(RouterContextProvider, {
+      router,
+      children: createElement(TooltipProvider, {
+        children: createElement(BundleLearning, {
+          scope,
+          state,
+          tab,
+          refresh: async () => {},
+        }),
+      }),
+    }),
+  );
+/** Every sub-tab of the Learning page, in order. */
+const allTabs = (state: LearningState) =>
+  (['overview', 'tasks', 'settings', 'memory'] as const).map((tab) => markup(state, tab)).join('');
+const response = (value: unknown, status = 200) => Response.json(value, { status });
+const notFound = () =>
+  response({ error: { code: 'not_found', message: 'Learning loop not enrolled' } }, 404);
+function bundleFixture(url: URL, role = 'admin'): Response | undefined {
+  if (url.pathname === '/v1/workspaces') return response({ items: [{ id: 'acme', role }] });
+  if (url.pathname === '/v1/workspaces/acme/bundles')
+    return response({ items: [{ id: scope.bundleId, name: 'Support' }] });
+  if (url.pathname === base + '/channels') return response({ items: [{ name: 'canary' }] });
+}
+
+test('enrollment and recovery render for the appropriate states and roles', () => {
+  assert.match(markup(empty, 'settings'), /Save learning settings/);
+  assert.match(markup(empty), /Learning is not set up for this bundle\./);
+  assert.match(markup(empty), /href="[^"]*\/learning\?tab=settings"[^>]*>Set up learning</);
+  assert.match(markup({ ...empty, loop }, 'tasks'), /Import material/);
+  assert.match(markup(empty, 'tasks'), /Save the learning settings before you add tasks/);
+  assert.match(
+    markup({ ...empty, loop: { ...loop, status: 'paused' } }),
+    /Start needs 20 more evolve and 20 more held-out/,
+  );
+  assert.doesNotMatch(allTabs({ ...empty, canManage: false }), /Save learning settings/);
+  assert.match(markup({ ok: false, message: 'Access denied' }), /role="alert"/);
+});
+
+test('renders round states, evaluation progress and decreasing measured scores', () => {
+  for (const state of activeRoundStates) {
+    const html = markup({
+      ...empty,
+      loop: { ...loop, activeRound: { ...round, state } },
+      activeEvaluation: {
+        role: 'incumbent',
+        sample: null,
+        split: 'evolve',
+        status: 'running',
+        cases: 4,
+        reportedCases: 2,
+      },
+    });
+    assert.match(html, /aria-current="step"[^>]*>[^<]+ \(current\)/);
+    assert.match(html, /2 of 4 cases reported/);
+  }
+  const html = markup({
+    ...empty,
+    loop,
+    rounds: [
+      {
+        ...round,
+        id: 'fifth',
+        number: 5,
+        state: 'stopped',
+        decision: null,
+        reason: 'stopped',
+        heldOutScore: null,
+      },
+      {
+        ...round,
+        id: 'fourth',
+        number: 4,
+        state: 'failed',
+        decision: null,
+        reason: 'incumbent-evaluation-failed',
+        incumbentScore: null,
+        heldOutScore: null,
+      },
+      {
+        ...round,
+        id: 'third',
+        number: 3,
+        heldOutError: 'held-out-evaluation-failed',
+        heldOutScore: null,
+        state: 'completed',
+      },
+      {
+        ...round,
+        id: 'kept-unchecked',
+        number: 5,
+        decision: 'kept',
+        adoptedSample: null,
+        adoptedVersionId: null,
+        heldOutError: 'held-out-evaluation-failed',
+        heldOutScore: null,
+        state: 'completed',
+      },
+      {
+        ...round,
+        id: 'second',
+        number: 2,
+        decision: 'kept',
+        reason: 'no-candidates',
+        incumbentScore: 0.6,
+        evolveScore: 0.6,
+        heldOutScore: 0,
+      },
+      round,
+    ],
+  });
+  assert.match(html, /Round 1 · Evolve score · 90%/);
+  assert.match(html, /Round 2 · Evolve score · 60%/);
+  assert.match(html, /Round 2 · Held-out score \(monitoring only\) · 0%/);
+  assert.match(html, /This version was released, but the regression check could not run\./);
+  assert.match(html, /The regression check on held-out tasks could not run\./);
+  assert.doesNotMatch(html, /held-out-evaluation-failed/);
+  assert.match(html, /<td[^>]*><span[^>]*data-tone="danger"[^>]*>Failed<\/span>/);
+  assert.match(html, /<td[^>]*><span[^>]*data-tone="neutral"[^>]*>Stopped<\/span>/);
+  assert.match(html, />Adopted<\/span>.*>Kept<\/span>|>Kept<\/span>.*>Adopted<\/span>/);
+  assert.match(html, /Small held-out sets/);
+  assert.doesNotMatch(html, />(Approve|Review|Rollout)</);
+});
+
+test('distinguishes an unenrolled bundle from access and service errors', async () => {
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === path) return notFound();
+    return bundleFixture(url) ?? response({}, 500);
+  };
+  const state = await readLearningState(env, scope, fetcher);
+  assert.deepEqual(state, empty);
+  for (const status of [403, 503]) {
+    const denied = await readLearningState(
+      env,
+      scope,
+      async (input) =>
+        bundleFixture(new URL(String(input))) ?? response({ error: { code: 'denied' } }, status),
+    );
+    assert.equal(denied.ok, false);
+    assert.match(markup(denied), /role="alert"/);
+  }
+});
+
+test('round pagination uses before and round reads omit trace requests and held-out case data', async () => {
+  const activeRound = { ...round, state: 'scoring_held_out' as const };
+  const paths: string[] = [];
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const headers = new Headers(init?.headers);
+    assert.equal(headers.get('x-acclimate-session'), env.CONSOLE_SESSION_TOKEN);
+    paths.push(url.pathname + url.search);
+    if (url.pathname === path) return response({ ...loop, activeRound });
+    if (url.pathname === path + '/rounds')
+      return url.searchParams.has('before')
+        ? response({ items: [], next: null })
+        : response({ items: [activeRound], next: 1 });
+    if (url.pathname === path + '/rounds/' + round.id)
+      return response({
+        ...activeRound,
+        evolveRevision: 1,
+        evaluations: [
+          {
+            role: 'retained',
+            sample: null,
+            split: 'heldOut',
+            status: 'running',
+            cases: 2,
+            reportedCases: 1,
+            caseSummaries: [{ caseId: 'held-out sentinel' }],
+            report: { trace: 'held-out trace sentinel' },
+          },
+          {
+            role: 'incumbent',
+            split: 'evolve',
+            status: 'scored',
+            caseSummaries: [
+              {
+                caseId: 'case-a',
+                passedRollouts: 3,
+                meanScore: 0.6,
+                trace: 'evolve trace sentinel',
+              },
+            ],
+          },
+        ],
+      });
+    return bundleFixture(url) ?? response({}, 500);
+  };
+  const state = await readLearningState(env, scope, fetcher);
+  assert.ok(state.ok);
+  assert.deepEqual(
+    paths.filter((item) => item.startsWith(path + '/rounds')),
+    [path + '/rounds?limit=100', path + '/rounds?limit=100&before=1', path + '/rounds/' + round.id],
+  );
+  assert.equal(state.activeEvaluation?.status, 'running');
+  assert.doesNotMatch(JSON.stringify(state), /sentinel/);
+});
+
+const changes = {
+  edits: [{ path: 'AGENTS.md', oldText: 'Stop', newText: 'Retry' }],
+  files: [],
+};
+const candidate: LearningCandidate = {
+  sample: 2,
+  status: 'evaluated',
+  dropReason: null,
+  diagnosis: { problem: { new: 'Agent stops early' }, predicted: ['case-a', 'case-b'] },
+  rationale: 'Retry after an error',
+  changes,
+  scan: { clean: true, findings: [] },
+  screen: { verdict: 'evaluate', reason: 'Targets the diagnosis' },
+  versionId: 'released-version',
+  evaluationId: 'evaluation',
+  evolveScore: 1,
+};
+const detailRound: LearningRound = {
+  ...round,
+  channel: 'canary',
+  channelRevision: '7',
+  evolveRevision: 2,
+  memoryRevision: 0,
+  memoryDigest: 'memory-digest',
+  historyDigest: null,
+  setting: loop.setting,
+  optimizerReasoningEffort: null,
+  optimizerModel: 'optimizer',
+  adoptedVersionId: candidate.versionId,
+  selection: {
+    decision: 'adopt',
+    sample: 2,
+    reason: 'Fixed the failures',
+    versionId: candidate.versionId,
+    digest: 'digest',
+    model: 'optimizer',
+    inputDigest: 'input-digest',
+  },
+  candidates: [
+    { ...candidate, sample: 1, diagnosis: { problem: { id: 'P1' }, predicted: [] } },
+    candidate,
+    {
+      ...candidate,
+      sample: 3,
+      status: 'dropped',
+      dropReason: 'scanner-rejected',
+      rationale: null,
+      changes: null,
+      diagnosis: null,
+      screen: null,
+      evolveScore: null,
+      scan: { clean: false, findings: [{ rule: 'email', field: 'rationale', path: null }] },
+    },
+    {
+      ...candidate,
+      sample: 4,
+      status: 'screened_out',
+      screen: { verdict: 'skip', reason: 'Repeated a direction' },
+    },
+    { ...candidate, sample: 5, status: 'evaluation_failed', evolveScore: null },
+  ],
+  evaluations: [],
+};
+const provenance = { ...loop.setting, round: 1 };
+const memory: LearningMemory = {
+  currentRevision: 2,
+  memoryRevision: 1,
+  memoryDigest: 'memory-digest',
+  improvementMemory: {
+    schemaVersion: 1,
+    memoryRevision: 1,
+    problems: [
+      {
+        id: 'P1',
+        rootCause: 'Agent stops early',
+        openedRound: 1,
+        attempts: [
+          {
+            round: 1,
+            sample: 2,
+            accepted: true,
+            backfilled: false,
+            what: { rationale: 'Keep trying', changes },
+            files: ['AGENTS.md'],
+            predicted: ['case-a', 'case-b'],
+            fixed: ['case-a'],
+            missed: ['case-b'],
+            passed: 9,
+            total: 10,
+            domain: body.setting.domain,
+            provenance,
+          },
+        ],
+      },
+    ],
+  },
+  records: [
+    {
+      revision: 1,
+      problemId: 'P1',
+      roundId: round.id,
+      round: 1,
+      versionId: 'released-version',
+      provenance: {
+        ...provenance,
+        optimizerModel: 'optimizer',
+        evolveRevision: 2,
+      },
+    },
+  ],
+};
+
+test('round detail and historical memory load with the session and render for editors', async () => {
+  const urls: string[] = [];
+  const state = await readLearningState(
+    env,
+    scope,
+    async (input, init) => {
+      const url = new URL(String(input));
+      assert.equal(
+        new Headers(init?.headers).get('x-acclimate-session'),
+        env.CONSOLE_SESSION_TOKEN,
+      );
+      urls.push(url.pathname + url.search);
+      if (url.pathname === path) return response(loop);
+      if (url.pathname === path + '/rounds') return response({ items: [round], next: null });
+      if (url.pathname === path + '/rounds/' + round.id) return response(detailRound);
+      if (url.pathname === path + '/memory') return response(memory);
+      return bundleFixture(url, 'editor') ?? response({}, 500);
+    },
+    { round: String(round.number), memory: '1' },
+  );
+  assert.ok(state.ok);
+  assert.equal(state.canManage, false);
+  assert.equal(state.canEditCases, true);
+  assert.ok(urls.includes(path + '/memory?revision=1'));
+  const html = allTabs(state);
+  assert.equal([...html.matchAll(/<h4[^>]*>Sample /g)].length, 5);
+  assert.match(
+    html,
+    /Sample 2<span class="sr-only"> · <\/span><span[^>]*data-tone="success"[^>]*>Adopted</,
+  );
+  for (const label of [
+    'Adopted sample 2',
+    'Fixed the failures',
+    'The proposal failed the content scan.',
+    'email · rationale',
+    'Agent stops early',
+    'Targets the diagnosis',
+    'Screened out · Repeated a direction',
+    'Passed screening · Targets the diagnosis',
+    '2 cases',
+    'AGENTS.md',
+    '- Stop',
+    '+ Retry',
+    '100%, against 90% for the current version',
+    'released-version',
+    '#revision-8',
+    'Round 1 · sample 2 · Accepted',
+    '9 / 10',
+    'Optimizer model optimizer · evolve revision 2',
+    'Revision 1 of 2',
+    'Export held-out tasks',
+  ])
+    assert.ok(html.includes(label), label);
+  assert.doesNotMatch(html, /appToken|>Pause</);
+});
+
+test('renders keep and empty candidate and memory states', () => {
+  const state: LearningState = {
+    ...empty,
+    loop,
+    detail: {
+      ok: true,
+      parentFiles: null,
+      problems: null,
+      round: {
+        ...detailRound,
+        failureCause: null,
+        incumbentEvaluationId: null,
+        reverted: false,
+        confirmedParentScore: null,
+        confirmedAdoptionScore: null,
+        candidates: [],
+        decision: 'kept',
+        reason: 'no-survivors',
+        selection: null,
+      },
+    },
+    memory: {
+      ok: true,
+      memory: { ...memory, improvementMemory: { ...memory.improvementMemory, problems: [] } },
+    },
+  };
+  const html = markup(state);
+  assert.match(html, /No candidates recorded/);
+  assert.match(html, /Kept the current version.*No candidate passed screening/);
+  assert.match(markup(state, 'memory'), /No problems recorded/);
+});
+
+test('whole-file changes use verified incumbent content for replacements and deletions', async () => {
+  const current = JSON.stringify({
+    schemaVersion: 1,
+    files: [
+      { kind: 'instruction', path: 'AGENTS.md', text: 'Original instructions' },
+      { kind: 'memory', path: 'old.md', text: 'Removed note' },
+    ],
+  });
+  const digest = 'sha256:' + createHash('sha256').update(current).digest('hex');
+  const state = await readLearningState(
+    env,
+    scope,
+    async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === path) return response(loop);
+      if (url.pathname === path + '/rounds') return response({ items: [round], next: null });
+      if (url.pathname === path + '/rounds/' + round.id)
+        return response({
+          ...detailRound,
+          candidates: [
+            {
+              ...candidate,
+              changes: {
+                edits: [],
+                files: [
+                  { op: 'write', path: 'AGENTS.md', text: 'Replacement instructions' },
+                  { op: 'delete', path: 'old.md' },
+                ],
+              },
+            },
+          ],
+        });
+      if (url.pathname === base + '/versions/' + round.parentVersionId)
+        return response({ id: round.parentVersionId, digest });
+      if (url.pathname === base + '/versions/' + round.parentVersionId + '/payload')
+        return new Response(current);
+      return bundleFixture(url) ?? response({}, 500);
+    },
+    { round: round.id },
+  );
+  const html = markup(state);
+  assert.match(html, /- Original instructions/);
+  assert.match(html, /\+ Replacement instructions/);
+  assert.match(html, /- Removed note/);
+});
+
+test('rollback is offered only on the live version and monitoring leads after start', () => {
+  const html = markup({
+    ...empty,
+    loop,
+    rounds: [round, { ...round, id: 'older', adoptedVersionId: 'old' }],
+    channelHead: round.adoptedVersionId,
+  });
+  assert.equal((html.match(/>Roll back</g) ?? []).length, 1);
+  assert.match(html, /Scores by round/);
+  assert.doesNotMatch(html, /Learning setup/);
+  assert.match(markup({ ...empty, loop }, 'settings'), /Learning setup/);
+  assert.doesNotMatch(
+    markup({ ...empty, loop, rounds: [round], channelHead: 'external' }),
+    />Roll back</,
+  );
+});
+
+test('running controls, waiting instructions, rollout progress and restores use service state', () => {
+  const active = {
+    ...loop,
+    activeRound: round,
+    waiting: 'no-executor',
+    alert: { roundId: round.id, score: 0.5, previousScore: 0.8, flippedTasks: 4, reverted: true },
+  };
+  const html = markup({
+    ...empty,
+    loop: active,
+    rounds: [round],
+    progress: { scored: 17, total: 100 },
+    history: [{ time: timestamp, actor: 'person@example', roundId: round.id }],
+    blocked: [
+      { digest: 'removed-digest', createdAt: timestamp, removedBy: 'operator', note: 'bad answer' },
+    ],
+  });
+  for (const message of [
+    'Stop learning',
+    'start an executor',
+    '17 of 100 rollouts scored',
+    'restored the previous version',
+    'person@example',
+    'removed-digest',
+    'Unblock version',
+  ])
+    assert.ok(html.includes(message), message);
+  const stopped = markup({ ...empty, loop: { ...loop, status: 'stopped', waiting: null } });
+  assert.doesNotMatch(stopped, />Stop learning</);
+  assert.match(stopped, /automatically, without approval/);
+});
+
+test('a failed round, a waiting loop and an alert say what happened and what to do next', () => {
+  const failed: LearningRoundSummary = {
+    ...round,
+    id: '00000000-0000-4000-8000-000000000009',
+    number: 3,
+    state: 'failed',
+    decision: null,
+    reason: 'incumbent-evaluation-failed',
+    adoptedSample: null,
+    adoptedVersionId: null,
+    failureCause: { code: 'judge-budget', message: 'judge stopped at its token limit' },
+  };
+  const paused = markup({
+    ...empty,
+    loop: { ...loop, status: 'paused', pauseReason: 'failed-rounds' },
+    rounds: [failed, round],
+  });
+  assert.equal((paused.match(/Learning is paused\./g) ?? []).length, 1);
+  assert.match(paused, /Round 3 failed: The judge model ran out of its token limit/);
+  assert.match(paused, /judge stopped at its token limit/);
+  assert.match(paused, /Inspect round 3/);
+
+  const capped = markup({
+    ...empty,
+    loop: { ...loop, waiting: 'daily-cap', nextRoundAt: '2026-11-21T12:00:00Z' },
+  });
+  assert.match(capped, /The next round can start at <time dateTime="2026-11-21T12:00:00Z"/);
+  assert.match(capped, /Nov 21, 2026, 12:00 UTC/);
+  const outage = markup({
+    ...empty,
+    loop: { ...loop, waiting: 'provider-unavailable', nextRoundAt: '2026-11-21T12:10:00Z' },
+  });
+  assert.match(outage, /check the provider and its rate limits/);
+  assert.match(outage, /The next round can start at/);
+  const idle = markup({
+    ...empty,
+    loop: { ...loop, waiting: 'no-new-evidence', evolveTasksNeeded: 3 },
+  });
+  assert.match(idle, /Add or change 3 more evolve tasks to start another round\./);
+
+  const alert = { roundId: round.id, score: 0.5, previousScore: 0.8, flippedTasks: 3 };
+  const live = {
+    ...empty,
+    loop: { ...loop, alert },
+    rounds: [round, { ...round, id: 'older', number: 0, adoptedVersionId: 'old' }],
+    channelHead: round.adoptedVersionId,
+    blocked: [
+      {
+        digest: 'removed-digest',
+        createdAt: timestamp,
+        removedBy: 'operator',
+        note: null,
+        roundId: round.id,
+        roundNumber: 1,
+      },
+    ],
+  };
+  const html = markup(live);
+  assert.match(html, /Held-out score dropped/);
+  assert.match(html, />Roll back this release</);
+  assert.match(html, /Only the latest release can be rolled back\./);
+  assert.match(
+    html,
+    /Removed by operator on <time[^>]*>Nov 20, 2026, 12:00 UTC<\/time> from <a[^>]*>round 1</,
+  );
+  assert.doesNotMatch(
+    markup({ ...live, canManage: false }),
+    /Roll back this release|Only the latest/,
+  );
+  assert.doesNotMatch(
+    markup({ ...live, loop: { ...loop, alert: { ...alert, reverted: true } } }),
+    /Roll back this release/,
+  );
+  assert.doesNotMatch(markup({ ...live, channelHead: 'external' }), /Roll back this release/);
+});
+
+test('setup explains each field and round detail links tasks and the current version', () => {
+  const setup = markup(empty, 'settings');
+  for (const help of [
+    'released here automatically, without approval',
+    'a model grading its own work is lenient',
+    'forms each round’s setting',
+    'trusts improvement memory from it most',
+    'every evolve task five times for up to six versions',
+    'add or import evolve and held-out tasks on the Tasks',
+  ])
+    assert.ok(setup.includes(help), help);
+  for (const [label, id] of [
+    ['Learning channel', 'learning-channel'],
+    ['Task model', 'learning-task'],
+    ['Judge model', 'learning-judge'],
+    ['Task domain', 'learning-domain'],
+    ['Benchmark name', 'learning-benchmark'],
+    ['Maximum rounds per day', 'learning-cap'],
+  ]) {
+    assert.ok(
+      setup.includes(`<label for="${id}" class="form-field-label">${label}</label>`),
+      label,
+    );
+    assert.match(setup, new RegExp(`id="${id}"[^>]*aria-describedby="${id}-hint"`), id);
+    assert.ok(setup.includes(`id="${id}-hint"`), id);
+  }
+  assert.match(setup, /<footer class="panel-footer">[\s\S]*Save learning settings/);
+  const html = markup({
+    ...empty,
+    loop,
+    detail: {
+      ok: true,
+      parentFiles: null,
+      problems: { P1: 'Agent stops early' },
+      round: {
+        ...detailRound,
+        state: 'failed',
+        decision: null,
+        reason: 'provider-unavailable',
+        reverted: false,
+        confirmedParentScore: null,
+        confirmedAdoptionScore: null,
+        failureCause: { code: 'gateway-upstream', message: null },
+        incumbentEvaluationId: 'incumbent-evaluation',
+        candidates: [
+          {
+            ...detailRound.candidates[1],
+            diagnosis: {
+              problem: { id: 'P1' },
+              predicted: ['00000000-0000-4000-8000-00000000000a', 'case-a'],
+            },
+          },
+        ],
+      },
+    },
+  });
+  assert.match(html, /P1 · Agent stops early/);
+  assert.match(html, /The model provider was unavailable, rate limited or overloaded/);
+  assert.match(html, /Show the current version(&#x27;|')s results/);
+  assert.match(html, /href="\?tab=tasks#task-case-a"/);
+  assert.match(
+    html,
+    /href="\?tab=tasks#task-00000000-0000-4000-8000-00000000000a"[^>]*><code aria-hidden="true">00000000…<\/code><span class="sr-only">00000000-0000-4000-8000-00000000000a/,
+  );
+  assert.match(html, /<time dateTime="2026-11-20T12:00:00Z"/);
+});
+
+test('sub-tabs follow the URL and old round and memory links keep working', () => {
+  assert.equal(learningTab({}), 'overview');
+  assert.equal(learningTab({ tab: 'tasks' }), 'tasks');
+  assert.equal(learningTab({ tab: 'settings' }), 'settings');
+  assert.equal(learningTab({ round: '3' }), 'overview');
+  assert.equal(learningTab({ memory: 'latest' }), 'memory');
+  assert.equal(learningTab({ tab: 'unknown' }), 'overview');
+  const html = markup(
+    { ...empty, loop: { ...loop, admittedEvolve: 21, admittedHeldOut: 20 } },
+    'tasks',
+  );
+  const nav = html.match(/<nav aria-label="Learning sections"[\s\S]*?<\/nav>/)?.[0] ?? '';
+  for (const [tab, label] of [
+    ['', 'Overview'],
+    ['?tab=tasks', 'Tasks'],
+    ['?tab=settings', 'Settings'],
+    ['?tab=memory', 'Memory'],
+  ])
+    assert.match(
+      nav,
+      new RegExp(`href="[^"]*/learning${tab.replace('?', '\\?')}"[^>]*>${label}`),
+      label,
+    );
+  assert.match(nav, /aria-current="page"[^>]*>Tasks<span class="sub-tab-count">41<\/span>/);
+});

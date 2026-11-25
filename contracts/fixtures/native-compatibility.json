@@ -1,0 +1,418 @@
+[
+  {
+    "name": "generic incomplete content",
+    "target": "generic",
+    "files": [
+      {
+        "path": "loose.md",
+        "kind": "skill",
+        "text": "unfinished"
+      }
+    ],
+    "codes": []
+  },
+  {
+    "name": "valid codex package",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/Review_OK/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: Review_OK\ndescription: Review changes\n---\nBody"
+      }
+    ],
+    "codes": []
+  },
+  {
+    "name": "cursor lowercase naming",
+    "target": "cursor",
+    "files": [
+      {
+        "path": "skills/Review_OK/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: Review_OK\ndescription: Review changes\n---\nBody"
+      }
+    ],
+    "codes": [
+      "skill_name"
+    ]
+  },
+  {
+    "name": "multiple instructions",
+    "target": "claude",
+    "files": [
+      {
+        "path": "a.md",
+        "kind": "instruction",
+        "text": "A"
+      },
+      {
+        "path": "b.md",
+        "kind": "instruction",
+        "text": "B"
+      }
+    ],
+    "codes": [
+      "instruction_count"
+    ]
+  },
+  {
+    "name": "loose skill",
+    "target": "pi",
+    "files": [
+      {
+        "path": "loose.md",
+        "kind": "skill",
+        "text": "Body"
+      }
+    ],
+    "codes": [
+      "skill_path"
+    ]
+  },
+  {
+    "name": "missing manifest",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/script.ts",
+        "kind": "skill",
+        "text": "Body"
+      }
+    ],
+    "codes": [
+      "skill_manifest"
+    ]
+  },
+  {
+    "name": "manifest exact case",
+    "target": "claude",
+    "files": [
+      {
+        "path": "skills/check/skill.md",
+        "kind": "skill",
+        "text": "Body"
+      }
+    ],
+    "codes": [
+      "skill_manifest"
+    ]
+  },
+  {
+    "name": "incomplete metadata",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\n---\nBody"
+      }
+    ],
+    "codes": [
+      "skill_metadata"
+    ]
+  },
+  {
+    "name": "wrong declared name",
+    "target": "pi",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: wrong\ndescription: Checks things\n---\nBody"
+      }
+    ],
+    "codes": [
+      "skill_metadata"
+    ]
+  },
+  {
+    "name": "CRLF valid metadata",
+    "target": "cursor",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\r\nname: check\r\ndescription: Checks things\r\n---\r\nBody"
+      }
+    ],
+    "codes": []
+  },
+  {
+    "name": "single character description invalid",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\ndescription: X\n---\nBody"
+      }
+    ],
+    "codes": [
+      "skill_metadata"
+    ]
+  },
+  {
+    "name": "case colliding packages",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\ndescription: Checks things\n---\nBody"
+      },
+      {
+        "path": "skills/CHECK/file.md",
+        "kind": "skill",
+        "text": "Body"
+      }
+    ],
+    "codes": [
+      "skill_case_collision"
+    ]
+  },
+  {
+    "name": "memory is app approved",
+    "target": "cursor",
+    "files": [
+      {
+        "path": "notes.md",
+        "kind": "memory",
+        "text": "Memory"
+      }
+    ],
+    "codes": []
+  },
+  {
+    "name": "emoji description valid",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\ndescription: 💡\n---\nBody"
+      }
+    ],
+    "codes": []
+  },
+  {
+    "name": "first declared name wins",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: wrong\nname: check\ndescription: Checks things\n---\nBody"
+      }
+    ],
+    "codes": [
+      "skill_metadata"
+    ]
+  },
+  {
+    "name": "nonclosing delimiter inside metadata",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\n---junk\ndescription: Checks things\n---\nBody"
+      }
+    ],
+    "codes": [
+      "skill_metadata"
+    ]
+  },
+  {
+    "name": "manifest tool permissions pass through",
+    "target": "claude",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\ndescription: Checks things\nallowed-tools: Bash\n---\nBody"
+      }
+    ],
+    "codes": []
+  },
+  {
+    "name": "license and tool list pass through",
+    "target": "claude",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\ndescription: Checks things\nlicense: MIT\nallowed-tools: Bash Read\n---\nBody"
+      }
+    ],
+    "codes": []
+  },
+  {
+    "name": "folded description",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\ndescription: >\n  Reviews\n  changes\n---\nBody"
+      }
+    ],
+    "codes": []
+  },
+  {
+    "name": "literal strip description",
+    "target": "pi",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\ndescription: |-\n  Reviews changes\n---\nBody"
+      }
+    ],
+    "codes": []
+  },
+  {
+    "name": "empty block description",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\ndescription: >\n---\nBody"
+      }
+    ],
+    "codes": [
+      "skill_metadata"
+    ]
+  },
+  {
+    "name": "block description with blank continuation",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\ndescription: |\n   \nlicense: MIT\n---\nBody"
+      }
+    ],
+    "codes": [
+      "skill_metadata"
+    ]
+  },
+  {
+    "name": "top-level junk line",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\ndescription: Checks things\njust some words\n---\nBody"
+      }
+    ],
+    "codes": [
+      "skill_metadata"
+    ]
+  },
+  {
+    "name": "top-level list item",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\ndescription: Checks things\n- item\n---\nBody"
+      }
+    ],
+    "codes": [
+      "skill_metadata"
+    ]
+  },
+  {
+    "name": "supporting files beside manifest",
+    "target": "cursor",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\ndescription: Checks things\n---\nBody"
+      },
+      {
+        "path": "skills/check/scripts/run.py",
+        "kind": "skill",
+        "text": "print('Body')"
+      },
+      {
+        "path": "skills/check/config.json",
+        "kind": "skill",
+        "text": "{}"
+      }
+    ],
+    "codes": []
+  },
+  {
+    "name": "quoted name",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: \"check\"\ndescription: 'Checks things'\n---\nBody"
+      }
+    ],
+    "codes": []
+  },
+  {
+    "name": "comment and nested metadata",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\n# Owned by the review team\nname: check\ndescription: Checks things\nmetadata:\n  version: 1\n\n  owner: team\n---\nBody"
+      }
+    ],
+    "codes": []
+  },
+  {
+    "name": "indented line before any key",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\n  name: check\nname: check\ndescription: Checks things\n---\nBody"
+      }
+    ],
+    "codes": [
+      "skill_metadata"
+    ]
+  },
+  {
+    "name": "missing frontmatter",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "Body"
+      }
+    ],
+    "codes": [
+      "skill_metadata"
+    ]
+  },
+  {
+    "name": "quoted single character description invalid",
+    "target": "codex",
+    "files": [
+      {
+        "path": "skills/check/SKILL.md",
+        "kind": "skill",
+        "text": "---\nname: check\ndescription: \"X\"\n---\nBody"
+      }
+    ],
+    "codes": [
+      "skill_metadata"
+    ]
+  }
+]

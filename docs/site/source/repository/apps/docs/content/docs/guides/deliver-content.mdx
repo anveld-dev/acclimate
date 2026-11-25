@@ -1,14 +1,16 @@
 ---
 title: Deliver content to jobs
-description: Prepare a verified version of a bundle for each job, report job starts and stage the files for a coding agent.
+description: Prepare a verified version of a bundle for each job and report job starts.
 ---
 
-This guide is for a developer whose application runs an agent. It shows how to prepare the released version of a bundle for each job, record it with the result and clean up. A job keeps the version it prepared even if a release lands while it runs. See [Delivery](/docs/concepts/how-it-works#delivery).
+This guide is for a developer whose application runs an agent. It shows how to prepare the released version of a bundle for each job, record it with the result and clean up. A job keeps the version it prepared even if a release lands while it runs. See [Delivery](/docs#delivery).
+
+To run Codex, the Claude Agent SDK, Pi or Cursor on the prepared files, see [Use a coding agent](/docs/guides/coding-agents).
 
 ## Before you start
 
 - Install the SDK. See [Install the SDKs](/docs/get-started/install).
-- Create a connection for the bundle and channel, and issue its connection credential. See [Connect your application](/docs/get-started/quickstart#connect-your-application) and [Credentials and rights](/docs/concepts/credentials).
+- Create a connection for the bundle and channel, and issue its connection credential. See [Connect your application](/docs/get-started/quickstart#connect-your-application) and [Credentials and rights](/docs/reference/credentials).
 - In the console, open **App setup** on the bundle's channel. It shows the API URL, the workspace, bundle and channel and a recipe to copy.
 
 The snippets read `ACCLIMATE_URL`, `ACCLIMATE_TOKEN` (the connection credential), `ACCLIMATE_SCOPE` (a stable name for your application) and `ACCLIMATE_CONNECTION` (the connection ID). See [Application](/docs/reference/configuration#application) in the environment variables.
@@ -84,7 +86,7 @@ Clean up only after the job has stopped and its result is saved. For a job that 
 
 To run an exact version instead of the channel's current one, pass `versionId` (`version_id` in Python) in place of `channel`.
 
-To have the SDK find the bundle by name and report production outcomes, use `createAcclimate().job()` (`Acclimate.from_env().job()` in Python) instead. See Jobs in the [TypeScript SDK](/docs/reference/typescript-sdk#jobs) and [Python SDK](/docs/reference/python-sdk#jobs) references, and [Support agent](/docs/examples/support-agent) for an application built on it.
+To have the SDK find the bundle by name and report production outcomes, use `createAcclimate().job()` (`Acclimate.from_env().job()` in Python) instead. See Jobs in the [TypeScript SDK](/docs/reference/typescript-sdk#jobs) and [Python SDK](/docs/reference/python-sdk#jobs) references, and [Support agent](/docs/tutorials/support-agent) for an application built on it.
 
 ## Report job starts
 
@@ -148,69 +150,6 @@ reporter.close(0.1)
 
 </Tab>
 </Tabs>
-
-## Choose a native integration
-
-A plugin stages a version in the layout its agent SDK reads.
-
-| Agent SDK | Prepared layout |
-| --- | --- |
-| [Codex](/docs/integrations/codex) | `AGENTS.md` and `.agents/skills/` |
-| [Claude Agent SDK](/docs/integrations/claude-agent-sdk) | `CLAUDE.md` and `.claude/skills/` |
-| [Pi](/docs/integrations/pi) | `AGENTS.md`, `.agents/skills/` and resource descriptors |
-| [Cursor](/docs/integrations/cursor) | `AGENTS.md` and `.cursor/skills/` |
-
-Each plugin's `prepare` writes a verified version, the SDK's checked copy of a version's bytes, to a fresh private directory. It accepts either of these:
-
-- The delivery from `client.prepare()`. Pass the delivery itself, so that `prepared.reportStarted()` still records the start receipt.
-- The verified version from `resolveAndCache(client, selection, { cacheDir })`.
-
-```ts
-import { prepare } from '@acclimate/codex-plugin';
-
-const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable' });
-const prepared = await prepare(delivery);
-// Run the agent SDK in prepared.cwd, then:
-await prepared.cleanup();
-```
-
-`prepared.cleanup()` removes the directory and releases the delivery. Each integration page shows a complete job.
-
-### Map an agent SDK without a plugin
-
-For an agent SDK with no plugin, call `prepareNativeFiles` with the paths your agent reads:
-
-```ts
-import { prepareNativeFiles } from '@acclimate/sdk/native-files';
-
-const prepared = await prepareNativeFiles(verifiedVersion, {
-  mapping: { instructionPath: 'AGENTS.md', skillRoot: '.agents/skills', memoryRoot: '.acclimate/memory' },
-  prefix: 'my-agent-',
-  target: 'codex',
-});
-```
-
-`target` names the rules to enforce before staging, `codex` by default.
-
-## Rules for bundle files
-
-A plugin refuses a version that breaks one of these rules. Each error names its rule, for example `[skill_metadata]`.
-
-- A file path is relative, with no `.` or `..` segment. No two paths differ only by case, and no file sits where another path needs a directory.
-- A version has at most one instruction file.
-- A skill lives under `skills/<name>/`. The name has at most 64 letters, digits, `_` or `-`, and does not differ from another only by case. Cursor accepts only lowercase letters, digits and `-`.
-- A skill needs a `SKILL.md` whose frontmatter has exactly one `name`, matching the directory, and exactly one non-empty `description`.
-- Other frontmatter keys such as `license` or `allowed-tools`, and folded `description: >` values, are kept as written.
-- Supporting text files, such as `scripts/check.py` or `config.json`, stay beside the skill.
-
-## Prepare an existing repository
-
-The native repository starter runs a coding agent with the prepared files on a copy of an existing repository and keeps its edits. Its offline replay checks preparation before you install an agent SDK.
-
-1. Extract the starter from the release files. See [Install from verified release files](/docs/get-started/install#install-from-verified-release-files).
-2. Run `node smoke.mjs` in the starter's directory.
-
-The [native repository starter README](https://github.com/anveld-dev/acclimate/tree/main/examples/native-repository#readme) covers configuration and recovering private jobs.
 
 ## Next steps
 

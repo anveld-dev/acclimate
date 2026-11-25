@@ -1,9 +1,0 @@
-{
-  "title": "Integrations",
-  "pages": [
-    "codex",
-    "claude-agent-sdk",
-    "pi",
-    "cursor"
-  ]
-}

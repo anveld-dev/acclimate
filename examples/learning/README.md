@@ -20,4 +20,4 @@ The requests cover billing, sign-in, bugs, exports, permissions, integrations an
 
 The judge model converts the rows into task cards and the service splits them into evolve and held-out tasks. Each task then passes the admission check before it counts. Review the cards before you start a round. Importing the same file again returns the earlier import, and an edited copy sets aside the rows whose request is already a task with the reason `duplicate`.
 
-The [support agent walkthrough](../../apps/docs/content/docs/examples/support-agent.mdx) runs an application on this bundle before and after a round. The [support agent example](../support-agent/README.md) is that application.
+The [support agent walkthrough](../../apps/docs/content/docs/tutorials/support-agent.mdx) runs an application on this bundle before and after a round. The [support agent example](../support-agent/README.md) is that application.

@@ -1,10 +1,4 @@
 {
   "title": "Get started",
-  "pages": [
-    "quickstart",
-    "first-learning-round",
-    "run-locally",
-    "install",
-    "join-a-team"
-  ]
+  "pages": ["quickstart", "install"]
 }

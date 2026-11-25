@@ -1,6 +1,6 @@
 # Support agent
 
-A small application that answers one support request with the bundle released on a channel, in TypeScript (`agent.ts` and `prompt.ts`) and Python (`agent.py`). Given a corrected reply, it reports the correction, and the request becomes a learning task. The [walkthrough](../../apps/docs/content/docs/examples/support-agent.mdx) goes from the first answer to an improved release.
+A small application that answers one support request with the bundle released on a channel, in TypeScript (`agent.ts` and `prompt.ts`) and Python (`agent.py`). Given a corrected reply, it reports the correction, and the request becomes a learning task. The [walkthrough](../../apps/docs/content/docs/tutorials/support-agent.mdx) goes from the first answer to an improved release.
 
 ## Run it
 

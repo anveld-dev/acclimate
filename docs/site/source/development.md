@@ -8,7 +8,7 @@ The Rust service uses PostgreSQL. The TypeScript and Python SDKs deliver version
 
 There is one production identity path, including during development. PostgreSQL 16 stores all service data. The console uses Keycloak through OIDC and HTTPS; browser users need verified sessions and workspace membership. Machine SDK credentials stay separate.
 
-For laptop development, run `npm run local:up` from the checkout. The [local stack guide](../apps/docs/content/docs/get-started/run-locally.mdx) covers prerequisites, Caddy's local CA and the bootstrap login.
+For laptop development, run `npm run local:up` from the checkout. The [local stack guide](../apps/docs/content/docs/reference/local-stack.mdx) covers prerequisites, Caddy's local CA and the bootstrap login.
 
 Use the [deployment guide](../deploy/README.md) for production hosting and required private configuration. The [console guide](../apps/console/README.md) lists identity settings. Builds need no runtime credentials:
 

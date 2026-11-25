@@ -9,20 +9,20 @@ Find your symptom to see its cause and fix. Text in backticks is the exact code 
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| An SDK call fails with `transport.unreachable` and `Could not reach the Acclimate service` while the stack is running | The shell has not loaded the stack's client settings, so it does not trust the certificate | Run `source .local/stack/env.sh` in that shell. See [Trust the local certificate](/docs/get-started/run-locally#trust-the-local-certificate). |
+| An SDK call fails with `transport.unreachable` and `Could not reach the Acclimate service` while the stack is running | The shell has not loaded the stack's client settings, so it does not trust the certificate | Run `source .local/stack/env.sh` in that shell. See [Trust the local certificate](/docs/reference/local-stack#trust-the-local-certificate). |
 | `job.expect()` fails with HTTP 404 and `Learning loop not enrolled`. The support agent example prints `Learning is not set up for this bundle`. | Learning is not turned on for the bundle | Save the learning settings on the bundle's **Learning** tab. See [Run a learning loop](/docs/guides/learning-loop). |
-| On Linux, the containers cannot reach a model proxy that answers on `127.0.0.1` | `host.docker.internal` is the Docker bridge address, not your loopback | Set the proxy's `server.host` to the bridge address. See [Set up a local model proxy](/docs/get-started/first-learning-round#set-up-a-local-model-proxy). |
+| On Linux, the containers cannot reach a model proxy that answers on `127.0.0.1` | `host.docker.internal` is the Docker bridge address, not your loopback | Set the proxy's `server.host` to the bridge address. See [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy). |
 
 ## Learning
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| **Start** is disabled and says the service has no optimizer model, or the API answers 409 `optimizer-required` | The service has no optimizer | The operator follows [Set the optimizer model](/docs/operate/enable-learning#set-the-optimizer-model). On the local stack, follow [Set up a local model proxy](/docs/get-started/first-learning-round#set-up-a-local-model-proxy). |
+| **Start** is disabled and says the service has no optimizer model, or the API answers 409 `optimizer-required` | The service has no optimizer | The operator follows [Set the optimizer model](/docs/operate/enable-learning#set-the-optimizer-model). On the local stack, follow [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy). |
 | **Start** is refused with `tasks-required`, or the loop pauses with that reason | A split has fewer than 20 admitted tasks | Add tasks, fix the ones set aside and confirm the held-out tasks. Then choose **Start**. |
-| Held-out tasks stay pending | Held-out tasks that need confirmation wait for a signed-in person. A machine token cannot confirm them. | In the console, check **Needs confirmation** and choose **Confirm all shown**. See [Rights](/docs/concepts/credentials#rights). |
+| Held-out tasks stay pending | Held-out tasks that need confirmation wait for a signed-in person. A machine token cannot confirm them. | In the console, check **Needs confirmation** and choose **Confirm all shown**. See [Rights](/docs/reference/credentials#rights). |
 | A round fails with `provider-unavailable` | Every failed rollout of the current version was a model provider outage or rate limit | Wait. The loop tries again by itself. See [When a round fails](/docs/guides/learning-loop#when-a-round-fails). |
 
-If `provider-unavailable` keeps coming back, check the model provider's rate limits. A single Codex sign-in may rate-limit many requests at once, so lower the [executor concurrency](/docs/get-started/run-locally#executor-concurrency).
+If `provider-unavailable` keeps coming back, check the model provider's rate limits. A single Codex sign-in may rate-limit many requests at once, so lower the [executor concurrency](/docs/reference/local-stack#executor-concurrency).
 
 ## Executor and model provider
 

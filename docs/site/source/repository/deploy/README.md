@@ -61,7 +61,7 @@ Keep the Docker bridge inaccessible to untrusted processes and firewall the back
 
 ## CLIProxyAPI with Codex sign-in
 
-Acclimate supports OpenAI-compatible Chat Completions endpoints for the optimizer. The reference setup is CLIProxyAPI with a Codex sign-in. The steps are in [Set up a local model proxy](../apps/docs/content/docs/get-started/first-learning-round.mdx#set-up-a-local-model-proxy), and the optimizer settings are in [Environment variables](../apps/docs/content/docs/reference/configuration.mdx#optimizer). This section keeps the details behind them.
+Acclimate supports OpenAI-compatible Chat Completions endpoints for the optimizer. The reference setup is CLIProxyAPI with a Codex sign-in. The steps are in [Set up a local model proxy](../apps/docs/content/docs/tutorials/first-learning-round.mdx#set-up-a-local-model-proxy), and the optimizer settings are in [Environment variables](../apps/docs/content/docs/reference/configuration.mdx#optimizer). This section keeps the details behind them.
 
 Pin the proxy build. The notes here were checked against the v8 revision that these links point to: the [example configuration](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/config.example.yaml), the [CLI flags](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/cmd/server/main.go) and the [Codex Chat Completions translator](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/internal/translator/codex/openai/chat-completions/codex_openai_request.go). The proxy's own guide is the [CLIProxyAPI setup guide](https://help.router-for.me/).
 

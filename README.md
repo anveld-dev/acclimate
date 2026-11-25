@@ -5,7 +5,7 @@
 - **Delivery.** Publish the files as a bundle and release a version to a channel. The SDK fetches and verifies the released version each time your application starts a job. To undo a release, roll the channel back to an earlier version.
 - **Learning.** Give a bundle tasks with expected answers. Each round proposes five candidate versions and scores them on the tasks. It then releases the one it selects or keeps the current version. Held-out tasks, which the optimizer never sees, check every release, and a confirmed drop reverts it. The loop is based on [Self-Improvement Memory (arXiv 2611.18856)](https://arxiv.org/abs/2611.18856).
 
-Your application runs its agent with its own model credentials. Learning runs in a separate `acclimate-executor` container and uses the model provider that each workspace configures. The service stores that provider's API key encrypted. See [How Acclimate works](apps/docs/content/docs/concepts/how-it-works.mdx) for what each part does and sees.
+Your application runs its agent with its own model credentials. Learning runs in a separate `acclimate-executor` container and uses the model provider that each workspace configures. The service stores that provider's API key encrypted. See [How Acclimate works](apps/docs/content/docs/index.mdx) for what each part does and sees.
 
 ## Run the local stack
 
@@ -23,13 +23,13 @@ The first start pulls the released images. If none are published for your checko
 - starts the executor
 - writes the client settings to `env.sh`
 
-Run `npm run local:trust` to trust the stack's HTTPS certificate in your browser. The [Quickstart](apps/docs/content/docs/get-started/quickstart.mdx) takes you from here to a delivered version, and [The local stack](apps/docs/content/docs/get-started/run-locally.mdx) describes everything the stack sets up.
+Run `npm run local:trust` to trust the stack's HTTPS certificate in your browser. The [Quickstart](apps/docs/content/docs/get-started/quickstart.mdx) takes you from here to a delivered version, and [The local stack](apps/docs/content/docs/reference/local-stack.mdx) describes everything the stack sets up.
 
 ## Run a learning loop
 
 Configure a model provider for the workspace and import about 50 tasks, so that each split reaches the 20 admitted tasks that learning needs. Then start learning on the bundle's **Learning** tab. Adopted versions are released automatically, with no approval step.
 
-- On the local stack, [Run your first learning round](apps/docs/content/docs/get-started/first-learning-round.mdx) sets up a model proxy and runs a round from one script. [`examples/learning/example-agent-tasks.jsonl`](examples/learning/README.md) gives the **Example agent** bundle 60 ready tasks.
+- On the local stack, [Run your first learning round](apps/docs/content/docs/tutorials/first-learning-round.mdx) sets up a model proxy and runs a round from one script. [`examples/learning/example-agent-tasks.jsonl`](examples/learning/README.md) gives the **Example agent** bundle 60 ready tasks.
 - In the console, follow [Run a learning loop](apps/docs/content/docs/guides/learning-loop.mdx). It also covers reporting a production outcome from your application with `job.expect()`.
 - On your own server, an operator sets the optimizer and starts the executor first. See [Enable learning](apps/docs/content/docs/operate/enable-learning.mdx).
 
@@ -39,7 +39,7 @@ The SDK fetches and verifies the released version when your application starts a
 
 ## Examples
 
-[`examples/`](examples/README.md) holds programs you can run against the local stack. The [support agent](examples/support-agent/README.md) answers with the released bundle and reports a person's correction as a learning task. [Ticket triage](examples/ticket-triage/README.md) publishes a bundle, imports 64 labelled tickets and runs the learning loop from one script. Both come in TypeScript and Python, with [walkthroughs](apps/docs/content/docs/examples/index.mdx) in the documentation.
+[`examples/`](examples/README.md) holds programs you can run against the local stack. The [support agent](examples/support-agent/README.md) answers with the released bundle and reports a person's correction as a learning task. [Ticket triage](examples/ticket-triage/README.md) publishes a bundle, imports 64 labelled tickets and runs the learning loop from one script. Both come in TypeScript and Python, with [walkthroughs](apps/docs/content/docs/tutorials/first-learning-round.mdx) in the documentation.
 
 ## Operate or develop Acclimate
 

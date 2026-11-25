@@ -172,7 +172,7 @@ Every method takes `workspaceId` first, then `bundleId` where the route has one.
 | `createReceiptReporter({ client, workspaceId, connectionId, maxPending? })` | Build the reporter that `client.prepare` takes. See [Report job starts](/docs/guides/deliver-content#report-job-starts). |
 | `compatibilityIssues(payload, target)` | List the rules a payload breaks for `codex`, `claude`, `pi` or `cursor`. `generic` has none. |
 | `assertCompatible(payload, target)` | Throw when `compatibilityIssues` finds any |
-| `prepareNativeFiles(version, { mapping, prefix, target })` | Write a version in another agent SDK's layout. See [Choose a native integration](/docs/guides/deliver-content#choose-a-native-integration). |
+| `prepareNativeFiles(version, { mapping, prefix, target })` | Write a version in another agent SDK's layout. See [Map an agent SDK without a plugin](/docs/guides/coding-agents#map-an-agent-sdk-without-a-plugin). |
 
 ## Errors
 

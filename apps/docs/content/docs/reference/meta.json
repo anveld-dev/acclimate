@@ -4,8 +4,10 @@
     "typescript-sdk",
     "python-sdk",
     "http-api",
+    "credentials",
     "error-codes",
     "configuration",
+    "local-stack",
     "versioning"
   ]
 }

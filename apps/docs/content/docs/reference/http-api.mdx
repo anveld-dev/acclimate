@@ -25,7 +25,7 @@ Send the credential as a bearer token, over HTTPS for any remote call:
 Authorization: Bearer <token>
 ```
 
-- A machine token carries `read`, `write` or `promote` rights in a workspace. See [Credential types](/docs/concepts/credentials#credential-types) and [Rights](/docs/concepts/credentials#rights).
+- A machine token carries `read`, `write` or `promote` rights in a workspace. See [Credential types](/docs/reference/credentials#credential-types) and [Rights](/docs/reference/credentials#rights).
 - A person calls the API through the console after signing in. On the learning routes, a person needs the Administrator role wherever a machine token needs `promote`. Releasing a version and publishing a bundle also accept an Editor.
 - Routes marked for a signed-in person refuse a machine token with 403 `denied`.
 - A missing or unknown token gets 401 `unauthenticated`, and a token without the needed grant gets 403 `denied`. See [Service codes](/docs/reference/error-codes#service-codes).
@@ -69,7 +69,7 @@ The sign-in, membership and invitation routes serve the console and are listed o
 3. Check the SHA-256 digest of those bytes against the metadata before you parse them. Parsing and writing a JSON object again can change the bytes.
 4. Validate the parsed payload against the bundle schema.
 
-A payload holds up to 128 UTF-8 text files of at most 256 KiB each and 1 MiB in total. Each file has a relative `path` and a `kind` of `instruction`, `skill` or `memory`. [Rules for bundle files](/docs/guides/deliver-content#rules-for-bundle-files) lists the path rules.
+A payload holds up to 128 UTF-8 text files of at most 256 KiB each and 1 MiB in total. Each file has a relative `path` and a `kind` of `instruction`, `skill` or `memory`. [Rules for bundle files](/docs/guides/coding-agents#rules-for-bundle-files) lists the path rules.
 
 ```json title="Bundle payload"
 {

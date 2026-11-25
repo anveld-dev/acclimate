@@ -1,6 +1,6 @@
 # Examples
 
-Each example runs against an Acclimate service. The quickest service is the [local stack](../apps/docs/content/docs/get-started/run-locally.mdx), started with `npm run local:up`. The documentation has a walkthrough for each learning example under [Examples](../apps/docs/content/docs/examples/index.mdx).
+Each example runs against an Acclimate service. The quickest service is the [local stack](../apps/docs/content/docs/reference/local-stack.mdx), started with `npm run local:up`. The documentation has a walkthrough for each learning example under [Examples](../apps/docs/content/docs/tutorials/first-learning-round.mdx).
 
 | Example | Shows | Needs |
 | --- | --- | --- |

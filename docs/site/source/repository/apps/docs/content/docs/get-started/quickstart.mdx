@@ -7,7 +7,7 @@ This page takes a developer from a source checkout to a running Acclimate stack 
 
 You need:
 
-- Docker, running. See [Prerequisites](/docs/get-started/run-locally#prerequisites) for the versions.
+- Docker, running. See [Prerequisites](/docs/reference/local-stack#prerequisites) for the versions.
 - Node.js 22.22 or later with npm.
 - Python 3.9 or later.
 
@@ -22,7 +22,7 @@ npm run local:trust
 
 `local:up` starts the service, the console and sign-in. The first start takes a few minutes, or 10 to 20 minutes when it builds from source. It prints the console URL, a login and its initial password. `local:trust` makes your browser trust the stack's HTTPS certificate. It asks you to type `trust` and may ask for your password.
 
-Open the console URL and sign in. The `local-demo` workspace already holds a [bundle](/docs/concepts/glossary) named **Example agent**, with one instruction file released on the `stable` channel.
+Open the console URL and sign in. The `local-demo` workspace already holds a [bundle](/docs) named **Example agent**, with one instruction file released on the `stable` channel.
 
 ## Connect your application
 
@@ -69,6 +69,6 @@ Creating the bundle publishes its first version and releases it on that channel.
 
 ## Next steps
 
-- [Run your first learning round](/docs/get-started/first-learning-round)
+- [Run your first learning round](/docs/tutorials/first-learning-round)
 - [Deliver content to jobs](/docs/guides/deliver-content)
 - [Install the SDKs](/docs/get-started/install)

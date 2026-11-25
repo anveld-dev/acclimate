@@ -15,7 +15,7 @@ This page lists every environment variable Acclimate reads, grouped by the proce
 | --- | --- | --- |
 | `ACCLIMATE_URL` | Yes | Public HTTPS base URL of the API |
 | `ACCLIMATE_WORKSPACE` | Yes | Workspace ID |
-| `ACCLIMATE_TOKEN` | Yes | The credential for the application's calls. See [Credentials and rights](/docs/concepts/credentials). |
+| `ACCLIMATE_TOKEN` | Yes | The credential for the application's calls. See [Credentials and rights](/docs/reference/credentials). |
 
 ### Used by convention
 
@@ -67,7 +67,7 @@ Three service values must be identical to their console values: `ACCLIMATE_OIDC_
 ]
 ```
 
-- `rights` holds any of `read`, `write` and `promote`. See [Rights](/docs/concepts/credentials#rights).
+- `rights` holds any of `read`, `write` and `promote`. See [Rights](/docs/reference/credentials#rights).
 - A token identifies one principal and can appear once for each workspace.
 - A `principalId` must not contain a colon.
 
@@ -89,7 +89,7 @@ These service variables set the optimizer, the model that changes bundles in a l
 - An invalid timeout, token limit or reasoning effort stops the service at startup, even without an endpoint. An unset, zero or invalid failed-round limit uses the default.
 - The service retries HTTP 429, HTTP 5xx and connection or timeout errors twice.
 
-To try the optimizer on your own machine, see [Set up a local model proxy](/docs/get-started/first-learning-round#set-up-a-local-model-proxy).
+To try the optimizer on your own machine, see [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy).
 
 ## Model provider
 

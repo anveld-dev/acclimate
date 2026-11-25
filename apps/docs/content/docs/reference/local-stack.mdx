@@ -3,7 +3,7 @@ title: The local stack
 description: What the local stack scripts start, print and store, and how to trust, stop, reset and move the stack.
 ---
 
-The local stack runs a complete Acclimate deployment on one laptop: the service, the console and the executor, with PostgreSQL 16, Keycloak sign-in, a Mailpit inbox and a Caddy HTTPS proxy. This page is the reference for its scripts. For the shortest path to a first delivery, follow the [Quickstart](/docs/get-started/quickstart).
+The local stack runs a complete Acclimate deployment on one laptop: the service, the console and the executor, with PostgreSQL 16, Keycloak sign-in, a Mailpit inbox and a Caddy HTTPS proxy. This page covers its requirements, its `npm run local:*` scripts and their output, and its settings. The [Quickstart](/docs/get-started/quickstart) uses it for a first delivery.
 
 ## Prerequisites
 
@@ -80,7 +80,7 @@ source /path/to/acclimate/.local/stack/env.sh
 | --- | --- |
 | `NODE_EXTRA_CA_CERTS` | Adds the local CA for Node.js. |
 | `SSL_CERT_FILE` | Points Python at `ca-bundle.pem`, which holds the local CA and any system CA bundle the script found. |
-| `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` | The service address and the workspace, which the SDKs and the [examples](/docs/examples) read. |
+| `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` | The service address and the workspace, which the SDKs and the [examples](/docs/tutorials/first-learning-round) read. |
 | `ACCLIMATE_API` | The service address again, for curl. |
 | `ACCLIMATE_PULL_CONFIG` | A ready config file for [`acclimate pull`](/docs/reference/typescript-sdk#acclimate-pull). |
 | `BUNDLE_ID` | The ID of the **Example agent** bundle. |
@@ -112,7 +112,7 @@ All mail from the stack arrives in Mailpit: invitations, email verification, pas
 
 ## Run learning rounds
 
-The **Learning** tab works as in a deployment, except that each rollout runs in a plain Docker sandbox, which isolates less than the gVisor runtime a deployment uses. Learning also needs an optimizer and a model provider. See [Run your first learning round](/docs/get-started/first-learning-round).
+The **Learning** tab works as in a deployment, except that each rollout runs in a plain Docker sandbox, which isolates less than the gVisor runtime a deployment uses. Learning also needs an optimizer and a model provider. See [Run your first learning round](/docs/tutorials/first-learning-round).
 
 ## Executor concurrency
 
@@ -140,9 +140,3 @@ ACCLIMATE_LOCAL_PORT=6443 ACCLIMATE_LOCAL_MAIL_PORT=38025 npm run local:up
 ```
 
 The first successful start saves the ports in `.local/stack/ports.json`, and Keycloak and the service record the console and sign-in addresses. To switch ports later, run `npm run local:reset` first.
-
-## Next steps
-
-- [Quickstart](/docs/get-started/quickstart)
-- [Run your first learning round](/docs/get-started/first-learning-round)
-- [Self-host Acclimate](/docs/operate/self-host)

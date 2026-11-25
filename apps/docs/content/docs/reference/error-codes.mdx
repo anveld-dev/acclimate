@@ -31,7 +31,7 @@ Only a `TransportError` or an HTTP 503 lets a job with an exact version fall bac
 
 ## Delivery codes
 
-A `DeliveryError` carries one of these codes. None of them triggers the offline fallback. [Rules for bundle files](/docs/guides/deliver-content#rules-for-bundle-files) lists the rules behind `invalid_payload`.
+A `DeliveryError` carries one of these codes. None of them triggers the offline fallback. [Rules for bundle files](/docs/guides/coding-agents#rules-for-bundle-files) lists the rules behind `invalid_payload`.
 
 | Code | Cause | What to do |
 | --- | --- | --- |
@@ -56,7 +56,7 @@ An `ApiError` carries the service's code and the HTTP `status`.
 | Code | Status | Cause | What to do |
 | --- | --- | --- | --- |
 | `unauthenticated` | 401 | No bearer token, or one the service does not know | Check that the token is current and belongs to this service. |
-| `denied` | 403 | The credential has no grant for the workspace or lacks the route's right. A machine token calling a route for signed-in people gets it too. | Use a credential with the needed [right](/docs/concepts/credentials#rights). |
+| `denied` | 403 | The credential has no grant for the workspace or lacks the route's right. A machine token calling a route for signed-in people gets it too. | Use a credential with the needed [right](/docs/reference/credentials#rights). |
 | `not_found` | 404 | The route, bundle, version or other resource does not exist in this workspace | Check the IDs and the workspace. |
 | `invalid_content` | 400 | The request is malformed, such as an ID that is not a UUID or a body with missing fields | Fix the request. The message names the problem. |
 | `invalid_compatibility` | 400 | A new version's payload does not fit the bundle's compatibility target | Fix the files in `details.issues`. |

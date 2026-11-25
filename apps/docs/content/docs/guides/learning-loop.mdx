@@ -5,11 +5,11 @@ description: Turn on learning for a bundle in the console, add tasks, start the 
 
 This guide is for a workspace administrator who wants the learning loop to improve a released bundle. Each round can release a better version to the channel, with no approval step.
 
-See [What a round does](/docs/concepts/how-it-works#what-a-round-does) for the steps and the [Glossary](/docs/concepts/glossary) for the terms. To run the loop from a script, see [Ticket triage](/docs/examples/ticket-triage).
+See [Learning loop](/docs#learning-loop) for the terms and [What a round does](/docs#what-a-round-does) for the steps. To run the loop from a script, see [Ticket triage](/docs/tutorials/first-learning-round).
 
 ## Before you start
 
-- The operator has set the optimizer and started an executor. See [Enable learning](/docs/operate/enable-learning), or [Run your first learning round](/docs/get-started/first-learning-round) on the local stack.
+- The operator has set the optimizer and started an executor. See [Enable learning](/docs/operate/enable-learning), or [Run your first learning round](/docs/tutorials/first-learning-round) on the local stack.
 - The bundle has a release on the channel you want to improve.
 - You have an OpenAI-compatible model provider with at least two models, one for the task model and another for the judge model.
 - You have examples of the agent's work to import as tasks.
@@ -20,13 +20,13 @@ See [What a round does](/docs/concepts/how-it-works#what-a-round-does) for the s
 2. Under **Model provider**, save its base URL, an API key and the allowed model IDs.
 3. Wait while the executor verifies each model. A model passes when it answers a chat request and reports token usage.
 
-The tested setup is CLIProxyAPI with a Codex sign-in. See [Set up a local model proxy](/docs/get-started/first-learning-round#set-up-a-local-model-proxy).
+The tested setup is CLIProxyAPI with a Codex sign-in. See [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy).
 
 ## Turn on learning
 
 1. Open the bundle's **Learning** tab.
-2. Choose the **Learning channel**, a **Task model** and a different **Judge model**. Use your application's model as the task model, so the loop measures the agent you run. See [How a rollout runs your bundle](/docs/concepts/how-it-works#how-a-rollout-runs-your-bundle).
-3. Set **Maximum rounds per day**, the daily round limit.
+2. Choose the **Learning channel**, a **Task model** and a different **Judge model**. Use your application's model as the task model, so the loop measures the agent you run. See [How a rollout runs your bundle](/docs#how-a-rollout-runs-your-bundle).
+3. Set **Maximum rounds per day**, the daily round limit. It counts rounds over a rolling 24 hours and defaults to 4.
 4. Choose **Save learning settings**.
 
 ## Add tasks
@@ -37,9 +37,9 @@ Add tasks on the **Learning** tab in any of three ways:
 - Paste text under **Paste conversations**.
 - Choose **Write a task**. Give an exact answer for a value that must match. For free text, write one criterion per line and optionally a reference answer.
 
-Import about 50 rows for a first round. Start needs 20 admitted tasks in each split, and some rows are usually set aside. [Improve the bundle with the sample tasks](/docs/examples/support-agent#improve-the-bundle-with-the-sample-tasks) has a ready file of 60 rows.
+Import about 50 rows for a first round. Start needs 20 admitted tasks in each split, and some rows are usually set aside. [Improve the bundle with the sample tasks](/docs/tutorials/support-agent#improve-the-bundle-with-the-sample-tasks) has a ready file of 60 rows.
 
-The service assigns each [source group](/docs/concepts/glossary#learning) to the evolve or held-out split by its hash, so about half the rows land in each. Tasks from the same source row, or with the same input, form one source group. Pasted text and `.txt` files are split on lines that hold only three or more dashes (`---`), and each piece is its own row and source group.
+The service assigns each source group to the evolve or held-out split by its hash, so about half the rows land in each. Tasks from the same source row, such as one conversation, share a source group, and so do tasks with the same input, even across imports. A production outcome is its own group. Pasted text and `.txt` files are split on lines that hold only three or more dashes (`---`), and each piece is its own row and source group.
 
 The **Imports** section lists past imports, newest first, with their counts and set-aside rows.
 
@@ -139,10 +139,10 @@ When a person corrects an answer in production, report it with `job.expect()` an
 
 One outcome does not wake a waiting loop. See [When the loop waits](#when-the-loop-waits).
 
-[Report a correction](/docs/examples/support-agent#report-a-correction) is a worked example. The signatures are under Jobs in the [TypeScript SDK](/docs/reference/typescript-sdk#jobs) and [Python SDK](/docs/reference/python-sdk#jobs) references.
+[Report a correction](/docs/tutorials/support-agent#report-a-correction) is a worked example. The signatures are under Jobs in the [TypeScript SDK](/docs/reference/typescript-sdk#jobs) and [Python SDK](/docs/reference/python-sdk#jobs) references.
 
 ## Next steps
 
-- Follow a complete run in [Support agent](/docs/examples/support-agent).
-- Read [How answers are scored](/docs/concepts/how-it-works#how-answers-are-scored) and [What a round costs](/docs/concepts/how-it-works#what-a-round-costs).
+- Follow a complete run in [Support agent](/docs/tutorials/support-agent).
+- Read [How answers are scored](/docs#how-answers-are-scored) and [What a round costs](/docs#what-a-round-costs).
 - Release or restore a version by hand with [Release and roll back](/docs/guides/release-and-roll-back).

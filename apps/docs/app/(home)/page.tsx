@@ -22,8 +22,8 @@ const entries = [
     body: 'Start a local stack and deliver a verified version to your application.',
   },
   {
-    title: 'First learning round',
-    href: '/docs/get-started/first-learning-round',
+    title: 'Run your first learning round',
+    href: '/docs/tutorials/first-learning-round',
     body: 'Connect a model and run a first round on 64 sample tickets.',
   },
   {
@@ -37,13 +37,13 @@ const entries = [
     body: 'Add tasks to a bundle, start learning and follow each round.',
   },
   {
-    title: 'Examples',
-    href: '/docs/examples',
-    body: 'Run a support agent and a ticket router in TypeScript or Python.',
+    title: 'Improve a support agent',
+    href: '/docs/tutorials/support-agent',
+    body: 'Run an application on a released bundle and teach it from sample tasks and corrections.',
   },
   {
-    title: 'Integrations',
-    href: '/docs/integrations/codex',
+    title: 'Use a coding agent',
+    href: '/docs/guides/coding-agents',
     body: 'Prepare content for Codex, the Claude Agent SDK, Pi and Cursor.',
   },
   {

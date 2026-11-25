@@ -1,0 +1,277 @@
+---
+title: Use a coding agent
+description: Run Codex, the Claude Agent SDK, Pi or Cursor on a verified bundle version, in a private directory in the layout each agent reads.
+---
+
+A plugin writes a verified bundle version into a private directory in the layout its agent SDK reads. Your application runs the agent there, saves the result with the version and cleans up.
+
+## Choose a native integration
+
+| Plugin | Agent SDK | Layout it writes | Versions |
+| --- | --- | --- | --- |
+| `@acclimate/codex-plugin` | [Codex](#codex) | `AGENTS.md` and `.agents/skills/` | `@openai/codex-sdk`, checked at 0.169.0 |
+| `@acclimate/claude-plugin` | [Claude Agent SDK](#claude-agent-sdk) | `CLAUDE.md` and `.claude/skills/` | `@anthropic-ai/claude-agent-sdk`, checked at 0.3.325 |
+| `@acclimate/pi-plugin` | [Pi](#pi) | `AGENTS.md`, `.agents/skills/` and a Pi resource loader | `@earendil-works/pi-coding-agent` `^1.5.2` |
+| `@acclimate/cursor-plugin` | [Cursor](#cursor) | `AGENTS.md` and `.cursor/skills/` | `@cursor/sdk` `^1.3.1`, local agents only |
+
+Every plugin writes memory files to `.acclimate/memory/` and needs Node.js 22.22 or later on Linux or macOS. See [Install the SDKs](/docs/get-started/install#prerequisites). The Codex and Claude plugins do not depend on their agent SDK. The Pi and Cursor SDKs are optional peers that only the `/native` entry point loads.
+
+## Install
+
+Install the plugin and its agent SDK beside the Acclimate SDK, with the plugin and the Acclimate SDK from the same Acclimate release. Each agent's section has its install line. For release files, see [Install from verified release files](/docs/get-started/install#install-from-verified-release-files).
+
+## What prepare takes and returns
+
+Each plugin's `prepare` accepts either of these:
+
+- The delivery from `client.prepare()`. Pass the delivery itself, so that `prepared.reportStarted()` still records the start receipt.
+- The verified version from `resolveAndCache(client, selection, { cacheDir })`.
+
+It writes the files into a new private directory, and fails before writing anything if the version breaks the [rules for bundle files](#rules-for-bundle-files). It returns:
+
+| Property | Contents |
+| --- | --- |
+| `cwd` | The private directory. Run the agent here. |
+| `versionId`, `digest` | Save these with the job's result. |
+| `memoryFiles` | Each memory file's `path`, `text` and `absolutePath`. The agents do not load memory. Add the files you choose to the prompt, or to the loader for Pi. |
+| `reportStarted()` | Queues the start receipt, or returns `null` without a `reporter`. See [Report job starts](/docs/guides/deliver-content#report-job-starts). |
+| `cleanup()` | Removes the directory, including files the agent created, and releases the delivery. |
+
+Start a new agent session in `prepared.cwd` for each job, and clean up only after it has stopped using the directory. If the run rejects or its end is unknown, keep the files for inspection. In the samples, your application supplies `client`, the IDs, the model, `prompt` and any agent credentials.
+
+## Rules for bundle files
+
+A plugin refuses a version that breaks one of these rules. Each error names its rule, for example `[skill_metadata]`.
+
+- A file path is relative, with no `.` or `..` segment. No two paths differ only by case, and no file sits where another path needs a directory.
+- A version has at most one instruction file.
+- A skill lives under `skills/<name>/`. The name has at most 64 letters, digits, `_` or `-`, and does not differ from another only by case. Cursor accepts only lowercase letters, digits and `-`.
+- A skill needs a `SKILL.md` whose frontmatter has exactly one `name`, matching the directory, and exactly one non-empty `description`.
+- Other frontmatter keys such as `license` or `allowed-tools`, and folded `description: >` values, are kept as written.
+- Supporting text files, such as `scripts/check.py` or `config.json`, stay beside the skill.
+
+## Codex
+
+```sh
+npm install @acclimate/sdk @acclimate/codex-plugin @openai/codex-sdk@0.169.0
+```
+
+```ts
+import { Codex } from '@openai/codex-sdk';
+import { prepare } from '@acclimate/codex-plugin';
+
+const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
+const prepared = await prepare(delivery);
+const thread = new Codex({ env }).startThread({
+  workingDirectory: prepared.cwd,
+  skipGitRepoCheck: true,
+  model,
+  sandboxMode: 'workspace-write',
+  approvalPolicy: 'never',
+  networkAccessEnabled: false,
+  webSearchMode: 'disabled',
+});
+const turn = await thread.runStreamed(prompt);
+let response = '';
+for await (const event of turn.events) {
+  if (event.type === 'turn.started') prepared.reportStarted();
+  if (event.type === 'item.completed' && event.item.type === 'agent_message') response = event.item.text;
+}
+await prepared.cleanup();
+```
+
+Set the sandbox, approval and network policy explicitly. These are the native repository starter's values.
+
+### Keep your Codex configuration out of the job
+
+Codex reads your global `config.toml`, MCP servers and `AGENTS.md` from `CODEX_HOME`. To keep them out, pass an `env` whose `CODEX_HOME` holds only `auth.json`. The Codex SDK then inherits nothing from `process.env`, so include what the Codex CLI needs, such as `PATH`.
+
+## Claude Agent SDK
+
+```sh
+npm install @acclimate/sdk @acclimate/claude-plugin @anthropic-ai/claude-agent-sdk
+```
+
+```ts
+import { query } from '@anthropic-ai/claude-agent-sdk';
+import { prepare } from '@acclimate/claude-plugin';
+import { claudeSessionOptions } from '@acclimate/claude-plugin/native';
+
+const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
+const prepared = await prepare(delivery);
+const abortController = new AbortController();
+for await (const message of query({
+  prompt,
+  options: {
+    ...claudeSessionOptions(prepared),
+    model,
+    abortController,
+    permissionMode: 'dontAsk',
+    allowedTools: ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash'],
+    sandbox: { enabled: true },
+  },
+})) {
+  if (message.type === 'system' && message.subtype === 'init') prepared.reportStarted();
+}
+await prepared.cleanup();
+```
+
+`claudeSessionOptions` returns `cwd`, `settingSources: ['project']` and the version's skill names as `skills`. It leaves out `skills` when there are none, because an empty list disables every skill. [`examples/claude-agent.ts`](https://github.com/anveld-dev/acclimate/blob/main/examples/claude-agent.ts) shows the complete job, including receipts and saving the result.
+
+### Use your repository's settings
+
+In a new directory your repository's settings, MCP servers, hooks and subagents do not apply. Pass `baseDir` to copy them in:
+
+```ts
+const prepared = await prepare(delivery, { baseDir: '/absolute/path/to/repository' });
+```
+
+| Copied from `baseDir` | Never copied |
+| --- | --- |
+| `.claude/settings.json` | `CLAUDE.md` |
+| `.claude/agents/` | `CLAUDE.local.md` |
+| `.claude/commands/` | `.claude/skills/` |
+| `.claude/hooks/` | `.claude/settings.local.json` |
+| `.claude/output-styles/` | |
+| `.mcp.json` | |
+
+Instructions and skills still come only from the bundle. Record `prepared.overlayFiles`, the copied files with their SHA-256 digests, with the job's result, because hooks and MCP servers change how the agent behaves.
+
+## Pi
+
+```sh
+npm install @acclimate/sdk @acclimate/pi-plugin @earendil-works/pi-coding-agent
+```
+
+```ts
+import { join } from 'node:path';
+import { createAgentSession, ModelRuntime, SessionManager, SettingsManager } from '@earendil-works/pi-coding-agent';
+import { prepare } from '@acclimate/pi-plugin';
+import { createPiResourceLoader } from '@acclimate/pi-plugin/native';
+
+const modelRuntime = await ModelRuntime.create({ allowModelNetwork: false });
+const model = modelRuntime.getModel(provider, modelId);
+if (!model) throw new Error(`Unknown Pi model: ${provider}/${modelId}`);
+
+const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
+const prepared = await prepare(delivery);
+const { session } = await createAgentSession({
+  cwd: prepared.cwd,
+  agentDir: join(prepared.cwd, '.acclimate', 'pi-agent'),
+  modelRuntime,
+  model,
+  tools: ['read', 'edit', 'write', 'bash', 'grep', 'find', 'ls'],
+  resourceLoader: await createPiResourceLoader(prepared, ['memory/selected.md']),
+  sessionManager: SessionManager.inMemory(prepared.cwd),
+  settingsManager: SettingsManager.inMemory(),
+});
+prepared.reportStarted();
+let output;
+try {
+  await session.prompt(prompt);
+  output = session.getLastAssistantText() ?? '';
+} finally {
+  session.dispose();
+}
+await prepared.cleanup();
+```
+
+`createPiResourceLoader` builds and loads a Pi resource loader that holds only the instruction, the skills and the memory files you select. It turns off Pi's own discovery of extensions, skills, prompt templates, themes and context files. `prepared.resources` lists every written file with its bundle `path`, `kind` and `absolutePath`. Set `tools` explicitly, as the starter does.
+
+### Choose memory
+
+The loader's second argument lists the bundle paths of the memory files to append as context. Replace `memory/selected.md` with a path from your bundle. The default list is empty, so no memory loads unless you name it. A path that is not a memory file in the version throws an error.
+
+## Cursor
+
+```sh
+npm install @acclimate/sdk @acclimate/cursor-plugin @cursor/sdk
+```
+
+```ts
+import { Agent } from '@cursor/sdk';
+import { prepare } from '@acclimate/cursor-plugin';
+import { cursorLocalOptions } from '@acclimate/cursor-plugin/native';
+
+const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
+const prepared = await prepare(delivery, { approvedMemoryPaths });
+const agent = await Agent.create({
+  apiKey,
+  model: { id: model },
+  local: { ...cursorLocalOptions(prepared).local, sandboxOptions: { enabled: true } },
+});
+let result;
+try {
+  const run = await agent.send(prompt);
+  let started = false;
+  for await (const event of run.stream()) {
+    if (!started && event.type === 'status' && event.status === 'RUNNING') {
+      started = true;
+      prepared.reportStarted();
+    }
+  }
+  result = await run.wait();
+} finally {
+  await agent[Symbol.asyncDispose]();
+}
+await prepared.cleanup();
+```
+
+Cursor cloud agents are not supported. The plugin writes only the memory files named in `approvedMemoryPaths`, and fails if one is not a memory file in the version. Save `result.status` and `result.result`, and clean up only after `run.wait()` has returned. [`examples/cursor-agent.ts`](https://github.com/anveld-dev/acclimate/blob/main/examples/cursor-agent.ts) shows the complete job.
+
+### Turn on Cursor's sandbox
+
+`cursorLocalOptions` returns the `local` fields `cwd` and `settingSources: ['project']`. Cursor's local sandbox is off unless you set `sandboxOptions: { enabled: true }` beside those fields, as the sample does.
+
+## Map an agent SDK without a plugin
+
+For an agent SDK with no plugin, call `prepareNativeFiles` with the paths your agent reads:
+
+```ts
+import { prepareNativeFiles } from '@acclimate/sdk/native-files';
+
+const prepared = await prepareNativeFiles(verifiedVersion, {
+  mapping: { instructionPath: 'AGENTS.md', skillRoot: '.agents/skills', memoryRoot: '.acclimate/memory' },
+  prefix: 'my-agent-',
+  target: 'codex',
+});
+```
+
+`target` names the rules to enforce before staging, `codex` by default.
+
+## Prepare an existing repository
+
+The native repository starter runs a coding agent with the prepared files on a copy of an existing repository and keeps its edits. Its offline replay checks preparation before you install an agent SDK.
+
+1. Extract the starter from the release files. See [Install from verified release files](/docs/get-started/install#install-from-verified-release-files).
+2. Run `node smoke.mjs` in the starter's directory.
+
+Codex is the starter's default agent SDK. Choose another with `"harness"`:
+
+| Agent SDK | Starter setting |
+| --- | --- |
+| Codex | The default. The adapter already uses a `CODEX_HOME` with only `auth.json`. |
+| Claude Agent SDK | `"harness": "claude"` |
+| Pi | `"harness": "pi"`, with a model value in the form `provider/model-id` |
+| Cursor | `"harness": "cursor"`, with the sandbox enabled |
+
+For Codex, install the pinned Codex SDK from your approved npm cache, where `$app` is the starter's absolute path. The check prints the Codex CLI version and needs no credentials.
+
+```sh
+npm install --prefix "$app" --workspaces=false --offline --include=optional --ignore-scripts --no-audit --no-fund \
+  --save-exact @openai/codex-sdk@0.169.0
+node "$app/verify-install.mjs" codex --codex-sdk
+```
+
+The [native repository starter README](https://github.com/anveld-dev/acclimate/tree/main/examples/native-repository#readme) covers configuration and recovering private jobs.
+
+## What has been tested
+
+Every starter adapter passed offline against a fake SDK module. The live Codex checks used `gpt-6-luna` as an example model and read its answers, because the Codex SDK reports no event when it loads a skill.
+
+| Agent SDK | Passed | Not tested |
+| --- | --- | --- |
+| Codex | Live on 0.169.0: each new thread returned values stored only in its own files, and a resumed thread kept its version in its original directory. Offline: file preparation and thread options. | Replacing files under a running thread, and a live job through the starter |
+| Claude Agent SDK | Offline: written files, copied settings and receipts. Session options and the example typecheck against 0.3.325. | A live session |
+| Pi | Offline with Pi's own loader: the resource loader, including selected memory | A live session |
+| Cursor | Offline: agent option types and file preparation | A live session, discovery of the written files by Cursor's scanner, and reloading files in a resumed session |

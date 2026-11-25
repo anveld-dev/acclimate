@@ -1,0 +1,215 @@
+---
+title: Run your first learning round
+description: Give the local stack a model, run the ticket triage script and watch the learning loop release a better bundle.
+---
+
+In this tutorial you give the local stack a model, then run a script that takes a bundle through the [learning loop](/docs#learning-loop), in which the service improves a bundle and releases the result. The script, in `examples/ticket-triage/`, teaches an agent to route support tickets. It uses the API, so the same steps run from CI. The measured first round took 14 minutes.
+
+## Before you start
+
+You need a source checkout and a Codex sign-in. Any Acclimate service works in place of the local stack if you set the same variables.
+
+1. Start the local stack. See the [Quickstart](/docs/get-started/quickstart).
+
+2. In a shell at the root of the checkout, load the stack's client settings. They set `ACCLIMATE_URL` and `ACCLIMATE_WORKSPACE` and make Node.js and Python trust the stack's certificate.
+
+   ```sh
+   source .local/stack/env.sh
+   ```
+
+3. In the console, open the `local-demo` workspace's **Members** page. Under **Machine tokens**, choose **Issue token** and tick the three [rights](/docs/reference/credentials#rights) the script needs: **Read content**, **Write content** and **Promote releases**. The secret is shown once, so export it now.
+
+   ```sh
+   export ACCLIMATE_TOKEN='<machine-token>'
+   ```
+
+4. Install what your language needs. See [Install the SDKs](/docs/get-started/install) for runtime versions.
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
+npm ci --ignore-scripts
+```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+python3.11 -m venv .venv
+.venv/bin/python -m pip install ./python
+```
+
+</Tab>
+</Tabs>
+
+## Set up a local model proxy
+
+Learning needs two model settings, neither with a default: the **optimizer** on the service, which proposes and selects bundle changes, and the **model provider** in the console, which serves the task model that answers tasks and the judge model that grades them. These steps use [CLIProxyAPI](https://help.router-for.me/) with a Codex sign-in for both. They were checked against one fixed revision of the proxy, so pin your build. The [operator guide](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#cliproxyapi-with-codex-sign-in) has the details.
+
+1. In the proxy's configuration file, set `server.port` to `8317`, put a private key of your choice under `access.api-keys` and set `routing.cooldown.disable-cooling: true`. Without that last setting, one rate-limited reply blocks a model for minutes. See the [example configuration](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/config.example.yaml) for that revision.
+
+2. Sign in, then start the proxy.
+
+   ```sh
+   cli-proxy-api -config /private/config.yaml -codex-login
+   cli-proxy-api -config /private/config.yaml
+   ```
+
+3. List the model IDs the proxy serves. On Linux, use the address the proxy listens on.
+
+   ```sh
+   curl -H "Authorization: Bearer <proxy-key>" http://127.0.0.1:8317/v1/models
+   ```
+
+4. Start the stack with the optimizer settings and the provider allowlist. The model IDs on this page are examples, so use IDs from step 3.
+
+   ```sh
+   export ACCLIMATE_MODEL_ENDPOINT=http://host.docker.internal:8317/v1/chat/completions
+   export ACCLIMATE_MODEL_TOKEN='<proxy-key>'
+   export ACCLIMATE_MODEL=gpt-6.2-astra
+   export ACCLIMATE_MODEL_REASONING_EFFORT=high
+   export ACCLIMATE_PROVIDER_HTTP_HOSTS=host.docker.internal
+   npm run local:up
+   ```
+
+   The containers reach the proxy over plain HTTP, which the service and the executor refuse unless the host is in `ACCLIMATE_PROVIDER_HTTP_HOSTS`. The stack saves these settings in `.local/stack/service.env` for later starts. Export an empty value to clear one.
+
+5. In the console, open the workspace's **Members** page and, under **Model provider**, enter:
+
+   | Field | Value |
+   | --- | --- |
+   | OpenAI-compatible base URL | `http://host.docker.internal:8317/v1` |
+   | API key | The proxy key, the same value as `ACCLIMATE_MODEL_TOKEN` |
+   | Allowed models | At least two IDs from `/v1/models`, one for tasks and one for the judge |
+
+   Unlike `ACCLIMATE_MODEL_ENDPOINT`, the base URL ends at `…/v1`, and the executor adds the path. The executor verifies each model. `local:up` has already set the key the service uses to encrypt the API key.
+
+<Callout type="warn" title="Linux">
+On Docker Desktop, `host.docker.internal` reaches your laptop's loopback. On Linux, it is the Docker bridge address, such as `172.17.0.1`, so a proxy bound to `127.0.0.1` is unreachable from the containers. Set the proxy's `server.host` to the bridge address. Binding it to all interfaces also works, but exposes it to your network.
+</Callout>
+
+## Run the ticket triage script
+
+The starting instructions, in `bundle/instructions.md`, do not name the queues:
+
+```text
+You route support tickets for a small software company.
+
+Read the ticket and reply with the queue it belongs to.
+```
+
+The 64 tickets in `tickets.csv` do, across eight queues. Each row has an `input` and a short `expected`, so it becomes an [exact-match task](/docs/guides/learning-loop#how-a-row-is-graded): a rollout passes only when the reply is exactly the expected text.
+
+```csv
+input,expected
+Can you add keyboard shortcuts for moving cards between columns?,feature-request
+"I got an email saying my password was changed, but I didn't change it.",security
+"I bought the annual plan by mistake, I wanted monthly. Can I get the difference back?",refunds
+```
+
+Name two of the provider's allowed models and run the script. It never calls the judge model, but the learning settings require one.
+
+```sh
+export TASK_MODEL=gpt-6-luna JUDGE_MODEL=gpt-6.2-sol
+```
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```sh
+npx tsx examples/ticket-triage/loop.ts
+```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+.venv/bin/python examples/ticket-triage/loop.py
+```
+
+</Tab>
+</Tabs>
+
+```text
+Published "Ticket triage" and released version c60f46ed-32f4-47a5-9815-c30b15a8951b on stable.
+Imported 64 of 64 rows as tasks.
+Checking tasks: 64 still pending.
+Checking tasks: 30 still pending.
+Checking tasks: 1 still pending.
+Admitted 32 evolve tasks and 32 held-out tasks.
+Learning is running. Press Ctrl-C to stop watching. Learning continues on the service.
+Round 1: scoring incumbent
+Round 1: proposing
+Round 1: evaluating
+Round 1: scoring held out
+Round 1 adopted and released version ba6a0ffc-33c7-4d04-a93b-3bfa2690f90e. Evolve tasks: 0% before, 100% for the adopted version. Held-out tasks: 100%.
+Round 2: proposing
+Round 2: evaluating
+Round 2: scoring held out
+Round 2 kept the current version (selector-kept). Evolve tasks: 100%. Held-out tasks: 100%.
+Round 3: proposing
+Round 3: evaluating
+Round 3: scoring held out
+Round 3 adopted and released version 4cedbe38-48ff-499f-be32-949bb2e8b6a6. Evolve tasks: 100% before, 100% for the adopted version. Held-out tasks: 100%.
+Learning is waiting: daily-cap. Next round at 2026-11-25T23:59:54.268843Z.
+
+Released on stable: version 4cedbe38-48ff-499f-be32-949bb2e8b6a6
+
+# instructions.md
+You route support tickets for a small software company.
+
+Choose the queue responsible for the customer's primary need, not merely the product or component mentioned. Use this queue directory:
+
+security: Investigate suspected threats, phishing, unauthorized access or exposure; contain compromised credentials or sessions.
+account-access: Help a legitimate user gain or recover access, including failures of sign-in, SSO, password reset or verification.
+data-privacy: Handle data rights and questions about how customer data is collected, used, shared, retained or erased.
+refunds: Return money or reverse a charge. Use this rather than billing when reimbursement is the requested remedy.
+billing: Manage invoices, payment methods and billing details, or explain an existing charge.
+sales: Evaluate a purchase or expansion, including quotes, plan comparisons, demos and negotiated pricing.
+bug: Investigate existing product behavior that fails or produces unexpected, incomplete or duplicate results.
+feature-request: Consider a desired new capability, enhancement or roadmap suggestion, rather than repair a malfunction.
+
+Output only the selected queue ID, copied verbatim from before its colon.
+```
+
+This real run used `gpt-6-luna` for tickets and `gpt-6.2-astra` as the optimizer, with some `Checking tasks` lines left out. Your IDs and instructions will differ. `incumbent` is the current version when the round started, `selector-kept` means the optimizer kept it after evaluating the candidates, and `daily-cap` is the daily round limit.
+
+The starting instructions passed none of the 160 evolve rollouts, because the model invented names such as "Billing Support". In round 1, all five candidates passed every evolve rollout, and the adopted version passed every held-out rollout, on tickets the optimizer never saw. The round ran 1,280 rollouts in 14 minutes ([what a round costs](/docs#what-a-round-costs)). Round 3 adopted a shorter wording that scored the same, and the loop then waited on the script's daily round limit of three.
+
+If the proxy answers with rate limits, lower the [executor concurrency](/docs/reference/local-stack#executor-concurrency).
+
+## What the script does
+
+Each step is one or two client calls, numbered as in the script's comments. Python uses the same names in snake case, such as `enroll_learning_loop`.
+
+| # | Step | Call | Notes |
+| --- | --- | --- | --- |
+| 1 | Publish the bundle | `listBundles`, `createBundleSetup` | Creates the bundle, its first version and a release on `stable`, unless a bundle with that name exists |
+| 2 | Check the model provider | `getModelProvider` | Checks that a verified model provider allows both models. Only a signed-in administrator can save one. |
+| 3 | Turn on learning | `getLearningLoop`, `enrollLearningLoop` | Sets the channel, both models and a daily round limit of three. Skipped when learning is on, so console changes survive a rerun. |
+| 4 | Import the tickets | `importLearningTasks`, `getLearningImport` | Polls until no row is pending. The same bytes return the first import. |
+| 5 | Wait for admission | `listLearningTasks` with `admission: 'pending'` | A machine token gets evolve tasks as `items` and only a `heldOutCount` for held-out tasks. |
+| 6 | Start | `startLearningLoop` | Only for a loop that has never run. Answers 409 when a split has fewer than 20 admitted tasks or the service has no optimizer. |
+| 7 | Follow the rounds | `getLearningLoop` | `activeRound.state` is the current step, `rounds` the finished rounds, `waiting` why the loop is idle. |
+| 8 | Show the release | `resolveAndCache` | Reads and verifies the version the next job will run. |
+
+## When a round ends
+
+A finished round has a `decision` of `adopted` or `kept`, or a `state` of `failed` or `stopped` with a `reason`. For an adoption the script prints three scores:
+
+- `incumbentScore`: the current version's evolve score when the round started.
+- `evolveScore`: the adopted version's evolve score, or the first score when the round kept the current version.
+- `heldOutScore`: the held-out score of the version released at the end of the round.
+
+The loop then runs another round or [waits](/docs/guides/learning-loop#when-the-loop-waits). The learning contract lists every code a script can branch on under [Codes a script reads](https://github.com/anveld-dev/acclimate/blob/main/contracts/learning.md#codes-a-script-reads).
+
+## Stop and run again
+
+Learning runs on the service, so you can stop the script with Ctrl-C after the first adoption and follow the rounds on the bundle's **Learning** tab. A second run reuses the bundle, its learning settings and the import. It starts only a loop that has never run, so a paused or stopped loop stays that way. To pause or stop learning, use the **Learning** tab, or call `pauseLearningLoop` or `stopLearningLoop`.
+
+## Adapt it
+
+- **Your own tasks.** Replace `tickets.csv` with rows of `input` and `expected`. [Add tasks](/docs/guides/learning-loop#add-tasks) says how many a first round needs and how a longer answer is graded.
+- **Your own bundle.** Put instruction files in `bundle/`, skills under `bundle/skills/` and memory under `bundle/memory/`. Set `ACCLIMATE_BUNDLE_NAME` to publish under another name.
+- **Your application.** Run jobs on the released version as in [Improve a support agent](/docs/tutorials/support-agent). Build your prompt the way a [learning rollout](/docs#how-a-rollout-runs-your-bundle) does and use the loop's task model, or the loop measures a different agent.

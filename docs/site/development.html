@@ -36,7 +36,7 @@
 <p>The Rust service uses PostgreSQL. The TypeScript and Python SDKs deliver versioned content and report production outcomes. Start with the local stack and the delivery example. Learning rounds need an optimizer endpoint, a workspace model provider and the rollout executor, which <code>npm run local:up</code> starts.</p>
 <h2 id="configure-the-app">Configure the app</h2>
 <p>There is one production identity path, including during development. PostgreSQL 16 stores all service data. The console uses Keycloak through OIDC and HTTPS; browser users need verified sessions and workspace membership. Machine SDK credentials stay separate.</p>
-<p>For laptop development, run <code>npm run local:up</code> from the checkout. The <a href="source/repository/apps/docs/content/docs/get-started/run-locally.mdx">local stack guide</a> covers prerequisites, Caddy's local CA and the bootstrap login.</p>
+<p>For laptop development, run <code>npm run local:up</code> from the checkout. The <a href="source/repository/apps/docs/content/docs/reference/local-stack.mdx">local stack guide</a> covers prerequisites, Caddy's local CA and the bootstrap login.</p>
 <p>Use the <a href="operate/deploy.html">deployment guide</a> for production hosting and required private configuration. The <a href="operate/console.html">console guide</a> lists identity settings. Builds need no runtime credentials:</p>
 <pre data-language="sh"><code class="language-sh">npm ci --ignore-scripts
 npm run build

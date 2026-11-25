@@ -1,11 +1,11 @@
 ---
 title: Support agent
-description: Answer support requests with a released bundle, improve the bundle with sample tasks, and turn a person's correction into a learning task.
+description: Answer support requests with a released bundle, improve the bundle with sample tasks and turn a person's correction into a learning task.
 ---
 
-`examples/support-agent/` is a small application: `agent.ts` with its prompt helper `prompt.ts`, or the single file `agent.py`. It answers one support request with whatever version is released on a channel. You will run it, improve its bundle with 60 sample tasks, and then report a correction.
+`examples/support-agent/` is a small application that answers one support request with the version released on a channel. This walkthrough is for a developer who wants to see delivery and learning work together. You run the application, improve its bundle with 60 sample tasks and then report a correction.
 
-Do the [shared setup](/docs/examples#set-up-once) first. The example uses the **Example agent** bundle that the local stack publishes on `stable`. Its instructions are two sentences:
+The application is `agent.ts` with its prompt helper `prompt.ts`, or the single file `agent.py`. Do the shared setup under [Set up once](/docs/examples#set-up-once) first. The example uses the **Example agent** bundle that the local stack publishes on `stable`. Its instructions are two sentences:
 
 ```text
 You are a support agent for a small software company.
@@ -15,13 +15,15 @@ Answer in two short paragraphs. Ask one clarifying question when the request is 
 
 ## Answer a request
 
-The application calls a model itself, so tell it which OpenAI-compatible endpoint and model to use. With the [local model proxy](/docs/get-started/run-locally#local-model-proxy):
+The application calls a model itself, so tell it which OpenAI-compatible endpoint and model to use. These values fit the proxy from [Set up a local model proxy](/docs/get-started/first-learning-round#set-up-a-local-model-proxy):
 
 ```sh
-export OPENAI_BASE_URL=http://127.0.0.1:8317/v1 OPENAI_API_KEY=your-proxy-key AGENT_MODEL=gpt-6-luna
+export OPENAI_BASE_URL=http://127.0.0.1:8317/v1
+export OPENAI_API_KEY='<proxy-key>'
+export AGENT_MODEL=gpt-6-luna
 ```
 
-`gpt-6-luna` stands for any model ID your provider serves. On Linux, use the address the proxy listens on, which is the Docker bridge address if you followed the proxy setup.
+The model IDs on this page are examples. Use an ID your provider serves. On Linux, use the address the proxy listens on.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
@@ -50,52 +52,52 @@ Answered with version 9ba17a2e-307b-41b4-8171-4d870b10c715 (sha256:10f60b34…).
 
 The reply is polite and follows the instructions, but it cannot say what the company does about a duplicate charge. Nothing in the bundle tells it.
 
-Three things happen in the application:
+The part of the application that uses Acclimate is short:
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
 
-```ts
-import { createAcclimate } from '@acclimate/sdk';
-import { systemPrompt } from './prompt.js';
-
+```ts title="agent.ts"
 // Reads ACCLIMATE_URL, ACCLIMATE_WORKSPACE and ACCLIMATE_TOKEN.
 const acclimate = createAcclimate();
 
-// 1. Pin the released version for this job.
-const job = await acclimate.job('Example agent', { channel: 'stable', input: request });
-
-// 2. Build the system prompt from the version's files and call the model.
+// Pin the released version for this job. Every job re-reads the channel, so a release made by
+// the learning loop reaches the next job without a deploy.
+const job = await acclimate.job(process.env.ACCLIMATE_BUNDLE_NAME ?? 'Example agent', {
+  channel: process.env.ACCLIMATE_CHANNEL ?? 'stable',
+  input: request,
+});
 const reply = await complete(systemPrompt(job.version.payload), request);
-
-// 3. Keep the version with the result.
-console.error(`Answered with version ${job.version.version.id} (${job.version.version.digest}).`);
+console.log(reply);
+// Keep the version with the result, so you can tell later which instructions produced it.
+console.error(`\nAnswered with version ${job.version.version.id} (${job.version.version.digest}).`);
 ```
 
 </Tab>
 <Tab value="Python">
 
-```python
-from acclimate import Acclimate
-
+```python title="agent.py"
 # Reads ACCLIMATE_URL, ACCLIMATE_WORKSPACE and ACCLIMATE_TOKEN.
 acclimate = Acclimate.from_env()
 
-# 1. Pin the released version for this job.
-job = acclimate.job("Example agent", channel="stable", input=request)
-
-# 2. Build the system prompt from the version's files and call the model.
+# Pin the released version for this job. Every job re-reads the channel, so a release made by
+# the learning loop reaches the next job without a deploy.
+job = acclimate.job(
+    os.environ.get("ACCLIMATE_BUNDLE_NAME", "Example agent"),
+    channel=os.environ.get("ACCLIMATE_CHANNEL", "stable"),
+    input=args.request,
+)
 version = job.version
-reply = complete(system_prompt(version["payload"]), request)
-
-# 3. Keep the version with the result.
-print(f"Answered with version {version['version']['id']} ({version['version']['digest']}).", file=sys.stderr)
+reply = complete(system_prompt(version["payload"]), args.request)
+print(reply, flush=True)
+# Keep the version with the result, so you can tell later which instructions produced it.
+print(f"\nAnswered with version {version['version']['id']} ({version['version']['digest']}).", file=sys.stderr)
 ```
 
 </Tab>
 </Tabs>
 
-`job()` resolves the channel, downloads the version if it is not cached, and verifies its digest. Every job reads the channel again, so a new release reaches the next job without a deploy. `systemPrompt` renders the files [the way a learning rollout does](/docs/examples#how-a-learning-rollout-runs-your-bundle).
+`job()` finds the bundle by name, resolves the channel, downloads the version if it is not cached and verifies its digest. `systemPrompt` (`system_prompt` in Python) renders the files the way a learning rollout does, so the loop measures the prompt your jobs run with. See [How a rollout runs your bundle](/docs/concepts/how-it-works#how-a-rollout-runs-your-bundle).
 
 ## Improve the bundle with the sample tasks
 
@@ -104,7 +106,7 @@ print(f"Answered with version {version['version']['id']} ({version['version']['d
 ```json
 {
   "request": "I was charged twice for my March subscription. Can you fix this?",
-  "ideal_reply": "Sorry about the double charge. I can see why that is worrying, and a duplicate payment for the same month is always refunded in full.\n\nWe will refund the second charge to the same card within five business days. …",
+  "ideal_reply": "Sorry about the double charge. I can see why that is worrying, and a duplicate payment for the same month is always refunded in full. …",
   "rubric": [
     "Answers in at most two short paragraphs",
     "Does not ask a clarifying question about the request",
@@ -116,21 +118,25 @@ print(f"Answered with version {version['version']['id']} ({version['version']['d
 
 The criteria include company facts, such as the refund timeframe, that the starting instructions do not mention. The loop has to learn them from the tasks the agent fails.
 
-1. In the console, open the **Example agent** bundle and its **Learning** tab. Choose a **Task model** and a different **Judge model**, then select **Save learning settings**. Use the same task model as `AGENT_MODEL`, so that the loop measures the model your application runs.
-2. Under **Import material**, choose `example-agent-tasks.jsonl` and select **Import tasks**. The judge model maps each row's fields to a task and keeps the row's own criteria. The service puts about half of the tasks in the evolve split, which the optimizer learns from, and the rest in the held-out split, which only measures.
-3. Wait while the executor checks each task. A task is admitted when its reference reply passes its criteria, an empty reply fails them, and the judge agrees with itself. In the run below all 60 were admitted.
-4. Select **Start**. The button is enabled once each split has 20 admitted tasks. This file gives 34 evolve tasks and 26 held-out tasks.
+1. In the console, open the **Example agent** bundle's **Learning** tab. Set **Task model** to the same model as `AGENT_MODEL`, choose a different **Judge model** and choose **Save learning settings**.
+2. Under **Import material**, choose `example-agent-tasks.jsonl`, then choose **Import tasks**.
+3. Wait while the executor checks each task. This file gives 34 evolve tasks and 26 held-out tasks, and in the run below all 60 were admitted.
+4. Choose **Start**.
 
-A round scores the current version on every evolve task five times and asks the optimizer for five candidate versions. It scores the candidates that pass screening the same way. The optimizer then adopts one of them, which releases it, or keeps the current version. The score chart and the round list on the **Learning** tab show each step. [Run a learning loop](/docs/guides/learning-loop#start-and-monitor) explains the waiting and failure states.
+[Run a learning loop](/docs/guides/learning-loop) explains each step, the checks and why a loop waits or a round fails.
 
-A real first round, with `gpt-6-luna` as the task model, `gpt-6.2-sol` as the judge and `gpt-6.2-astra` as the optimizer:
+### What the first round changed
+
+This is a real first round, with `gpt-6-luna` as the task model, `gpt-6.2-sol` as the judge model and `gpt-6.2-astra` as the optimizer. Each task runs five rollouts.
 
 | | Evolve tasks | Held-out tasks |
 | --- | --- | --- |
-| Starting version | 0.43, with 5 of 170 rollouts passing | 0.41, with 3 of 130 rollouts passing |
+| Version before the round | 0.43, with 5 of 170 rollouts passing | 0.41, with 3 of 130 rollouts passing |
 | Adopted version | 0.99, with 161 of 170 rollouts passing | 0.53, with 10 of 130 rollouts passing |
 
-A score gives partial credit for each criterion a reply meets, and a rollout passes only when it meets all four. The starting version's replies met fewer than two of their four criteria on average, and almost none met all four, because it did not know the company's answers. The five candidates scored between 0.95 and 0.99, and the optimizer adopted the best one. It replaced the two sentences with a product guide of about 5,800 characters that begins:
+A score gives partial credit for each criterion a reply meets, and a rollout passes only when it meets all four. See [How answers are scored](/docs/concepts/how-it-works#how-answers-are-scored). Before the round, replies met fewer than two of their four criteria on average, because the bundle did not hold the company's answers.
+
+The five candidates scored between 0.95 and 0.99, and the optimizer adopted the best one. It replaced the two sentences with a product guide of about 5,800 characters that begins:
 
 ```text
 You provide first-party support for our workspace web app. Unless the customer explicitly names another product, their account, documents, subscription, and integrations are in this workspace. Use the product guide below. State documented facts directly; don't substitute generic industry practices or ask the customer to identify our product.
@@ -139,9 +145,11 @@ You provide first-party support for our workspace web app. Unless the customer e
 - Full workspace exports start at Settings → Workspace → Export data. The download link is emailed and is valid for 7 days; after expiry, start a new export to get a fresh link.
 ```
 
-The held-out score moved much less than the evolve score. The optimizer only sees evolve tasks, and in this file most requests turn on a company fact of their own. The guide therefore holds the facts behind the 34 evolve tasks, and the 26 held-out tasks ask about other ones. That gap is what the held-out split is for: it shows that the agent has learned what it was shown, and still lacks whatever it was not shown. Closing the gap takes more tasks or [corrections](#report-a-correction) that cover those requests, or writing the missing facts into the bundle yourself.
+The held-out score moved much less. The optimizer sees only the evolve tasks, and in this file most requests turn on a company fact of their own. The guide holds the facts behind the 34 evolve tasks, and the 26 held-out tasks ask about other facts. The held-out split exists to show that gap. To close it, add tasks or corrections that cover those requests, or write the missing facts into the bundle yourself. See [Report a correction](#report-a-correction).
 
-The round took about 95 minutes on one Codex sign-in with four rollouts at a time, while another example was also running. It ran 1,280 rollouts, and each judged rollout is one task call and three judge calls.
+The round ran 1,280 rollouts and took about 95 minutes on one Codex sign-in with four rollouts at a time, while another example was also running.
+
+### Run the application again
 
 When a round adopts a version, run the application again. It answers with the new version:
 
@@ -153,7 +161,9 @@ Answered with version 7073d86d-e5f1-4560-8fe6-8ca5a36512fd (sha256:24e2ca1f…).
 
 ## Report a correction
 
-A support lead reads a reply and rewrites it. Save the rewrite in a file and pass it with `--expected`:
+A support lead reads a reply and rewrites it. Report the rewrite and the request becomes a learning task. Reporting needs learning turned on for the bundle. Until you save the learning settings, the service answers 404 and the example prints `Learning is not set up for this bundle`.
+
+Save the rewrite in a file and pass it with `--expected`:
 
 ```sh
 cat > corrected.txt <<'EOF'
@@ -180,13 +190,20 @@ npx tsx examples/support-agent/agent.ts "Can I pause my subscription for a while
 </Tab>
 </Tabs>
 
+```text
+There isn’t a subscription-pause option documented. To stop renewal, go to **Settings → Billing**, select **Cancel subscription**, and confirm; your paid access continues through the end of the paid period. You can subscribe again later if you want to resume.
+
+Answered with version 7073d86d-e5f1-4560-8fe6-8ca5a36512fd (sha256:24e2ca1f…).
+Recorded the correction as outcome 512d1634-cd27-41a4-bbf2-78733548383e. It becomes an evolve task.
+```
+
 The application answers as before and then reports the correction for the same job:
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
 
 ```ts
-const receipt = await job.expect(expected, { output: reply, grading: 'criteria' });
+receipt = await job.expect(expected, { output: reply, grading: 'criteria' });
 ```
 
 </Tab>
@@ -199,38 +216,10 @@ receipt = job.expect(expected, output=reply, grading="criteria")
 </Tab>
 </Tabs>
 
-```text
-There isn’t a subscription-pause option documented. To stop renewal, go to **Settings → Billing**, select **Cancel subscription**, and confirm; your paid access continues through the end of the paid period. You can subscribe again later if you want to resume.
+The SDK sends the request, the corrected reply, the agent's own reply and the version that produced it. The example prints the split from the receipt. The judge model then drafted six criteria from the corrected reply, such as "Confirms that a subscription can be paused for up to three months." The request appears on the **Learning** tab as a task card marked **Production outcome**. A held-out one waits until you confirm it under **Needs confirmation**.
 
-Answered with version 7073d86d-e5f1-4560-8fe6-8ca5a36512fd (sha256:24e2ca1f…).
-Recorded the correction as outcome 512d1634-cd27-41a4-bbf2-78733548383e. It becomes an evolve task.
-```
-
-The SDK sends the request, the corrected reply, the agent's own reply and the version that produced it. The service chooses the split, and the receipt says which. The judge model then drafts criteria from the corrected reply. In this run it drafted six, such as "Confirms that a subscription can be paused for up to three months." Once it has, the request appears on the **Learning** tab as a task card marked **Production outcome**. A held-out task waits for you: check **Needs confirmation**, read its drafted criteria, and confirm it.
-
-Reporting needs learning settings on the bundle. Before you save them, the service answers 404 and the example prints `Learning is not set up for this bundle`.
-
-One correction does not start a round. A waiting loop starts again when at least 5 evolve tasks, and at least 10 percent of them, are new or changed.
+One correction does not start a round. See [Report production outcomes](/docs/guides/learning-loop#report-production-outcomes) for what the service does with an outcome.
 
 ## Use your own bundle
 
-Set `ACCLIMATE_BUNDLE_NAME` and `ACCLIMATE_CHANNEL` to run the application on another bundle. On a service without the example bundle, create one in the console under **Bundles**, or publish a payload file. The payload is a JSON object that holds the files:
-
-```json title="payload.json"
-{
-  "schemaVersion": 1,
-  "files": [
-    {
-      "path": "instructions.md",
-      "kind": "instruction",
-      "text": "You are a support agent for a small software company.\n\nAnswer in two short paragraphs. Ask one clarifying question when the request is ambiguous.\n"
-    }
-  ]
-}
-```
-
-```sh
-ACCLIMATE_SCOPE=examples npm run example:publish -- payload.json "Example agent" "First version"
-```
-
-Publishing needs a token with write and promote.
+Set `ACCLIMATE_BUNDLE_NAME` and `ACCLIMATE_CHANNEL` to run the application on another bundle. On a service without the example bundle, create one in the console under **Bundles**, or follow [Publish a bundle from a file](/docs/guides/release-and-roll-back#publish-a-bundle-from-a-file).

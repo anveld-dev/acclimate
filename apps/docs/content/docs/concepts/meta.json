@@ -1,4 +1,8 @@
 {
   "title": "Concepts",
-  "pages": ["how-it-works", "glossary"]
+  "pages": [
+    "how-it-works",
+    "credentials",
+    "glossary"
+  ]
 }

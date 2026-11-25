@@ -1,24 +1,135 @@
 ---
 title: Release and roll back
-description: Point a channel at an immutable version and record the reason.
+description: Upload a new version of a bundle, point a channel at it and move the channel back to an earlier version.
 ---
+
+This guide is for a developer or workspace administrator who changes what a channel delivers by hand. A release points a channel such as `stable` at an immutable version and records the reason.
+
+The learning loop makes its own releases. To undo a version the loop adopted, use **Roll back** on its round, which also blocks that version from being adopted again. See [Pause, stop and roll back](/docs/guides/learning-loop#pause-stop-and-roll-back).
 
 ## Release a version
 
-Creating a bundle in the console imports its content and creates its first release. Use the SDK or [HTTP API](/docs/reference/http-api) to upload a new version to an existing bundle. A release requires the target version ID, the channel's expected revision, and a reason in `unevaluatedReason`. Use a credential with the `promote` right to release.
+Creating a bundle in the console imports its files and makes its first release. To release a new version of an existing bundle, use the SDK or the [HTTP API](/docs/reference/http-api) with a machine token that has read, write and promote.
+
+1. Read the channel's current revision and version. This needs read.
+2. Upload the new files as a version. This needs write.
+3. Release that version to the channel. This needs promote. Pass the revision you read and a reason in `unevaluatedReason`.
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
 
 ```ts
-const release = await client.createRelease(workspaceId, bundleId, 'stable', {
-  versionId,
-  expectedRevision: currentRevision,
-  unevaluatedReason: 'Ship updated instructions',
-}, operationId);
+import { randomUUID } from 'node:crypto';
+
+const current = await client.inspectSource(workspaceId, bundleId, 'stable');
+if (!current) throw new Error('The channel has no release yet');
+
+const version = await client.createVersion(
+  workspaceId,
+  bundleId,
+  { parentVersionId: current.version.id, payload },
+  randomUUID(),
+);
+
+const release = await client.createRelease(
+  workspaceId,
+  bundleId,
+  'stable',
+  {
+    versionId: version.id,
+    expectedRevision: current.revision,
+    unevaluatedReason: 'Ship updated instructions',
+  },
+  randomUUID(),
+);
 ```
 
-Use a fresh idempotency key for each operation. If the channel moved, re-read its revision before deciding whether to release.
+</Tab>
+<Tab value="Python">
 
-## Roll back a channel
+```python
+import uuid
 
-Open the bundle's **Releases** tab, select the earlier release and inspect its content. Choose **Restore**, enter a reason and confirm. This creates a new release with a higher revision pointing to the existing immutable version. New jobs resolve to it; already prepared jobs keep their pinned versions.
+current = client.inspect_source(workspace_id, bundle_id, "stable")
+if current is None:
+    raise RuntimeError("The channel has no release yet")
 
-If the console loses the response, check the pending operation in **Releases**. Retry the exact saved request or close the operation before submitting a new one.
+version = client.create_version(
+    workspace_id,
+    bundle_id,
+    {"parentVersionId": current["version"]["id"], "payload": payload},
+    str(uuid.uuid4()),
+)
+
+release = client.create_release(
+    workspace_id,
+    bundle_id,
+    "stable",
+    {
+        "versionId": version["id"],
+        "expectedRevision": current["revision"],
+        "unevaluatedReason": "Ship updated instructions",
+    },
+    str(uuid.uuid4()),
+)
+```
+
+</Tab>
+</Tabs>
+
+`client` is an `AcclimateClient`, and `payload` has the shape shown under [Publish a bundle from a file](#publish-a-bundle-from-a-file).
+
+The last argument of each write is its idempotency key. Send the same key again only to retry the same request. See [Retry a write](/docs/reference/http-api#retry-a-write).
+
+If the channel moved after you read it, the release is refused with `revision_conflict`. Read the revision again and decide whether you still want to release.
+
+New jobs resolve to the released version. Jobs that are already prepared keep the version they started with.
+
+## Roll back
+
+Rolling back creates a new release, with a higher revision, that points the channel at an earlier version. No history is removed.
+
+1. Open the bundle's **Releases** tab.
+2. Select the earlier release and inspect its files.
+3. Choose **Restore**, enter a reason and confirm.
+
+From a script, release the earlier version's ID with `createRelease` (`create_release` in Python), as in step 3 above.
+
+If the console does not get the service's answer, it shows **Restore needs confirmation**. The restore may still have gone through, so do not submit a new one yet:
+
+1. Choose **Check result**.
+2. If the result is still unknown, choose **Retry exact restore** to send the stored request again, or **Close unresolved restore** to close the operation.
+3. Start a new restore only after the operation is confirmed or closed.
+
+## Publish a bundle from a file
+
+To create a bundle from a script instead of the console's **Bundles** page, publish a payload file. The payload is a JSON object that holds the bundle's files. A file's `kind` is `instruction`, `skill` or `memory`.
+
+```json title="payload.json"
+{
+  "schemaVersion": 1,
+  "files": [
+    {
+      "path": "instructions.md",
+      "kind": "instruction",
+      "text": "You are a support agent for a small software company.\n\nAnswer in two short paragraphs. Ask one clarifying question when the request is ambiguous.\n"
+    }
+  ]
+}
+```
+
+From a source checkout, with `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` set, run:
+
+```sh
+ACCLIMATE_SCOPE=examples npm run example:publish -- payload.json "Example agent" "First version"
+```
+
+The arguments are the payload file, the bundle's name and the reason for its first release. The command creates the bundle, its first version and its first release on `stable`, then prints their IDs. Set `ACCLIMATE_CHANNEL` to release on another channel.
+
+Publishing needs a machine token with write and promote. See [Rights](/docs/concepts/credentials#rights).
+
+## Next steps
+
+- Prepare the released version in your application with [Deliver content to jobs](/docs/guides/deliver-content).
+- Let the service propose and release improvements with [Run a learning loop](/docs/guides/learning-loop).
+- Look up release and operation routes in the [HTTP API](/docs/reference/http-api) reference.

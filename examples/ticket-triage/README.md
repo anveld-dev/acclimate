@@ -10,7 +10,7 @@ One script that runs a learning loop end to end over the API. It publishes a bun
 
 ## Run it
 
-The script needs a service with an optimizer model, an executor, and a verified model provider on the workspace. The [local stack](../../apps/docs/content/docs/get-started/run-locally.mdx) with a local model proxy has all three.
+The script needs a service with an optimizer model, an executor, and a verified model provider on the workspace. The [local stack](../../apps/docs/content/docs/get-started/run-locally.mdx) with a [local model proxy](../../apps/docs/content/docs/get-started/first-learning-round.mdx) has all three.
 
 | Variable | Value |
 | --- | --- |

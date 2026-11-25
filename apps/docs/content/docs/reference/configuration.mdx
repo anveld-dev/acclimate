@@ -1,147 +1,236 @@
 ---
-title: Configuration and environment variables
-description: Find the values your application, service, and console read.
+title: Environment variables
+description: Every environment variable that an application, the service, the executor, the console and the Compose files read, and the service's operator commands.
 ---
 
-Configure each process with its own credentials and addresses. Use the [self-hosting guide](/docs/operate/self-host) for the private runtime files and machine-token access for workspace credentials.
+This page lists every environment variable Acclimate reads, grouped by the process that reads it. Developers need only [Application](#application). The other sections are for the operator who runs the service. [Self-host Acclimate](/docs/operate/self-host) shows where each private runtime file lives.
 
-## Application and CLI recipes
+## Application
 
-The SDK’s job helpers read `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` directly. Other delivery variables below are app setup conventions. Read them in your app and pass them to the client or preparation call.
+### Read by the SDKs
 
-| Variable | Purpose |
+`createAcclimate()` in TypeScript and `Acclimate.from_env()` in Python read these three variables. `acclimate pull` reads `ACCLIMATE_TOKEN` when its config file names no token.
+
+| Variable | Required | Value |
+| --- | --- | --- |
+| `ACCLIMATE_URL` | Yes | Public HTTPS base URL of the API. |
+| `ACCLIMATE_WORKSPACE` | Yes | Workspace ID. |
+| `ACCLIMATE_TOKEN` | Yes | The credential for the calls the application makes. [Credentials and rights](/docs/concepts/credentials) says which one each call needs. |
+
+You can pass each value as an option instead of setting the variable.
+
+### Used by convention
+
+The SDKs do not read the variables below. The console's **App setup** code and the repository examples use these names. Your application reads them and passes the values to the client.
+
+| Variable | Value |
 | --- | --- |
-| `ACCLIMATE_URL` | Public HTTPS API base URL. |
-| `ACCLIMATE_TOKEN` | Scoped machine token for the operation. Use a delivery read token in the application. |
-| `ACCLIMATE_SCOPE` | Stable app or authenticated principal identity for cache scoping. Keep it distinct from the token. |
-| `ACCLIMATE_WORKSPACE`, `ACCLIMATE_BUNDLE`, `ACCLIMATE_CHANNEL` | Workspace ID, bundle ID, and channel used by the delivery examples. |
-| `ACCLIMATE_CACHE`, `ACCLIMATE_JOB_DIR` | Cache and staging directory overrides in the console recipes. |
-| `ACCLIMATE_CONNECTION`, `ACCLIMATE_RECEIPT_TOKEN` | Connection ID and separate optional delivery reporting credential. |
-| `AGENT_TASK` | Task input for the console's connected agent recipe. |
+| `ACCLIMATE_SCOPE` | Stable name for the application, passed as the client's `scope`. It namespaces the local cache. Never use a token as the scope. |
+| `ACCLIMATE_BUNDLE` | Bundle ID. |
+| `ACCLIMATE_CHANNEL` | Channel name, such as `stable`. |
+| `ACCLIMATE_CONNECTION` | Connection ID, passed as the client's `connectionId`. |
+| `ACCLIMATE_RECEIPT_TOKEN` | Optional receipt credential, kept separate from `ACCLIMATE_TOKEN`. See [Report job starts](/docs/guides/deliver-content#report-job-starts). |
+| `ACCLIMATE_CACHE` | Cache directory, in place of the SDK's default. |
+| `ACCLIMATE_JOB_DIR` | Directory the job's files are written to. |
+| `AGENT_TASK` | The task text for the console's connected agent example. |
 
+## Service
 
-## Rust service
+| Variable | Required | Default | Value |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | Yes | None | `postgresql://` or `postgres://` URL with an explicit host, user and database. URL-encode only the password component. |
+| `ACCLIMATE_BIND` | No | `127.0.0.1:3000` | Socket address of the private API listener. Compose sets `0.0.0.0:3000` inside its private network. |
+| `ACCLIMATE_INTERNAL_BIND` | No | `127.0.0.1:3001` | Host and port of the listener the executor connects to. Compose sets `executor-listener:3001` on its private executor network. |
+| `ACCLIMATE_OIDC_ISSUER` | Yes | None | HTTPS realm issuer, identical to `CONSOLE_OIDC_ISSUER` including any trailing slash. No credentials, query or fragment. |
+| `ACCLIMATE_LOGIN_TOKEN` | Yes | None | Login authority token. The same value as `CONSOLE_LOGIN_TOKEN`. |
+| `ACCLIMATE_CONSOLE_TOKEN` | Yes | None | Console transport token. The same value as `CONSOLE_SERVICE_TOKEN`. |
+| `ACCLIMATE_OPERATORS` | Yes | None | JSON array of objects with `issuer` and `subject`, one for each operator. It must not be empty. |
+| `ACCLIMATE_AUTH` | Yes | None | JSON array of [static machine grants](#static-machine-grants). Use `[]` for browser-only use, or when every machine token is issued from the console. |
+| `ACCLIMATE_SERVICE_BINARY` | No | `target/release/acclimate-service` under the checkout | Absolute path to the executable. Only the `npm start` wrapper for a service run outside a container reads it. |
 
-| Variable | Purpose |
-| --- | --- |
-| `DATABASE_URL` | Required `postgresql://` or `postgres://` URL with an explicit host, user and database. URL-encode the password component. |
-| `ACCLIMATE_BIND` | Private API socket address. Defaults to `127.0.0.1:3000`. Compose binds `0.0.0.0:3000` inside the private network. |
-| `ACCLIMATE_OIDC_ISSUER` | Required exact HTTPS realm issuer. Match `CONSOLE_OIDC_ISSUER` verbatim, including any trailing slash. Do not include credentials, a query or a fragment. |
-| `ACCLIMATE_LOGIN_TOKEN` | Required login authority token. Match `CONSOLE_LOGIN_TOKEN`. |
-| `ACCLIMATE_CONSOLE_TOKEN` | Required console transport token. Match `CONSOLE_SERVICE_TOKEN`. Use a different token from the login authority and every machine grant. The login authority and machine tokens must also be distinct. |
-| `ACCLIMATE_OPERATORS` | Required nonempty JSON array of objects with `issuer` and `subject`. Each pair must be unique, use the exact configured issuer and have a nonempty subject of at most 512 bytes. |
-| `ACCLIMATE_AUTH` | Required JSON array of static machine grants with `token`, `principalId`, `workspaceId` and `rights`. Use `[]` when every machine token is issued from the console. Rights are `read`, `write` and `promote`.
+The login token, the console token and every static machine token must be different values.
 
-A token identifies one principal and can appear once per workspace. Keep colons out of principal IDs. Changing this value requires a restart; console-issued machine tokens do not. |
-| `ACCLIMATE_SERVICE_BINARY` | Absolute path to the executable used by the native `npm start` wrapper. Defaults to `target/release/acclimate-service` under the checkout. |
+Remove `ACCLIMATE_MODE` and `CONSOLE_MODE` from older runtime files. The service and the console refuse to start when either is defined, whatever its value.
 
-Remove `ACCLIMATE_MODE` and `CONSOLE_MODE` from both the Rust and console environments. Startup rejects any defined value.
+Each operator pair must be unique. Its `issuer` must equal `ACCLIMATE_OIDC_ISSUER` and its `subject` must be nonempty and at most 512 bytes.
 
-### Learning
+### Static machine grants
 
-Run the `acclimate-executor` container with a provisioned executor credential and access to the Docker socket. Create the credential with the service binary's `--create-executor-token` command, which prints it as JSON, save the token in a private file, and point `ACCLIMATE_EXECUTOR_TOKEN_FILE` at that file. Build the chat runner image and configure gVisor (`runsc`) in production. Set `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` on the service to a 64-character hex key so workspace provider credentials can be encrypted at rest. [Enable learning](/docs/operate/self-host#enable-learning) lists the steps in order.
+`ACCLIMATE_AUTH` holds machine tokens that are fixed in the service's environment. Changing it needs a restart. Machine tokens issued from the console do not.
 
-The first time the service starts with a key, it stores a check value sealed with that key. A later start with a different key stops with an error, rather than failing every lease. Before a check value exists, a key that opens none of the stored provider keys is also refused. Without a key, the service starts and logs a warning: saving a provider fails with 503, and stored providers show "Provider key unavailable".
+```json
+[
+  {
+    "token": "<secret>",
+    "principalId": "support-agent",
+    "workspaceId": "<workspace-id>",
+    "rights": ["read", "write"]
+  }
+]
+```
 
-| Service command | What it does |
-| --- | --- |
-| `acclimate-service --create-executor-token` | Creates an executor credential and prints `{id, token}`. |
-| `acclimate-service --list-executor-tokens` | Prints a JSON array with each credential's `id`, `createdAt`, `lastSeenAt`, declared `runtime`, `revoked` and `revokedAt`. It never prints a token. |
-| `acclimate-service --revoke-executor-token <id>` | Revokes a credential. |
-| `acclimate-service --reset-provider-keys --confirm` | Deletes every stored workspace provider, with its URL, models and API key, and the key check value, then prints `{"removedProviders": n}`. Use it only to start over with a new key. Each workspace administrator must then enter their provider again. Without `--confirm` it explains itself and exits. |
+- `rights` holds any of `read`, `write` and `promote`. See [Rights](/docs/concepts/credentials#rights).
+- A token identifies one principal and can appear once for each workspace.
+- A `principalId` must not contain a colon.
 
-Run each with the service's `DATABASE_URL`, for example through `docker compose exec -T service /usr/local/bin/acclimate-service`.
+## Optimizer
 
-| Executor setting | Purpose |
-| --- | --- |
-| `ACCLIMATE_EXECUTOR_TOKEN_FILE` | File that holds the executor credential. The executor exits at startup when the file is missing, unreadable or empty. `ACCLIMATE_EXECUTOR_TOKEN` is read only when the file setting is unset. |
-| `ACCLIMATE_SANDBOX_RUNTIME` | `runsc` (gVisor, the production Compose default) or `docker`. Any other value stops the executor at startup. |
-| `ACCLIMATE_RUNNER_IMAGE` | The chat runner image. It must exist when the executor starts. |
-| `ACCLIMATE_EXECUTOR_HEALTH_FILE` | File the executor touches after each successful lease request and heartbeat. Defaults to `/tmp/acclimate-executor-health`. `acclimate-executor --health` exits 0 when it is at most 120 seconds old. |
-| `ACCLIMATE_EXECUTOR_CONCURRENCY` | Rollouts run at once. Defaults to 1. |
+These service variables set the optimizer, the model that changes bundles in a learning round. Without them, delivery still works and starting a loop is refused with `optimizer-required`. See [Set the optimizer model](/docs/operate/enable-learning#set-the-optimizer-model).
 
-The executor exits with status 78 and a plain message when its configuration cannot work: the service refuses its credential with HTTP 401, the credential file is missing or empty, the runtime name is unsupported, the runner image is missing, or the startup sandbox preflight fails. The preflight runs one throwaway sandbox with the rollout's flags and checks that it can read its lease directory and reach the gateway socket.
+| Variable | Required | Default | Value |
+| --- | --- | --- | --- |
+| `ACCLIMATE_MODEL_ENDPOINT` | No | Unset | Full HTTP or HTTPS URL of an OpenAI-compatible Chat Completions route, such as `https://llm.example.com/v1/chat/completions`. No embedded credentials. |
+| `ACCLIMATE_MODEL_TOKEN` | With the endpoint | None | Bearer credential for the endpoint. Nonblank, with no control characters. |
+| `ACCLIMATE_MODEL` | With the endpoint | None | Model ID, 1 to 256 bytes after trimming, with no control characters. |
+| `ACCLIMATE_MODEL_REASONING_EFFORT` | No | Unset | `low`, `medium`, `high`, `xhigh`, `max` or `ultra`. When unset, requests omit `reasoning_effort`. |
+| `ACCLIMATE_MODEL_TIMEOUT_SECONDS` | No | `600` | Timeout for each HTTP attempt, from 30 to 3,600 seconds. |
+| `ACCLIMATE_MODEL_MAX_COMPLETION_TOKENS` | No | `32768` | Sent as `max_completion_tokens` on each call, from 1,024 to 262,144. |
+| `ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS` | No | `3` | Consecutive failed rounds before the loop pauses, from 1 to 4,294,967,295. |
 
-`ACCLIMATE_PROVIDER_HTTP_HOSTS` is a comma-separated list of exact hostnames or IP addresses, compared without case. It defaults to empty. Set it to the same value on the service and on the executor. The service checks a provider's base URL when it is saved, and the executor checks it again with the addresses the host resolves to.
+- The service posts to `ACCLIMATE_MODEL_ENDPOINT` as written.
+- A round pins `ACCLIMATE_MODEL` and `ACCLIMATE_MODEL_REASONING_EFFORT` when it starts.
+- An invalid timeout, token limit or reasoning effort stops the service at startup, even when the endpoint is unset.
+- An unset, zero or invalid `ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS` uses the default.
+- The service retries HTTP 429, HTTP 5xx and connection or timeout errors after 5 and then 30 seconds.
+
+To try the optimizer on your own machine, see [Set up a local model proxy](/docs/get-started/first-learning-round#set-up-a-local-model-proxy).
+
+## Model provider
+
+The task model and the judge model come from the model provider that a workspace administrator saves in the console, not from the environment. Two service variables control how the service stores and reaches it.
+
+| Variable | Required | Default | Value |
+| --- | --- | --- | --- |
+| `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` | For learning | Unset | 64 hex characters. Encrypts the provider API keys stored in the database. |
+| `ACCLIMATE_PROVIDER_HTTP_HOSTS` | No | Empty | Comma-separated hostnames or IP addresses that a provider may use over plain HTTP or at a private address. |
+
+Without the provider encryption key, the service starts but cannot save a model provider. See [Keep the provider encryption key](/docs/operate/backup-and-restore#keep-the-provider-encryption-key) for what happens when the key is missing or changed.
+
+### Provider addresses
+
+Set `ACCLIMATE_PROVIDER_HTTP_HOSTS` to the same value on the service and on the executor. Each entry is an exact hostname or IP address, compared without case. The service checks a provider's base URL when it is saved. The executor checks it again, with the addresses the host resolves to.
 
 - The base URL must use HTTPS. Plain HTTP is allowed only for a listed host.
-- It must not contain a user name, password, query or fragment.
-- Link-local addresses, the unspecified address, multicast, broadcast, the cloud metadata addresses `100.100.100.200`, `168.63.129.16` and `fd00:ec2::254`, and the hostnames `metadata.google.internal` and `metadata.goog` are always refused.
-- Loopback, `localhost` and `*.localhost`, private IPv4, carrier-grade NAT (`100.64.0.0/10`) and IPv6 unique-local addresses need the host on the list, even over HTTPS.
+- The base URL must not contain a user name, password, query or fragment.
+- Loopback addresses, `localhost` and `*.localhost`, private IPv4 addresses, carrier-grade NAT addresses (`100.64.0.0/10`) and IPv6 unique-local addresses need the host on the list, even over HTTPS.
+- Some addresses are always refused: link-local, unspecified, multicast and broadcast addresses, the cloud metadata addresses `100.100.100.200`, `168.63.129.16` and `fd00:ec2::254`, and the hostnames `metadata.google.internal` and `metadata.goog`.
 
-The settings below configure the optimizer. The task model and judge model come from the workspace model provider, which must be an OpenAI-compatible endpoint. Workspace administrators set it in the console.
+## Invitation email
 
-The failed-round threshold accepts integers from 1 to 4,294,967,295. An unset or invalid value falls back to its default. Invalid optimizer timeout, token limit or reasoning effort settings prevent startup, even when the endpoint is unset.
+Set `ACCLIMATE_SMTP_HOST` on the service to send workspace invitations by email. Keycloak's own email is configured separately.
 
-| Learning setting | Purpose |
-| --- | --- |
-| `ACCLIMATE_MODEL_ENDPOINT` | Full HTTP or HTTPS OpenAI-compatible Chat Completions URL without embedded credentials, including `/v1/chat/completions` for CLIProxyAPI. An unset endpoint leaves the optimizer unavailable. |
-| `ACCLIMATE_MODEL_TOKEN` | Nonblank optimizer endpoint bearer credential without control characters. Required when the endpoint is set. |
-| `ACCLIMATE_MODEL` | Model for proposing, screening and selecting. Required when the endpoint is set. The trimmed model ID must have 1–256 bytes and no control characters. The round pins this value at its start. |
-| `ACCLIMATE_MODEL_REASONING_EFFORT` | Optional reasoning effort for optimizer requests. Accepts `low`, `medium`, `high`, `xhigh`, `max` or `ultra`. The round pins this value at its start. When unset, requests omit `reasoning_effort`. |
-| `ACCLIMATE_MODEL_TIMEOUT_SECONDS` | Timeout per optimizer HTTP attempt in seconds. Integer from 30 to 3,600, defaults to 600. |
-| `ACCLIMATE_MODEL_MAX_COMPLETION_TOKENS` | Value sent as `max_completion_tokens` for each optimizer call. Integer from 1,024 to 262,144, defaults to 32,768. |
-| `ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS` | Consecutive failed rounds before the loop pauses. Defaults to 3. |
+| Variable | Required | Default | Value |
+| --- | --- | --- | --- |
+| `ACCLIMATE_SMTP_HOST` | No | Unset | SMTP relay hostname. Required when any other `ACCLIMATE_SMTP_*` variable is set. |
+| `ACCLIMATE_SMTP_FROM` | With SMTP | None | Sender mailbox, such as `Acclimate <noreply@example.com>`. |
+| `ACCLIMATE_CONSOLE_ORIGIN` | With SMTP | None | Public HTTPS origin of the console, the same as `CONSOLE_ORIGIN`. Invitation links use it. |
+| `ACCLIMATE_SMTP_TLS` | No | `starttls` | `starttls`, `tls` for implicit TLS or `none`. |
+| `ACCLIMATE_SMTP_PORT` | No | `465` with `tls`, otherwise `587` | Integer from 1 to 65,535. |
+| `ACCLIMATE_SMTP_USERNAME` | No | Unset | SMTP user name. Set it together with the password. |
+| `ACCLIMATE_SMTP_PASSWORD` | No | Unset | SMTP password. Set it together with the user name. |
 
-### CLIProxyAPI with Codex sign-in
+`ACCLIMATE_SMTP_TLS=none` is accepted only for the hosts `localhost`, `127.0.0.1`, `::1` and `mailpit`, and only without SMTP credentials.
 
-Acclimate supports OpenAI-compatible Chat Completions endpoints for the optimizer. Follow the CLIProxyAPI setup guide and pin the proxy build. In the current v8 config, set `server.port` to `8317` (the default) and put a private client API key in `access.api-keys`. Bind the listener to an interface reachable by the service on a private network. Use loopback when both processes run directly on the same host. Inside Compose, use the proxy's reachable hostname since loopback refers to the service container. [CLIProxyAPI setup guide](https://help.router-for.me/) · [Example configuration](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/config.example.yaml)
+## Executor
 
-Run `cli-proxy-api -config /private/config.yaml -codex-login` to sign in with Codex, then start the proxy with `cli-proxy-api -config /private/config.yaml`. Check that the intended model ID is available to the signed-in account. [CLI flags](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/cmd/server/main.go)
+The executor is the process that runs learning rollouts in sandboxes. In the bundled deployment, Compose sets most of these variables. See [Enable learning](/docs/operate/enable-learning).
 
-Set these values in the service environment.
+| Variable | Required | Default | Value |
+| --- | --- | --- | --- |
+| `ACCLIMATE_EXECUTOR_SERVICE` | Yes | None | Base URL of the service's executor listener. Compose sets `http://service:3001`. |
+| `ACCLIMATE_EXECUTOR_TOKEN_FILE` | One of the two | None | File that holds the executor credential. The executor exits at startup when the file is missing, unreadable or empty. |
+| `ACCLIMATE_EXECUTOR_TOKEN` | One of the two | None | The executor credential itself. Read only when `ACCLIMATE_EXECUTOR_TOKEN_FILE` is unset. |
+| `ACCLIMATE_SANDBOX_RUNTIME` | No | `runsc` | `runsc` for gVisor, or `docker`. Any other value stops the executor at startup. |
+| `ACCLIMATE_RUNNER_IMAGE` | No | `acclimate-chat:1` | The runner image each sandbox runs. It must exist when the executor starts. Compose sets the release's `acclimate-runner` image. |
+| `ACCLIMATE_SANDBOX_DIR` | No | `/var/lib/acclimate-executor` | Directory where the executor keeps the files of each leased rollout. |
+| `ACCLIMATE_SANDBOX_VOLUME` | No | Unset | Name of the Docker volume mounted at `ACCLIMATE_SANDBOX_DIR`. Set it when the executor runs in a container. |
+| `ACCLIMATE_EXECUTOR_CONCURRENCY` | No | `1` | Number of rollouts run at once. |
+| `ACCLIMATE_EXECUTOR_HEALTH_FILE` | No | `/tmp/acclimate-executor-health` | File the executor touches after each successful lease request and heartbeat. |
+| `ACCLIMATE_PROVIDER_HTTP_HOSTS` | No | Empty | The same value as on the service. See [Provider addresses](#provider-addresses). |
 
-| Setting | Value |
-| --- | --- |
-| `ACCLIMATE_MODEL_ENDPOINT` | Full URL, for example `http://127.0.0.1:8317/v1/chat/completions`. The service posts to the URL as written. |
-| `ACCLIMATE_MODEL_TOKEN` | Required nonempty proxy client key from `access.api-keys`. The service sends it as a bearer token. |
-| `ACCLIMATE_MODEL` | `gpt-6.2-astra` for the experiment, or the model ID served by your proxy. |
-| `ACCLIMATE_MODEL_REASONING_EFFORT` | `high` for the experiment. |
+`acclimate-executor --health` exits 0 when the health file is at most 120 seconds old.
 
-The optimizer requests JSON mode and includes `max_completion_tokens` (default 32,768). The inspected CLIProxyAPI Codex translator maps `max_completion_tokens` to `max_output_tokens` and `reasoning_effort` to `reasoning.effort`. Its format switch has no `json_object` case, so JSON mode is unenforced on that route. The optimizer prompts for JSON and validates the returned content. The service retries HTTP 429, HTTP 5xx, and qualifying connection or timeout errors with 5- and 30-second backoffs. [Codex Chat Completions translator](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/internal/translator/codex/openai/chat-completions/codex_openai_request.go)
-
-### Invitation email
-
-Set `ACCLIMATE_SMTP_HOST` to enable application invitation email. Configure Keycloak's email separately.
-
-| Variable | Purpose |
-| --- | --- |
-| `ACCLIMATE_SMTP_HOST` | SMTP relay hostname. Required when another `ACCLIMATE_SMTP_*` variable is set. |
-| `ACCLIMATE_SMTP_PORT` | Integer from 1 to 65,535. Defaults to 465 with `tls` and 587 otherwise. |
-| `ACCLIMATE_SMTP_FROM` | Required sender mailbox when SMTP is enabled, for example `Acclimate <noreply@example.com>`. |
-| `ACCLIMATE_SMTP_TLS` | `starttls` by default. Use `tls` for implicit TLS. The `none` setting requires `localhost`, `127.0.0.1`, `::1` or `mailpit`, with no SMTP credentials. |
-| `ACCLIMATE_SMTP_USERNAME`, `ACCLIMATE_SMTP_PASSWORD` | Optional authentication. Set both to nonempty values for a TLS relay that requires credentials. |
-| `ACCLIMATE_CONSOLE_ORIGIN` | Required HTTPS console origin when SMTP is enabled. Use the same public origin as `CONSOLE_ORIGIN` for invitation links. |
+When its credential, runner image or sandbox runtime is wrong, or its startup sandbox check fails, the executor exits with status 78 and a message that names the fault. See [Check the executor](/docs/operate/enable-learning#check-the-executor).
 
 ## Console
 
-| Variable | Purpose |
+| Variable | Required | Default | Value |
+| --- | --- | --- | --- |
+| `CONSOLE_ORIGIN` | Yes | None | Canonical public HTTPS origin, with no path or trailing slash. |
+| `CONSOLE_PUBLIC_API_URL` | Yes | None | Public HTTPS base URL of the API, shown in **App setup**. |
+| `CONSOLE_SERVICE_URL` | Yes | None | Private HTTP or HTTPS base URL of the API. Use `http://service:3000` in Compose. |
+| `CONSOLE_LOGIN_TOKEN` | Yes | None | The same value as the service's `ACCLIMATE_LOGIN_TOKEN`. |
+| `CONSOLE_SERVICE_TOKEN` | Yes | None | The same value as the service's `ACCLIMATE_CONSOLE_TOKEN`. It must differ from `CONSOLE_LOGIN_TOKEN`. |
+| `CONSOLE_OIDC_ISSUER` | Yes | None | HTTPS realm issuer, identical to `ACCLIMATE_OIDC_ISSUER`. |
+| `CONSOLE_OIDC_CLIENT_ID` | Yes | None | ID of the confidential OIDC client. The bundled realm uses `acclimate-console`. |
+| `CONSOLE_OIDC_CLIENT_SECRET` | Yes | None | Secret of that client. |
+| `CONSOLE_ALLOW_EDITS` | No | Disabled | Set to the literal `true` to let members with the right role change bundles, releases, connections, tasks, the model provider and learning in the console. Otherwise the console only shows them. |
+| `CONSOLE_WORKSPACE` | No | Unset | Workspace used by server operations when the user has no saved selection. |
+| `CONSOLE_BUNDLE` | No | Unset | Bundle used in the same case. |
+| `CONSOLE_CHANNEL` | No | Unset | Channel used in the same case. Many operations use `stable` when no channel is set. |
+| `HOST` | No | `127.0.0.1` | Listener address. Compose sets `0.0.0.0` on its private network. |
+| `PORT` | No | `3100` | Listener port, from 1 to 65,535. |
+| `NODE_ENV` | No | None | The console image runs with `production`. |
+
+- The trusted proxy must send the host of `CONSOLE_ORIGIN` as `Host`.
+- Register `CONSOLE_ORIGIN` plus `/auth/callback` as the OIDC client's redirect URI.
+- Prefer choosing the workspace, bundle and channel in the console over the three fallback variables.
+- `CONSOLE_SESSION_TOKEN` is not a setting. The console derives it from each request's session cookie.
+- The built Node listener can also read Nitro's `NITRO_HOST`, `NITRO_PORT`, `NITRO_UNIX_SOCKET`, `NITRO_SSL_CERT` and `NITRO_SSL_KEY`. Leave them unset in the bundled deployment, so its health check and proxy can reach the private HTTP listener.
+
+## Compose
+
+Set these variables in the shell that runs `docker compose`. They tell `compose.yaml` and the Keycloak overlay `compose.keycloak.yaml` where your private files are and which images to run.
+
+| Variable | Required | Default | Value |
+| --- | --- | --- | --- |
+| `CONSOLE_HOST` | Yes | None | Public hostname of the console, with no scheme or path. |
+| `API_HOST` | Yes | None | Public hostname of the API, different from `CONSOLE_HOST`. |
+| `ACME_EMAIL` | Yes | None | Contact email for the certificates Caddy requests. |
+| `ACCLIMATE_SERVICE_ENV` | Yes | None | Absolute path to the private runtime file that holds the service's variables. |
+| `ACCLIMATE_CONSOLE_ENV` | Yes | None | Absolute path to the private runtime file that holds the console's variables. |
+| `ACCLIMATE_POSTGRES_PASSWORD_FILE` | Yes | None | Absolute path to the private file that holds the raw PostgreSQL password. |
+| `ACCLIMATE_EXECUTOR_TOKEN_FILE` | Yes | None | Absolute path on the host to the private executor credential file, outside the checkout. |
+| `ACCLIMATE_VERSION` | No | `latest` | Tag of the service, console, executor and runner images. |
+| `ACCLIMATE_SERVICE_IMAGE` | No | The GHCR image at `ACCLIMATE_VERSION` | Complete image reference for the service. |
+| `ACCLIMATE_CONSOLE_IMAGE` | No | The GHCR image at `ACCLIMATE_VERSION` | Complete image reference for the console. |
+| `ACCLIMATE_EXECUTOR_IMAGE` | No | The GHCR image at `ACCLIMATE_VERSION` | Complete image reference for the executor. |
+| `ACCLIMATE_RUNNER_IMAGE` | No | The GHCR image at `ACCLIMATE_VERSION` | Complete image reference for the runner image. Compose also passes it to the executor. |
+| `KEYCLOAK_HOST` | With the overlay | None | Public hostname of Keycloak, different from the other two. |
+| `ACCLIMATE_KEYCLOAK_ENV` | With the overlay | None | Absolute path to the private Keycloak runtime file. |
+| `ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE` | With the overlay | None | Absolute path to the private file that holds Keycloak's raw database password. |
+
+- The password in `ACCLIMATE_POSTGRES_PASSWORD_FILE` must match the URL-encoded password in `DATABASE_URL`.
+- `docker compose` refuses to run without `ACCLIMATE_EXECUTOR_TOKEN_FILE`, even before learning is set up. Compose mounts the file into the executor container, where the executor's own `ACCLIMATE_EXECUTOR_TOKEN_FILE` points at the mounted copy.
+- Pin `ACCLIMATE_VERSION` to the exact Acclimate release, written without the Git tag's leading `v`, such as `0.1.0`. See [Versioning and compatibility](/docs/reference/versioning).
+- Compose passes `ACCLIMATE_PROVIDER_HTTP_HOSTS`, `ACCLIMATE_EXECUTOR_CONCURRENCY` and `ACCLIMATE_SANDBOX_RUNTIME` from this shell to the executor. Setting them in the service's runtime file does not reach the executor.
+
+### Keycloak runtime file
+
+The file that `ACCLIMATE_KEYCLOAK_ENV` names holds these variables for the co-hosted Keycloak. [Self-host Acclimate](/docs/operate/self-host) creates it.
+
+| Variable | Value |
 | --- | --- |
-| `CONSOLE_ORIGIN` | Required canonical public HTTPS origin without a path or trailing slash. The trusted proxy must supply this origin's host as `Host`. |
-| `CONSOLE_PUBLIC_API_URL` | Required public HTTPS API base URL shown in app setup. |
-| `CONSOLE_SERVICE_URL` | Required private HTTP or HTTPS API base URL. Use `http://service:3000` in Compose. |
-| `CONSOLE_LOGIN_TOKEN` | Required. Match Rust's `ACCLIMATE_LOGIN_TOKEN`. |
-| `CONSOLE_SERVICE_TOKEN` | Required. Match Rust's `ACCLIMATE_CONSOLE_TOKEN`. Use a different value from `CONSOLE_LOGIN_TOKEN`. |
-| `CONSOLE_OIDC_ISSUER` | Required exact HTTPS realm issuer. Match `ACCLIMATE_OIDC_ISSUER` verbatim. |
-| `CONSOLE_OIDC_CLIENT_ID`, `CONSOLE_OIDC_CLIENT_SECRET` | Required confidential client ID and credential. The bundled realm uses `acclimate-console`. Register the exact `CONSOLE_ORIGIN` plus `/auth/callback`. |
-| `CONSOLE_ALLOW_EDITS` | Set to the literal `true` to enable authoring, connection and learning mutations for authorized users. Defaults to disabled. |
-| `CONSOLE_WORKSPACE`, `CONSOLE_BUNDLE`, `CONSOLE_CHANNEL` | Optional fallback workspace, bundle and channel for server operations without a saved selection. Many operations use `stable` when a channel is absent. Prefer selecting the scope in the console. |
-| `HOST`, `PORT` | Listener settings. The native console and dev wrappers default to `127.0.0.1` and `3100` and accept port numbers 1–65,535. Compose binds `0.0.0.0:3100` on the private network. |
-| `NODE_ENV` | The console image runs with `production`. |
+| `KC_DB_PASSWORD` | The raw password from the file `ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE` names. |
+| `KC_BOOTSTRAP_ADMIN_USERNAME` | User name of the temporary administrator. |
+| `KC_BOOTSTRAP_ADMIN_PASSWORD` | Password of the temporary administrator. |
+| `ACCLIMATE_CONSOLE_ORIGIN` | The console's `CONSOLE_ORIGIN`, used by the first realm import. |
+| `ACCLIMATE_OIDC_CLIENT_SECRET` | The console's `CONSOLE_OIDC_CLIENT_SECRET`, used by the first realm import. |
 
-The console derives `CONSOLE_SESSION_TOKEN` from the request's session cookie. Set user access through OIDC sign-in. The built Node listener can also read Nitro's `NITRO_HOST`, `NITRO_PORT`, `NITRO_UNIX_SOCKET`, `NITRO_SSL_CERT` and `NITRO_SSL_KEY`. Leave those overrides unset for the bundled deployment so its health probe and proxy can reach the private HTTP listener.
+## Service commands
 
-## Compose and co-hosted Keycloak
+The service executable also runs one-off operator commands. Each command except `--check-grants` connects to the database, so run it with the service's `DATABASE_URL`. In the bundled deployment, run it through `docker compose exec -T service /usr/local/bin/acclimate-service`.
 
-| Variable | Purpose |
+| Command | What it does |
 | --- | --- |
-| `CONSOLE_HOST`, `API_HOST`, `KEYCLOAK_HOST` | Distinct public hostnames without schemes or paths. The Keycloak hostname is required with the co-hosted overlay. |
-| `ACME_EMAIL` | Certificate contact email for Caddy. |
-| `ACCLIMATE_SERVICE_ENV`, `ACCLIMATE_CONSOLE_ENV` | Absolute paths to the private service and console runtime files. |
-| `ACCLIMATE_POSTGRES_PASSWORD_FILE` | Absolute path to the private raw PostgreSQL password file. Its password must match the encoded value in `DATABASE_URL`. |
-| `ACCLIMATE_KEYCLOAK_ENV`, `ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE` | Absolute paths to the private Keycloak runtime file and separate raw database password file for the overlay. |
-| `ACCLIMATE_VERSION` | Tag for the service, console, executor and runner images. Defaults to `latest`. Pin the exact release version without the Git tag's leading `v`, for example `0.1.0`. |
-| `ACCLIMATE_EXECUTOR_TOKEN_FILE` | Required absolute path to the private executor credential file, outside the checkout. `docker compose` refuses to run without it. |
-| `ACCLIMATE_SERVICE_IMAGE`, `ACCLIMATE_CONSOLE_IMAGE`, `ACCLIMATE_EXECUTOR_IMAGE`, `ACCLIMATE_RUNNER_IMAGE` | Optional complete image references. An explicit reference overrides the corresponding default GHCR image and version tag. |
+| `acclimate-service --create-executor-token` | Creates an executor credential and prints it as JSON with `id` and `token`. |
+| `acclimate-service --list-executor-tokens` | Prints a JSON array of the executor credentials. It never prints a token. |
+| `acclimate-service --revoke-executor-token <id>` | Revokes one executor credential. |
+| `acclimate-service --reset-provider-keys --confirm` | Deletes every stored model provider and the key check value, then prints `{"removedProviders": n}`. |
+| `acclimate-service --check-grants` | Checks an `ACCLIMATE_AUTH` value read from standard input, without starting the service. |
 
-In the Keycloak runtime file, set `KC_DB_PASSWORD` to the raw password from the identity database's password file. For the initial realm import, set `ACCLIMATE_CONSOLE_ORIGIN` and `ACCLIMATE_OIDC_CLIENT_SECRET` to the values of the console's `CONSOLE_ORIGIN` and `CONSOLE_OIDC_CLIENT_SECRET`. Set `KC_BOOTSTRAP_ADMIN_USERNAME` and `KC_BOOTSTRAP_ADMIN_PASSWORD` for the temporary administrator. See [Self-host Acclimate](/docs/operate/self-host) for the file setup and first sign-in.
+- `--list-executor-tokens` prints each credential's `id`, `createdAt`, `lastSeenAt`, declared `runtime`, `revoked` and `revokedAt`.
+- `--reset-provider-keys` deletes each provider's URL, allowed models and provider API key. Use it only to start again with a new provider encryption key. Each workspace administrator must then enter the model provider again. Without `--confirm`, the command explains itself and exits without deleting anything.
+- `--check-grants` reads up to 1 MiB of JSON. It prints `{"schemaVersion":1,"valid":true}` and exits 0, or prints `{"schemaVersion":1,"valid":false,"code":"grants.invalid"}` to standard error and exits with a failure status. It does not echo its input.
+
+See [Enable learning](/docs/operate/enable-learning) for the order in which to use the executor commands.

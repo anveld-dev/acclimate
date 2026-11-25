@@ -1,41 +1,87 @@
 ---
-title: Use a reverse proxy
-description: Preserve Acclimate's public HTTPS origins, private listeners and trusted proxy headers.
+title: Use your own reverse proxy
+description: Replace the bundled Caddy with nginx, Traefik or an ingress while keeping Acclimate's HTTPS origins, private listeners and trusted proxy headers.
 ---
 
-Use the bundled Caddy configuration for the supported single-host deployment. Caddy terminates TLS for your public console and API hostnames and forwards HTTP over a private Docker network. The Keycloak overlay adds a separate identity hostname. See [Self-host Acclimate](/docs/operate/self-host) for the DNS and runtime settings.
+The bundled Caddy configuration needs no changes for the single-host deployment in [Self-host Acclimate](/docs/operate/self-host). Read this page only if you are an operator who replaces Caddy with nginx, Traefik or a Kubernetes ingress. It lists what your proxy must do and gives an nginx example.
 
-## Match the bundled proxy behavior
+## Match the bundled proxy
 
-If you operate nginx, Traefik or a Kubernetes ingress, apply these requirements to the console and the API.
+Caddy terminates TLS for the public console and API hostnames and forwards plain HTTP over a private Docker network. Apply the same rules to both hostnames.
 
-- Terminate TLS at the trusted edge and redirect public HTTP to HTTPS. Route each public hostname to its own private listener. The bundled listeners are `console:3100` and `service:3000`. Expose neither listener, either PostgreSQL database nor the proxy admin interface to public clients.
-- Set the upstream `Host` to the fixed public host for that route. For the console, use the host from `CONSOLE_ORIGIN`, including the port if you use a nondefault HTTPS port. The console rejects a different host and reconstructs request URLs from its configured origin. It ignores caller-supplied forwarding headers.
-- Remove incoming `Forwarded` and all `X-Forwarded-*` headers. Set `X-Forwarded-Proto` to `https`, `X-Forwarded-Host` to the fixed public host, and `X-Forwarded-For` to the peer IP observed at your trusted edge. Avoid appending a client-supplied chain.
-- Preserve paths and query strings, including `/auth/callback`. Keep console cookies, request `Origin` and API `Authorization` intact. Register the exact public console origin plus `/auth/callback` with Keycloak.
-- Let API requests reach the service's 2 MiB body limit and 30-second processing deadline. Configure a 2 MiB ingress limit on the API and an upstream response timeout slightly above 30 seconds so the service can return its timeout response. A proxy that enforces the body limit itself can return its own 413 response.
+| Requirement | What your proxy must do |
+| --- | --- |
+| TLS | Terminate TLS and redirect public HTTP to HTTPS. |
+| Routing | Send each public hostname to its own private listener: the console to `console:3100` and the API to `service:3000`. |
+| `Host` | Set the upstream `Host` to the fixed public host for that route. For the console, use the host from `CONSOLE_ORIGIN`, with the port if you use a nondefault HTTPS port. |
+| Forwarding headers | Remove incoming `Forwarded` and all `X-Forwarded-*` headers. Then set the three headers listed under this table. |
+| Request contents | Preserve paths and query strings, including `/auth/callback`. Keep console cookies, the request `Origin` and the API `Authorization` header intact. |
+| Body limit | Let API requests reach the service's 2 MiB body limit. A proxy that enforces the limit itself returns its own 413 response. |
+| Timeout | Set the upstream response timeout slightly above 30 seconds, so the service can return its own timeout response. |
+| Private listeners | Do not expose either listener, either PostgreSQL database or the proxy's admin interface to public clients. |
 
-If you replace Caddy for the co-hosted Keycloak overlay, also preserve the HTTPS issuer from the browser and from the private application network. The supplied identity route forwards only `/realms/acclimate`, `/realms/acclimate/*`, `/resources/*` and `/robots.txt` to `keycloak:8080`. It applies the same header rules using the identity hostname. Keep `/admin`, the master realm and the management listener private.
+Set these forwarding headers on every upstream request:
+
+- `X-Forwarded-Proto` to `https`
+- `X-Forwarded-Host` to the fixed public host
+- `X-Forwarded-For` to the peer IP address your proxy observed, without appending a chain the client supplied
+
+The console rejects a request for a different host and rebuilds request URLs from its configured origin. It ignores forwarding headers that a caller supplies. Register the exact public console origin plus `/auth/callback` with Keycloak.
+
+## Allow task imports
+
+Task import is the exception to the body limit and the timeout. A proxy that applies 2 MiB or 30 seconds to it rejects or cuts off larger imports.
+
+| Host | Request | Body limit | Time allowed |
+| --- | --- | --- | --- |
+| API | `POST /v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/tasks/import` | 64 MiB | 600 seconds |
+| Console | `POST /learning-import` | 64 MiB | 610 seconds |
+
+The service enforces the API row. The console forwards each upload from the browser to the service and waits up to 610 seconds for the answer. The bundled Caddy configuration raises its body limit to 64 MiB for the API import path. It sets no body limit or timeout of its own on the console host.
+
+## Keep Keycloak sign-in working
+
+If you replace Caddy in a deployment with the co-hosted Keycloak, also serve the Keycloak hostname.
+
+- Forward only `/realms/acclimate`, `/realms/acclimate/*`, `/resources/*` and `/robots.txt` to `keycloak:8080`. Answer every other path yourself, as the bundled configuration does with a 404.
+- Apply the same header rules, using the Keycloak hostname.
+- Keep `/admin`, the master realm and the management listener private.
+- Keep the HTTPS issuer reachable from the private network too. Containers on that network reach the issuer at its public HTTPS name. In `compose.keycloak.yaml` the `proxy` container carries that name as an alias on the `backend` network, so those requests go to the proxy and see the public certificate. Your proxy needs the same arrangement.
+
+## Run without the bundled proxy
+
+`compose.yaml` defines Caddy as the `proxy` service. To leave it out, start the other services by name and omit `proxy`. For example, with release images:
+
+```sh
+docker compose up -d --no-build --wait postgres service console
+```
+
+Three facts about `compose.yaml` shape the rest:
+
+- **The proxy variables stay required.** Compose refuses every command unless `CONSOLE_HOST`, `API_HOST` and `ACME_EMAIL` are set, even when `proxy` does not run.
+- **No application port is published.** The console and the service listen only on the Compose network `backend`. Only the `proxy` service publishes ports, 80 and 443.
+- **`backend` has no outside route.** It is an internal network. Your proxy must join it to reach `console:3100` and `service:3000`, and it needs a second network or the host's ports for public traffic. The bundled `proxy` service joins `backend` and a second network, `edge`, for that reason.
 
 ## Example nginx configuration
 
-<Callout type="info">
-The repository's qualification tests do not cover this nginx example or other replacement proxies. Verify your own routing, TLS, header handling and sign-in before switching traffic.
+<Callout type="warn" title="This example is untested">
+The repository's tests do not cover this nginx example or any other replacement proxy. Verify your own routing, TLS, header handling and sign-in before you switch traffic.
 </Callout>
 
-This example assumes nginx runs at the public edge and can resolve both service names on the private network. Load the [headers-more module](https://github.com/openresty/headers-more-nginx-module) for wildcard request-header removal. Put the common directives inside each proxy location through an include. Configure your certificate paths and existing HTTP redirects for the two hostnames.
+This example assumes nginx runs at the public edge and can resolve both service names on the private network. Load the [headers-more module](https://github.com/openresty/headers-more-nginx-module) to remove request headers by wildcard. Configure your own certificate paths and your HTTP redirects for the two hostnames.
+
+Put the common directives in one file and include it in each proxy location.
 
 ```nginx title="/etc/nginx/acclimate-proxy.inc"
 more_clear_input_headers 'Forwarded' 'X-Forwarded-*';
 proxy_http_version 1.1;
 proxy_set_header X-Forwarded-Proto https;
 proxy_set_header X-Forwarded-For $remote_addr;
-client_max_body_size 2m;
 proxy_connect_timeout 5s;
-proxy_send_timeout 35s;
-proxy_read_timeout 35s;
 proxy_next_upstream off;
 ```
+
+Each server sets the ordinary limits. Its import location raises them.
 
 ```nginx
 server {
@@ -43,10 +89,22 @@ server {
     server_name console.example.com;
     ssl_certificate /etc/nginx/tls/console.fullchain.pem;
     ssl_certificate_key /etc/nginx/tls/console.key;
+    client_max_body_size 2m;
+    proxy_send_timeout 35s;
+    proxy_read_timeout 35s;
     location / {
         include /etc/nginx/acclimate-proxy.inc;
         proxy_set_header Host console.example.com;
         proxy_set_header X-Forwarded-Host console.example.com;
+        proxy_pass http://console:3100;
+    }
+    location = /learning-import {
+        include /etc/nginx/acclimate-proxy.inc;
+        proxy_set_header Host console.example.com;
+        proxy_set_header X-Forwarded-Host console.example.com;
+        client_max_body_size 64m;
+        proxy_send_timeout 615s;
+        proxy_read_timeout 615s;
         proxy_pass http://console:3100;
     }
 }
@@ -56,15 +114,27 @@ server {
     server_name api.example.com;
     ssl_certificate /etc/nginx/tls/api.fullchain.pem;
     ssl_certificate_key /etc/nginx/tls/api.key;
+    client_max_body_size 2m;
+    proxy_send_timeout 35s;
+    proxy_read_timeout 35s;
     location / {
         include /etc/nginx/acclimate-proxy.inc;
         proxy_set_header Host api.example.com;
         proxy_set_header X-Forwarded-Host api.example.com;
         proxy_pass http://service:3000;
     }
+    location ~ ^/v1/workspaces/[^/]+/bundles/[^/]+/learning/tasks/import$ {
+        include /etc/nginx/acclimate-proxy.inc;
+        proxy_set_header Host api.example.com;
+        proxy_set_header X-Forwarded-Host api.example.com;
+        client_max_body_size 64m;
+        proxy_send_timeout 605s;
+        proxy_read_timeout 605s;
+        proxy_pass http://service:3000;
+    }
 }
 ```
 
-Keep unmatched hosts on a rejecting default virtual host. The nginx read and send timeouts measure inactivity between I/O operations. The service enforces its own total processing deadline. See the [nginx proxy module reference](https://nginx.org/en/docs/http/ngx_http_proxy_module.html).
+Keep unmatched hosts on a default virtual host that rejects them. The nginx read and send timeouts measure inactivity between I/O operations, while the service enforces its own total deadline for each request. See the [nginx proxy module reference](https://nginx.org/en/docs/http/ngx_http_proxy_module.html).
 
-[Verify readiness, scoped API access and real OIDC sign-in](/docs/operate/health-and-readiness#verify-access-and-activity) through the configured edge.
+When your proxy is in place, run the checks in [Verify API access and sign-in](/docs/operate/health-and-readiness#verify-api-access-and-sign-in) through it.

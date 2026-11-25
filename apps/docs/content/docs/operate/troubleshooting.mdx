@@ -1,0 +1,42 @@
+---
+title: Troubleshooting
+description: Symptoms you may see on the local stack, in a learning loop or on the executor, with the cause and fix for each.
+---
+
+Find your symptom below to see its cause and fix. Text in backticks is the exact code or message that the SDK, the API, the console or a log shows. For every code, see [Error codes](/docs/reference/error-codes).
+
+## Local stack and SDK
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| An SDK call fails with `transport.unreachable` and `Could not reach the Acclimate service` while the stack is running | The shell has not loaded the stack's client settings, so Node.js or Python does not trust its certificate | Run `source .local/stack/env.sh` in that shell. See [Trust the local certificate](/docs/get-started/run-locally#trust-the-local-certificate). |
+| `job.expect()` fails with HTTP 404 and `Learning loop not enrolled` | Learning is not turned on for the bundle | Save the learning settings on the bundle's **Learning** tab. See [Run a learning loop](/docs/guides/learning-loop). |
+| On Linux, the containers cannot reach a model proxy that answers on `127.0.0.1` | On Linux, `host.docker.internal` is the Docker bridge address, not your loopback | Set the proxy's `server.host` to the bridge address. See [Set up a local model proxy](/docs/get-started/first-learning-round#set-up-a-local-model-proxy). |
+
+In the second case, the support agent example prints `Learning is not set up for this bundle`.
+
+## Learning
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| **Start** is disabled and says the service has no optimizer model, or the API answers 409 `optimizer-required` | The service has no optimizer | The operator sets the optimizer and restarts the service. See [Set the optimizer model](/docs/operate/enable-learning#set-the-optimizer-model). |
+| **Start** is refused with `tasks-required`, or the loop pauses with that reason | A split has fewer than 20 admitted tasks | Add tasks, fix the ones set aside and confirm the held-out tasks. Then choose **Start**. |
+| Held-out tasks stay pending | A held-out task that waits for confirmation is not checked until a signed-in person confirms it. A machine token cannot. | In the console, check **Needs confirmation** and choose **Confirm all shown**. See [Rights](/docs/concepts/credentials#rights). |
+| A round fails with `provider-unavailable` | Every failed rollout of the current version's evaluation was a model provider outage or rate limit | Wait. The loop tries again by itself. See [When a round fails](/docs/guides/learning-loop#when-a-round-fails). |
+
+On the local stack, set the optimizer as [Set up a local model proxy](/docs/get-started/first-learning-round#set-up-a-local-model-proxy) describes.
+
+If `provider-unavailable` keeps coming back, check the model provider's rate limits. A single Codex sign-in may answer many requests at once with rate limits, so lower the [executor concurrency](/docs/get-started/run-locally#executor-concurrency).
+
+## Executor and model provider
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Imports and task checks stay queued, or the loop waits with `no-executor` | No executor is connected to the service | The operator starts one. See [Start the executor](/docs/operate/enable-learning#start-the-executor). |
+| The executor container keeps restarting | It exits with status 78 because its credential, runner image or sandbox runtime is wrong | Read `docker compose logs acclimate-executor` and fix the cause it names. See [Check the executor](/docs/operate/enable-learning#check-the-executor). |
+| **Start** is refused with `Verify the workspace model provider before starting` | The executor has not verified every allowed model | Read each model's result under **Model provider** on the **Members** page. Fix the base URL, the API key or the model IDs. |
+| The service does not start and logs `ACCLIMATE_PROVIDER_ENCRYPTION_KEY does not match` | The key differs from the one the service first started with | Restore the original key. See [Keep the provider encryption key](/docs/operate/backup-and-restore#keep-the-provider-encryption-key). |
+
+The executor's log names the cause. Its message starts with `The service refused the executor credential`, `Cannot read the executor credential file`, `The executor credential is empty`, `Unsupported sandbox runtime`, `Inspecting the runner image` or `Sandbox preflight failed`.
+
+A model fails verification when it does not answer a chat request, or when its reply reports no token usage, which shows `Upstream response is missing token usage`. Saving a model provider over plain HTTP is refused with `Plain HTTP is allowed only for hosts listed in ACCLIMATE_PROVIDER_HTTP_HOSTS` until the operator lists the host. See [Provider addresses](/docs/reference/configuration#provider-addresses).

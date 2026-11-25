@@ -3,15 +3,15 @@ import Link from 'next/link';
 const delivery = [
   {
     step: 'Version',
-    body: 'Save instructions, skills and approved memory as an immutable bundle version.',
+    body: 'Save instructions, skills and memory files as an immutable version of a bundle.',
   },
   {
     step: 'Release',
-    body: 'Point a channel such as stable at an immutable version, or restore an earlier one.',
+    body: 'Point a channel such as stable at a version, or roll back to an earlier one.',
   },
   {
     step: 'Deliver',
-    body: 'Each new job fetches, verifies and prepares the pinned content for its native agent SDK.',
+    body: 'Each new job fetches the released version, verifies it and prepares its files for your agent.',
   },
 ];
 
@@ -22,14 +22,24 @@ const entries = [
     body: 'Start a local stack and deliver a verified version to your application.',
   },
   {
-    title: 'Guides',
-    href: '/docs/guides/deliver-content',
-    body: 'Release versions to channels and prepare them for jobs.',
+    title: 'First learning round',
+    href: '/docs/get-started/first-learning-round',
+    body: 'Connect a model and run a first round on 64 sample tickets.',
   },
   {
-    title: 'Learning loop',
+    title: 'Deliver content to jobs',
+    href: '/docs/guides/deliver-content',
+    body: 'Prepare the released version each time your application starts a job.',
+  },
+  {
+    title: 'Run a learning loop',
     href: '/docs/guides/learning-loop',
-    body: 'Configure a bundle, review tasks and start learning.',
+    body: 'Add tasks to a bundle, start learning and follow each round.',
+  },
+  {
+    title: 'Examples',
+    href: '/docs/examples',
+    body: 'Run a support agent and a ticket router in TypeScript or Python.',
   },
   {
     title: 'Integrations',
@@ -37,8 +47,8 @@ const entries = [
     body: 'Prepare content for Codex, the Claude Agent SDK, Pi and Cursor.',
   },
   {
-    title: 'Operate',
-    href: '/docs/operate/deploy',
+    title: 'Self-host',
+    href: '/docs/operate/self-host',
     body: 'Deploy the service with PostgreSQL, Keycloak and TLS.',
   },
 ];
@@ -49,12 +59,12 @@ export default function HomePage() {
       <section className="flex flex-col gap-6">
         <p className="text-sm font-medium text-fd-muted-foreground">Acclimate documentation</p>
         <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance md:text-5xl">
-          Improve your agent’s harness and deliver each version to your jobs.
+          Version, deliver and improve your agent’s instructions, skills and memory.
         </h1>
         <p className="max-w-2xl text-lg text-fd-muted-foreground text-pretty">
-          Acclimate versions and delivers your agent’s instructions, skills and memory. The
-          learning loop proposes five candidates per round for an enrolled bundle, evaluates the
-          candidates that pass screening and records what adopted changes fixed.
+          Acclimate stores those files as versioned bundles and delivers the released version to
+          each job your application starts. Its learning loop improves a bundle from example tasks
+          and releases the changes that score better.
         </p>
         <div className="flex flex-wrap gap-3">
           <Link

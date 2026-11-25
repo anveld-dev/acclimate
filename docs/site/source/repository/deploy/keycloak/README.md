@@ -123,7 +123,7 @@ Fetch verifies the official release asset's SHA256 and refuses an existing outpu
 
 The [testing guide](../../features/README.md#keycloak-and-sign-in-coverage) separates provider interoperability from generic failure tests and the full product behavior suite. CI runs the Keycloak provider matrix in its own job so a failure in the main behavior suite cannot prevent it from starting.
 
-Back up and restore Keycloak's PostgreSQL volume separately from Acclimate. Its realm import file is provisioning, not a full backup. Never delete either volume to apply configuration or reset a login. Verify public HTTPS and the real realm through the [external gates](../README.md#qualification-boundaries) before routing users.
+Back up and restore Keycloak's PostgreSQL volume separately from Acclimate. Its realm import file is provisioning, not a full backup. Never delete either volume to apply configuration or reset a login. Verify public HTTPS and the real realm through the [external gates](../README.md#what-has-been-tested) before routing users.
 
 ## Verification record — 2026-11-14
 

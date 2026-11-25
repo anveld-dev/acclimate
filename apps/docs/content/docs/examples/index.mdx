@@ -1,24 +1,26 @@
 ---
 title: Examples
-description: Runnable examples in the repository, what each one shows, and the setup they share.
+description: Runnable examples in the repository, what each one shows and the setup they share.
 ---
 
-The repository's [`examples/`](https://github.com/anveld-dev/acclimate/tree/main/examples) directory holds small programs you can run against your own service. Two of them have a walkthrough here.
+The repository's [`examples/`](https://github.com/anveld-dev/acclimate/tree/main/examples) directory holds small programs that a developer can run against their own service. This page lists them and covers the setup that the two learning walkthroughs share.
 
-| Example | What you do | Walkthrough |
+| Example | What you do | Read |
 | --- | --- | --- |
-| `examples/support-agent/` | Answer a support request with the released bundle, improve the bundle with 60 sample tasks, and report a person's correction as a new task. TypeScript and Python. | [Support agent](/docs/examples/support-agent) |
+| `examples/support-agent/`, `examples/learning/` | Answer a support request with the released bundle, improve the bundle with 60 sample tasks and report a person's correction as a new task. TypeScript and Python. | [Support agent](/docs/examples/support-agent) |
 | `examples/ticket-triage/` | Publish a bundle, import 64 labelled tickets, start the learning loop and follow each round from one script. TypeScript and Python. | [Ticket triage](/docs/examples/ticket-triage) |
-| `examples/learning/` | Import 60 ready support tasks, each with its own grading criteria. | [Support agent](/docs/examples/support-agent#improve-the-bundle-with-the-sample-tasks) |
-| `examples/delivery-check.ts`, `python/examples/delivery_check.py` | Prepare the released version for a connection and read back the verified files. | [Try Acclimate on your laptop](/docs/get-started/quickstart#connect-your-application) |
+| `examples/delivery-check.ts`, `python/examples/delivery_check.py` | Prepare the released version for a connection and read back the verified files. | [Connect your application](/docs/get-started/quickstart#connect-your-application) |
+| `examples/publish.ts` | Create a bundle, its first version and its first release from a payload file. | [Publish a bundle from a file](/docs/guides/release-and-roll-back#publish-a-bundle-from-a-file) |
 | `examples/claude-agent.ts`, `codex-agent.ts`, `cursor-agent.ts` | Run a coding agent on the prepared files. | [Claude Agent SDK](/docs/integrations/claude-agent-sdk), [Codex](/docs/integrations/codex), [Cursor](/docs/integrations/cursor) |
-| `examples/native-repository/` | Stage an existing repository for a coding agent, with an offline replay harness. | [Deliver content to jobs](/docs/guides/deliver-content#prepare-an-existing-repository) |
+| `examples/native-repository/` | Stage an existing repository for a coding agent, with an offline replay. | [Prepare an existing repository](/docs/guides/deliver-content#prepare-an-existing-repository) |
+
+Start with ticket triage for a quick end-to-end run. Its measured first round took 14 minutes, against about 95 minutes for the support agent. See [What a round costs](/docs/concepts/how-it-works#what-a-round-costs).
 
 ## Set up once
 
 Both walkthroughs use the local stack and a source checkout. They also work against any Acclimate service if you set the same variables.
 
-1. Start the [local stack](/docs/get-started/run-locally) with a [local model proxy](/docs/get-started/run-locally#local-model-proxy), so that the service has an optimizer model and the workspace has a verified model provider. The support agent's first step works without either.
+1. Start the local stack and give it a model. See [The local stack](/docs/get-started/run-locally) and [Set up a local model proxy](/docs/get-started/first-learning-round#set-up-a-local-model-proxy). The proxy gives the service an optimizer and the workspace a verified model provider. The first step of the support agent walkthrough needs neither, only a model endpoint for the application itself.
 
 2. Load the stack's client settings in the shell you run the examples from. The file sets `ACCLIMATE_URL` and `ACCLIMATE_WORKSPACE`, and makes Node.js and Python trust the stack's certificate.
 
@@ -26,20 +28,25 @@ Both walkthroughs use the local stack and a source checkout. They also work agai
    source .local/stack/env.sh
    ```
 
-3. Issue a credential for the examples. Sign in to the console, open the `local-demo` workspace's **Members** page and, under **Machine tokens**, choose **Issue token**. Name it `examples` and select **Read content**, **Write content** and **Promote releases**. The secret is shown once. Export it:
+3. Issue a machine token for the examples. Sign in to the console and open the `local-demo` workspace's **Members** page. Under **Machine tokens**, choose **Issue token**, name the token `examples` and tick the rights below. The secret is shown once, so export it straight away.
+
+   | Example | Rights to tick |
+   | --- | --- |
+   | Support agent | **Read content** and **Write content** |
+   | Ticket triage | **Read content**, **Write content** and **Promote releases** |
 
    ```sh
-   export ACCLIMATE_TOKEN='acm_…'
+   export ACCLIMATE_TOKEN='<machine-token>'
    ```
 
-   The support agent needs only read and write. The ticket triage script also publishes a bundle, changes learning settings and starts the loop, and each of those needs promote.
+   [Rights](/docs/concepts/credentials#rights) lists the right each step of the scripts needs.
 
-4. Install what your language needs, from the repository root.
+4. Install what your language needs, from the repository root. See [Install the SDKs](/docs/get-started/install) for the supported runtime versions.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
 
-Use Node.js 22.22 or later. The examples import the SDK from the checkout.
+The examples import the SDK from the checkout.
 
 ```sh
 npm ci --ignore-scripts
@@ -47,8 +54,6 @@ npm ci --ignore-scripts
 
 </Tab>
 <Tab value="Python">
-
-Use Python 3.11 or later. The SDK has no dependencies outside the standard library.
 
 ```sh
 python3.11 -m venv .venv
@@ -58,8 +63,4 @@ python3.11 -m venv .venv
 </Tab>
 </Tabs>
 
-## How a learning rollout runs your bundle
-
-The learning executor renders a bundle as one system prompt. Instructions come first, then skills, then memory, and each file sits under a `# path` heading. The task input becomes the user message, and the model's reply is the output that gets graded.
-
-The support agent builds its prompt the same way, in `prompt.ts` and in `system_prompt` in `agent.py`. If your application assembles the prompt differently, or runs a different model from the loop's task model, the loop measures a different agent from the one you run.
+When you adapt an example, build your application's prompt the way a learning rollout does and run the loop's task model. Otherwise the loop measures a different agent from the one you run. See [How a rollout runs your bundle](/docs/concepts/how-it-works#how-a-rollout-runs-your-bundle).

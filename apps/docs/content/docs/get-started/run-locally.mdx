@@ -1,17 +1,20 @@
 ---
-title: Run Acclimate locally
-description: Start the service, console, and sign-in on your laptop, with a ready workspace and example bundle for your first delivery.
+title: The local stack
+description: What the local stack scripts start, print and store, and how to trust, stop, reset and move the stack.
 ---
 
-The local stack runs the Acclimate service, console and rollout executor, PostgreSQL 16, Keycloak sign-in, a Mailpit inbox, and a Caddy HTTPS proxy on one laptop. Use it for local integration and development. The console uses the same HTTPS sign-in as a production deployment.
+The local stack runs a complete Acclimate deployment on one laptop: the service, the console and the executor, with PostgreSQL 16, Keycloak sign-in, a Mailpit inbox and a Caddy HTTPS proxy. The console uses the same HTTPS sign-in as a production deployment.
+
+This page is the reference for the stack scripts. For the shortest path to a first delivery, follow the [Quickstart](/docs/get-started/quickstart).
 
 ## Prerequisites
 
 - macOS or Linux.
 - Docker Engine 26 or later with Docker Compose v2.24 or later, running. The executor mounts a volume subpath into each sandbox, which needs Engine 26.
-- For a first build from source, give Docker several GB of memory. Docker Desktop's default can be too small for the Rust build.
 - An Acclimate checkout, with Node.js and npm, and Python 3.9 or later to run the stack scripts.
-- For the SDK: Node.js 22.22 or later, or Python 3.11 or later. See [install the SDKs](/docs/get-started/install).
+- For a build from source, several GB of memory for Docker. Docker Desktop's default can be too small to compile the service.
+
+The SDKs have their own runtime versions. See [Install the SDKs](/docs/get-started/install).
 
 ## Start the stack
 
@@ -21,7 +24,15 @@ From the checkout, run:
 npm run local:up
 ```
 
-The first start pulls the released service and console images for the checkout's version and builds the Keycloak theme image, which takes a few minutes depending on your connection. If no images are published for your checkout's version, `local:up` says so and builds everything from source, including the Rust service. That takes 10 to 20 minutes the first time. Later starts reuse the images and take a minute or two.
+How long a start takes depends on where the images come from.
+
+| Start | What happens | Time |
+| --- | --- | --- |
+| First start with released images | Pulls the service and console images for the checkout's version. Builds the Keycloak theme image and the executor image. | A few minutes, depending on your connection |
+| First start from source | Builds everything from the checkout, including the service. | 10 to 20 minutes |
+| Later starts | Reuses the images. | A minute or two |
+
+`local:up` uses released images by default. If none are published for your checkout's version, it says so and builds from source. The executor image is always built from the checkout.
 
 If you are changing the service or console code, build from your checkout instead. `local:up` remembers the choice, and `--release` switches back.
 
@@ -29,14 +40,9 @@ If you are changing the service or console code, build from your checkout instea
 npm run local:up -- --build
 ```
 
-When the stack is ready, `local:up`:
+### What `local:up` prints
 
-- Picks free loopback ports for this checkout and prints the console, API, and Mailpit URLs.
-- Creates a verified Keycloak login and prints its initial password once. The password is also stored in the `operator` field of `.local/stack/credentials.json`.
-- Makes that login the administrator of the `local-demo` workspace. It uses the service's audited adoption route with the reason "local stack bootstrap".
-- Publishes an example bundle named **Example agent** on the `stable` channel.
-- Starts the rollout executor with its own credential and waits until its health check passes. The executor image is always built from the checkout, which takes a few minutes the first time.
-- Writes client settings to `.local/stack/env.sh` and prints them.
+`local:up` also starts the executor with its own credential and waits until its health check passes. When the stack is ready, it prints the URLs, a verified Keycloak login with its initial password, the `local-demo` workspace with its **Example agent** bundle on `stable`, and the client settings:
 
 ```text
 Console       https://localhost:24830
@@ -62,99 +68,74 @@ export ACCLIMATE_WORKSPACE='local-demo'
 export BUNDLE_ID='0b6e…41f2'
 ```
 
-Starting again reuses the ports, databases, login, and credentials. Keep `.local/stack/` private. All published ports bind to loopback, and invitations, email verification, and password resets arrive in Mailpit.
+The `Workspace` line records how the login became administrator: `local:up` uses the service's audited adoption route with the reason "local stack bootstrap".
+
+Starting again reuses the ports, databases, login and credentials. All published ports bind to loopback. Keep `.local/stack/` private.
 
 ## Trust the local certificate
 
-Caddy serves HTTPS with its own local certificate authority (CA), stored at `.local/stack/root.crt`.
+Caddy serves HTTPS with its own local certificate authority (CA), stored at `.local/stack/root.crt`. The CLI, the SDKs and your browser each need to trust it.
 
-**For the CLI and SDKs**, load the settings in each shell you run them from:
+### In a shell
+
+Load the client settings in each shell that runs the CLI, an SDK or an example:
 
 ```sh
 source /path/to/acclimate/.local/stack/env.sh
 ```
 
-`NODE_EXTRA_CA_CERTS` adds the local CA for Node.js. `SSL_CERT_FILE` points Python at `ca-bundle.pem`, which holds the local CA and any system CA bundle the script found. If no system bundle was found, use a merged bundle before connecting to an external model provider from Python. For curl, use `curl --cacert .local/stack/root.crt "$ACCLIMATE_API/ready"`. `ACCLIMATE_URL` and `ACCLIMATE_WORKSPACE` are the service address and workspace the SDKs and the [examples](/docs/examples) read.
+| Variable | What it does |
+| --- | --- |
+| `NODE_EXTRA_CA_CERTS` | Adds the local CA for Node.js. |
+| `SSL_CERT_FILE` | Points Python at `ca-bundle.pem`, which holds the local CA and any system CA bundle the script found. |
+| `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` | The service address and the workspace. The SDKs and the [examples](/docs/examples) read them. |
+| `ACCLIMATE_API` | The service address again. The curl command below uses it. |
+| `ACCLIMATE_PULL_CONFIG` | The path of a ready config file for [`acclimate pull`](/docs/reference/typescript-sdk#acclimate-pull). |
+| `BUNDLE_ID` | The ID of the **Example agent** bundle. |
 
-**For your browser**, run:
+If the script found no system CA bundle, `local:up` says so. In that case, point `SSL_CERT_FILE` at a merged bundle before you call an external model provider from Python.
+
+curl takes the CA as a flag:
+
+```sh
+curl --cacert .local/stack/root.crt "$ACCLIMATE_API/ready"
+```
+
+### In your browser
 
 ```sh
 npm run local:trust
 ```
 
-It shows the CA's fingerprint and the exact commands it will run, and asks you to type `trust` first. On macOS it adds the CA to your login keychain, and macOS asks for your password. On Linux it adds the CA to the system store with `sudo`, and to Chrome and Firefox certificate databases when `certutil` is installed. Restart your browser afterwards. To undo it, run `npm run local:trust -- --remove`.
+The script shows the CA's fingerprint and the exact commands it will run, and asks you to type `trust` first.
 
-Prefer to do it by hand? Import `.local/stack/root.crt` as a trusted certificate authority in your browser or OS trust store, or accept a certificate exception for the console URL and the Keycloak sign-in URL.
+- On macOS it adds the CA to your login keychain, and macOS asks for your password.
+- On Linux it adds the CA to the system store with `sudo`, and to the Chrome and Firefox certificate databases when `certutil` is installed.
 
-## Open the console
+Restart your browser afterwards. To undo it, run `npm run local:trust -- --remove`.
 
-Open the printed console URL and sign in with the printed login. The `local-demo` workspace is already yours. Self-registration is on in the local realm so you can test invitations through Mailpit. A new account has no workspace access until an administrator invites it.
+To do it by hand, import `.local/stack/root.crt` as a trusted certificate authority in your browser or OS trust store. You can also accept a certificate exception for the console URL and the Keycloak sign-in URL.
 
-Open the example bundle on `stable` and follow [the delivery quickstart](/docs/get-started/quickstart#connect-your-application).
+## Sign in to the console
+
+Open the printed console URL and sign in with the printed login. The `local-demo` workspace is already yours. To deliver the example bundle, follow [Connect your application](/docs/get-started/quickstart#connect-your-application).
+
+All mail from the stack arrives in Mailpit: invitations, email verification, password resets and the alert email for a held-out regression. Self-registration is on in the local realm, so you can test invitations. A new account has no workspace access until a workspace administrator invites it.
 
 ## Run learning rounds
 
-The executor is already running, so the **Learning** tab works as it does in a deployment. The local stack runs each rollout in a plain Docker sandbox, which isolates less than the gVisor runtime a deployment uses. Two model settings have no default.
+The executor is already running, so the **Learning** tab works as it does in a deployment. The local stack runs each rollout in a plain Docker sandbox, which isolates less than the gVisor runtime a deployment uses.
 
-- **The optimizer** proposes and selects changes. It is set on the service, from the shell before `local:up`. The stack saves it in `.local/stack/service.env` and reuses it on later starts, and an exported empty value clears it. Without it, Start is refused with `optimizer-required`.
-- **The workspace model provider** runs the tasks and the judge. It is set in the console. `local:up` sets the provider encryption key the service needs to store its key.
+Learning also needs an optimizer on the service and a model provider in the workspace. See [Run your first learning round](/docs/get-started/first-learning-round) for both settings and a first round.
 
-### Local model proxy
+## Executor concurrency
 
-These steps use [CLIProxyAPI](https://help.router-for.me/) with a Codex sign-in for both settings. Pin the proxy build. The [operator guide](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#cliproxyapi-with-codex-sign-in) has the details.
+`ACCLIMATE_EXECUTOR_CONCURRENCY` sets how many rollouts the executor runs at once. The local default is 4.
 
-1. In the proxy's configuration file, set `server.port` to `8317`, put a private key of your choice under `access.api-keys`, and set `routing.cooldown.disable-cooling: true`. With one Codex sign-in, cooling would block a model for minutes after one rate-limited reply. The [example configuration](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/config.example.yaml) shows where each setting goes.
+- A higher value finishes rounds sooner. It also runs more sandboxes on your laptop and sends more requests to the model provider at the same time, which a single Codex sign-in may answer with rate limits.
+- A lower value is slower and gentler on the provider.
 
-2. Sign in, then start the proxy:
-
-   ```sh
-   cli-proxy-api -config /private/config.yaml -codex-login
-   cli-proxy-api -config /private/config.yaml
-   ```
-
-3. Check which model IDs the proxy serves. On Linux, use the address the proxy listens on (see the note below).
-
-   ```sh
-   curl -H "Authorization: Bearer your-proxy-key" http://127.0.0.1:8317/v1/models
-   ```
-
-4. Start the stack with the optimizer settings and the provider allowlist. The containers reach the proxy at `host.docker.internal` over plain HTTP, which the service and the executor refuse unless the host is listed in `ACCLIMATE_PROVIDER_HTTP_HOSTS`.
-
-   ```sh
-   export ACCLIMATE_MODEL_ENDPOINT=http://host.docker.internal:8317/v1/chat/completions \
-     ACCLIMATE_MODEL_TOKEN=your-proxy-key \
-     ACCLIMATE_MODEL=gpt-6.2-astra \
-     ACCLIMATE_MODEL_REASONING_EFFORT=high \
-     ACCLIMATE_PROVIDER_HTTP_HOSTS=host.docker.internal && npm run local:up
-   ```
-
-5. In the console, open the workspace's **Members** page and, under **Model provider**, enter:
-
-   | Field | Value |
-   | --- | --- |
-   | Base URL | `http://host.docker.internal:8317/v1` |
-   | API key | `your-proxy-key`, the same key as `ACCLIMATE_MODEL_TOKEN` |
-   | Allowed models | At least two IDs from `/v1/models`, one for tasks and one for the judge |
-
-   The executor verifies each model.
-
-The two URLs differ. `ACCLIMATE_MODEL_ENDPOINT` is the full `…/v1/chat/completions` URL, because the service posts to it as written. The provider's base URL is the `…/v1` base, and the executor adds the path. The same proxy key goes in `ACCLIMATE_MODEL_TOKEN` and in the console's API key field.
-
-<Callout type="warn" title="Linux">
-On Docker Desktop, `host.docker.internal` reaches your laptop's loopback, so a proxy on `127.0.0.1` works. On Linux, `host.docker.internal` is the Docker bridge address, such as `172.17.0.1`, and a proxy bound to `127.0.0.1` is unreachable from the containers. Set the proxy's `server.host` to the bridge address. Binding it to all interfaces also works, but exposes the proxy to your network.
-</Callout>
-
-### Executor concurrency
-
-`ACCLIMATE_EXECUTOR_CONCURRENCY` sets how many rollouts the executor runs at once. The local default is 4. A higher value finishes rounds sooner, but sends more requests to the provider at the same time, which a single Codex sign-in may answer with rate limits, and runs more sandboxes on your laptop. A lower value is slower and gentler on the provider. Export it before `npm run local:up`. It is not saved, so a later start without it returns to 4.
-
-### Tasks for a first round
-
-Start needs 20 admitted tasks in each split. The service assigns each task to evolve or held-out by a hash, so roughly half of your rows land on each side. Import about 50 rows for a first round, so both sides reach 20 after some rows are set aside. See [run a learning loop](/docs/guides/learning-loop).
-
-The quickest start is the sample file for the **Example agent** bundle, [`examples/learning/example-agent-tasks.jsonl`](https://github.com/anveld-dev/acclimate/blob/main/examples/learning/example-agent-tasks.jsonl). It holds 60 support requests, each with a reference reply and its own criteria. On the bundle's **Learning** tab, choose the file under **Import material** and select **Import tasks**. The rows bring their own criteria, so the judge model only maps the fields. Review the cards while their admission checks run. [Sample tasks](https://github.com/anveld-dev/acclimate/blob/main/examples/learning/README.md)
-
-Alert email for a held-out regression arrives in Mailpit.
+Export it before `npm run local:up`. It is not saved, so a later start without it returns to 4.
 
 ## Stop or reset
 
@@ -163,14 +144,26 @@ npm run local:down
 npm run local:reset
 ```
 
-`local:down` stops the stack and keeps its volumes and configuration. `local:reset` asks you to type `reset`, then deletes this checkout's stack volumes and `.local/stack/`, including the local CA. If you ran `local:trust`, run `npm run local:trust -- --remove` first.
+`local:down` stops the stack and keeps its volumes and configuration.
 
-## Choose ports
+`local:reset` asks you to type `reset`, then deletes this checkout's stack volumes and `.local/stack/`, including the local CA. If you ran `local:trust`, run `npm run local:trust -- --remove` first.
 
-Each checkout gets its own Compose project and volumes, and its own default block of four ports between 10000 and 30000, so checkouts side by side do not collide. `local:up` checks the ports before starting Docker and moves to the next free block if one is busy. To choose ports yourself on the first start, set `ACCLIMATE_LOCAL_PORT` for the console. The API and Keycloak use the next two ports, and Mailpit uses the third unless you set `ACCLIMATE_LOCAL_MAIL_PORT`.
+## Choose ports before the first start
+
+Each checkout gets its own Compose project and volumes, and its own default block of four ports between 10000 and 30000, so checkouts side by side do not collide. `local:up` checks the ports before starting Docker and moves to the next free block if one is busy.
+
+To choose ports yourself, set `ACCLIMATE_LOCAL_PORT` for the console on the first start. The API, Keycloak and Mailpit take the next three ports, unless you set `ACCLIMATE_LOCAL_MAIL_PORT` for Mailpit.
 
 ```sh
 ACCLIMATE_LOCAL_PORT=6443 ACCLIMATE_LOCAL_MAIL_PORT=38025 npm run local:up
 ```
 
-If a port you chose is busy, `local:up` stops before starting anything and prints a free alternative to copy. The stack saves its ports in `.local/stack/ports.json` after the first successful start. Keycloak and the service record the console and sign-in addresses at that point, so run `npm run local:reset` before switching ports later.
+If a port you chose is busy, `local:up` stops before starting anything and prints a free alternative to copy.
+
+The stack saves its ports in `.local/stack/ports.json` after the first successful start. Keycloak and the service record the console and sign-in addresses at that point, so run `npm run local:reset` before you switch ports later.
+
+## Next steps
+
+- [Quickstart](/docs/get-started/quickstart) delivers the example bundle to a shell.
+- [Run your first learning round](/docs/get-started/first-learning-round) gives the stack a model and runs a round.
+- [Self-host Acclimate](/docs/operate/self-host) sets up a server for your team.

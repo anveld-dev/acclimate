@@ -1,19 +1,78 @@
 ---
 title: How Acclimate works
-description: How jobs receive immutable versions and how the learning loop evaluates them.
+description: How each job receives an immutable version of a bundle, and how the learning loop proposes, scores and releases improvements.
 ---
 
-## Versioned delivery
+Acclimate has two parts. Delivery gets a fixed version of your agent's files to each job. The learning loop improves those files against tasks you supply. Read this page before you follow a guide. The [Glossary](/docs/concepts/glossary) defines each term.
 
-A workspace owns bundles and connections. Import instructions, skills and memory into a bundle. Each version is immutable and carries the digest of its exact bytes. A release points a channel such as `stable` at a version. A connection tells the SDK which bundle and channel the application uses.
+## Delivery
 
-On each job start, the SDK resolves the channel, fetches and verifies the payload, and prepares job-local files. An active job keeps its pinned version through subsequent releases. Optional delivery receipts let a workspace see what version an application reported using. [Deliver content to jobs](/docs/guides/deliver-content)
+A **workspace** owns bundles and connections. A **bundle** holds your agent's instructions, skills and memory files. Each **version** of a bundle is immutable and carries a digest of its exact bytes. A **release** points a **channel**, such as `stable`, at a version. A **connection** tells the SDK which bundle and channel an application uses.
+
+A **job** is one run of your agent. When a job starts, the SDK resolves the channel to a version, downloads it, checks it against the digest and writes the files to a directory for that job. The job keeps that version even if the channel is released again while it runs. The application can also send a receipt, so the workspace sees which version each job used. See [Deliver content to jobs](/docs/guides/deliver-content).
 
 ## Learning loop
 
-1. On the workspace's **Members** page, under **Model provider**, configure an OpenAI-compatible model provider, its key and allowed models.
-2. Open the released bundle’s **Learning** tab. Choose its channel, task model and a different judge model.
-3. Import CSV, JSONL, a spreadsheet or pasted examples. Each task pairs an input with an expected answer or grading criteria. Review the task cards and confirm held-out material. Use **Try task** to inspect an executor run before starting a round.
-4. Start learning once at least 20 evolve tasks and 20 held-out tasks pass admission. The same floor applies on resume.
+The learning loop improves a released bundle against tasks. A **task** is an input with an exact expected answer or grading criteria. The service puts each task in one of two splits. The loop learns from the **evolve split**. The **held-out split** only measures the result.
 
-The executor runs each rollout in a fresh sandbox and grades it outside the sandbox. An exact-match task scores 1 or 0. A criteria task is judged three times: it passes when at least two judgments pass every criterion, and its score is the share of criteria met. The service scores candidates on evolve tasks and automatically releases the selected version to the channel, with no approval step. Held-out scores monitor regressions. A clear held-out drop after an adoption, confirmed by a second measurement, reverts the release automatically. Inspect the round, usage and release history in the console or roll back an adopted round.
+Three models take part.
+
+| Model | What it does | Who sets it |
+| --- | --- | --- |
+| Optimizer | Proposes, screens and selects changes to the bundle | The operator, on the service. See [Optimizer](/docs/reference/configuration#optimizer). |
+| Task model | Answers each task | Chosen on the bundle's **Learning** tab, from the models a workspace administrator allowed on the model provider |
+| Judge model | Grades answers against criteria. It must differ from the task model. | Chosen the same way |
+
+The **executor**, a process separate from the service and from your application, calls the task model and the judge model. See [Run a learning loop](/docs/guides/learning-loop) for the console steps.
+
+### What a round does
+
+1. **Score the current version** on the evolve tasks.
+2. **Propose.** The optimizer writes five candidates. Each is a change to the bundle with a diagnosis of what it fixes.
+3. **Screen.** A scanner checks each candidate for secrets and personal data. Then one optimizer call skips candidates that hard-code particular tasks or address the grader instead of doing the task.
+4. **Evaluate.** Each remaining candidate is scored on the same evolve tasks.
+5. **Select.** One optimizer call adopts a candidate or keeps the current version. An adoption is released to the channel at once, with no approval step, and is added to improvement memory, the optimizer's record of problems and adopted fixes.
+6. **Score the held-out tasks** for the version now on the channel. After an adoption, a clear drop that a second measurement confirms reverts the release automatically.
+
+### How a rollout runs your bundle
+
+A **rollout** is one run of one task against one version. The executor runs it in a fresh sandbox with no network, and grades it outside the sandbox.
+
+The rollout renders the bundle as one system prompt. Instructions come first, then skills, then memory, and each file sits under a `# path` heading. The task input becomes the user message. The model's reply is the output that is graded.
+
+If your application builds its prompt differently, or runs a different model from the task model, the loop measures a different agent from the one you run.
+
+### How answers are scored
+
+| What is scored | Rule |
+| --- | --- |
+| Exact-match rollout | 1 when the reply equals the expected answer exactly, otherwise 0. |
+| Judged rollout | The judge model judges the reply three times. The rollout passes when at least two judgments pass every criterion. Its score is the share of criteria met, averaged over the judgments. |
+| Task | Each task runs five rollouts. Its score is the mean of the five, and it passes when at least three pass. |
+| Version | The mean of its task scores. |
+
+### What a round costs
+
+Count a round in rollouts.
+
+- **Evolve tasks.** Each task runs five times for the current version, and five times for each candidate that passes screening.
+- **Held-out tasks.** After the decision, each task runs five times. After an adoption it runs five times for the old release and five for the new one.
+
+An exact-match rollout is one task-model call. A judged rollout is one task-model call and three judge calls. A round skips step 1 when the current version already has scores for the same tasks and models.
+
+Two measured rounds, each with five candidates evaluated and one adopted:
+
+| Example | Tasks | Rollouts | Time |
+| --- | --- | --- | --- |
+| [Ticket triage](/docs/examples/ticket-triage) | 64, exact match | 1,280 | 14 minutes |
+| [Support agent](/docs/examples/support-agent) | 60, judged | 1,280 | About 95 minutes, with another example running |
+
+## Who sees what
+
+- **The optimizer** receives the bundle, improvement memory and the evolve tasks with their rollouts and judge reasons. When an exact-match evolve task fails, it also receives that task's expected answer. Held-out tasks, scores and logs never reach it.
+- **Held-out tasks** are stored apart from the evolve tasks.
+- **The task model and the judge model** read tasks from both splits, because they score them. The sandbox that runs a rollout receives only the bundle and the task input, never the expected answer or criteria. It reaches the model provider only through the executor's gateway.
+- **The model provider's API key** is stored encrypted by the service. The executor holds it in memory only.
+- **A machine token** receives counts and aggregate scores for held-out tasks, never their text.
+- **Your application** runs its agent with its own model credentials. They never reach Acclimate.
+- **Improvement memory** is never delivered to jobs.

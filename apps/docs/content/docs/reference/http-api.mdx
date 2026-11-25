@@ -1,44 +1,77 @@
 ---
 title: HTTP API and wire contract
-description: Locate the workspace routes and understand payload verification, authentication, and write retries.
+description: Find a route, and read how to authenticate, verify a payload and retry a write without an SDK.
 ---
 
-Use the HTTP contract when integrating without an SDK or inspecting a response. [`contracts/openapi.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/openapi.json) is the OpenAPI 3.1 source of truth for routes, request and response bodies, status codes and error codes. [`contracts/bundle.schema.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/bundle.schema.json) describes bundle payloads.
+Use this page when you call Acclimate without an SDK, or when you need to read a raw response. It indexes the routes and explains authentication, payload verification and write retries.
 
-The SDKs ship the same shapes. In TypeScript, import the types from `@acclimate/sdk`; their declarations are in `node_modules/@acclimate/sdk/dist/types.d.ts`. In Python, import them from `acclimate` or `acclimate.types`. JSON fields are camelCase in every language. See [versioning and compatibility](/docs/reference/versioning) for how the contract changes between releases.
+## Contract files
+
+| File | Describes |
+| --- | --- |
+| [`contracts/openapi.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/openapi.json) | Every route, request and response body, status code and error code, as OpenAPI 3.1. It is the source of truth. |
+| [`contracts/bundle.schema.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/bundle.schema.json) | Bundle payloads. |
+| [`contracts/learning.md`](https://github.com/anveld-dev/acclimate/blob/main/contracts/learning.md#codes-a-script-reads) | The learning status values a script can branch on. |
+
+The SDKs ship the same shapes as types. In TypeScript, import them from `@acclimate/sdk`. In Python, import them from `acclimate` or `acclimate.types`.
+
+JSON fields are camelCase on the wire and in both SDKs' request and response objects. Python method names, arguments and attributes are snake_case. For example, the Python `ApiError.request_id` carries the error body's `requestId`.
+
+See [Versioning and compatibility](/docs/reference/versioning) for how the contract changes between Acclimate releases.
+
+## Authentication
+
+Send the credential as a bearer token, over HTTPS for any remote call:
+
+```text
+Authorization: Bearer <token>
+```
+
+- A machine token carries rights in a workspace: `read`, `write` or `promote`. See [Credential types](/docs/concepts/credentials#credential-types) for the other credentials and [Rights](/docs/concepts/credentials#rights) for what each right allows.
+- A person calls the API through the console after signing in. On the learning routes, a signed-in person needs the Administrator role wherever a machine token needs `promote`. Releasing a version and publishing a bundle also accept an Editor.
+- A few routes accept only a signed-in person. They refuse a machine token with 403 `denied`. The tables below mark them.
+- A request with no token or an unknown token gets 401 `unauthenticated`. A token without the needed grant gets 403 `denied`. See [Service codes](/docs/reference/error-codes#service-codes).
+- When an SDK client has a connection ID, it sends the ID as `X-Acclimate-Connection-Id` on version, payload and channel reads.
+
+The [health endpoints](/docs/operate/health-and-readiness) `/health` and `/ready` need no token and sit outside `/v1`.
 
 ## Workspace routes
 
-Every workspace route starts with `/v1/workspaces/{workspaceId}`.
+`GET /v1/workspaces` lists the workspaces the caller can access. Every other route in this table starts with `/v1/workspaces/{workspaceId}`.
 
-| Operation | Method and path relative to the workspace prefix |
+| Operation | Method and path |
 | --- | --- |
 | List or create bundles | `GET` or `POST /bundles` |
 | Create a bundle, its first version and its first release | `POST /bundle-setups` |
 | Create a version | `POST /bundles/{bundleId}/versions` |
-| Read metadata or exact bytes | `GET /bundles/{bundleId}/versions/{versionId}` or the same path with `/payload` |
+| Read a version's metadata | `GET /bundles/{bundleId}/versions/{versionId}` |
+| Read a version's exact bytes | `GET /bundles/{bundleId}/versions/{versionId}/payload` |
 | List channels | `GET /bundles/{bundleId}/channels` |
 | Resolve a channel | `GET /bundles/{bundleId}/channels/{channel}` |
 | List or create releases | `GET` or `POST /bundles/{bundleId}/channels/{channel}/releases` |
 | List or create connections | `GET` or `POST /connections` |
-| List connection observations | `GET /connection-observations` |
-| Issue or list machine tokens | `GET` or `POST /machine-tokens` |
-| Rotate or revoke a machine token | `POST /machine-tokens/{tokenId}/rotate` or `POST /machine-tokens/{tokenId}/revoke` |
-| List machine token events | `GET /machine-token-events` |
 | Revoke a connection | `POST /connections/{connectionId}/revoke` |
-| Issue or revoke a connection credential | `POST /connections/{connectionId}/credentials` or `POST /connections/{connectionId}/credentials/{credential}/revoke` |
+| Issue a connection credential | `POST /connections/{connectionId}/credentials` |
+| Revoke a connection credential | `POST /connections/{connectionId}/credentials/{credential}/revoke` |
 | List or submit delivery receipts | `GET` or `POST /connections/{connectionId}/receipts` |
-| Look up or close a retained write | `GET /operations/{operationId}` or `POST /operations/{operationId}/close` |
+| List connection observations | `GET /connection-observations` |
+| List or issue machine tokens | `GET` or `POST /machine-tokens` |
+| Rotate a machine token | `POST /machine-tokens/{tokenId}/rotate` |
+| Revoke a machine token | `POST /machine-tokens/{tokenId}/revoke` |
+| List machine token events | `GET /machine-token-events` |
+| Look up a retained write | `GET /operations/{operationId}` |
+| Close a retained write | `POST /operations/{operationId}/close` |
 
-`GET /v1/workspaces` lists the workspaces the caller can access.
-
-Machine requests carry an `Authorization: Bearer …` header and need the appropriate workspace grant. Use HTTPS for remote access. The unauthenticated [health endpoints](/docs/operate/health-and-readiness) sit outside the workspace prefix.
+The sign-in, membership and invitation routes serve the console. They are listed only in `contracts/openapi.json`.
 
 ## Read and verify a version
 
-Channel resolution returns a revision and immutable version metadata. Send the last ETag in `If-None-Match` for a conditional channel read. An HTTP 304 means the selected mapping was unchanged. Obtain the exact stored payload from `/payload`, verify its SHA-256 digest against the metadata before parsing, then validate the bundle schema. Re-encoding a JSON object can change the bytes.
+1. Resolve the channel. The response holds the channel's revision and the metadata of its version, which never changes. To ask only for a change, send the last `ETag` in `If-None-Match`. HTTP 304 means the channel still points at the same version.
+2. Fetch the exact stored bytes from the version's `/payload` route.
+3. Check the SHA-256 digest of those bytes against the metadata before you parse them. Parsing and writing a JSON object again can change the bytes.
+4. Validate the parsed payload against the bundle schema.
 
-Bundle entries are UTF-8 text with a portable relative path and a kind of `instruction`, `skill`, or `memory`. The contract allows up to 128 files, 256 KiB of text per file, and a 1 MiB bundle payload. Paths reject traversal and file or directory collisions.
+A payload holds up to 128 UTF-8 text files of at most 256 KiB each and 1 MiB in total. Each file has a relative `path` and a `kind` of `instruction`, `skill` or `memory`. [Rules for bundle files](/docs/guides/deliver-content#rules-for-bundle-files) lists the path rules.
 
 ```json title="Bundle payload"
 {
@@ -51,45 +84,97 @@ Bundle entries are UTF-8 text with a portable relative path and a kind of `instr
 
 `POST /bundles/{bundleId}/versions` takes this object as `payload`, with an optional `parentVersionId`.
 
-## Retry a mutation
+A release write takes three fields:
 
-For content writes that require an idempotency key, provide an `Idempotency-Key` of 1–128 printable ASCII characters. Retry with the same key and exact request bytes. A different body with that key can return a 409 conflict. Bundle setup, version creation and release writes support retained results. Send `X-Acclimate-Durable-Operation: true` with a UUID idempotency key. Look up a lost write with `GET /operations/{key}?operationPath=...`. To close it, send `POST /operations/{key}/close` with the same `Idempotency-Key` and a JSON body containing `operationPath`. Use the full original API path for `operationPath`.
+| Field | Value |
+| --- | --- |
+| `versionId` | The version to release. |
+| `expectedRevision` | The channel's current revision, as a string. Use `"0"` for a new channel. |
+| `unevaluatedReason` | The reason recorded with the release. It must not be blank. |
 
-Release writes take `versionId`, `expectedRevision` as a string (use `"0"` for a new channel), and a nonblank `unevaluatedReason`. On a revision conflict, re-read the channel before submitting a new release.
+When the channel has moved, the write fails with 409 `revision_conflict`. Read the channel again before you submit a new release.
+
+## Retry a write
+
+### Idempotency keys
+
+A write that requires an idempotency key, such as creating a version or a release, takes an `Idempotency-Key` header of 1 to 128 printable ASCII characters. To retry, send the same key with the same request bytes. The same key with different bytes gets 409 `idempotency_conflict`.
+
+### Retained results
+
+Bundle setup, version creation and release writes can keep their result, so you can read it after a lost response.
+
+1. Send the write with a UUID as its `Idempotency-Key` and the header `X-Acclimate-Durable-Operation: true`.
+2. If the response is lost, read the result with `GET /operations/{key}?operationPath={path}`. `{key}` is the idempotency key and `{path}` is the full API path of the original request. A bundle setup can be looked up by its key alone.
+3. To stop the key from being used again, send `POST /operations/{key}/close` with the same `Idempotency-Key` and the JSON body `{"operationPath": "{path}"}`. A later write with that key gets 409 `operation_closed`.
 
 ## Learning
 
-All bundle routes sit under `/v1/workspaces/{ws}/bundles/{b}/learning`.
+Every route in this section starts with `/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning`, except the model provider. The Right column gives the right a machine token needs.
+
+[Run a learning loop](/docs/guides/learning-loop) explains what the loop does with each call. [Learning codes](/docs/reference/error-codes#learning-codes) lists the codes these routes return.
+
+### Loop
 
 | Route | Purpose | Right |
 | --- | --- | --- |
-| `PUT` (root) | Turn learning on or change its settings: channel, `domain` and `benchmark`, task model, judge model, `maxRoundsPerDay` | promote |
-| `GET` (root) | Loop status, `waiting` reason, `nextRoundAt` and `evolveTasksNeeded` for a wait, pause reason, split counts, active round, alert state, and `optimizerConfigured` | read |
-| `POST /start` | Start learning. Refused with `tasks-required` below the Start floor, and with `optimizer-required` when the service has no optimizer model. | promote |
-| `POST /pause`, `/resume`, `/stop` | Pause, resume or stop learning. Resume is refused like Start. | promote |
-| `GET /tasks` | List tasks, paged. Filters: `split`, `source`, `admission`, `flagged`, `confirmed` | read |
-| `POST /tasks` | Create one task | write |
-| `PATCH /tasks/{id}` | Edit a task. Bumps the task revision and re-runs admission. | write |
-| `DELETE /tasks/{id}` | Retire a task. Rows are kept. | write |
-| `POST /tasks/confirm` | Confirm up to 100 held-out tasks in one change. Returns a result for each ID. | write, signed-in person |
+| `PUT` on the prefix | Turn on learning or change its settings: the channel, `domain` and `benchmark`, the task model, the judge model and `maxRoundsPerDay`. | promote |
+| `GET` on the prefix | Read the loop: its status, why it is waiting or paused, the task counts in each split, the active round and any alert. | read |
+| `POST /start` | Start the loop. Refused with `tasks-required` when a split has fewer than 20 admitted tasks, and with `optimizer-required` when the service has no optimizer. | promote |
+| `POST /pause` | Pause the loop. | promote |
+| `POST /resume` | Resume the loop. Refused for the same reasons as `/start`. | promote |
+| `POST /stop` | Stop the loop. | promote |
+
+While the loop waits, the `GET` response also holds `waiting`, `nextRoundAt` and `evolveTasksNeeded`. `optimizerConfigured` says whether the service has an optimizer.
+
+### Tasks
+
+| Route | Purpose | Right |
+| --- | --- | --- |
+| `GET /tasks` | List tasks, in pages. Filters: `split`, `source`, `admission`, `flagged` and `confirmed`. | read |
+| `POST /tasks` | Create one task. | write |
+| `PATCH /tasks/{id}` | Edit a task. This creates a new task revision and runs the admission check again. | write |
+| `DELETE /tasks/{id}` | Retire a task. Its rows are kept. | write |
+| `POST /tasks/confirm` | Confirm up to 100 held-out tasks in one change. Returns a result for each ID. | write, signed-in person only |
 | `POST /tasks/{id}/recheck` | Run the admission check again for a task set aside with `check-failed`, without a new revision. Any other state returns 409. | write |
-| `POST /tasks/recheck` | The same for every `check-failed` task, or for the `taskIds` in the body | write |
-| `POST /tasks/import` | Streamed upload of a spreadsheet, CSV, JSONL or pasted text. Returns an import with counts, and the drafted task cards for a console session. | write |
-| `GET /tasks/imports` | The 50 most recent imports, newest first, with counts, `createdAt` and `source` | read |
-| `GET /tasks/imports/{id}` | Import status and counts of converted, pending and set-aside source rows | read |
-| `POST /tasks/{id}/try` | Run one task on the executor against the channel head. Returns a trial ID. | write |
-| `GET /trials/{id}` | A trial's status, gateway log, output and verdict, and `error: {code}` when it failed | read |
-| `GET /held-out-tasks/export` | Download the held-out tasks | console session only |
-| `GET /rounds`, `GET /rounds/{id}` | Round timeline, and one round with its candidates, diffs, diagnoses and evolve results | read |
+| `POST /tasks/recheck` | The same for every `check-failed` task, or for the `taskIds` in the body. | write |
+| `GET /held-out-tasks/export` | Download the held-out tasks. | Signed-in person only |
+
+### Imports and trials
+
+| Route | Purpose | Right |
+| --- | --- | --- |
+| `POST /tasks/import` | Upload a spreadsheet, CSV, JSONL or text as a stream. Returns an import with its counts. | write |
+| `GET /tasks/imports` | The 50 most recent imports, newest first, with counts, `createdAt` and `source`. | read |
+| `GET /tasks/imports/{id}` | One import's status and its counts of converted, pending and set-aside rows. | read |
+| `POST /tasks/{id}/try` | Run one task on the executor against the channel's current version. Returns a trial ID. | write |
+| `GET /trials/{id}` | A trial's status, gateway log, output and verdict, and `error.code` when it failed. | read |
+
+An import sent from a console session also returns the drafted task cards.
+
+### Rounds and rollback
+
+| Route | Purpose | Right |
+| --- | --- | --- |
+| `GET /rounds` | The round timeline. | read |
+| `GET /rounds/{id}` | One round with its candidates, diffs and diagnoses, and the results on the evolve split. | read |
 | `POST /rollback` | Move the channel back to the version a named round replaced. The removed version is blocked from adoption. | promote |
-| `GET /blocked-versions` | Versions blocked from adoption after a rollback or revert | read |
-| `DELETE /blocked-versions/{digest}` | Unblock a version | promote |
-| `GET /usage` | Rounds, rollouts and tokens per day | read |
-| `POST /outcomes` | A production outcome from `job.expect()`, with optional `grading` | write |
-| `GET /memory` | Improvement memory at a revision | read |
+| `GET /blocked-versions` | Versions blocked from adoption after a rollback or an automatic revert. | read |
+| `DELETE /blocked-versions/{digest}` | Unblock a version. | promote |
 
-The workspace model provider is at `GET` and `PUT /v1/workspaces/{ws}/model-provider`. It holds an OpenAI-compatible base URL, the key and the allowed models. `PUT` needs a signed-in administrator. The key is write-only: `GET` returns whether one is set and the executor's verification result, never the key.
+### Usage, outcomes and memory
 
-A signed-in caller needs the administrator role wherever a machine token needs `promote`.
+| Route | Purpose | Right |
+| --- | --- | --- |
+| `GET /usage` | Rounds, rollouts and tokens for each day. | read |
+| `POST /outcomes` | Report a production outcome, with an optional `grading`. The SDKs send it from `job.expect()`. | write |
+| `GET /memory` | The improvement memory at a revision. | read |
 
-The [learning contract](https://github.com/anveld-dev/acclimate/blob/main/contracts/learning.md#codes-a-script-reads) lists the admission, import, round, waiting, pause and error codes a script can branch on.
+### Model provider
+
+The workspace's model provider is at `/v1/workspaces/{workspaceId}/model-provider`.
+
+| Route | Purpose | Right |
+| --- | --- | --- |
+| `GET` | Read the base URL, the allowed models, whether a provider API key is set and the executor's verification result. It never returns the key. | read |
+| `PUT` | Save an OpenAI-compatible base URL, the provider API key and the allowed models. | Signed-in administrator only |

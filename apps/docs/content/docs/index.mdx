@@ -1,17 +1,22 @@
 ---
 title: Acclimate
-description: Self-improvement with versioned delivery for agent instructions, skills and memory.
+description: Version, deliver and automatically improve an AI agent's instructions, skills and memory files.
 ---
 
-**Acclimate versions and delivers your agent’s instructions, skills and memory files.** Its learning loop proposes, evaluates and releases improvements to enrolled bundles.
+**Acclimate stores your agent's instructions, skills and memory files as versioned bundles and delivers the released version to each job your application starts.** It can also improve a bundle automatically from example tasks. It is open source and self-hosted.
 
-Your application still runs the agent for its own jobs. A separate executor runs and grades learning rollouts. Acclimate versions the instructions, skills and memory files it uses, delivers the released version to the next job, and lets you point a channel back at an earlier version.
+- **Delivery.** Publish the files as a bundle and release a version to a channel such as `stable`. When your application starts a job, the SDK fetches that version, verifies it and writes the files for your agent. To undo a release, roll the channel back to an earlier version.
+- **Learning.** Give a bundle tasks with expected answers. In each round the service proposes five changed versions and scores them on the tasks. It then releases the one it selects or keeps the current version. There is no approval step. Held-out tasks, which the loop never learns from, check every release, and a confirmed drop reverts it.
 
-The loop screens five candidates per round and evaluates the survivors. Adoption releases the version and adds an attempt to improvement memory. Held-out scores provide monitoring after selection.
+Your application still runs the agent with its own model credentials. Acclimate supplies the files.
 
-- [Try Acclimate on your laptop](/docs/get-started/quickstart)
-- [Deliver content to jobs](/docs/guides/deliver-content)
-- [Release and roll back](/docs/guides/release-and-roll-back)
-- [Run a learning loop from the console](/docs/guides/learning-loop)
-- [Run the examples](/docs/examples)
-- [Self-host Acclimate](/docs/operate/self-host)
+| You want to | Start here |
+| --- | --- |
+| See it work on your laptop | [Quickstart](/docs/get-started/quickstart), then [Run your first learning round](/docs/get-started/first-learning-round) |
+| Add delivery to an agent application | [Deliver content to jobs](/docs/guides/deliver-content), then your agent SDK: [Codex](/docs/integrations/codex), [Claude Agent SDK](/docs/integrations/claude-agent-sdk), [Pi](/docs/integrations/pi) or [Cursor](/docs/integrations/cursor) |
+| Turn on learning for a bundle | [Run a learning loop](/docs/guides/learning-loop) or the [Examples](/docs/examples) |
+| Choose a credential for an application | [Credentials and rights](/docs/concepts/credentials) |
+| Deploy it for a team | [Self-host Acclimate](/docs/operate/self-host) |
+| Understand it first | [How Acclimate works](/docs/concepts/how-it-works) and the [Glossary](/docs/concepts/glossary) |
+| Look something up | [TypeScript SDK](/docs/reference/typescript-sdk), [Python SDK](/docs/reference/python-sdk), [HTTP API](/docs/reference/http-api) and [Environment variables](/docs/reference/configuration) |
+| Fix a problem | [Troubleshooting](/docs/operate/troubleshooting) |

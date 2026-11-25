@@ -1,0 +1,120 @@
+---
+title: Upgrade and recover
+description: Upgrade a self-hosted deployment to a new Acclimate release, and roll back if the upgrade fails.
+---
+
+This page is for the operator of a self-hosted deployment. It upgrades a running deployment to a new Acclimate release without losing bundles or release history, and rolls back when an upgrade fails.
+
+The service applies pending database migrations when it starts, and there is no downgrade. The only way back is the backup you take during the upgrade, so it is one of the steps.
+
+If your database was last run by a build from before learning moved into the service, read [Upgrade to the learning-loop schema](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#upgrade-to-the-learning-loop-schema) in the repository first. Those upgrades drop data and need extra steps.
+
+## Pin an Acclimate release
+
+Set `ACCLIMATE_VERSION` to the exact image tag of the Acclimate release, which is the Git tag without its leading `v`. For the Git tag `v0.1.0`, the image tag is `0.1.0`. The default tag is `latest`, which can change between pulls, so always set the pin.
+
+The pin selects the service and console images. It also selects the executor and runner images when the release publishes them. See [Versioning and compatibility](/docs/reference/versioning).
+
+## Upgrade
+
+Before you start:
+
+- Read the release notes of the new Acclimate release.
+- Note the Git tag and `ACCLIMATE_VERSION` you run now. Keep that checkout state and your private runtime files available for a rollback.
+- If you run learning, choose **Pause** on each running loop in the console and wait for its active round to finish. See [Upgrade the executor](/docs/operate/enable-learning#upgrade-the-executor) for the reason.
+- Run every command from the checkout with your deployment settings loaded.
+
+<Steps>
+<Step>
+
+### Stop traffic and the applications
+
+Pause external clients. Take the public routes out of service, then stop both application containers. Leave PostgreSQL running for the dump. In the bundled stack, stopping Caddy first closes all public routes.
+
+```sh
+docker compose stop proxy
+docker compose stop console service
+```
+
+</Step>
+<Step>
+
+### Back up and rehearse a restore
+
+Dump the application database and the Keycloak database to separate archives. Then restore the application archive into a separate empty database and verify it with the service build you run now. See [Back up and restore](/docs/operate/backup-and-restore), then return here.
+
+</Step>
+<Step>
+
+### Start the new release
+
+Switch the checkout to the new release's tag. Set `ACCLIMATE_VERSION` in `compose.env` to its image tag and load the file again. Then validate the configuration, pull the images and start the service and the console while public traffic is still stopped.
+
+```sh
+git fetch --tags
+git switch --detach v<new-version>
+docker compose config --quiet
+docker compose pull service console
+docker compose up -d --no-build --wait service console
+```
+
+If you build from source, replace the last two commands with `docker compose build service console` and `docker compose up -d --wait service console`.
+
+Keep the same Compose project name and volumes as before. A different project name gives the new containers new, empty volumes. Keep one service process per database.
+
+<Callout type="warn" title="Do not delete the volumes">
+`docker compose down` keeps the volumes. `docker compose down --volumes` deletes them, and with them both databases and Caddy's certificates.
+</Callout>
+
+</Step>
+<Step>
+
+### Upgrade the executor
+
+If you run learning, upgrade the executor now, after the service. Follow [Upgrade the executor](/docs/operate/enable-learning#upgrade-the-executor).
+
+</Step>
+<Step>
+
+### Verify, then resume traffic
+
+1. Run `docker compose ps` and check that the service and the console are `healthy`.
+2. Start the proxy. This opens ports 80 and 443 again. To verify before your users return, first limit those ports at your firewall to the clients you verify from.
+
+   ```sh
+   docker compose up -d --no-build --wait proxy
+   ```
+
+3. Run the checks in [Verify API access and sign-in](/docs/operate/health-and-readiness#verify-api-access-and-sign-in).
+4. Resume user and application traffic, then start the learning loops again.
+
+If verification fails after the new service has started, follow [Roll back an upgrade](#roll-back-an-upgrade).
+
+</Step>
+</Steps>
+
+## Roll back an upgrade
+
+<Callout type="warn" title="A rollback discards newer data">
+There is no downgrade. Rolling back means running the previous build against the backup you took before the upgrade. Everything written after that backup is lost.
+</Callout>
+
+1. Stop the public routes and the applications.
+
+   ```sh
+   docker compose stop proxy
+   docker compose stop console service
+   ```
+
+2. Restore the dump you took before the upgrade into a new, empty database. Follow [Restore](/docs/operate/backup-and-restore#restore). You create that database yourself. This guide has no command for it.
+3. Switch the checkout back to the previous release's tag with `git switch --detach v<previous-version>`. Set `ACCLIMATE_VERSION` in `compose.env` back to the previous image tag and load the file again.
+4. In `service.env`, point `DATABASE_URL` at the restored database. Use the private runtime files from before the upgrade, including the same provider encryption key.
+5. Start the previous service and console.
+
+   ```sh
+   docker compose pull service console
+   docker compose up -d --no-build --wait service console
+   ```
+
+6. If you had upgraded the executor, build or pull it again from the previous checkout. Follow step 3 of [Upgrade the executor](/docs/operate/enable-learning#upgrade-the-executor).
+7. Verify and resume traffic as in the last step of [Upgrade](#upgrade).

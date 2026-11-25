@@ -6,7 +6,7 @@ import './global.css';
 export const metadata: Metadata = {
   title: { template: '%s | Acclimate', default: 'Acclimate documentation' },
   description:
-    'Version and deliver your agent’s harness, and improve enrolled bundles with a learning loop.',
+    'Version and deliver your agent’s instructions, skills and memory, and improve them with a learning loop.',
 };
 
 const inter = Inter({

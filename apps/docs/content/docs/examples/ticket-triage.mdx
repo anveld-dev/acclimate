@@ -3,15 +3,9 @@ title: Ticket triage
 description: Publish a bundle, import labelled tickets, start the learning loop and follow each round from one script.
 ---
 
-`examples/ticket-triage/` teaches an agent to route support tickets to the right queue. One script does everything over the API: it publishes the bundle, turns learning on, imports 64 labelled tickets, starts the loop and reports each round. Use it as a template for running the loop from CI or your own tooling instead of the console.
+`examples/ticket-triage/` teaches an agent to route support tickets to the right queue. One script does everything over the API: it publishes the bundle, turns on learning, imports 64 labelled tickets, starts the loop and reports each round. It is for a developer who wants to run the loop from CI or their own tooling instead of the console.
 
-| File | Contents |
-| --- | --- |
-| `bundle/instructions.md` | The starting instructions |
-| `tickets.csv` | 64 tickets, each with the queue it belongs to |
-| `loop.ts`, `loop.py` | The same script in TypeScript and Python |
-
-The starting instructions do not name the queues:
+The directory holds the starting instructions in `bundle/instructions.md`, the tickets in `tickets.csv` and the same script as `loop.ts` and `loop.py`. The starting instructions do not name the queues:
 
 ```text
 You route support tickets for a small software company.
@@ -19,7 +13,7 @@ You route support tickets for a small software company.
 Read the ticket and reply with the queue it belongs to.
 ```
 
-The tickets do. Each row has an `input` and an `expected` of at most 80 characters on one line, so the service imports it as an exact-match task: a rollout passes only when the model's reply is exactly the expected text.
+The tickets do. Each row has an `input` and a short one-line `expected`, so the service imports it as an exact-match task. See [How a row is graded](/docs/guides/learning-loop#how-a-row-is-graded). A rollout passes only when the model's reply is exactly the expected text.
 
 ```csv
 input,expected
@@ -32,7 +26,7 @@ The eight queues are `billing`, `refunds`, `account-access`, `security`, `bug`, 
 
 ## Run it
 
-Do the [shared setup](/docs/examples#set-up-once) first. The script needs the token with **Promote releases**, a verified model provider on the workspace, and an optimizer model on the service. Choose two of the provider's allowed models. The IDs below stand for yours. The judge model grades free-text tasks, so this example never calls it, but the loop settings require one.
+Do the shared setup under [Set up once](/docs/examples#set-up-once) first, including the model proxy and a machine token with all three rights. Then name two of the provider's allowed models. The model IDs on this page are examples. The judge model grades free-text tasks, so this example never calls it, but the learning settings require one.
 
 ```sh
 export TASK_MODEL=gpt-6-luna JUDGE_MODEL=gpt-6.2-sol
@@ -99,43 +93,47 @@ Output only the selected queue ID, copied verbatim from before its colon.
 
 This is a real run, with `gpt-6-luna` answering tickets and `gpt-6.2-astra` as the optimizer. Some `Checking tasks` lines are left out. Your version IDs and the wording of the instructions will differ.
 
+Three words in the output are the service's own codes. `incumbent` is the current version, the one released when the round started. `selector-kept` means the optimizer evaluated the candidates and kept that version. `daily-cap` is the daily round limit.
+
 - **Round 1** found that the starting instructions passed none of the 160 evolve rollouts. All five candidates passed every one, and the optimizer adopted one. The released version then passed every held-out rollout, on tickets the optimizer never saw.
 - **Round 2** kept that version, because no candidate did better.
 - **Round 3** adopted a shorter wording of the output rule that scored the same.
 
-The loop then waited, because the script allows three rounds a day. Round 1 took 14 minutes and ran 1,280 rollouts: 32 evolve tasks five times each for the starting version and for five candidates, then 32 held-out tasks five times each for the old and the new release. The later rounds changed little, so you can stop watching after the first adoption.
-
-Learning runs on the service and its executor. The script only watches, so you can stop it with Ctrl-C and run it again later. A second run reuses the bundle, its learning settings and the import, and goes back to watching. It starts a loop only when the loop has never run, so a loop you paused or stopped stays that way. To pause or stop learning, use the bundle's **Learning** tab, or call `pauseLearningLoop` or `stopLearningLoop`.
+The loop then waited, because the script sets a daily round limit of three. Round 1 took 14 minutes and ran 1,280 rollouts. See [What a round costs](/docs/concepts/how-it-works#what-a-round-costs). The later rounds changed little, so you can stop watching after the first adoption.
 
 ## What the script does
 
-Each step is one or two client calls. The TypeScript names are shown here. The Python client has the same methods in snake case, such as `enroll_learning_loop`.
+Each step is one or two client calls, numbered as in the comments of `loop.ts` and `loop.py`. The table shows the TypeScript names. The Python client has the same methods in snake case, such as `enroll_learning_loop`.
 
-| Step | Call | Notes |
-| --- | --- | --- |
-| Publish the bundle | `createBundleSetup` | Creates the bundle, its first version and its first release on `stable`. Skipped when a bundle with the name exists. |
-| Check the provider | `getModelProvider` | Saving a provider needs a signed-in administrator, so the script only checks that one is verified. |
-| Turn learning on | `getLearningLoop`, `enrollLearningLoop` | Sets the channel, the task and judge models, and a limit of three rounds a day. Skipped when the bundle already has learning settings, so changes made in the console survive a second run. |
-| Import the tickets | `importLearningTasks`, `getLearningImport` | The upload returns at once. The script polls until no row is pending. The same bytes return the first import. |
-| Wait for admission | `listLearningTasks` with `admission: 'pending'` | The executor checks every task before it counts. A machine token gets the evolve tasks as `items` and the held-out tasks only as `heldOutCount`, so the script adds the two. |
-| Start | `startLearningLoop` | Called only for a loop that has never run. Answers 409 when a split has fewer than 20 admitted tasks or the service has no optimizer model. |
-| Follow the rounds | `getLearningLoop` | `activeRound.state` is the current step, `rounds` holds the finished rounds, and `waiting` says why the loop is idle. |
-| Show the release | `resolveAndCache` | Reads and verifies the version now released on the channel, which the next job will run with. |
+| # | Step | Call | Notes |
+| --- | --- | --- | --- |
+| 1 | Publish the bundle | `listBundles`, `createBundleSetup` | Creates the bundle with its first version and its first release on `stable`. Skipped when a bundle with the name exists. |
+| 2 | Check the model provider | `getModelProvider` | Checks that a verified model provider allows both models. Only a signed-in administrator can save one. |
+| 3 | Turn on learning | `getLearningLoop`, `enrollLearningLoop` | Sets the channel, both models and a daily round limit of three. Skipped when learning is already on, so console changes survive a second run. |
+| 4 | Import the tickets | `importLearningTasks`, `getLearningImport` | The upload returns at once, so the script polls until no row is pending. The same bytes return the first import. |
+| 5 | Wait for admission | `listLearningTasks` with `admission: 'pending'` | The executor checks every task before it counts. |
+| 6 | Start | `startLearningLoop` | Called only for a loop that has never run. Answers 409 when a split has fewer than 20 admitted tasks or the service has no optimizer. |
+| 7 | Follow the rounds | `getLearningLoop` | `activeRound.state` is the current step, `rounds` holds the finished rounds and `waiting` says why the loop is idle. |
+| 8 | Show the release | `resolveAndCache` | Reads and verifies the version the next job will run. |
 
-The token needs all three rights: write and promote to publish, write to import, promote to change learning settings and start, and read for the rest.
-
-### The two splits
-
-The service assigns each imported row to the evolve split or the held-out split by a hash, so the script does not choose. For this file, 32 tickets land on each side. The optimizer sees the evolve tickets and their expected queues when a rollout fails. It never sees the held-out tickets. The held-out score is the honest measure of whether the new instructions generalise.
+In step 5, a machine token gets the evolve tasks as `items` and the held-out tasks only as `heldOutCount`, so the script adds the two.
 
 ### When a round ends
 
-A finished round has a `decision` of `adopted` or `kept`, or a `state` of `failed` or `stopped` with a `reason`. For an adoption the script prints three scores: the version the round started with on the evolve tasks, the adopted version on the evolve tasks, and the version released at the end of the round on the held-out tasks. `evolveScore` is the adopted version's score, and equals `incumbentScore` when the round kept the current version. [The learning contract](https://github.com/anveld-dev/acclimate/blob/main/contracts/learning.md#codes-a-script-reads) lists every code a script can branch on.
+A finished round has a `decision` of `adopted` or `kept`, or a `state` of `failed` or `stopped` with a `reason`. For an adoption the script prints three scores:
 
-After an adoption the loop runs another round. After two rounds in a row that adopt nothing, it waits with `no-new-evidence` until enough evolve tasks are added or changed. It also waits with `daily-cap` once it has run the rounds allowed in 24 hours.
+- `incumbentScore`, the evolve score of the current version when the round started.
+- `evolveScore`, the evolve score of the adopted version. It equals the first score when the round kept the current version.
+- `heldOutScore`, the held-out score of the version released at the end of the round.
+
+The loop then runs another round or waits. See [When the loop waits](/docs/guides/learning-loop#when-the-loop-waits). The learning contract lists every code a script can branch on, under [Codes a script reads](https://github.com/anveld-dev/acclimate/blob/main/contracts/learning.md#codes-a-script-reads).
+
+### Stop and run again
+
+The script only watches, so you can stop it with Ctrl-C and run it again later. A second run reuses the bundle, its learning settings and the import, and goes back to watching. It starts a loop only when the loop has never run, so a loop you paused or stopped stays that way. To pause or stop learning, use the bundle's **Learning** tab, or call `pauseLearningLoop` or `stopLearningLoop`.
 
 ## Adapt it
 
-- **Your own tasks.** Replace `tickets.csv` with rows of `input` and `expected`. An answer of at most 80 characters on one line is compared exactly. A longer answer is graded against criteria that the judge model drafts from it, and a held-out task with drafted criteria waits for a person to confirm it in the console. The script keeps reporting it as pending until you do. Import about 50 rows so that both splits reach 20 admitted tasks. [Import shapes](/docs/guides/learning-loop#import-shapes)
+- **Your own tasks.** Replace `tickets.csv` with your own rows of `input` and `expected`. [Add tasks](/docs/guides/learning-loop#add-tasks) says how many a first round needs. A longer answer is graded by criteria the judge model drafts. A held-out task with drafted criteria stays pending in the script's output until you confirm it in the console.
 - **Your own bundle.** Put instruction files in `bundle/`, skills under `bundle/skills/` and memory under `bundle/memory/`. Set `ACCLIMATE_BUNDLE_NAME` to publish under another name.
-- **Your application.** Run jobs on the released version the way the [support agent](/docs/examples/support-agent) does.
+- **Your application.** Run jobs on the released version the way the [Support agent](/docs/examples/support-agent) example does.

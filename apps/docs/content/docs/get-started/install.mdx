@@ -1,39 +1,38 @@
 ---
 title: Install the SDKs
-description: Install the TypeScript or Python SDK from its registry, from verified release files, or from a source checkout.
+description: Install the TypeScript or Python SDK from its registry, from verified release files or from a source checkout.
 ---
 
-Install the SDK in the environment that runs your agent. Use the SDK release that matches your service's version. See [versioning and compatibility](/docs/reference/versioning).
+This page installs the TypeScript or Python SDK in the environment that runs your agent. It is for developers adding Acclimate to an application.
+
+Most readers install from the registry. Use release files on an air-gapped machine, or when your operator distributes Acclimate directly. Build from source when you are changing the SDK. Use the SDK release that matches your service's version. See [Versioning and compatibility](/docs/reference/versioning).
 
 ## Prerequisites
 
 | To use | You need |
 | --- | --- |
-| TypeScript SDK and `acclimate pull` | Node.js 22.22 or later |
-| Python SDK and `acclimate` (or `python -m acclimate`) | Python 3.11 or later |
-| File preparation | Linux or macOS, and a private local staging directory |
-| The [local stack](/docs/get-started/run-locally) | Docker with Compose v2.24 or later, an Acclimate checkout, Node.js with npm, and Python 3.9 or later |
-
-
+| The TypeScript SDK and its `acclimate` command | Node.js 22.22 or later |
+| The Python SDK and its `acclimate` command | Python 3.11 or later |
+| Preparing files for a job | Linux or macOS, and a private local directory to stage the files in |
 
 ## Install from the registry
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
 
-Use Node.js 22.22 or later.
-
 ```sh
 npm install @acclimate/sdk
 npx acclimate pull --help
 ```
 
-See the [learning loop guide](/docs/guides/learning-loop). Install a plugin package, such as `@acclimate/codex-plugin`, alongside the SDK when you need [native preparation](/docs/guides/deliver-content#choose-a-native-integration).
+`acclimate pull` saves a released version to a file. See [acclimate pull](/docs/reference/typescript-sdk#acclimate-pull).
+
+To run Codex, the Claude Agent SDK, Pi or Cursor on the delivered files, also install the matching plugin, such as `@acclimate/codex-plugin`. See [Choose a native integration](/docs/guides/deliver-content#choose-a-native-integration).
 
 </Tab>
 <Tab value="Python">
 
-Use Python 3.11 or later. The SDK uses only the standard library and needs no Node.js.
+The SDK uses only the standard library and needs no Node.js.
 
 ```sh
 python3.11 -m venv .venv
@@ -41,23 +40,32 @@ python3.11 -m venv .venv
 .venv/bin/acclimate --help
 ```
 
-The distribution is named `acclimate-sdk`. Import it as `acclimate`. The `acclimate` command and `python -m acclimate` run the same CLI. Run `.venv/bin/python -m acclimate pull --help` for command usage. On Python 3.10 or earlier, importing the package fails with a message that names the version it found.
+The distribution is named `acclimate-sdk`. Import it as `acclimate`. The `acclimate` command and `python -m acclimate` run the same CLI. See [acclimate pull](/docs/reference/python-sdk#acclimate-pull).
+
+On Python 3.10 or earlier, importing the package fails with a message that names the version it found.
 
 </Tab>
 </Tabs>
 
-If the registry doesn't have your release yet, install from the release files below. Registry publishing is a separate maintainer step after each GitHub Release.
+An Acclimate release can reach GitHub Releases before npm and PyPI. If your version is not on the registry yet, install from the release files.
 
 ## Install from verified release files
 
-Use release files for an air-gapped machine, or when your operator distributes Acclimate directly.
+1. Choose a version on the [GitHub Releases page](https://github.com/anveld-dev/acclimate/releases).
+2. Download `manifest.json`, `SHA256SUMS` and every file that `SHA256SUMS` lists into one directory.
+3. From that directory, verify the files before you install anything.
 
-Choose a version on the [GitHub Releases page](https://github.com/anveld-dev/acclimate/releases). Download `manifest.json`, `SHA256SUMS` and every file that `SHA256SUMS` lists into one directory. From that directory, verify the files before installing anything. On Linux, run `sha256sum --check SHA256SUMS`. On macOS, run `shasum -a 256 --check SHA256SUMS`.
+   ```sh
+   sha256sum --check SHA256SUMS        # Linux
+   shasum -a 256 --check SHA256SUMS    # macOS
+   ```
+
+4. Install the file for your language. The examples use Acclimate release 0.1.0.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
 
-Run the install command from your app directory with the matching file. The SDK tarball has no npm runtime dependencies. This example uses release 0.1.0.
+Run the install command from your application's directory. The SDK tarball has no npm runtime dependencies.
 
 ```sh
 npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz
@@ -67,7 +75,7 @@ npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0
 </Tab>
 <Tab value="Python">
 
-Install the wheel without contacting a package index. This example uses release 0.1.0.
+Install the wheel without contacting a package index.
 
 ```sh
 python3.11 -m venv .venv
@@ -80,20 +88,20 @@ python3.11 -m venv .venv
 
 ## Build from a source checkout
 
-<Tabs items={['TypeScript', 'Python']}>
-<Tab value="TypeScript">
+### Build every artifact
 
-From the repository root, use Node.js 22.22 or later and Python 3.11 or later to build every artifact and check it against isolated consumers.
+From the repository root, build every artifact and check it against isolated consumers. This needs Node.js 22.22 or later and Python 3.11 or later.
 
 ```sh
 npm ci --ignore-scripts
 npm run pack:verify
 ```
 
-The command writes the SDK and plugin tarballs, Python wheel, starter archives, manifest and checksums to `artifacts/releases/<version>/`. To build the same version again, pass `-- --output /path/to/new-release` to `npm run pack:verify`.
+The command writes the SDK and plugin tarballs, the Python wheel, the starter archives, the manifest and the checksums to `artifacts/releases/<version>/`. To build the same version again, pass `-- --output /path/to/new-release` to `npm run pack:verify`.
 
-</Tab>
-<Tab value="Python">
+Install the tarball or the wheel with the commands under [Install from verified release files](#install-from-verified-release-files).
+
+### Build only the Python wheel
 
 Building the wheel needs only Python. Write the output outside the checkout:
 
@@ -103,13 +111,12 @@ python3.11 -m pip wheel --no-deps --wheel-dir /tmp/acclimate-wheel ./python
 uv build --wheel --out-dir /tmp/acclimate-wheel ./python
 ```
 
-The build leaves no `build/` or `.egg-info` directories in the checkout. It downloads the `flit_core` build backend unless your index or cache already has it. Install the result with the offline `pip install` command above. To install straight from the checkout instead, run `pip install ./python`.
+The build leaves no `build/` or `.egg-info` directories in the checkout. It downloads the `flit_core` build backend unless your index or cache already has it.
 
-</Tab>
-</Tabs>
+Install the wheel with the offline `pip install` command above. To install straight from the checkout instead, run `pip install ./python`.
 
-## Platform requirements
+## Next steps
 
-Private file preparation uses POSIX on Linux or macOS.
-
-[Connect your application](/docs/get-started/quickstart).
+- [Connect your application](/docs/get-started/quickstart#connect-your-application) to run a first delivery check.
+- [Deliver content to jobs](/docs/guides/deliver-content) to prepare a version at the start of each job.
+- [TypeScript SDK](/docs/reference/typescript-sdk) and [Python SDK](/docs/reference/python-sdk) list every call.

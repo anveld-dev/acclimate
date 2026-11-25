@@ -1,11 +1,15 @@
 ---
 title: Versioning and compatibility
-description: How releases are numbered, which SDK and service versions work together, and how the wire contract and deprecated names change from the first release.
+description: How Acclimate releases are numbered, which SDK and service versions work together, and how the wire contract and deprecated names change.
 ---
+
+This page says what an Acclimate version number promises, for developers who pin an SDK and operators who plan an upgrade. Here "release" means an Acclimate release, not the release of a bundle version to a channel.
 
 ## One version for every artifact
 
-Each Acclimate release has one `major.minor.patch` version. The service and console images, `@acclimate/sdk`, the four plugin packages, the `acclimate-sdk` Python package and the starter archives all carry it. The release check refuses to build artifacts whose versions differ. Git tags add a leading `v`, such as `v0.1.0`.
+Each Acclimate release has one `major.minor.patch` version. The service and console images, `@acclimate/sdk`, the four plugin packages, the `acclimate-sdk` Python package and the starter archives all carry it. The release check refuses to build artifacts whose versions differ.
+
+Git tags add a leading `v`, such as `v0.1.0`. Image tags and package versions do not, so the same release is `0.1.0` there.
 
 ## What a version number promises
 
@@ -20,49 +24,42 @@ From `1.0.0`, Acclimate follows [Semantic Versioning](https://semver.org): break
 
 ## Match SDK and service versions
 
-Use the SDK release that matches your service's minor version. The service also accepts requests from SDKs of the previous minor release where the wire contract remains compatible, so you can upgrade the service first and then roll out applications. Use the [upgrade notes](/docs/operate/upgrades-and-recovery) for removed workflows. An SDK newer than the service isn't supported, because it can call routes or send fields the older service rejects.
-
-| Service | SDK `0.N.x` | SDK `0.(N-1).x` | SDK `0.(N+1).x` |
-| --- | --- | --- | --- |
-| `0.N.x` | Supported | Supported during the upgrade | Not supported |
+Use the SDK release that matches your service's minor version. The service also accepts the previous minor's SDK where the wire contract remains compatible. An SDK newer than the service is not supported, because it can call routes or send fields the older service rejects.
 
 Upgrade in this order:
 
-1. Upgrade the service and console. See [upgrades and recovery](/docs/operate/upgrades-and-recovery).
-2. Upgrade applications to the matching SDK.
-
+1. Upgrade the service and console. See [Upgrade](/docs/operate/upgrades-and-recovery#upgrade).
+2. Upgrade your applications to the matching SDK.
 
 ## The wire contract
 
-[`contracts/openapi.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/openapi.json) is the source of truth for routes, fields, status codes and error codes. Both SDKs follow it: TypeScript types ship in `@acclimate/sdk`'s declarations and Python types in `acclimate.types`.
+The [HTTP API and wire contract](/docs/reference/http-api) page describes the contract and names its source files. This section says how it may change.
 
-The versioned API uses `/v1`. Liveness and readiness use `/health` and `/ready`. Within `/v1`, a release may:
+The versioned API uses the prefix `/v1`. The health endpoints `/health` and `/ready` sit outside it. Within `/v1`, an Acclimate release may:
 
-- add routes, optional request fields and response fields;
-- add values to an enumeration, such as a new status or error code;
-- relax a limit.
+- add routes, optional request fields and response fields
+- add values to an enumeration, such as a new status or error code
+- relax a limit
 
-Write clients that ignore response fields they don't recognize and treat an unknown enumeration value as unknown rather than failing. A change that removes or renames a field or route, makes an optional field required, or tightens a limit is breaking. It follows the rules above and appears in the changelog. Breaking changes to every route would move to `/v2`, and the service would serve both prefixes for at least one minor release.
+Write clients that ignore response fields they do not recognize and that treat an unknown enumeration value as unknown instead of failing.
 
-### Field names
-
-JSON fields are camelCase on the wire and in both SDKs' request and response objects. Python method arguments, keyword options and object attributes are snake_case. For example, the Python client's `ApiError.request_id` carries the error body's `requestId`, and `get_version(workspace_id, bundle_id, version_id)` reads the specified immutable version.
+A change that removes or renames a field or route, makes an optional field required or tightens a limit is breaking. It follows the rules above and appears in the changelog. Breaking changes to every route would move to `/v2`, and the service would serve both prefixes for at least one minor release.
 
 ## Document schema versions
 
-Several JSON documents carry a `schemaVersion` field: bundle payloads, improvement memory and the `acclimate pull` config. All are version `1` today.
+Three JSON documents carry a `schemaVersion` field: bundle payloads, improvement memory and the `acclimate pull` config. All are version `1` today.
 
 - A document's `schemaVersion` changes only when the document changes incompatibly. Additive fields keep the number.
-- Readers reject a `schemaVersion` they don't know rather than guessing.
+- Readers reject a `schemaVersion` they do not know instead of guessing.
 - Stored bundle versions are immutable and keep the schema version they were written with. The service keeps reading every schema version it has stored.
 - When a new schema version arrives, the service keeps accepting the previous one for writes for at least one minor release.
 
 ## Deprecation
 
-From the first release, a deprecated name keeps working until it is removed. Deprecations are announced in the changelog with their replacements, and removal waits at least one minor release after the announcement.
+A deprecated name keeps working until it is removed. The changelog announces each deprecation with its replacement, and removal waits at least one minor release after the announcement. Nothing is deprecated in `0.1.0`.
 
-| Where | How deprecation appears |
+| Where | How a deprecation will appear |
 | --- | --- |
 | TypeScript | A `@deprecated` tag that editors and type checkers show. |
-| Python | A `Deprecated.` comment on the alias, also listed in the [Python SDK reference](/docs/reference/python-sdk). |
-| HTTP | The [HTTP reference](/docs/reference/http-api) lists deprecated routes with their replacements. |
+| Python | A `Deprecated.` comment on the alias, and an entry in the [Python SDK](/docs/reference/python-sdk) reference. |
+| HTTP | An entry in the [HTTP API and wire contract](/docs/reference/http-api) reference, with the replacement route. |

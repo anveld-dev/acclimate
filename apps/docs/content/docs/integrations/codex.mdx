@@ -1,18 +1,50 @@
 ---
 title: Codex
-description: Stage verified instructions and skills for a fresh Codex SDK thread with an explicit sandbox policy.
+description: Run a Codex SDK thread on a verified bundle version, in a private directory with an explicit sandbox policy.
 ---
 
-Prepare a private workspace for a Codex thread using `@acclimate/codex-plugin`. Install the plugin tarball with the matching [Acclimate SDK](/docs/get-started/install), then install the native SDK separately. The release manifest pins `@openai/codex-sdk` 0.169.0. The plugin has a preparation entry point and declares no Codex peer dependency.
+Use `@acclimate/codex-plugin` when your application runs agents with the Codex SDK. The plugin writes a verified bundle version into a private directory in the layout Codex reads, and your application starts the thread there.
 
-## Prepare a thread
+| Requirement | Value |
+| --- | --- |
+| Plugin | `@acclimate/codex-plugin`, with one entry point |
+| Agent SDK | `@openai/codex-sdk`. The checked version is 0.169.0. |
+| Node.js | 22.22 or later. See [Install the SDKs](/docs/get-started/install#prerequisites). |
+| Platform | Linux or macOS |
 
-The plugin maps the instruction to `AGENTS.md`, skills to `.agents/skills/<name>/` with their supporting files, and memory files to `.acclimate/memory/`. `prepare` accepts a verified version or the result of `client.prepare()`; with a delivery, `prepared.reportStarted()` keeps its start receipt. Use the prepared directory as the working directory for a fresh thread, and set the sandbox, approval and network policy explicitly. These are the defaults the native repository starter uses:
+## Install
+
+The plugin only writes files, so it does not depend on the Codex SDK. Install the agent SDK yourself, next to the plugin and the Acclimate SDK.
+
+```sh
+npm install @acclimate/sdk @acclimate/codex-plugin @openai/codex-sdk@0.169.0
+```
+
+The plugin and the Acclimate SDK must come from the same Acclimate release. To install them from release files, see [Install from verified release files](/docs/get-started/install#install-from-verified-release-files).
+
+## Files the plugin writes
+
+`prepare` creates a new private directory for each job and writes the version's files into it.
+
+| Bundle file | Written to |
+| --- | --- |
+| Instruction | `AGENTS.md` |
+| Skills | `.agents/skills/<name>/`, with their supporting files |
+| Memory | `.acclimate/memory/` |
+
+Codex does not load the memory files. `prepared.memoryFiles` lists each one with its `path`, `text` and `absolutePath`. Add the ones you choose to the prompt.
+
+A version must follow the [rules for bundle files](/docs/guides/deliver-content#rules-for-bundle-files), or `prepare` fails before it writes anything.
+
+## Prepare and run a thread
+
+Pass the result of `client.prepare()` to the plugin's `prepare`. [Choose a native integration](/docs/guides/deliver-content#choose-a-native-integration) explains what else `prepare` accepts. Your application supplies `client`, the IDs, `model`, `prompt` and `env`.
 
 ```ts
-import { prepare } from '@acclimate/codex-plugin';
 import { Codex } from '@openai/codex-sdk';
+import { prepare } from '@acclimate/codex-plugin';
 
+const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
 const prepared = await prepare(delivery);
 const thread = new Codex({ env }).startThread({
   workingDirectory: prepared.cwd,
@@ -23,11 +55,30 @@ const thread = new Codex({ env }).startThread({
   networkAccessEnabled: false,
   webSearchMode: 'disabled',
 });
+const turn = await thread.runStreamed(prompt);
+let response = '';
+for await (const event of turn.events) {
+  if (event.type === 'turn.started') prepared.reportStarted();
+  if (event.type === 'item.completed' && event.item.type === 'agent_message') response = event.item.text;
+}
+await prepared.cleanup();
 ```
 
-Your app supplies the model, credentials and any selected memory context. Codex also reads `CODEX_HOME`, which holds your global `config.toml`, MCP servers and `AGENTS.md`. Pass an `env` whose `CODEX_HOME` contains only `auth.json` if those must not affect the job; the native repository starter does this for each job. Retain the prepared files until the thread has finished, then call `await prepared.cleanup()`.
+- Start a new thread for each job, with `prepared.cwd` as its working directory.
+- Set the sandbox, approval and network policy explicitly. The values above are the ones the native repository starter uses.
+- `prepared.reportStarted()` queues the delivery's start receipt. It returns `null` when `client.prepare()` had no `reporter`. See [Report job starts](/docs/guides/deliver-content#report-job-starts).
+- Save `response` with `prepared.versionId` and `prepared.digest` before you clean up.
+- `prepared.cleanup()` removes the directory and releases the delivery. Call it after the thread has finished.
 
-For the [native repository starter](/docs/guides/deliver-content#prepare-an-existing-repository), Codex is the default harness and its adapter already runs the thread. Install the pinned SDK and matching platform executable from your approved npm cache. The starter's check prints the CLI version without requiring credentials.
+## Keep your Codex configuration out of the job
+
+Codex reads `CODEX_HOME`, which holds your global `config.toml`, MCP servers and `AGENTS.md`. If those must not affect the job, pass an `env` whose `CODEX_HOME` contains only `auth.json`. When you pass `env`, the Codex SDK does not inherit variables from `process.env`, so include everything the Codex CLI needs, such as `PATH`.
+
+## Use the native repository starter
+
+Codex is the starter's default agent SDK, and its adapter already runs the thread with a `CODEX_HOME` that holds only `auth.json`. See [Prepare an existing repository](/docs/guides/deliver-content#prepare-an-existing-repository).
+
+Install the pinned Codex SDK and its platform executable into the starter from your approved npm cache. `$app` is the absolute path of the extracted starter. The check prints the Codex CLI version and needs no credentials.
 
 ```sh
 npm install --prefix "$app" --workspaces=false --offline --include=optional --ignore-scripts --no-audit --no-fund \
@@ -35,6 +86,14 @@ npm install --prefix "$app" --workspaces=false --offline --include=optional --ig
 node "$app/verify-install.mjs" codex --codex-sdk
 ```
 
-## Qualification
+## What has been tested
 
-The repository records a live `gpt-6-luna` check on SDK 0.169.0. Fresh threads returned markers from their prepared versions. A thread resumed with its original workspace returned the original markers. The result captures responses, without a direct SDK resource-discovery event. In-place hot reload was outside the check.
+| Check | Result |
+| --- | --- |
+| A new thread reads its prepared version | Passed live on `@openai/codex-sdk` 0.169.0 with `gpt-6-luna`. Each thread returned values stored only in its own prepared files. |
+| A resumed thread keeps its version | Passed live. A thread resumed in its original directory returned the original values. |
+| File preparation, thread options and the starter's adapter | Passed offline. The adapter ran against a fake SDK module. |
+| Replacing files under a running thread | Not tested |
+| A live job through the native repository starter | Not tested |
+
+`gpt-6-luna` is the model that check used, not a requirement. The live check read the model's answers. The Codex SDK reports no event that shows it loaded a skill.

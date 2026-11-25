@@ -2,8 +2,8 @@
   "title": "Acclimate",
   "pages": [
     "index",
-    "concepts",
     "get-started",
+    "concepts",
     "guides",
     "examples",
     "integrations",

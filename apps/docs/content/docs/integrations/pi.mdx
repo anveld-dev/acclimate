@@ -1,26 +1,94 @@
 ---
 title: Pi
-description: Stage a verified version and load its resources for a fresh Pi coding-agent session.
+description: Run a Pi coding-agent session on a verified bundle version, loaded through Pi's resource loader.
 ---
 
-Prepare resources for a Pi session with `@acclimate/pi-plugin`. Install the plugin tarball with the matching [Acclimate SDK](/docs/get-started/install); the SDK is a peer of the plugin. The `/native` entry uses optional peer `@earendil-works/pi-coding-agent` `^1.5.2` and requires Node.js 22.19 or later. Preparation-only imports do not load the Pi SDK.
+Use `@acclimate/pi-plugin` when your application runs agents with the Pi coding-agent SDK. The plugin writes a verified bundle version into a private directory and builds the Pi resource loader for it, and your application creates the session.
 
-## Load the prepared resources
+| Requirement | Value |
+| --- | --- |
+| Plugin | `@acclimate/pi-plugin`, with a `/native` entry point for the resource loader |
+| Agent SDK | `@earendil-works/pi-coding-agent` `^1.5.2`, an optional peer of the plugin that only the `/native` entry point loads |
+| Node.js | 22.22 or later. See [Install the SDKs](/docs/get-started/install#prerequisites). |
+| Platform | Linux or macOS |
 
-The main entry returns a private working directory and resource descriptors for the instruction, skills, and memory. It accepts a verified version or the result of `client.prepare()`. The native entry builds and reloads Pi's resource loader. Pass source paths for the memory you approve as appended context. The default list is empty.
+## Install
+
+```sh
+npm install @acclimate/sdk @acclimate/pi-plugin @earendil-works/pi-coding-agent
+```
+
+The plugin and the Acclimate SDK must come from the same Acclimate release. To install them from release files, see [Install from verified release files](/docs/get-started/install#install-from-verified-release-files).
+
+## Files the plugin writes
+
+`prepare` creates a new private directory for each job and writes the version's files into it.
+
+| Bundle file | Written to |
+| --- | --- |
+| Instruction | `AGENTS.md` |
+| Skills | `.agents/skills/<name>/`, with their supporting files |
+| Memory | `.acclimate/memory/` |
+
+`prepared.resources` lists every written file with its bundle `path`, `kind` and `absolutePath`. `createPiResourceLoader` from the `/native` entry point builds and loads a Pi resource loader that holds only the instruction, the skills and the memory files you select. It turns off Pi's own discovery of extensions, skills, prompt templates, themes and context files.
+
+A version must follow the [rules for bundle files](/docs/guides/deliver-content#rules-for-bundle-files), or `prepare` fails before it writes anything.
+
+## Prepare and run a session
+
+Pass the result of `client.prepare()` to the plugin's `prepare`. [Choose a native integration](/docs/guides/deliver-content#choose-a-native-integration) explains what else `prepare` accepts. Your application supplies `client`, the IDs, `provider`, `modelId` and `prompt`.
 
 ```ts
+import { join } from 'node:path';
+import { createAgentSession, ModelRuntime, SessionManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { prepare } from '@acclimate/pi-plugin';
 import { createPiResourceLoader } from '@acclimate/pi-plugin/native';
 
+const modelRuntime = await ModelRuntime.create({ allowModelNetwork: false });
+const model = modelRuntime.getModel(provider, modelId);
+if (!model) throw new Error(`Unknown Pi model: ${provider}/${modelId}`);
+
+const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
 const prepared = await prepare(delivery);
-const loader = await createPiResourceLoader(prepared, ['memory/selected.md']);
+const { session } = await createAgentSession({
+  cwd: prepared.cwd,
+  agentDir: join(prepared.cwd, '.acclimate', 'pi-agent'),
+  modelRuntime,
+  model,
+  tools: ['read', 'edit', 'write', 'bash', 'grep', 'find', 'ls'],
+  resourceLoader: await createPiResourceLoader(prepared, ['memory/selected.md']),
+  sessionManager: SessionManager.inMemory(prepared.cwd),
+  settingsManager: SettingsManager.inMemory(),
+});
+prepared.reportStarted();
+let output;
+try {
+  await session.prompt(prompt);
+  output = session.getLastAssistantText() ?? '';
+} finally {
+  session.dispose();
+}
+await prepared.cleanup();
 ```
 
-Use the returned loader when your app creates a fresh session with `createAgentSession`, and limit its `tools`. Replace the example memory path with one in your bundle or omit the list. Call `prepared.reportStarted()` when the session starts, keep the working directory until the session stops using it, then call `await prepared.cleanup()`.
+- Create a new session for each job, with the loader that `createPiResourceLoader` returns.
+- Set `tools` explicitly. The list above is the one the native repository starter uses.
+- `prepared.reportStarted()` queues the delivery's start receipt. It returns `null` when `client.prepare()` had no `reporter`. See [Report job starts](/docs/guides/deliver-content#report-job-starts).
+- Save `output` with `prepared.versionId` and `prepared.digest` before you clean up.
+- `prepared.cleanup()` removes the directory and releases the delivery. Call it after the session has stopped using the directory.
 
-The [native repository starter](/docs/guides/deliver-content#prepare-an-existing-repository) runs Pi with `"harness": "pi"` and a `provider/model-id` model value.
+## Choose memory
 
-## Qualification
+The second argument of `createPiResourceLoader` lists the bundle paths of the memory files to append as context. Replace `memory/selected.md` with a memory path from your bundle. The default list is empty, so no memory is loaded unless you name it. A path that is not a memory file in the version throws an error.
 
-Offline checks exercise Pi's actual resource loader, including explicit memory selection, and the starter's adapter against a fake SDK module. Live Pi provider sessions remain unqualified.
+## Use the native repository starter
+
+The starter runs Pi with `"harness": "pi"` and a model value in the form `provider/model-id`. See [Prepare an existing repository](/docs/guides/deliver-content#prepare-an-existing-repository).
+
+## What has been tested
+
+| Check | Result |
+| --- | --- |
+| The resource loader, including memory you select | Passed offline with Pi's own loader |
+| The starter's adapter | Passed offline against a fake SDK module |
+| A live Pi session | Not tested |

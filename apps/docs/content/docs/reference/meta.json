@@ -3,9 +3,9 @@
   "pages": [
     "typescript-sdk",
     "python-sdk",
+    "http-api",
     "error-codes",
     "configuration",
-    "http-api",
     "versioning"
   ]
 }

@@ -146,5 +146,10 @@
     "source": "docs/architecture/central-learning/tasks-and-grading.md",
     "route": "source/architecture/central-learning/tasks-and-grading.md",
     "kind": "source"
+  },
+  {
+    "source": "docs/architecture/ci-pull-request-security.md",
+    "route": "source/architecture/ci-pull-request-security.md",
+    "kind": "source"
   }
 ]

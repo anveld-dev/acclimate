@@ -7,13 +7,15 @@ This page says what an Acclimate version number promises, for developers who pin
 
 ## One version for every artifact
 
-Each Acclimate release has one `major.minor.patch` version. The service and console images, `@acclimate/sdk`, the four plugin packages, the `acclimate-sdk` Python package and the starter archives all carry it, and the release check refuses artifacts whose versions differ.
+Each Acclimate release has one `major.minor.patch` version. The service, console, executor and runner images, `@acclimate/sdk`, the four plugin packages, the `acclimate-sdk` Python package and the starter archives all carry it, and the release check refuses artifacts whose versions differ.
 
-Git tags add a leading `v`, such as `v0.1.0`. Image tags and package versions do not, so the same release is `0.1.0` there.
+Git tags add a leading `v`, such as `v0.1.0`. Image tags and package versions do not, so the same release is `0.1.0` there. Pushing a tag builds the images for amd64 and arm64 and creates a GitHub Release with the package files.
+
+No Acclimate release has been published yet: the repository has no release tags, and no images or registry packages exist. Until the first release, build from source. See [Install](/docs/get-started/install) and [Self-host Acclimate](/docs/operate/self-host).
 
 ## What a version number promises
 
-Acclimate is at `0.x`, and `0.1.0` is the first release. From that release until `1.0.0`:
+Acclimate is at `0.x`, and the first release will be `0.1.0`. From that release until `1.0.0`:
 
 | Release | May contain |
 | --- | --- |
@@ -46,7 +48,7 @@ Bundle payloads, improvement memory and the `acclimate pull` config carry a `sch
 
 ## Deprecation
 
-A deprecated name keeps working until it is removed. The changelog announces each deprecation with its replacement, and removal waits at least one minor release after that. Nothing is deprecated in `0.1.0`.
+A deprecated name keeps working until it is removed. The changelog announces each deprecation with its replacement, and removal waits at least one minor release after that. Nothing is deprecated today.
 
 | Where | How a deprecation will appear |
 | --- | --- |

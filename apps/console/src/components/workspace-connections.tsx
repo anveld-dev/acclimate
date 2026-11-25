@@ -433,12 +433,12 @@ function ConnectionWorkspace({
       <div
         className="connection-issued-credentials"
         aria-label={
-          kind === 'content-read' ? 'Issued read credentials' : 'Issued reporting credentials'
+          kind === 'content-read' ? 'Issued read credentials' : 'Issued receipt credentials'
         }
       >
         {!items.length && (
           <p className="connection-credential-empty">
-            No {kind === 'content-read' ? 'read' : 'reporting'} credentials yet.
+            No {kind === 'content-read' ? 'read' : 'receipt'} credentials yet.
           </p>
         )}
         {items.map((item) => (
@@ -449,7 +449,7 @@ function ConnectionWorkspace({
           >
             <div className="min-w-0">
               <p className="connection-credential-title">
-                {item.kind === 'content-read' ? 'Read credential' : 'Reporting credential'} ·{' '}
+                {item.kind === 'content-read' ? 'Read credential' : 'Receipt credential'} ·{' '}
                 {item.revokedAt ? 'Revoked' : 'Active'}
               </p>
               <code>{item.id}</code>
@@ -463,7 +463,7 @@ function ConnectionWorkspace({
                 variant="ghost"
                 size="sm"
                 className="connection-credential-revoke"
-                aria-label={`Revoke ${item.kind === 'content-read' ? 'read' : 'reporting'} credential ${item.id}`}
+                aria-label={`Revoke ${item.kind === 'content-read' ? 'read' : 'receipt'} credential ${item.id}`}
                 disabled={!state.canManage || busy}
                 onClick={(event) => {
                   revokeTriggerRef.current = event.currentTarget;
@@ -487,7 +487,7 @@ function ConnectionWorkspace({
         <div className="connection-credential-heading">
           <div className="min-w-0">
             <h3>
-              {read ? 'Read credentials' : 'Reporting credentials'}
+              {read ? 'Read credentials' : 'Receipt credentials'}
               {!read && <span className="connection-optional">Optional</span>}
             </h3>
             <p>
@@ -505,7 +505,7 @@ function ConnectionWorkspace({
             }}
           >
             <Plus aria-hidden="true" />{' '}
-            {read ? 'Create read credential' : 'Create reporting credential'}
+            {read ? 'Create read credential' : 'Create receipt credential'}
           </Button>
         </div>
         {issuedCredentials(kind)}
@@ -515,7 +515,7 @@ function ConnectionWorkspace({
   const credentialRecovery = selected && recovery && (
     <div className="space-y-3 rounded border border-amber-500/50 p-3" role="status">
       <p>
-        We couldn’t confirm this {recovery.kind === 'content-read' ? 'read' : 'reporting'}{' '}
+        We couldn’t confirm this {recovery.kind === 'content-read' ? 'read' : 'receipt'}{' '}
         credential creation. Check its result before creating another credential. Previously issued
         secrets cannot be retrieved.
       </p>
@@ -789,7 +789,7 @@ function ConnectionWorkspace({
                         {!unrevoked
                           ? 'Unavailable'
                           : reads + reporting
-                            ? [reads && `${reads} read`, reporting && `${reporting} reporting`]
+                            ? [reads && `${reads} read`, reporting && `${reporting} receipt`]
                                 .filter(Boolean)
                                 .join(' · ')
                             : 'No credentials'}
@@ -1037,7 +1037,7 @@ function ConnectionWorkspace({
                           <div className="connection-step-actions connection-recipe-footer">
                             <span>Optional delivery reports:</span>
                             <ConsoleLink href={tabHref('credentials')}>
-                              Reporting credentials
+                              Receipt credentials
                             </ConsoleLink>
                             <ConsoleLink href={guideHref! + '#reporting'}>
                               Reporting recipe
@@ -1290,7 +1290,7 @@ function ConnectionWorkspace({
           <DialogHeader>
             <DialogTitle>Save this credential now</DialogTitle>
             <DialogDescription>
-              This {credential?.kind === 'content-read' ? 'read' : 'reporting'} secret appears only
+              This {credential?.kind === 'content-read' ? 'read' : 'receipt'} secret appears only
               once. Save it in your application's secret manager.
             </DialogDescription>
           </DialogHeader>
@@ -1369,7 +1369,7 @@ function ConnectionWorkspace({
                     {revokeCredentialKind === 'content-read'
                       ? 'Read credential (content-read)'
                       : revokeCredentialKind === 'receipt-write'
-                        ? 'Reporting credential (receipt-write)'
+                        ? 'Receipt credential (receipt-write)'
                         : 'Credential kind is unavailable for this ID.'}
                   </dd>
                 </div>

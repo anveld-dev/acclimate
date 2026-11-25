@@ -89,7 +89,7 @@ def integration_offline(context):
 @then('delivery is denied despite the cached files')
 def denied_cache(context):
     w = context.world
-    assert w.delivery['error']['status'] == 403
+    assert w.delivery['error']['status'] == 401
     assert 'instruction' not in w.delivery
     assert set(w.sdk_directory.glob('prepared-*')) == w.prepared_before_request
 

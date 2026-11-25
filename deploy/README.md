@@ -107,10 +107,12 @@ Migrations `0017_remove_manual_changes.sql` and `0018_remove_connected_learning.
 
    Record the delivered version ID for each affected connection. Then stop the old service and console.
 
-3. Back up the stopped installation's database.
+3. Back up the stopped installation's database. For the bundled database, run `pg_dump` in its container as in [Bundled databases](../apps/docs/content/docs/operate/backup-and-restore.mdx#bundled-databases).
 
    ```sh
-   python3 scripts/operations/backup.py dump /private/backups/acclimate-pre-loop.dump --pg-bin /path/to/postgresql-16/bin
+   umask 077
+   set -o noclobber
+   docker compose exec -T postgres pg_dump -U acclimate -d acclimate --format=custom --no-owner --no-acl > /private/backups/acclimate-pre-loop.dump
    ```
 
    To read old rounds, proposals or comparisons later, restore the backup into a separate database and run the `pre-learning-loop` build against it.
@@ -147,7 +149,7 @@ Two things change around them:
 
 The runner image default changes from `acclimate-chat:1` to `ghcr.io/anveld-dev/acclimate-runner:${ACCLIMATE_VERSION:-latest}`. If you rebuild from the checkout, `docker compose build acclimate-runner acclimate-executor` tags the new names. An `ACCLIMATE_RUNNER_IMAGE` you set yourself still names the image for both the runner and the executor.
 
-The release workflow publishes `acclimate-executor` and `acclimate-runner` images with the same tags and platforms as the service and console. `compose.yaml` names them through `ACCLIMATE_EXECUTOR_IMAGE` and `ACCLIMATE_RUNNER_IMAGE`. No release has included them yet. Until one does, build them from the checkout, and do not run `docker compose up --no-build` without service names, because those images cannot be pulled.
+The release workflow publishes `acclimate-executor` and `acclimate-runner` images with the same tags and platforms as the service and console. `compose.yaml` names them through `ACCLIMATE_EXECUTOR_IMAGE` and `ACCLIMATE_RUNNER_IMAGE`. No Acclimate release has been published yet, so no image can be pulled. Until the first release, build every image from the checkout, and do not run `docker compose up --no-build` without service names.
 
 ### Service and executor versions
 
@@ -175,7 +177,7 @@ The `container` check and the repository's other tests use test issuers and cert
 
 ## Backup scripts
 
-[Back up and restore](../apps/docs/content/docs/operate/backup-and-restore.mdx) has the operator procedure. This section describes the scripts in `scripts/operations/`.
+[Back up and restore](../apps/docs/content/docs/operate/backup-and-restore.mdx) has the operator procedure. The bundled databases publish no ports, so that page dumps and restores them with the PostgreSQL tools inside their containers. This section describes the scripts in `scripts/operations/`, which serve a database the host can reach.
 
 `backup.py` needs Python 3 and `psql`, `pg_dump` and `pg_restore` from the same major version as the connected server. `--pg-bin` selects the tools explicitly. `DATABASE_URL` accepts PostgreSQL URLs with the `sslmode`, `sslrootcert`, `sslcert`, `sslkey` and `connect_timeout` query options. The script passes the URL to the tools through libpq environment variables, not command arguments.
 

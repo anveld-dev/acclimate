@@ -3,7 +3,7 @@ title: Back up and restore
 description: Back up both databases, the runtime files and the provider encryption key, and restore a dump into a new database.
 ---
 
-This page is for the operator of a self-hosted deployment. It covers what to back up, how to dump a database with the repository's script and how to restore one.
+This page is for the operator of a self-hosted deployment. It covers what to back up, how to dump each database and how to restore one.
 
 ## What to back up
 
@@ -14,28 +14,45 @@ This page is for the operator of a self-hosted deployment. It covers what to bac
 | `service.env`, which holds the provider encryption key | Copy it off the server, apart from the dumps | Without the key, the saved model provider API keys cannot be decrypted. |
 | The other private runtime files | Copy them off the server | The database passwords and the secrets that the service, the console and Keycloak share |
 
-Record the Acclimate release with each dump. A dump is restored with the service build that made it.
+Record the Acclimate release or commit with each dump. A dump is restored with the service build that made it. Data written after your last dump is lost if a volume is lost, so schedule the dump, for example with cron, as often as you can afford to lose.
 
 ## Dump a database
 
-You need:
+`pg_dump` takes a consistent snapshot while the service runs, so a scheduled dump needs no downtime.
 
-- A checkout of the repository at the Acclimate release you run, with Python 3.
-- `psql`, `pg_dump` and `pg_restore` from the same PostgreSQL major version as the server. The bundled databases run PostgreSQL 16. The script stops if the versions differ.
-- A network path to the database. The bundled databases publish no ports. They listen at `postgres:5432` and `keycloak-db:5432` on the Compose network `backend`, so the tools must run on that network.
+### Bundled databases
 
-Then:
+The bundled databases publish no ports, so run `pg_dump` inside their containers. The tools there match the server version and connect over the local socket without a password. Run this from the checkout with your deployment settings loaded, and choose a private backup directory. Leave out the Keycloak line if you do not co-host Keycloak.
 
-1. Set `DATABASE_URL` to the database you want to dump. For the Acclimate database, use the value from `service.env`. For the co-hosted Keycloak, the user and database are both `keycloak` and the host is `keycloak-db`. URL-encode the password. Protect this environment from other users.
+```sh
+umask 077
+set -o noclobber
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+docker compose exec -T postgres pg_dump -U acclimate -d acclimate --format=custom --no-owner --no-acl > "/private/backups/acclimate-$stamp.dump"
+docker compose exec -T keycloak-db pg_dump -U keycloak -d keycloak --format=custom --no-owner --no-acl > "/private/backups/keycloak-$stamp.dump"
+```
+
+| Part | Effect |
+| --- | --- |
+| `umask 077` | The archive gets mode 0600. |
+| `set -o noclobber` | The shell refuses to overwrite an existing archive. |
+| `-T` | Output passes through unchanged. Without it, Compose allocates a terminal, which corrupts the archive. |
+| `--no-owner --no-acl` | The archive holds no database roles or grants. |
+
+If a command fails, delete its partial archive. Encrypt the archives at rest and in transit, set a retention period and protect the copies.
+
+### Other PostgreSQL servers
+
+For a database the host can reach, such as a managed server, `scripts/operations/backup.py` runs the same dump. It also checks that `psql`, `pg_dump` and `pg_restore` have the server's major version and refuses to overwrite an archive. You need a checkout with Python 3 and those tools.
+
+1. Set `DATABASE_URL` to the database you want to dump. URL-encode the password. Protect this environment from other users.
 2. Run the dump with a new archive path in a private directory. `--pg-bin` names the directory that holds the PostgreSQL tools. Leave it out if they are on your `PATH`.
 
    ```sh
    python3 scripts/operations/backup.py dump /private/backups/acclimate.dump --pg-bin /path/to/postgresql-16/bin
    ```
 
-3. Repeat for the Keycloak database with its own `DATABASE_URL` and archive path.
-
-The script creates the archive with mode 0600 and refuses to overwrite an existing file. Encrypt the archive at rest and in transit, set a retention period and protect the copies. It holds no database roles or grants. Provision those separately, and keep a separate recovery plan for the PostgreSQL server itself. For the connection options the script accepts, see [Backup scripts](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#backup-scripts).
+For the connection options the script accepts, see [Backup scripts](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#backup-scripts). Keep a separate recovery plan for the PostgreSQL server itself.
 
 ## Keep the provider encryption key
 
@@ -57,25 +74,59 @@ Without any key, the service starts and logs a warning. Saving a model provider 
 ## Restore
 
 <Callout type="warn" title="Restore into a new database">
-Never restore over a live database. The script refuses a target that already has tables. Always restore into a new, empty database and verify it before any service uses it.
+Never restore over a live database. A restore into a database that already has tables fails. Always restore into a new, empty database and verify it before any service uses it.
 </Callout>
 
-1. Create a new, empty database with the correct owner and grants. How depends on where your PostgreSQL runs, so this guide has no command for it.
-2. Point `DATABASE_URL` at the new database and run the restore.
+1. Stop public traffic and the applications.
 
    ```sh
-   python3 scripts/operations/backup.py restore /private/backups/acclimate.dump --pg-bin /path/to/postgresql-16/bin
+   docker compose stop proxy
+   docker compose stop console service
    ```
 
-   The restore runs as one transaction. If it fails, nothing is restored. Find the cause and retry against a fresh empty database.
+2. Create a new, empty database and restore the archive into it. For the bundled Acclimate database:
 
-3. Start the service build that matches the dump against the restored database, away from traffic. Use the provider encryption key that was in use when the dump was taken.
-4. Verify the restored data: bundle contents, channel revisions, learning rounds, improvement memory and application access. For Keycloak, verify the realm, the client settings and sign-in with a matching Keycloak version.
-5. To put the database into service, stop the service, check `DATABASE_URL` and the machine grants in `service.env`, then start the service.
-6. Run the checks in [Check health and readiness](/docs/operate/health-and-readiness) and watch the service after it starts.
+   ```sh
+   docker compose exec -T postgres createdb -U acclimate acclimate_restore
+   docker compose exec -T postgres pg_restore -U acclimate -d acclimate_restore --exit-on-error --single-transaction --no-owner --no-acl < /private/backups/acclimate-<stamp>.dump
+   ```
+
+   On another server, create the database with the service's role as its owner, set `DATABASE_URL` to it and run `python3 scripts/operations/backup.py restore <archive> --pg-bin <dir>`. The script refuses a database that has tables.
+
+   The restore runs as one transaction. If it fails, nothing is restored. Fix the cause and retry into the same empty database.
+
+3. In `service.env`, point `DATABASE_URL` at the new database. For the bundled database, change the name at the end of the URL from `/acclimate` to `/acclimate_restore`. Keep the provider encryption key that was in use when the dump was taken.
+4. Start the service build that matches the dump, with the proxy still stopped.
+
+   ```sh
+   docker compose up -d --wait service
+   ```
+
+5. Verify the restored data: bundle contents, channel revisions, learning rounds, improvement memory and application access.
+6. Start the console and the proxy, then run the checks in [Check health and readiness](/docs/operate/health-and-readiness).
+
+   ```sh
+   docker compose up -d --wait console proxy
+   ```
+
+Keep the old database until you trust the restored one. Then remove it with `docker compose exec -T postgres dropdb -U acclimate <old-name>`.
 
 To restore as part of undoing an upgrade, see [Roll back an upgrade](/docs/operate/upgrades-and-recovery#roll-back-an-upgrade).
 
+### Restore the co-hosted Keycloak database
+
+`compose.keycloak.yaml` fixes Keycloak's database name as `keycloak`. Restore into a new database, then swap the names while Keycloak is stopped. The swap runs in one transaction.
+
+```sh
+docker compose stop keycloak
+docker compose exec -T keycloak-db createdb -U keycloak keycloak_restore
+docker compose exec -T keycloak-db pg_restore -U keycloak -d keycloak_restore --exit-on-error --single-transaction --no-owner --no-acl < /private/backups/keycloak-<stamp>.dump
+docker compose exec -T keycloak-db psql -X -v ON_ERROR_STOP=1 -1 -U keycloak -d postgres -c 'ALTER DATABASE keycloak RENAME TO keycloak_before_restore' -c 'ALTER DATABASE keycloak_restore RENAME TO keycloak'
+docker compose up -d --wait keycloak
+```
+
+Verify the realm, the client settings and sign-in with the Keycloak version that made the dump. Then remove `keycloak_before_restore` with `dropdb`, as above.
+
 ## Rehearse a restore
 
-Restore your real archives on a schedule and verify them as in steps 3 and 4. A dump you have never restored is not a tested backup. The repository's script for testing the backup tooling does not test your archives. See [Backup scripts](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#backup-scripts).
+Restore your real archives on a schedule on a separate host with its own checkout, and verify them as in steps 2 to 5. A dump you have never restored is not a tested backup. The repository's script for testing the backup tooling does not test your archives. See [Backup scripts](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#backup-scripts).

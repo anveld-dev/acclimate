@@ -1,11 +1,11 @@
 ---
 title: Install the SDKs
-description: Install the TypeScript or Python SDK from its registry, from verified release files or from a source checkout.
+description: Install the TypeScript or Python SDK from a source checkout, or from its registry or verified release files once an Acclimate release is published.
 ---
 
-This page installs the TypeScript or Python SDK in the environment that runs your agent. Most developers install from the registry. Use release files on an air-gapped machine or when your operator distributes Acclimate directly, and build from source when you are changing the SDK.
+This page installs the TypeScript or Python SDK in the environment that runs your agent. No Acclimate release has been published yet, so the SDKs are not on npm or PyPI. Until one is, build them from a source checkout. The registry and release-file sections apply once an Acclimate release is published.
 
-Use the SDK release that matches your service's version. See [Versioning and compatibility](/docs/reference/versioning).
+Use the SDK version that matches your service's version. See [Versioning and compatibility](/docs/reference/versioning).
 
 ## Prerequisites
 
@@ -15,7 +15,69 @@ Use the SDK release that matches your service's version. See [Versioning and com
 | The Python SDK and its `acclimate` command | Python 3.11 or later |
 | Preparing files for a job | Linux or macOS, and a private local directory to stage the files in |
 
+`@acclimate/sdk` is an ES module only. CommonJS code loads it with `await import('@acclimate/sdk')`.
+
+## Build from a source checkout
+
+Clone the repository:
+
+```sh
+git clone https://github.com/anveld-dev/acclimate.git
+cd acclimate
+```
+
+### Build every artifact
+
+From the repository root, build every artifact and check it against isolated consumers:
+
+```sh
+npm ci --ignore-scripts
+npm run pack:verify
+```
+
+The command writes the SDK and plugin tarballs, the Python wheel, the starter archives, the manifest and the checksums to `artifacts/releases/<version>/`. To build the same version again, add `-- --output /path/to/new-release`. Install the tarball or the wheel as in [Install the files](#install-the-files).
+
+### Build only the Python wheel
+
+Building the wheel needs only Python. Write the output outside the checkout:
+
+```sh
+python3.11 -m pip wheel --no-deps --wheel-dir /tmp/acclimate-wheel ./python
+# or, with uv
+uv build --wheel --out-dir /tmp/acclimate-wheel ./python
+```
+
+The build downloads the `flit_core` build backend unless your index or cache already has it. Install the wheel as in [Install the files](#install-the-files), or install straight from the checkout with `pip install ./python`.
+
+### Install the files
+
+Run this from your application's directory. `/absolute/path/to/release` is `artifacts/releases/<version>/` in your checkout, or the directory you downloaded release files into. The examples use version 0.1.0, the version a source build produces today.
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+The SDK tarball has no npm runtime dependencies.
+
+```sh
+npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz
+./node_modules/.bin/acclimate pull --help
+```
+
+</Tab>
+<Tab value="Python">
+
+```sh
+python3.11 -m venv .venv
+.venv/bin/python -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
+.venv/bin/acclimate --help
+```
+
+</Tab>
+</Tabs>
+
 ## Install from the registry
+
+Once an Acclimate release is published to npm and PyPI:
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
@@ -43,9 +105,11 @@ The distribution is `acclimate-sdk`, imported as `acclimate`. The `acclimate` co
 </Tab>
 </Tabs>
 
-A version can reach GitHub Releases before npm and PyPI. If yours is not on the registry yet, install from the release files.
+An Acclimate release can reach GitHub Releases before npm and PyPI. If yours is not on the registry yet, install from the release files.
 
 ## Install from verified release files
+
+Once an Acclimate release is published:
 
 1. Choose a version on the [GitHub Releases page](https://github.com/anveld-dev/acclimate/releases).
 2. Download `manifest.json`, `SHA256SUMS` and every file that `SHA256SUMS` lists into one directory.
@@ -56,54 +120,7 @@ A version can reach GitHub Releases before npm and PyPI. If yours is not on the 
    shasum -a 256 --check SHA256SUMS    # macOS
    ```
 
-4. Install the file for your language. The examples use Acclimate release 0.1.0.
-
-<Tabs items={['TypeScript', 'Python']}>
-<Tab value="TypeScript">
-
-Run this from your application's directory. The SDK tarball has no npm runtime dependencies.
-
-```sh
-npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz
-./node_modules/.bin/acclimate pull --help
-```
-
-</Tab>
-<Tab value="Python">
-
-```sh
-python3.11 -m venv .venv
-.venv/bin/python -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
-.venv/bin/acclimate --help
-```
-
-</Tab>
-</Tabs>
-
-## Build from a source checkout
-
-### Build every artifact
-
-From the repository root, build every artifact and check it against isolated consumers:
-
-```sh
-npm ci --ignore-scripts
-npm run pack:verify
-```
-
-The command writes the SDK and plugin tarballs, the Python wheel, the starter archives, the manifest and the checksums to `artifacts/releases/<version>/`. To build the same version again, add `-- --output /path/to/new-release`. Install the tarball or the wheel as in [Install from verified release files](#install-from-verified-release-files).
-
-### Build only the Python wheel
-
-Building the wheel needs only Python. Write the output outside the checkout:
-
-```sh
-python3.11 -m pip wheel --no-deps --wheel-dir /tmp/acclimate-wheel ./python
-# or, with uv
-uv build --wheel --out-dir /tmp/acclimate-wheel ./python
-```
-
-The build downloads the `flit_core` build backend unless your index or cache already has it. Install the wheel with the offline `pip install` command above, or install straight from the checkout with `pip install ./python`.
+4. Install the file for your language as in [Install the files](#install-the-files).
 
 ## Next steps
 

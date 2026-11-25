@@ -5,8 +5,7 @@
  *   npx tsx examples/support-agent/agent.ts "I was charged twice this month." --expected corrected.txt
  */
 import { readFile } from 'node:fs/promises';
-import { ApiError, createAcclimate } from '@acclimate/sdk';
-import { systemPrompt } from './prompt.js';
+import { ApiError, createAcclimate, systemPrompt } from '@acclimate/sdk';
 
 function setting(name: string): string {
   const value = process.env[name];
@@ -45,6 +44,7 @@ const job = await acclimate.job(process.env.ACCLIMATE_BUNDLE_NAME ?? 'Example ag
   channel: process.env.ACCLIMATE_CHANNEL ?? 'stable',
   input: request,
 });
+// Send the bundle as the learning loop does, so the loop scores the prompt this job runs with.
 const reply = await complete(systemPrompt(job.version.payload), request);
 console.log(reply);
 // Keep the version with the result, so you can tell later which instructions produced it.

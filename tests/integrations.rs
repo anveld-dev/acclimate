@@ -59,6 +59,40 @@ async fn call_with_key(
         serde_json::from_slice(&bytes).unwrap_or(Value::Null),
     )
 }
+/// Send raw body bytes with an optional content type, for malformed-body checks.
+async fn raw(
+    app: &axum::Router,
+    path: &str,
+    token: &str,
+    content_type: Option<&str>,
+    body: &str,
+    key: &str,
+) -> (StatusCode, Value) {
+    let mut request = Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("authorization", format!("Bearer {token}"))
+        .header("idempotency-key", key);
+    if let Some(content_type) = content_type {
+        request = request.header("content-type", content_type);
+    }
+    let response = app
+        .clone()
+        .oneshot(request.body(Body::from(body.to_owned())).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 2 * 1024 * 1024)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+fn message(v: &Value) -> &str {
+    v["error"]["message"].as_str().unwrap_or("")
+}
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL; run scripts/productization/rust_tests.py"]
 async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
@@ -219,18 +253,151 @@ async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
         call(&app, "GET", &receipt, write, Value::Null).await.0,
         StatusCode::UNAUTHORIZED
     );
-    let mut bad = event.clone();
-    bad["stage"] = json!("downloaded");
+    // An unknown aci_ secret is unauthenticated, on reads and on receipts.
+    let unknown = format!("aci_{}", "0".repeat(64));
+    let (status, body) = call(&app, "POST", &receipt, &unknown, event.clone()).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["error"]["code"], "unauthenticated");
+    let released = format!("/v1/workspaces/{p}/bundles/{b}/versions/{v}/payload");
     assert_eq!(
-        call(&app, "POST", &receipt, write, bad).await.0,
-        StatusCode::BAD_REQUEST
+        call(&app, "GET", &released, &unknown, Value::Null).await.0,
+        StatusCode::UNAUTHORIZED
     );
-    let mut bad = event.clone();
-    bad["occurredAt"] = json!(chrono::Utc::now() - chrono::Duration::hours(25));
     assert_eq!(
-        call(&app, "POST", &receipt, write, bad).await.0,
-        StatusCode::BAD_REQUEST
+        call(&app, "POST", &receipt, "not-a-token", event.clone())
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
     );
+    // A valid credential of another kind is still denied.
+    assert_eq!(
+        call(&app, "POST", &receipt, "operator", event.clone())
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    // Malformed bodies get the standard error envelope.
+    let key = Uuid::new_v4().to_string();
+    for (content_type, body, status, text) in [
+        (
+            Some("application/json"),
+            "{not json",
+            StatusCode::BAD_REQUEST,
+            "not valid JSON",
+        ),
+        (
+            None,
+            "{}",
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "Content-Type",
+        ),
+        (
+            Some("application/json"),
+            "{}",
+            StatusCode::BAD_REQUEST,
+            "missing field",
+        ),
+    ] {
+        let (got, error) = raw(&app, &receipt, write, content_type, body, &key).await;
+        assert_eq!(got, status, "{error}");
+        assert_eq!(error["error"]["code"], "invalid_content", "{error}");
+        assert!(message(&error).contains(text), "{error}");
+        assert!(error["error"]["requestId"].is_string());
+        let (got, error) = raw(
+            &app,
+            &format!("{endpoint}/credentials"),
+            "operator",
+            content_type,
+            body,
+            &key,
+        )
+        .await;
+        assert_eq!(got, status, "{error}");
+        assert_eq!(error["error"]["code"], "invalid_content", "{error}");
+        let (got, error) = raw(
+            &app,
+            &format!("/v1/workspaces/{p}/operations/{key}/close"),
+            "operator",
+            content_type,
+            if body == "{}" { "5" } else { body },
+            &key,
+        )
+        .await;
+        assert_eq!(got, status, "{error}");
+        assert_eq!(error["error"]["code"], "invalid_content", "{error}");
+    }
+    let mut bad = event.clone();
+    bad["extra"] = json!(true);
+    let (status, error) = call(&app, "POST", &receipt, write, bad).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(message(&error).contains("unknown field `extra`"), "{error}");
+    // Each failed rule is named in the message.
+    let now = chrono::Utc::now();
+    for (field, value, text) in [
+        ("stage", json!("downloaded"), "downloaded receipt"),
+        ("stage", json!("loaded"), "stage must be"),
+        ("source", json!("disk"), "source must be"),
+        ("digest", json!("a".repeat(71)), "digest must be"),
+        (
+            "digest",
+            json!(format!("sha256:{}", "A".repeat(64))),
+            "digest must be",
+        ),
+        ("channel", json!("stable"), "sent together"),
+        (
+            "occurredAt",
+            json!(now - chrono::Duration::hours(25)),
+            "24 hours",
+        ),
+        (
+            "occurredAt",
+            json!(now + chrono::Duration::minutes(10)),
+            "5 minutes",
+        ),
+    ] {
+        let mut bad = event.clone();
+        bad[field] = value;
+        let (status, error) = call(&app, "POST", &receipt, write, bad).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{field}: {error}");
+        assert!(message(&error).contains(text), "{field}: {error}");
+    }
+    let mut bad = event.clone();
+    bad["stage"] = json!("resolved");
+    let (status, error) = call(&app, "POST", &receipt, write, bad).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(message(&error).contains("resolved receipt"), "{error}");
+    let mut bad = event.clone();
+    for (field, value) in [
+        ("channel", json!("stable")),
+        ("revision", json!("x")),
+        ("resolvedAt", json!(now)),
+        ("stale", json!(false)),
+    ] {
+        bad[field] = value;
+    }
+    let (status, error) = call(&app, "POST", &receipt, write, bad).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(message(&error).contains("revision"), "{error}");
+    // A full channel mapping is accepted when the revision was released.
+    let mut mapped = event.clone();
+    mapped["eventId"] = json!(Uuid::new_v4());
+    mapped["stage"] = json!("resolved");
+    for (field, value) in [
+        ("channel", json!("stable")),
+        ("revision", json!("1")),
+        ("resolvedAt", json!(now)),
+        ("stale", json!(false)),
+    ] {
+        mapped[field] = value;
+    }
+    let (status, body) = call(&app, "POST", &receipt, write, mapped.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["revision"], "1");
+    mapped["eventId"] = json!(Uuid::new_v4());
+    mapped["revision"] = json!("2");
+    let (status, body) = call(&app, "POST", &receipt, write, mapped).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert!(message(&body).contains("never released"), "{body}");
     let mut bad = event.clone();
     bad["digest"] = json!(format!("sha256:{}", "b".repeat(64)));
     assert_eq!(
@@ -280,9 +447,13 @@ async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
     )
     .await;
     event["versionId"] = json!(v);
+    // Revoking the connection disables its credentials: they are no longer known.
+    let (status, body) = call(&app, "POST", &receipt, write, event).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["error"]["code"], "unauthenticated");
     assert_eq!(
-        call(&app, "POST", &receipt, write, event).await.0,
-        StatusCode::FORBIDDEN
+        call(&app, "GET", &released, read, Value::Null).await.0,
+        StatusCode::UNAUTHORIZED
     );
 }
 

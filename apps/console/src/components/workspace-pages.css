@@ -1060,7 +1060,7 @@
   }
 }
 
-/* Credentials: a short scope note, then read and reporting credentials as
+/* Credentials: a short scope note, then connection and receipt credentials as
    matching sections, each a heading with its create action over the list. */
 .connection-credentials {
   display: grid;

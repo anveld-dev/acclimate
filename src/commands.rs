@@ -1,6 +1,7 @@
 use crate::{ApiResult, AppState, auth::Actor, db, err};
 use axum::{
     Json, Router,
+    body::Bytes,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
@@ -365,8 +366,9 @@ async fn close(
     State(s): State<AppState>,
     Path((p, id)): Path<(String, String)>,
     h: HeaderMap,
-    Json(scope): Json<OperationScope>,
+    body: Bytes,
 ) -> ApiResult<Json<Value>> {
+    let scope: OperationScope = crate::json_body(&h, &body)?;
     if h.get("idempotency-key").and_then(|v| v.to_str().ok()) != Some(id.as_str()) {
         return Err(err(
             StatusCode::BAD_REQUEST,

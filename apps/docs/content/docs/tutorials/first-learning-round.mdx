@@ -7,7 +7,7 @@ In this tutorial you give the local stack a model, then run a script that takes 
 
 ## Before you start
 
-You need a source checkout and a Codex sign-in. Any Acclimate service works in place of the local stack if you set the same variables.
+You need a source checkout and a provider API key for an OpenAI-compatible API, or a Codex sign-in. Any Acclimate service works in place of the local stack if you set the same variables.
 
 1. Start the local stack. See the [Quickstart](/docs/get-started/quickstart).
 
@@ -43,9 +43,28 @@ python3.11 -m venv .venv
 </Tab>
 </Tabs>
 
+## Use a provider API key
+
+Learning needs two model settings, neither with a default: the **optimizer** on the service, which proposes and selects bundle changes, and the **model provider** in the console, which serves the task model that answers tasks and the judge model that grades them. One provider API key for an OpenAI-compatible API, such as OpenAI's, serves both.
+
+1. Start the stack with the optimizer settings. Use a model ID your provider serves.
+
+   ```sh
+   export ACCLIMATE_MODEL_ENDPOINT=https://api.openai.com/v1/chat/completions
+   export ACCLIMATE_MODEL_TOKEN='<provider-api-key>'
+   export ACCLIMATE_MODEL='<optimizer-model-id>'
+   npm run local:up
+   ```
+
+   The stack saves these settings in `.local/stack/service.env` for later starts. See [Optimizer](/docs/reference/configuration#optimizer) for the other variables.
+
+2. In the console, open **Model provider** under **Settings** in the sidebar. Enter `https://api.openai.com/v1` as the **OpenAI-compatible base URL**, the same key as the **API key** and at least two **Allowed models**, one for tasks and one for the judge. The executor verifies each model.
+
+Then go on to [Run the ticket triage script](#run-the-ticket-triage-script).
+
 ## Set up a local model proxy
 
-Learning needs two model settings, neither with a default: the **optimizer** on the service, which proposes and selects bundle changes, and the **model provider** in the console, which serves the task model that answers tasks and the judge model that grades them. These steps use [CLIProxyAPI](https://help.router-for.me/) with a Codex sign-in for both. They were checked against one fixed revision of the proxy, so pin your build. The [operator guide](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#cliproxyapi-with-codex-sign-in) has the details.
+Instead of a provider API key, you can serve both settings from a Codex sign-in through [CLIProxyAPI](https://help.router-for.me/). The measured runs on this page used it. These steps were checked against one fixed revision of the proxy, so pin your build. The [operator guide](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#cliproxyapi-with-codex-sign-in) has the details.
 
 1. In the proxy's configuration file, set `server.port` to `8317`, put a private key of your choice under `access.api-keys` and set `routing.cooldown.disable-cooling: true`. Without that last setting, one rate-limited reply blocks a model for minutes. See the [example configuration](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/config.example.yaml) for that revision.
 
@@ -177,7 +196,7 @@ This real run used `gpt-6-luna` for tickets and `gpt-6.2-astra` as the optimizer
 
 The starting instructions passed none of the 160 evolve rollouts, because the model invented names such as "Billing Support". In round 1, all five candidates passed every evolve rollout, and the adopted version passed every held-out rollout, on tickets the optimizer never saw. The round ran 1,280 rollouts in 14 minutes ([what a round costs](/docs#what-a-round-costs)). Round 3 adopted a shorter wording that scored the same, and the loop then waited on the script's daily round limit of three.
 
-If the proxy answers with rate limits, lower the [executor concurrency](/docs/reference/local-stack#executor-concurrency).
+If the provider or proxy answers with rate limits, lower the [executor concurrency](/docs/reference/local-stack#executor-concurrency).
 
 ## What the script does
 

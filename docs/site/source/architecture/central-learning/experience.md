@@ -72,7 +72,7 @@ No one needs to be present after Start.
 - **Each release explains itself.** It names the round that produced it and shows the diff with the diagnosis in plain language. This replaces an approval step.
 - **Flagged tasks.** The service flags tasks that drag scores: ones that fail for every candidate round after round, ones whose judge votes disagree, and ones that error. A flagged task opens to its last gateway log and reasoning, and you can edit it inline, try it and save.
 - **Held-out drop.** A drop in the held-out score or pass rate after a release raises a banner that links the round. On a [clear drop](loop.md) the service also reverts the release on its own, emails workspace admins, and the loop continues from the restored version.
-- **Roll back.** The round whose adopted version is still live has a Roll back button that re-releases the previous version. A version that was rolled back or reverted is blocked and cannot be adopted again.
+- **Roll back.** The round whose adopted version is still live has a Roll back button that re-releases the previous version. A version that was rolled back or reverted is blocked: a candidate with exactly the same bytes cannot be adopted again. A candidate that differs by even one byte can.
 
 - **Failures explain themselves.** A failed round shows the first rollout error. A provider outage makes the loop wait ten minutes and try again, and a waiting loop says when its next round can run or how many more tasks it needs.
 

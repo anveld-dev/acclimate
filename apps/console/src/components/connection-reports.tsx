@@ -48,7 +48,7 @@ export function ConnectionReports({
       {!receipts.items.length ? (
         <div className="connection-reports-empty">
           <p>No delivery report received; status unknown.</p>
-          <p>Reports appear here once your app sends them with a reporting credential.</p>
+          <p>Reports appear here once your app sends them with a receipt credential.</p>
           <Button asChild variant="outline">
             <ConsoleLink href={`${setupHref}#reporting`}>Set up reporting</ConsoleLink>
           </Button>

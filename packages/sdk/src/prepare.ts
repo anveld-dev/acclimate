@@ -3,7 +3,7 @@ import { AcclimateUsageError } from './errors.js';
 import { lstat, mkdir, mkdtemp, open, realpath, rm, rmdir, chmod, readdir } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { VerifiedVersion, FileKind, DeliveryReceiptRequest } from './types.js';
+import type { BundlePayload, VerifiedVersion, FileKind, DeliveryReceiptRequest } from './types.js';
 import { validatePayload, DeliveryError, resolveAndCache } from './cache.js';
 import type { Selection, CachePolicy } from './cache.js';
 import type { AcclimateClient } from './client.js';
@@ -37,11 +37,26 @@ export interface PreparedDelivery extends PreparedFiles {
   directory: string;
   /** The verified version this job runs. Its metadata is `version.version`. */
   version: VerifiedVersion;
+  /** The instruction files' text, joined by a blank line. Skills and memory are not included. */
   instructions: string;
+  /** The whole bundle as one system message, exactly as the learning loop sends it. See `systemPrompt`. */
+  systemPrompt: string;
   skillFiles: PreparedFile[];
   /** Queue this job's start once. Retain its receipt with the job for field auditing. */
   reportStarted(): Readonly<DeliveryReceiptRequest> | null;
   [Symbol.asyncDispose](): Promise<void>;
+}
+
+/**
+ * Render a bundle as the system message the learning loop's rollouts send: instruction files,
+ * then skills, then memory, each as `# <path>` followed by its text, joined by a blank line.
+ * Send this as your system message so production runs the prompt the loop scores.
+ */
+export function systemPrompt(payload: BundlePayload): string {
+  return (['instruction', 'skill', 'memory'] as const)
+    .flatMap((kind) => payload.files.filter((file) => file.kind === kind))
+    .map((file) => `# ${file.path}\n${file.text}`)
+    .join('\n\n');
 }
 
 /**
@@ -121,6 +136,7 @@ export async function prepareDelivery(
       .filter((file) => file.kind === 'instruction')
       .map((file) => file.text)
       .join('\n\n'),
+    systemPrompt: systemPrompt(verified.payload),
     skillFiles: staged.files.filter((file) => file.kind === 'skill'),
     reportStarted() {
       if (!started) {

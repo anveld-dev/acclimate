@@ -17,7 +17,7 @@ Import everything from the root package.
 | --- | --- |
 | Jobs | `Acclimate`, `Job` |
 | Client | `AcclimateClient` |
-| Delivery | `resolve_and_cache`, `prepare_files`, `validate_payload`, `PreparedFiles`, `PreparedDelivery` |
+| Delivery | `system_prompt`, `resolve_and_cache`, `prepare_files`, `validate_payload`, `PreparedFiles`, `PreparedDelivery` |
 | Receipts | `DeliveryReporter`, `BoundDeliveryReporter` |
 | Errors | `AcclimateError`, `UsageError`, `ApiError`, `TransportError`, `DeliveryError` |
 | Wire types | Every name in `acclimate.types` |
@@ -27,22 +27,26 @@ Import everything from the root package.
 `Acclimate` is the shortest way to run a job on a released version and report its outcome. It finds the bundle by name.
 
 ```python
-from acclimate import Acclimate
+from acclimate import Acclimate, system_prompt
 
 # Reads ACCLIMATE_URL, ACCLIMATE_WORKSPACE and ACCLIMATE_TOKEN.
 acclimate = Acclimate.from_env()
 job = acclimate.job("Support agent", channel="stable", input=request)
-reply = run_agent(request, job.version["payload"])
+reply = run_agent(system_prompt(job.version["payload"]), request)
 job.expect(corrected_reply, output=reply)
 ```
+
+Send `system_prompt(job.version["payload"])` as your system message. It is the message a [learning rollout](/docs#how-a-rollout-runs-your-bundle) sends, so the loop scores the prompt your jobs run with.
+
+`Acclimate` reads only `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN`. It ignores `ACCLIMATE_SCOPE` and `ACCLIMATE_CONNECTION`, takes its cache scope from a hash of the token, and sends no delivery receipts. Use a machine token with read, and with write if you call `expect`.
 
 | Call | What it does |
 | --- | --- |
 | `Acclimate.from_env(*, cache_dir=None)` | Reads the three environment variables |
 | `Acclimate(url=None, workspace=None, token=None, *, cache_dir=None)` | Takes the values as arguments, each falling back to its variable when `None` |
-| `acclimate.job(bundle, *, channel="stable", input)` | Resolves the release, downloads and verifies the version and returns a `Job` |
+| `acclimate.job(bundle, *, channel="stable", input)` | Finds the bundle, resolves the release, downloads and verifies the version and returns a `Job` |
 
-`job()` raises `UsageError` when no bundle has that name. `acclimate.client` is the underlying `AcclimateClient`.
+On each call, `job()` lists the workspace's bundles page by page until one has that name, and uses the first match. It raises `UsageError` when no bundle has that name. `acclimate.client` is the underlying `AcclimateClient`.
 
 | Job member | What it is |
 | --- | --- |
@@ -51,35 +55,63 @@ job.expect(corrected_reply, output=reply)
 | `prepare(destination=None)` | Writes the version's files into a private directory and returns what `client.prepare` returns |
 | `expect(expected, input=None, *, output=..., grading=None)` | Reports a production outcome and returns its receipt |
 
-`expect` works as in [Jobs](/docs/reference/typescript-sdk#jobs). `input` defaults to the job's input, `grading` is `"exact"` or `"criteria"`, and any other value raises `UsageError`.
+About `expect`:
+
+- It needs a token with write.
+- `input` defaults to the job's input.
+- `grading` is `"exact"` or `"criteria"`, and any other value raises `UsageError`. Without it, the service chooses as [How a row is graded](/docs/guides/learning-loop#how-a-row-is-graded) describes.
+- Every call sends the job's outcome ID, so repeating the same call is a safe retry.
+
+[Report production outcomes](/docs/guides/learning-loop#report-production-outcomes) explains what the service does with an outcome.
 
 ## Client
 
-`AcclimateClient` calls the workspace API directly and is synchronous. Its arguments mean what the [TypeScript options](/docs/reference/typescript-sdk#options) mean, except `timeout`, which is in seconds, up to 120. Leave `session_token` unset.
+`AcclimateClient` calls the workspace API directly. It is synchronous: each call blocks until the service answers. One client can be shared across threads, because it keeps no state between requests, and the receipt reporter already calls it from its own thread. For an asyncio application, see [Deliver content to jobs](/docs/guides/deliver-content).
 
 ```python
 AcclimateClient(base_url, token, scope, *, retries=2, timeout=30, max_payload_bytes=1048576,
                 max_json_response_bytes=4194304, connection_id=None, session_token=None)
 ```
 
+| Argument | Value |
+| --- | --- |
+| `base_url` | HTTP or HTTPS base URL of the API, with no credentials, query or fragment |
+| `token` | The credential, sent as a bearer token |
+| `scope` | Stable application name that separates cache entries. Never use a token. |
+| `retries` | 0 to 3 resends of a write with an idempotency key after a transport failure or HTTP 5xx. Reads are not retried. |
+| `timeout` | Timeout of each request in seconds, up to 120 |
+| `max_payload_bytes`, `max_json_response_bytes` | Largest payload to download, up to 2 MiB, and largest JSON response to read, up to 8 MiB |
+| `connection_id` | The connection's UUID, when reading for a connection |
+
+Leave `session_token` unset. It exists for the console's own server.
+
 ### Prepare a job
 
 `client.prepare(workspace_id, bundle_id, *, channel=None, version_id=None, cache_dir=None, destination=None, offline=None, max_cache_bytes=20971520, reporter=None)`
 
-Pass exactly one of `channel` and `version_id`. `cache_dir` defaults to `~/.cache/acclimate/python`, and `reporter` takes a [`DeliveryReporter`](#receipts). The other arguments match the [TypeScript `client.prepare`](/docs/reference/typescript-sdk#prepare-a-job).
+| Argument | Value |
+| --- | --- |
+| `workspace_id`, `bundle_id` | The bundle to read |
+| `channel` or `version_id` | Exactly one |
+| `cache_dir` | Cache directory, `~/.cache/acclimate/python` by default |
+| `destination` | Directory for the job's files. By default a new temporary directory. |
+| `offline` | `{"pinned_version_id": version_id}` lets an exact version fall back to the verified cache after a transport failure or HTTP 502, 503 or 504. A channel always confirms its release with the service. |
+| `max_cache_bytes` | Size the cache is trimmed to, at most 1 GiB |
+| `reporter` | A [`DeliveryReporter`](#receipts) |
 
 The result is a context manager that removes the job's files when the block exits. For a background job, keep the object and call `cleanup()` after the job has stopped and its result is saved.
 
 | Member of the result | What it is |
 | --- | --- |
 | `version` | The verified version, with metadata at `version["version"]` and the verified `payload`. `version["stale"]` is true when it came from the offline cache. |
-| `instructions` | The instruction files joined into one string |
+| `system_prompt` | The whole bundle as one system message, as `system_prompt()` renders it. This is what the loop scores. |
+| `instructions` | The instruction files only, joined by a blank line. Skills and memory are left out. |
 | `skill_files`, `files` | The written skill files and all written files, each with `path`, `kind` and `absolutePath` |
 | `directory` | The job's private directory |
 | `report_started()` | Reports the job's start when `prepare` had a `reporter` |
 | `cleanup()` | Removes the written files |
 
-The [offline fallback](/docs/reference/typescript-sdk#cache-and-offline-fallback) works as in TypeScript:
+For example, to pin a version that can run from the cache:
 
 ```python
 client.prepare(workspace_id, bundle_id, version_id=pinned, offline={"pinned_version_id": pinned})
@@ -127,12 +159,16 @@ The methods are the snake_case forms of the TypeScript client's, with these diff
 | Model provider | `get_model_provider`, `set_model_provider` |
 | Outcomes | `report_learning_outcome` |
 
-The keys, filters and signed-in-only methods match the [TypeScript learning methods](/docs/reference/typescript-sdk#learning). `list_learning_tasks` takes the filters as keywords, and `import_learning_tasks(workspace_id, bundle_id, data, content_type, filename=None)` takes the file's bytes.
+- `enroll_learning_loop` turns on learning or changes its settings. It and `pause_learning_loop`, `resume_learning_loop` and `stop_learning_loop` take an optional idempotency key. `report_learning_outcome` uses the outcome ID as its key unless you pass one.
+- `list_learning_tasks` takes the keywords `after`, `limit`, `split`, `source`, `admission`, `flagged` and `confirmed`.
+- `import_learning_tasks(workspace_id, bundle_id, data, content_type, filename=None)` takes the file's bytes. Send `text/plain`, `text/csv`, `application/x-ndjson`, `application/jsonl` or the xlsx type `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`. For any other type the service takes the format from the filename's extension (`csv`, `jsonl`, `xlsx` or `text`), or reads plain text when there is no filename or extension.
+- `confirm_learning_tasks`, `export_held_out_tasks` and `set_model_provider` need a signed-in person, not a machine token.
 
 ## Lower-level helpers
 
 | Function | Use |
 | --- | --- |
+| `system_prompt(payload)` | Render a payload as the system message a learning rollout sends: instruction, then skill, then memory files, each as `# <path>`, a line break and its text, joined by a blank line |
 | `resolve_and_cache(client, workspace_id, bundle_id, *, cache_dir, channel=None, version_id=None, offline=None, max_cache_bytes=20971520, reporter=None)` | Resolve and verify a version without writing job files |
 | `prepare_files(version, destination)` | Write a verified version's files into a private directory |
 | `validate_payload(payload)` | Check a bundle payload without calling the service |
@@ -145,13 +181,17 @@ The keys, filters and signed-in-only methods match the [TypeScript learning meth
 2. Call `prepared.report_started()` when the job starts.
 3. Before a short-lived process exits, call `wait(timeout)` and then `close(timeout)`.
 
+A report that fails is kept, not retried. Only `flush()` sends the kept reports again, with their original IDs. Call it before `wait()` to retry them.
+
 ## Errors
 
 Every error the SDK raises on purpose is an `AcclimateError` with a stable `code`. [Error codes](/docs/reference/error-codes) lists each class, its attributes and each code with its cause.
 
 ## acclimate pull
 
-The package installs the `acclimate` command, which `python -m acclimate` also runs. Its flags and config file are the same as in TypeScript, and [acclimate pull](/docs/reference/typescript-sdk#acclimate-pull) covers the config format and the three ways to supply the token.
+The package installs the `acclimate` command, which `python -m acclimate` also runs. It saves a channel's released payload to a new JSON file you can edit. It takes `--config`, `--bundle` (the bundle ID), `--channel` (`stable` by default) and `--out` (a new file, never overwritten).
+
+The config is an owner-only JSON file with `schemaVersion` 1, `serviceUrl`, `workspaceId`, `scope` and an absolute `cacheDir`. The token needs read. Supply it as `ACCLIMATE_TOKEN`, a `token` field or a `tokenFile` field. [acclimate pull](/docs/reference/typescript-sdk#acclimate-pull) shows an example config and the output.
 
 ```sh
 acclimate pull --config /absolute/path/pull.json --bundle <bundle-id> --channel stable --out payload.json

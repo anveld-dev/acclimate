@@ -59,6 +59,33 @@ docker compose up -d --no-build --wait postgres service console
 - Compose still refuses every command unless `CONSOLE_HOST`, `API_HOST` and `ACME_EMAIL` are set.
 - The console and the service listen only on the internal Compose network `backend`, which has no outside route. Your proxy must join `backend`, and use a second network or the host's ports for public traffic, as the bundled proxy does with `edge`.
 
+## Run behind a load balancer
+
+To put a cloud or hardware load balancer in front of the server, keep Caddy and send the balancer's traffic to it. Caddy routes by hostname, so the balancer must keep the client's `Host` header and TLS server name.
+
+| Balancer mode | Caddy's certificates |
+| --- | --- |
+| TCP passthrough on 443 and 80. Caddy terminates TLS. | Caddy's ACME works unchanged, as long as the internet reaches both ports through the balancer. |
+| TLS termination at the balancer, then HTTPS to Caddy on 443 | The balancer holds your public certificate. Caddy needs a certificate the balancer accepts: its own ACME certificate, which needs port 80 forwarded from the internet, or your own certificate. |
+| TLS termination, then plain HTTP to Caddy | Not supported. The bundled Caddyfile redirects HTTP to HTTPS. |
+
+To give Caddy your own certificate, copy `deploy/Caddyfile`, or `deploy/keycloak/Caddyfile` with the co-hosted Keycloak, to your private directory. Add a `tls` line with the paths as Caddy sees them to each site block, for example `tls /etc/caddy/certs/console.pem /etc/caddy/certs/console.key`. Caddy then requests no certificate for that site. With the co-hosted Keycloak, the console reaches the issuer through Caddy and trusts only public certificate authorities, so the Keycloak hostname's certificate must come from one.
+
+To accept traffic only from the balancer, publish Caddy's ports on a private interface. Put the overrides in a file in your private directory and add its path to `COMPOSE_FILE` in `compose.env`. This example also mounts the copied Caddyfile and your certificates.
+
+```yaml title="~/.config/acclimate/compose.edge.yaml"
+services:
+  proxy:
+    ports: !override
+      - "10.0.0.5:80:80"
+      - "10.0.0.5:443:443"
+    volumes:
+      - /home/ops/.config/acclimate/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /home/ops/.config/acclimate/certs:/etc/caddy/certs:ro
+```
+
+Use absolute paths and your server's private address. Check the merged result with `docker compose config --quiet`, then run `docker compose up -d --wait proxy`.
+
 ## Example nginx configuration
 
 <Callout type="warn" title="This example is untested">

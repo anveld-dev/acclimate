@@ -27,6 +27,12 @@ Other behavior to know:
 - The executor gateway retries provider errors and waits on `Retry-After` for up to seven minutes. It does not resend a request that ran for its full ten-minute timeout. With CLIProxyAPI and one Codex sign-in, turn the proxy's cooldown off. [Operator guide](deploy/README.md#cliproxyapi-with-codex-sign-in)
 - An adopted round that loses its executor before the held-out check finishes keeps its release and raises the `regression-check-incomplete` alert.
 - The console's workspace settings are three pages under **Settings** in the sidebar: **Members** (`/w/{workspace}/settings/members`), **Model provider** (`/settings/model-provider`) and **Machine tokens** (`/settings/tokens`). The provider and tokens no longer appear on Members. A bundle's **Learning** tab has **Overview**, **Tasks**, **Settings** and **Memory** pages, selected with `?tab=`. Links with `?round=` open the round on the Overview, and links with `?memory=` open Memory.
+- The automatic revert now fires when the held-out pass rate falls by at least 10 percentage points or half the previous version's pass rate, whichever is smaller, and at least two tasks go from passing to failing. Before, a version passing under 10% could never be reverted.
+- An unknown or revoked connection or receipt credential (`aci_`) now gets 401 `unauthenticated` instead of 403 `denied` on content reads and receipts. 403 stays for a valid credential asking for something it may not have.
+- Malformed JSON bodies on receipts, credential issue and operation close return the standard error envelope: 400 `invalid_content` naming the field, or 415 without `Content-Type: application/json`. Each failed receipt rule has its own message. A receipt `digest` must be `sha256:` and 64 lowercase hex characters, and `revision` must be decimal digits. `contracts/openapi.json` documents connections, credentials and receipts in full and no longer forbids additional properties in responses.
+- Both SDKs add `systemPrompt(payload)` / `system_prompt(payload)` and `prepared.systemPrompt` / `prepared.system_prompt`, which render a bundle exactly as a learning rollout's system message. `instructions` stays and holds only the instruction files.
+- An exact version with the offline option now also falls back to the verified cache after HTTP 502 or 504, which a reverse proxy returns for a stopped service.
+- The console calls the connection's reporting credential a **receipt credential**.
 
 All notable changes to Acclimate will be documented in this file.
 

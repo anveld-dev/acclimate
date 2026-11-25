@@ -5,6 +5,8 @@ description: The public entry points, options, methods and command of @acclimate
 
 This page lists what `@acclimate/sdk` exports and the arguments each part takes, for developers who call Acclimate from Node.js. [Install the SDKs](/docs/get-started/install) covers installation.
 
+The package is ESM only. It sets `"type": "module"` and exports only `import` conditions, so `require('@acclimate/sdk')` fails. From CommonJS, use `await import('@acclimate/sdk')`.
+
 ## Entry points
 
 Import only these entry points. Other paths inside the package are private and can change in any Acclimate release.
@@ -13,7 +15,7 @@ Import only these entry points. Other paths inside the package are private and c
 | --- | --- |
 | `@acclimate/sdk` | Jobs: `createAcclimate` |
 | | Client: `AcclimateClient` |
-| | Delivery: `resolveAndCache`, `prepareFiles`, `defaultCacheDir`, `verifyPayloadBytes`, `validatePayload` |
+| | Delivery: `systemPrompt`, `resolveAndCache`, `prepareFiles`, `defaultCacheDir`, `verifyPayloadBytes`, `validatePayload` |
 | | Receipts: `createReceiptReporter` |
 | | Compatibility: `compatibilityIssues`, `assertCompatible` |
 | | Errors: `AcclimateError`, `AcclimateUsageError`, `TransportError`, `ApiError`, `DeliveryError`, `TaskExecutionError`, `InfrastructureError` |
@@ -27,14 +29,18 @@ The root entry point also exports every wire type, such as `Bundle`, `VersionMet
 `createAcclimate` is the shortest way to run a job on a released version and report its outcome. It finds the bundle by name.
 
 ```ts
-import { createAcclimate } from '@acclimate/sdk';
+import { createAcclimate, systemPrompt } from '@acclimate/sdk';
 
 // Reads ACCLIMATE_URL, ACCLIMATE_WORKSPACE and ACCLIMATE_TOKEN.
 const acclimate = createAcclimate();
 const job = await acclimate.job('Support agent', { channel: 'stable', input: request });
-const reply = await runAgent(request, job.version.payload);
+const reply = await runAgent(systemPrompt(job.version.payload), request);
 await job.expect(correctedReply, { output: reply });
 ```
+
+Send `systemPrompt(job.version.payload)` as your system message. It is the message a [learning rollout](/docs#how-a-rollout-runs-your-bundle) sends, so the loop scores the prompt your jobs run with.
+
+`createAcclimate` reads only `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN`. It ignores `ACCLIMATE_SCOPE` and `ACCLIMATE_CONNECTION`, and it sends no delivery receipts. Use a machine token with read, and with write if you call `expect`.
 
 `createAcclimate(options?)` takes these options:
 
@@ -48,7 +54,7 @@ await job.expect(correctedReply, { output: reply });
 
 It also accepts the [client options](#options) `retries`, `timeoutMs`, `maxPayloadBytes`, `maxJsonResponseBytes` and `fetch`.
 
-`acclimate.job(bundleName, options)` resolves the release, downloads the version if it is not cached and verifies its digest. It throws `AcclimateUsageError` when no bundle or more than one has that name.
+`acclimate.job(bundleName, options)` finds the bundle by listing every bundle in the workspace, on each call. It then resolves the release, downloads the version if it is not cached and verifies its digest. It throws `AcclimateUsageError` when no bundle or more than one has that name.
 
 | Option | Value |
 | --- | --- |
@@ -109,7 +115,8 @@ Leave `sessionToken` unset. It exists for the console's own server. The client r
 | Returned member | What it is |
 | --- | --- |
 | `version` | The verified version, with its metadata at `version.version` |
-| `instructions` | The instruction files joined into one string |
+| `systemPrompt` | The whole bundle as one system message, as `systemPrompt` renders it. This is what the loop scores. |
+| `instructions` | The instruction files only, joined by a blank line. Skills and memory are left out. |
 | `skillFiles`, `files` | The written skill files and all written files, each with `path`, `kind` and `absolutePath` |
 | `directory` | The job's private directory |
 | `reportStarted()` | Queues the job's start receipt once, or returns `null` without a reporter |
@@ -117,7 +124,7 @@ Leave `sessionToken` unset. It exists for the console's own server. The client r
 
 ### Cache and offline fallback
 
-A job that names a channel always confirms the release with the service. A job that names an exact version can fall back to the verified cache after a transport failure or an HTTP 503. A denied request, a missing resource or a failed integrity check never falls back.
+A job that names a channel always confirms the release with the service. A job that names an exact version can fall back to the verified cache after a transport failure or an HTTP 502, 503 or 504. A reverse proxy answers 502 or 504 for a stopped service. A denied request, a missing resource or a failed integrity check never falls back.
 
 ```ts
 await client.prepare({ workspaceId, bundleId, versionId: pinned, offline: { pinnedVersionId: pinned } });
@@ -157,13 +164,14 @@ Every method takes `workspaceId` first, then `bundleId` where the route has one.
 - `enrollLearningLoop` turns on learning or changes its settings.
 - `enrollLearningLoop`, `pauseLearningLoop`, `resumeLearningLoop` and `stopLearningLoop` take an optional idempotency key. `reportLearningOutcome` uses the outcome ID as its key unless you pass one.
 - `listLearningTasks` takes `{ after, limit, split, source, admission, flagged, confirmed }`.
-- `importLearningTasks(workspaceId, bundleId, data, contentType, filename?)` takes the file's bytes as an `ArrayBuffer`.
+- `importLearningTasks(workspaceId, bundleId, data, contentType, filename?)` takes the file's bytes as an `ArrayBuffer`. Send `text/plain`, `text/csv`, `application/x-ndjson`, `application/jsonl` or the xlsx type `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`. For any other type the service takes the format from the filename's extension (`csv`, `jsonl`, `xlsx` or `text`), or reads plain text when there is no filename or extension.
 - `confirmLearningTasks`, `exportHeldOutTasks` and `setModelProvider` need a signed-in person, not a machine token.
 
 ## Lower-level helpers
 
 | Function | Use |
 | --- | --- |
+| `systemPrompt(payload)` | Render a payload as the system message a learning rollout sends: instruction, then skill, then memory files, each as `# <path>`, a line break and its text, joined by a blank line |
 | `resolveAndCache(client, selection, { cacheDir, offline?, maxCacheBytes?, reporter? })` | Resolve and verify a version without writing files, for a plugin or `prepareFiles` |
 | `prepareFiles(version, destination, options?)` | Write a verified version's files into a private directory |
 | `defaultCacheDir()` | Returns the default cache directory, `~/.cache/acclimate/typescript` |

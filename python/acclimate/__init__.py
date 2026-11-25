@@ -24,6 +24,7 @@ from .delivery import (
     PreparedDelivery as PreparedDelivery,
     prepare_files as prepare_files,
     resolve_and_cache as resolve_and_cache,
+    system_prompt as system_prompt,
     validate_payload as validate_payload,
 )
 from ._jobs import Acclimate as Acclimate, Job as Job
@@ -50,6 +51,7 @@ __all__ = [
     "PreparedDelivery",
     "prepare_files",
     "resolve_and_cache",
+    "system_prompt",
     "validate_payload",
     "DeliveryReporter",
     "BoundDeliveryReporter",

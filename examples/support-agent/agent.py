@@ -12,17 +12,7 @@ import sys
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from acclimate import Acclimate, ApiError
-
-
-def system_prompt(payload) -> str:
-    """Render the bundle the way the learning executor does.
-
-    Instructions come first, then skills, then memory, each file under a ``# path`` heading.
-    Building the prompt the same way means the loop measures the prompt your jobs run with.
-    """
-    files = [file for kind in ("instruction", "skill", "memory") for file in payload["files"] if file["kind"] == kind]
-    return "\n\n".join(f"# {file['path']}\n{file['text']}" for file in files)
+from acclimate import Acclimate, ApiError, system_prompt
 
 
 def setting(name: str) -> str:
@@ -66,6 +56,7 @@ def main() -> int:
         input=args.request,
     )
     version = job.version
+    # Send the bundle as the learning loop does, so the loop scores the prompt this job runs with.
     reply = complete(system_prompt(version["payload"]), args.request)
     print(reply, flush=True)
     # Keep the version with the result, so you can tell later which instructions produced it.

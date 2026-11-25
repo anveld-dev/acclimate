@@ -23,7 +23,8 @@ client = AcclimateClient(
     connection_id=os.environ["ACCLIMATE_CONNECTION"],
 )
 with client.prepare(workspace_id, bundle_id, channel="stable") as prepared:
-    result = run_agent(task, instructions=prepared.instructions, skill_files=prepared.skill_files)
+    # system_prompt renders the bundle exactly as learning rollouts see it.
+    result = run_agent(task, system_prompt=prepared.system_prompt)
     save_job_result(result, version=prepared.version["version"]["id"], digest=prepared.version["version"]["digest"])
 ```
 
@@ -47,7 +48,7 @@ The client and delivery helpers are synchronous.
 
 ## Report delivery
 
-With a separate reporting credential, pass a `DeliveryReporter` to `client.prepare` and call `prepared.report_started()` from the job's actual start event. Save the returned record with your job ID so the connection can link it to the outcome. Calling it again on the same job returns the same event ID. Without a reporter, or when the queue is full, it returns `None`.
+With a separate receipt credential, pass a `DeliveryReporter` to `client.prepare` and call `prepared.report_started()` from the job's actual start event. Save the returned record with your job ID so the connection can link it to the outcome. Calling it again on the same job returns the same event ID. Without a reporter, or when the queue is full, it returns `None`.
 
 `DeliveryReporter` starts one daemon thread on the first observation and keeps at most `max_queue` events. Report failures never affect delivery. `flush()` retries failed events with their original IDs, `wait(timeout=1)` waits for scheduled work, and `close(timeout=0.1)` stops the worker. A short-lived CLI can call `wait(1.2)` and then `close(0)` before it exits. Reports live in memory; a missing report means unknown, not that the agent didn't use the content.
 

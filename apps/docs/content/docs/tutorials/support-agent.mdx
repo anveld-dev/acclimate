@@ -3,7 +3,7 @@ title: Improve a support agent
 description: Answer support requests with a released bundle, improve the bundle with sample tasks and turn a person's correction into a learning task.
 ---
 
-In this tutorial you run a support agent that answers each request with the version released on a channel, improve its bundle with 60 sample tasks until its replies state the company's facts, and turn a support lead's correction into a learning task. The application is `examples/support-agent/`: `agent.ts` with its prompt helper `prompt.ts`, or `agent.py`.
+In this tutorial you run a support agent that answers each request with the version released on a channel, improve its bundle with 60 sample tasks until its replies state the company's facts, and turn a support lead's correction into a learning task. The application is `examples/support-agent/`: `agent.ts` or `agent.py`.
 
 ## Before you start
 
@@ -27,7 +27,7 @@ export OPENAI_API_KEY='<proxy-key>'
 export AGENT_MODEL=gpt-6-luna
 ```
 
-The model ID is an example. On Linux, use the address the proxy listens on.
+The model ID is an example. On Linux, use the address the proxy listens on. With a provider API key instead of the proxy, set `OPENAI_BASE_URL` to the provider's base URL, such as `https://api.openai.com/v1`, and `OPENAI_API_KEY` to the key.
 
 ## Answer a request
 
@@ -102,7 +102,7 @@ print(f"\nAnswered with version {version['version']['id']} ({version['version'][
 </Tab>
 </Tabs>
 
-`job()` finds the bundle by name, resolves the channel, downloads the version unless cached and verifies its digest. `systemPrompt` (`system_prompt` in Python) renders the files the way a [learning rollout](/docs#how-a-rollout-runs-your-bundle) does, so the loop measures the prompt your jobs run with.
+`job()` finds the bundle by name, resolves the channel, downloads the version unless cached and verifies its digest. `systemPrompt` (`system_prompt` in Python) comes from the SDK. It renders the bundle as exactly the system message a [learning rollout](/docs#how-a-rollout-runs-your-bundle) sends, so the loop scores the prompt your jobs run with.
 
 ## Improve the bundle with the sample tasks
 
@@ -136,10 +136,10 @@ A real first round, with `gpt-6-luna` as task model, `gpt-6.2-sol` as judge mode
 
 | | Evolve tasks | Held-out tasks |
 | --- | --- | --- |
-| Version before the round | 0.43, 5 of 170 rollouts passing | 0.41, 3 of 130 rollouts passing |
-| Adopted version | 0.99, 161 of 170 rollouts passing | 0.53, 10 of 130 rollouts passing |
+| Version before the round | 0.43, 5 of 170 rollouts passing (3%) | 0.41, 3 of 130 rollouts passing (2%) |
+| Adopted version | 0.99, 161 of 170 rollouts passing (95%) | 0.53, 10 of 130 rollouts passing (8%) |
 
-A score gives partial credit for each criterion met, and a rollout passes only when it meets all four ([how answers are scored](/docs#how-answers-are-scored)).
+A score gives partial credit for each criterion met, and a rollout passes only when it meets all four ([how answers are scored](/docs#how-answers-are-scored)). The console's chart and **Held-out** column show the score, 53.2% here. The automatic revert compares the pass rate.
 
 The five candidates scored between 0.95 and 0.99. The adopted one replaced the two sentences with a product guide of about 5,800 characters that begins:
 
@@ -150,7 +150,7 @@ You provide first-party support for our workspace web app. Unless the customer e
 - Full workspace exports start at Settings → Workspace → Export data. The download link is emailed and is valid for 7 days; after expiry, start a new export to get a fresh link.
 ```
 
-The held-out score moved much less. The optimizer sees only evolve tasks, and most requests turn on a company fact of their own, so the guide lacks the facts held-out tasks ask about. To close the gap, add tasks or [corrections](#report-a-correction) that cover them, or write the facts into the bundle.
+The held-out results moved much less. A pass rate of 95% on evolve tasks and 8% on held-out tasks is what overfitting looks like: the change fits the tasks the optimizer saw. This one round is not evidence that the loop's changes generalize. Here the optimizer sees only evolve tasks, and most requests turn on a company fact of their own, so the guide lacks the facts held-out tasks ask about. To close the gap, add tasks or [corrections](#report-a-correction) that cover them, or write the facts into the bundle.
 
 The round ran 1,280 rollouts in about 95 minutes on one Codex sign-in with four rollouts at a time, while another example was also running.
 

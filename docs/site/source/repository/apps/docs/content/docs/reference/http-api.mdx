@@ -28,8 +28,21 @@ Authorization: Bearer <token>
 - A machine token carries `read`, `write` or `promote` rights in a workspace. See [Credential types](/docs/reference/credentials#credential-types) and [Rights](/docs/reference/credentials#rights).
 - A person calls the API through the console after signing in. On the learning routes, a person needs the Administrator role wherever a machine token needs `promote`. Releasing a version and publishing a bundle also accept an Editor.
 - Routes marked for a signed-in person refuse a machine token with 403 `denied`.
-- A missing or unknown token gets 401 `unauthenticated`, and a token without the needed grant gets 403 `denied`. See [Service codes](/docs/reference/error-codes#service-codes).
-- An SDK client with a connection ID sends it as `X-Acclimate-Connection-Id` on version, payload and channel reads.
+- A missing, unknown, expired or revoked credential gets 401 `unauthenticated`. A valid credential that asks for something it may not have gets 403 `denied`. [Error codes](/docs/reference/error-codes#service-codes) shows the error body.
+
+Connection and receipt credentials work only on the routes in this table. Any other route answers them with 401, because it does not accept them.
+
+| Credential | Accepted on | 403 `denied` when |
+| --- | --- | --- |
+| Connection credential | Resolving a channel, and reading a version's metadata or payload | The workspace, bundle or channel is not its connection's, `X-Acclimate-Connection-Id` names another connection, or the version was never released on its channel. A receipt credential reading content gets 403 too. |
+| Receipt credential | `POST /connections/{connectionId}/receipts` | The path names another workspace or connection, the body's `connectionId`, `workspaceId` or `bundleId` do not match it, `channel` is another channel, or the version, `revision` and `digest` were never released together on its channel. A connection credential or machine token sending a receipt gets 403 too. |
+
+Revoking a credential or its connection makes the credential unknown, so its next request gets 401.
+
+`X-Acclimate-Connection-Id` names a connection on those three reads, and an SDK client with a connection ID sends it.
+
+- With a connection credential it is optional, and must name the credential's own connection.
+- With a machine token or session, which also needs read, it limits the read to that connection. The connection must be active and for the bundle in the path. A channel other than the connection's, or a version never released on that channel, gets 403.
 
 The [health endpoints](/docs/operate/health-and-readiness) `/health` and `/ready` need no token and sit outside `/v1`.
 
@@ -49,8 +62,8 @@ The [health endpoints](/docs/operate/health-and-readiness) `/health` and `/ready
 | List or create releases | `GET` or `POST /bundles/{bundleId}/channels/{channel}/releases` |
 | List or create connections | `GET` or `POST /connections` |
 | Revoke a connection | `POST /connections/{connectionId}/revoke` |
-| Issue a connection credential | `POST /connections/{connectionId}/credentials` |
-| Revoke a connection credential | `POST /connections/{connectionId}/credentials/{credential}/revoke` |
+| Issue a connection or receipt credential | `POST /connections/{connectionId}/credentials` |
+| Revoke a connection or receipt credential | `POST /connections/{connectionId}/credentials/{credential}/revoke` |
 | List or submit delivery receipts | `GET` or `POST /connections/{connectionId}/receipts` |
 | List connection observations | `GET /connection-observations` |
 | List or issue machine tokens | `GET` or `POST /machine-tokens` |
@@ -68,6 +81,22 @@ The sign-in, membership and invitation routes serve the console and are listed o
 2. Fetch the exact stored bytes from the version's `/payload` route.
 3. Check the SHA-256 digest of those bytes against the metadata before you parse them. Parsing and writing a JSON object again can change the bytes.
 4. Validate the parsed payload against the bundle schema.
+
+A connection credential can read any version ever released on its channel, including one later rolled back or blocked, so a job pinned to an older version keeps working.
+
+```sh
+# ACCLIMATE_URL is the service URL, without /v1.
+BUNDLE_API="$ACCLIMATE_URL/v1/workspaces/$WORKSPACE_ID/bundles/$BUNDLE_ID"
+AUTH="Authorization: Bearer $ACCLIMATE_TOKEN"
+
+curl -fsS -H "$AUTH" "$BUNDLE_API/channels/stable" -o resolution.json
+VERSION_ID=$(jq -r .version.id resolution.json)
+DIGEST=$(jq -r .version.digest resolution.json)
+
+curl -fsS -H "$AUTH" "$BUNDLE_API/versions/$VERSION_ID/payload" -o payload.json
+# Hash the downloaded bytes, never a reformatted copy. On macOS, use shasum -a 256.
+test "sha256:$(sha256sum payload.json | cut -d ' ' -f 1)" = "$DIGEST" || { echo "digest mismatch" >&2; exit 1; }
+```
 
 A payload holds up to 128 UTF-8 text files of at most 256 KiB each and 1 MiB in total. Each file has a relative `path` and a `kind` of `instruction`, `skill` or `memory`. [Rules for bundle files](/docs/guides/coding-agents#rules-for-bundle-files) lists the path rules.
 
@@ -92,11 +121,47 @@ A release write takes three fields:
 
 When the channel has moved, the write fails with 409 `revision_conflict`. Read the channel again, then submit a new release.
 
+## Send a delivery receipt
+
+A receipt records one stage of a delivery, such as the start of a job, for the connection's **Delivery reports**. Send it with the connection's receipt credential to `POST /v1/workspaces/{workspaceId}/connections/{connectionId}/receipts`, with `Content-Type: application/json`. This continues the example in [Read and verify a version](#read-and-verify-a-version).
+
+```sh
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+jq -n --arg event "$(uuidgen)" --arg connection "$CONNECTION_ID" --arg workspace "$WORKSPACE_ID" \
+  --arg now "$NOW" --slurpfile r resolution.json '{
+    eventId: $event, connectionId: $connection, workspaceId: $workspace,
+    bundleId: $r[0].version.bundleId, versionId: $r[0].version.id, digest: $r[0].version.digest,
+    stage: "started", source: "network", occurredAt: $now,
+    channel: $r[0].channel, revision: $r[0].revision, resolvedAt: $now, stale: false
+  }' > receipt.json
+
+curl -fsS -X POST "$ACCLIMATE_URL/v1/workspaces/$WORKSPACE_ID/connections/$CONNECTION_ID/receipts" \
+  -H "Authorization: Bearer $ACCLIMATE_RECEIPT_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data-binary @receipt.json
+```
+
+| Field | Rule |
+| --- | --- |
+| `eventId` | Required UUID you choose. Sending the same body again returns the stored receipt, and a different body with the same ID gets 409 `idempotency_conflict`. |
+| `connectionId`, `workspaceId`, `bundleId` | Required. They must match the path and the credential's connection. |
+| `versionId`, `digest` | Required. `digest` is `sha256:` and 64 lowercase hex characters. The version, with that digest, must have been released on the connection's channel. |
+| `stage` | Required: `resolved`, `downloaded`, `verified`, `prepared` or `started` |
+| `source` | Required: `network`, `cache` or `offline`. A `downloaded` stage needs `network`. |
+| `occurredAt` | Required RFC 3339 time, no more than 24 hours in the past or 5 minutes in the future |
+| `channel`, `revision`, `resolvedAt`, `stale` | Send all four or none. A `resolved` stage needs them. `channel` is the connection's channel, `revision` the channel revision as a string of digits, `resolvedAt` no more than 5 minutes after `occurredAt`, and `stale` true when the mapping came from a local cache because the service could not be reached. |
+
+Unknown fields are rejected, and `null` counts as absent. A broken rule gets 400 `invalid_content`, whose message names the field or rule. The response is the receipt with `receivedAt` and `delayed`, which is true when it arrived more than 5 minutes after `occurredAt`. The service keeps receipts for 30 days, and a token with read can list them with `GET` on the same path. The SDKs send receipts for you, as [Report job starts](/docs/guides/deliver-content#report-job-starts) shows.
+
 ## Retry a write
 
 ### Idempotency keys
 
-A write that requires an idempotency key, such as creating a version or a release, takes an `Idempotency-Key` header of 1 to 128 printable ASCII characters. To retry, send the same key with the same request bytes. The same key with different bytes gets 409 `idempotency_conflict`.
+These writes require an `Idempotency-Key` header of 1 to 128 printable ASCII characters: creating a bundle, a bundle setup, a version, a release or a connection, issuing a connection or receipt credential, and closing a retained write. To retry, send the same key with the same request bytes. The same key with different bytes gets 409 `idempotency_conflict`. The service keeps a key's result for 24 hours, or longer as a [retained result](#retained-results).
+
+Issuing a credential never returns its secret twice. Its key, reused, gets 409 `credential_already_issued` with the credential's ID, so revoke that credential and issue a new one with a new key.
+
+Turning on learning, the loop controls and a rollback accept an optional key, which makes a retry return the first result. A receipt uses its `eventId` instead.
 
 ### Retained results
 

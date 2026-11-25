@@ -14,6 +14,7 @@ from acclimate import (
     DeliveryReporter,
     prepare_files,
     resolve_and_cache,
+    system_prompt,
     validate_payload,
 )
 
@@ -55,6 +56,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if self.mode == "unavailable":
             self.reply(503, b"{}")
+            return
+        if self.mode in ("bad_gateway", "gateway_timeout"):
+            self.reply(502 if self.mode == "bad_gateway" else 504, b"{}")
             return
         if self.mode == "redirect":
             self.send_response(302)
@@ -123,6 +127,7 @@ class SDKTest(unittest.TestCase):
                 self.assertFalse(hasattr(job, "bundle"))
                 self.assertEqual(job.instructions, "\n\n".join(
                     file["text"] for file in job.version["payload"]["files"] if file["kind"] == "instruction"))
+                self.assertEqual(job.system_prompt, system_prompt(job.version["payload"]))
                 self.assertEqual(job.skill_files, [file for file in job.files if file["kind"] == "skill"])
                 self.assertTrue(Path(job.files[0]["absolutePath"]).exists())
                 binding = reporter.bind.return_value
@@ -208,6 +213,23 @@ class SDKTest(unittest.TestCase):
                 self.assertTrue(Path(prepared.files[0]["absolutePath"]).is_file())
             self.assertFalse(Path(prepared.files[0]["absolutePath"]).exists())
 
+    def test_eviction_tolerates_entries_another_job_removed_first(self):
+        real_listdir, real_unlink = os.listdir, os.unlink
+
+        def listdir(fd):
+            return [*real_listdir(fd), "0" * 64]
+
+        def unlink(name, *, dir_fd=None):
+            real_unlink(name, dir_fd=dir_fd)  # Another thread sharing the cache evicts it first.
+            real_unlink(name, dir_fd=dir_fd)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            kw = dict(cache_dir=os.path.realpath(tmp) + "/cache", channel="stable")
+            resolve_and_cache(self.client, "p", "b1", **kw)
+            with patch("acclimate.delivery.os.listdir", listdir), patch("acclimate.delivery.os.unlink", unlink):
+                version = resolve_and_cache(self.client, "p", "b1", max_cache_bytes=1, **kw)
+            self.assertEqual(version["version"]["digest"], VERSION["digest"])
+
     def test_connection_scoped_client_records_the_connection_like_typescript(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = os.path.realpath(tmp)
@@ -236,6 +258,13 @@ class SDKTest(unittest.TestCase):
             )
             self.assertTrue(pinned["stale"])
             self.assertEqual(pinned["version"]["id"], VERSION["id"])
+            # A reverse proxy in front of a stopped service answers 502 or 504.
+            for mode in ("bad_gateway", "gateway_timeout"):
+                Handler.mode = mode
+                proxied = resolve_and_cache(
+                    self.client, "p", "b1", **kw, offline={"pinned_version_id": VERSION["id"]}
+                )
+                self.assertTrue(proxied["stale"])
 
     def test_integrity_and_redirect(self):
         with tempfile.TemporaryDirectory() as tmp:

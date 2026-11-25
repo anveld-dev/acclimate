@@ -187,7 +187,7 @@ def _fallback(exc: Exception) -> bool:
     return (
         isinstance(exc, TransportError)
         or isinstance(exc, ApiError)
-        and exc.status == 503
+        and exc.status in (502, 503, 504)
     )
 
 
@@ -316,11 +316,15 @@ def resolve_and_cache(
                 {"version": version, "cachedAt": now},
             )
         # Evict oldest regular entries without following symlinks; preserve the payload just used.
+        # Another thread or process sharing the cache may evict an entry first.
         entries = []
         for name in os.listdir(fd):
             if not re.fullmatch("[a-f0-9]{64}", name):
                 continue
-            s = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            try:
+                s = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            except FileNotFoundError:
+                continue
             if not stat.S_ISREG(s.st_mode):
                 raise DeliveryError("unsafe_cache", "Unsafe cache entry")
             entries.append((s.st_mtime, name, s.st_size))
@@ -330,7 +334,10 @@ def resolve_and_cache(
                 break
             if name == payload_key:
                 continue
-            os.unlink(name, dir_fd=fd)
+            try:
+                os.unlink(name, dir_fd=fd)
+            except FileNotFoundError:
+                pass
             total -= size
         result: VerifiedVersion = {
             "version": version,
@@ -395,6 +402,17 @@ class PreparedFiles:
         self.cleanup()
 
 
+def system_prompt(payload: BundlePayload) -> str:
+    """Render a bundle as the system message the learning loop's rollouts send.
+
+    Instruction files come first, then skills, then memory, each as ``# <path>`` followed by its
+    text, joined by a blank line. Send this as your system message so production runs the prompt
+    the loop scores.
+    """
+    files = [file for kind in ("instruction", "skill", "memory") for file in payload["files"] if file["kind"] == kind]
+    return "\n\n".join(f"# {file['path']}\n{file['text']}" for file in files)
+
+
 class PreparedDelivery(AbstractContextManager["PreparedDelivery"]):
     """Pinned instructions, staged skills and the complete file inventory for one job."""
 
@@ -403,7 +421,9 @@ class PreparedDelivery(AbstractContextManager["PreparedDelivery"]):
         self.version = version
         self.files = staged.files
         self.directory = directory
+        # The instruction files' text only. ``system_prompt`` is the whole bundle as the loop sends it.
         self.instructions = "\n\n".join(f["text"] for f in version["payload"]["files"] if f["kind"] == "instruction")
+        self.system_prompt = system_prompt(version["payload"])
         self.skill_files = [f for f in self.files if f["kind"] == "skill"]
         self._staged = staged
         self._owned = owned

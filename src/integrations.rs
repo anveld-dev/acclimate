@@ -42,20 +42,23 @@ pub fn routes() -> Router<AppState> {
             get(receipts).post(receive),
         )
 }
-fn invalid() -> crate::ApiErr {
+fn invalid(message: &'static str) -> crate::ApiErr {
+    err(StatusCode::BAD_REQUEST, "invalid_content", message)
+}
+fn denied(message: &'static str) -> crate::ApiErr {
+    err(StatusCode::FORBIDDEN, "denied", message)
+}
+/// An unknown or revoked `aci_` secret, or one whose connection was revoked.
+fn unknown_credential() -> crate::ApiErr {
     err(
-        StatusCode::BAD_REQUEST,
-        "invalid_content",
-        "Invalid integration or receipt",
+        StatusCode::UNAUTHORIZED,
+        "unauthenticated",
+        "Unknown or revoked connection or receipt credential",
     )
 }
-fn denied() -> crate::ApiErr {
-    err(
-        StatusCode::FORBIDDEN,
-        "denied",
-        "Integration credential does not permit this operation",
-    )
-}
+const LIMIT: &str = "limit must be between 1 and 100";
+const NOT_PERMITTED: &str = "Integration credential does not permit this operation";
+const NOT_RELEASED: &str = "This version was never released on the connection's channel";
 async fn admin(
     s: &AppState,
     h: &HeaderMap,
@@ -86,12 +89,18 @@ async fn create(
     h: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Response> {
-    let b: NewIntegration = serde_json::from_slice(&body).map_err(|_| invalid())?;
-    if b.display_name.trim().is_empty()
-        || b.display_name.len() > 120
-        || !crate::channels::valid_channel(&b.channel)
-    {
-        return Err(invalid());
+    let b: NewIntegration = serde_json::from_slice(&body).map_err(|e| {
+        err(
+            StatusCode::BAD_REQUEST,
+            "invalid_content",
+            format!("Invalid request body: {e}"),
+        )
+    })?;
+    if b.display_name.trim().is_empty() || b.display_name.len() > 120 {
+        return Err(invalid("displayName must be 1 to 120 characters"));
+    }
+    if !crate::channels::valid_channel(&b.channel) {
+        return Err(invalid("Invalid channel"));
     }
     let a = crate::auth::actor(&h, &s, &p, "write")?;
     if a.user_id.is_none() {
@@ -135,7 +144,7 @@ async fn observations(
     let mut tx = crate::auth::read_transaction(&s, &h, &p).await?;
     let limit = q.limit.unwrap_or(50);
     if !(1..=100).contains(&limit) {
-        return Err(invalid());
+        return Err(invalid(LIMIT));
     }
     // The existing recent index supports each bounded lateral lookup. All latest
     // fields come from ONE server-receive-ordered receipt, including tied events.
@@ -187,7 +196,7 @@ async fn list(
     let mut tx = admin(&s, &h, &p, "admin").await?;
     let limit = q.limit.unwrap_or(50);
     if !(1..=100).contains(&limit) {
-        return Err(invalid());
+        return Err(invalid(LIMIT));
     }
     let rows=sqlx::query("SELECT i.*,(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',c.id,'kind',c.kind,'createdAt',c.created_at,'revokedAt',c.revoked_at) ORDER BY c.created_at DESC),'[]'::jsonb) FROM integration_credentials c WHERE c.project_id=i.project_id AND c.integration_id=i.id) AS credentials FROM integrations i WHERE project_id=$1 AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3").bind(p).bind(q.cursor).bind(limit+1).fetch_all(&mut *tx).await.map_err(db)?;
     let next = if rows.len() > limit as usize {
@@ -226,10 +235,11 @@ async fn issue(
     State(s): State<AppState>,
     Path((p, i)): Path<(String, Uuid)>,
     h: HeaderMap,
-    Json(b): Json<Credential>,
+    body: Bytes,
 ) -> ApiResult<Json<Value>> {
+    let b: Credential = crate::json_body(&h, &body)?;
     if !matches!(b.kind.as_str(), "content-read" | "receipt-write") {
-        return Err(invalid());
+        return Err(invalid("kind must be content-read or receipt-write"));
     }
     let a = crate::auth::actor(&h, &s, &p, "write")?;
     let key = h
@@ -238,7 +248,7 @@ async fn issue(
         .filter(|v| {
             !v.is_empty() && v.len() <= 128 && v.bytes().all(|b| (0x20..=0x7e).contains(&b))
         })
-        .ok_or_else(invalid)?;
+        .ok_or_else(|| invalid("Idempotency-Key must be 1 to 128 printable ASCII characters"))?;
     let mut tx = admin(&s, &h, &p, "admin").await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("credential-issue:{p}:{i}:{}:{key}", a.principal))
@@ -258,7 +268,7 @@ async fn issue(
     .await
     .map_err(db)?;
     if !valid {
-        return Err(denied());
+        return Err(denied("The connection is revoked"));
     }
     let secret = format!("aci_{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
     let id = Uuid::new_v4();
@@ -294,7 +304,7 @@ async fn credential(s: &AppState, h: &HeaderMap) -> ApiResult<Option<sqlx::postg
     {
         return Ok(None);
     }
-    let row=sqlx::query("SELECT i.*,c.kind FROM integration_credentials c JOIN integrations i ON i.id=c.integration_id AND i.project_id=c.project_id WHERE c.secret_hash=$1 AND c.revoked_at IS NULL AND i.enabled").bind(crate::digest(token.as_bytes())).fetch_optional(&s.db).await.map_err(db)?.ok_or_else(denied)?;
+    let row=sqlx::query("SELECT i.*,c.kind FROM integration_credentials c JOIN integrations i ON i.id=c.integration_id AND i.project_id=c.project_id WHERE c.secret_hash=$1 AND c.revoked_at IS NULL AND i.enabled").bind(crate::digest(token.as_bytes())).fetch_optional(&s.db).await.map_err(db)?.ok_or_else(unknown_credential)?;
     Ok(Some(row))
 }
 pub(crate) async fn content_transaction<'a>(
@@ -312,7 +322,7 @@ pub(crate) async fn content_transaction<'a>(
                 .to_str()
                 .ok()
                 .and_then(|value| Uuid::parse_str(value).ok())
-                .ok_or_else(invalid)
+                .ok_or_else(|| invalid("X-Acclimate-Connection-Id must be a UUID"))
         })
         .transpose()?;
     let token = h
@@ -334,23 +344,24 @@ pub(crate) async fn content_transaction<'a>(
     let bundle = path(b)?;
     let source = if integration_token {
         let r = sqlx::query("SELECT i.project_id,i.bundle_id,i.channel,i.id,c.kind FROM integration_credentials c JOIN integrations i ON (i.project_id,i.id)=(c.project_id,c.integration_id) WHERE c.secret_hash=$1 AND c.revoked_at IS NULL AND i.enabled FOR SHARE OF c,i")
-            .bind(crate::digest(token.as_bytes())).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(denied)?;
+            .bind(crate::digest(token.as_bytes())).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(unknown_credential)?;
         let id: Uuid = r.get("id");
         if r.get::<String, _>("project_id") != p
             || r.get::<Uuid, _>("bundle_id") != bundle
             || r.get::<String, _>("kind") != "content-read"
             || connection.is_some_and(|connection| connection != id)
         {
-            return Err(denied());
+            return Err(denied(NOT_PERMITTED));
         }
         r.get::<String, _>("channel")
     } else {
-        let id = connection.ok_or_else(denied)?;
+        let id = connection.ok_or_else(|| denied(NOT_PERMITTED))?;
         sqlx::query_scalar("SELECT channel FROM integrations WHERE project_id=$1 AND bundle_id=$2 AND id=$3 AND enabled FOR SHARE")
-            .bind(p).bind(bundle).bind(id).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(denied)?
+            .bind(p).bind(bundle).bind(id).fetch_optional(&mut *tx).await.map_err(db)?
+            .ok_or_else(|| denied("No active connection with this ID for this bundle"))?
     };
     if channel.is_some_and(|c| c != source) {
-        return Err(denied());
+        return Err(denied("A connection reads only its own channel"));
     }
     if let Some(version) = version
         && !delivery_history(
@@ -366,7 +377,7 @@ pub(crate) async fn content_transaction<'a>(
         )
         .await?
     {
-        return Err(denied());
+        return Err(denied(NOT_RELEASED));
     }
     Ok(tx)
 }
@@ -412,53 +423,95 @@ pub struct Receipt {
     pub resolved_at: Option<DateTime<Utc>>,
     pub stale: Option<bool>,
 }
-fn validate(b: &Receipt, now: DateTime<Utc>) -> ApiResult<()> {
+/// Return the receipt's parsed revision, or the first rule it breaks. Each
+/// message names only the receipt's own fields.
+fn validate(b: &Receipt, now: DateTime<Utc>) -> ApiResult<Option<i64>> {
     if !matches!(
         b.stage.as_str(),
         "resolved" | "downloaded" | "verified" | "prepared" | "started"
-    ) || !matches!(b.source.as_str(), "network" | "cache" | "offline")
-        || b.stage == "downloaded" && b.source != "network"
-        || b.channel.is_some() != b.revision.is_some()
-        || b.channel.is_some() != b.resolved_at.is_some()
-        || b.channel.is_some() != b.stale.is_some()
-        || b.stage == "resolved" && b.channel.is_none()
-        || b.occurred_at < now - Duration::hours(24)
-        || b.occurred_at > now + Duration::minutes(5)
-        || b.resolved_at
-            .is_some_and(|t| t > b.occurred_at + Duration::minutes(5))
-        || b.digest.len() != 71
-    {
-        return Err(invalid());
+    ) {
+        return Err(invalid(
+            "stage must be resolved, downloaded, verified, prepared or started",
+        ));
     }
-    Ok(())
+    if !matches!(b.source.as_str(), "network" | "cache" | "offline") {
+        return Err(invalid("source must be network, cache or offline"));
+    }
+    if b.stage == "downloaded" && b.source != "network" {
+        return Err(invalid("A downloaded receipt must have source network"));
+    }
+    let hex = b.digest.strip_prefix("sha256:").unwrap_or("");
+    if hex.len() != 64 || !hex.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err(invalid(
+            "digest must be sha256: followed by 64 lowercase hex characters",
+        ));
+    }
+    let mapped = b.channel.is_some();
+    if mapped != b.revision.is_some()
+        || mapped != b.resolved_at.is_some()
+        || mapped != b.stale.is_some()
+    {
+        return Err(invalid(
+            "channel, revision, resolvedAt and stale must be sent together or not at all",
+        ));
+    }
+    if b.stage == "resolved" && !mapped {
+        return Err(invalid(
+            "A resolved receipt needs channel, revision, resolvedAt and stale",
+        ));
+    }
+    if b.occurred_at < now - Duration::hours(24) {
+        return Err(invalid("occurredAt is more than 24 hours in the past"));
+    }
+    if b.occurred_at > now + Duration::minutes(5) {
+        return Err(invalid("occurredAt is more than 5 minutes in the future"));
+    }
+    if b.resolved_at
+        .is_some_and(|t| t > b.occurred_at + Duration::minutes(5))
+    {
+        return Err(invalid(
+            "resolvedAt is more than 5 minutes after occurredAt",
+        ));
+    }
+    b.revision
+        .as_ref()
+        .map(|v| {
+            v.bytes()
+                .all(|c| c.is_ascii_digit())
+                .then(|| v.parse::<i64>().ok())
+                .flatten()
+        })
+        .map(|v| v.ok_or_else(|| invalid("revision must be a string of decimal digits")))
+        .transpose()
 }
 async fn receive(
     State(s): State<AppState>,
     Path((p, i)): Path<(String, Uuid)>,
     h: HeaderMap,
-    Json(b): Json<Receipt>,
+    body: Bytes,
 ) -> ApiResult<Json<Value>> {
-    let r = credential(&s, &h).await?.ok_or_else(denied)?;
-    if r.get::<String, _>("kind") != "receipt-write"
-        || r.get::<String, _>("project_id") != p
-        || r.get::<Uuid, _>("id") != i
-        || b.integration_id != i
-        || b.project_id != p
-        || b.bundle_id != r.get::<Uuid, _>("bundle_id")
-    {
-        return Err(denied());
+    let Some(r) = credential(&s, &h).await? else {
+        // Unknown bearer tokens get 401; any other credential cannot write receipts.
+        crate::auth::actor(&h, &s, &p, "read")?;
+        return Err(denied("Only a receipt credential can send receipts"));
+    };
+    if r.get::<String, _>("kind") != "receipt-write" {
+        return Err(denied("Only a receipt credential can send receipts"));
     }
-    validate(&b, Utc::now())?;
+    if r.get::<String, _>("project_id") != p || r.get::<Uuid, _>("id") != i {
+        return Err(denied("This credential belongs to another connection"));
+    }
+    let b: Receipt = crate::json_body(&h, &body)?;
+    if b.integration_id != i || b.project_id != p || b.bundle_id != r.get::<Uuid, _>("bundle_id") {
+        return Err(denied(
+            "connectionId, workspaceId and bundleId must match the credential's connection",
+        ));
+    }
+    let revision = validate(&b, Utc::now())?;
     let channel: String = r.get("channel");
     if b.channel.as_ref().is_some_and(|c| c != &channel) {
-        return Err(denied());
+        return Err(denied("channel is not the connection's channel"));
     }
-    let revision = b
-        .revision
-        .as_ref()
-        .map(|v| v.parse::<i64>())
-        .transpose()
-        .map_err(|_| invalid())?;
     let body = serde_json::to_value(&b).map_err(db)?;
     let fingerprint = crate::digest(&serde_json::to_vec(&body).map_err(db)?);
     let mut tx = s.db.begin().await.map_err(db)?;
@@ -470,7 +523,7 @@ async fn receive(
     let still_valid=sqlx::query("SELECT c.id FROM integration_credentials c JOIN integrations i ON i.id=c.integration_id AND i.project_id=c.project_id WHERE c.secret_hash=$1 AND c.revoked_at IS NULL AND i.enabled AND i.id=$2 AND i.project_id=$3 AND c.kind='receipt-write' FOR SHARE OF c,i")
         .bind(crate::digest(token.as_bytes())).bind(i).bind(&p).fetch_optional(&mut *tx).await.map_err(db)?;
     if still_valid.is_none() {
-        return Err(denied());
+        return Err(unknown_credential());
     }
     if !delivery_history(
         &mut tx,
@@ -485,7 +538,9 @@ async fn receive(
     )
     .await?
     {
-        return Err(denied());
+        return Err(denied(
+            "This version, revision and digest were never released together on the connection's channel",
+        ));
     }
     // Cooperative retention is applied on each receipt operation, including dedup keys.
     sqlx::query("DELETE FROM integration_receipts WHERE received_at<now()-interval '30 days'")
@@ -528,7 +583,7 @@ async fn receipts(
         .map_err(db)?;
     let limit = q.limit.unwrap_or(50);
     if !(1..=100).contains(&limit) {
-        return Err(invalid());
+        return Err(invalid(LIMIT));
     }
     let rows=sqlx::query("SELECT body,received_at,event_id FROM integration_receipts WHERE project_id=$1 AND integration_id=$2 AND received_at>=now()-interval '30 days' AND ($3::uuid IS NULL OR (received_at,event_id)<(SELECT received_at,event_id FROM integration_receipts WHERE project_id=$1 AND integration_id=$2 AND event_id=$3)) ORDER BY received_at DESC,event_id DESC LIMIT $4").bind(p).bind(i).bind(q.cursor).bind(limit+1).fetch_all(&mut *tx).await.map_err(db)?;
     let next = if rows.len() > limit as usize {

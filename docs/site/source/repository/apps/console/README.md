@@ -4,7 +4,7 @@ The TanStack Start console provides sign-in, workspace membership and invitation
 
 - **Bundles** imports a payload and publishes the first release. **Content** reads, searches, copies and downloads verified files.
 - **Releases** shows channel history and lets an authorized editor release an earlier version again with a reason. If a response is lost, use the retained operation to confirm, retry or close that request.
-- **Connections** manages scoped content-read and reporting credentials. The setup recipe prepares a version in the application environment.
+- **Connections** manages scoped connection and receipt credentials. The setup recipe prepares a version in the application environment.
 - **Delivery** shows reported versions and receipt times. Under **Settings**, **Members** manages workspace access, **Model provider** holds the workspace's model endpoint for learning, and **Machine tokens** issues credentials for scripts and CI.
 - **Learning** on a bundle sets up the loop, imports and reviews tasks, runs trials, and shows rounds, usage, alerts and rollback.
 

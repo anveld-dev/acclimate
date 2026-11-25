@@ -22,7 +22,7 @@ See [Learning loop](/docs#learning-loop) for the terms and [What a round does](/
 
 <Screenshot name="model-provider" alt="The Model provider page with a base URL, a stored API key with a Replace key button, two allowed models, a Provider verified badge and both models verified." />
 
-The tested setup is CLIProxyAPI with a Codex sign-in. See [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy).
+Any OpenAI-compatible endpoint works, such as `https://api.openai.com/v1` with a provider API key. The measured runs in these docs used CLIProxyAPI with a Codex sign-in. See [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy).
 
 ## Turn on learning
 
@@ -101,7 +101,9 @@ On the **Learning** tab's **Overview**:
 - Open a round to see its candidates, the bundle changes each proposed and the evolve rollouts behind its score. It links to the task cards it mentions.
 - Check **Flagged only** to list tasks with repeated failures, executor errors or inconsistent verdicts. Edit a card and try it again.
 
-<Screenshot name="rounds" alt="The Scores by round chart with an evolve score near 1 and a held-out score near 0.5 for round 1, above the Rounds table. Round 1 adopted sample 3 and shows a Roll back button. Round 2 was stopped." caption="The support agent tutorial after its first round. Choose a round number to open it." />
+People signed in to the console can read, try and edit held-out cards. Edit a held-out card only when the task itself is wrong. Rewriting held-out tasks after reading the agent's failures fits them to the bundle, and the held-out score stops measuring unseen work. Add a new evolve task instead.
+
+<Screenshot name="rounds" alt="The Scores by round chart with an evolve score near 1 and a held-out score near 0.5 for round 1, above the Rounds table. Round 1 adopted sample 3 and shows a Roll back button. Round 2 was stopped." caption="The support agent tutorial after its first round. The held-out line is the score, with partial credit (53.2%). The automatic revert uses the pass rate instead (10 of 130 rollouts). Choose a round number to open it." />
 
 <Screenshot name="round-candidate" alt="The adopted candidate in a round: its diagnosis, the tasks it predicts it will fix, its rationale, the scanner and screening results, its evolve score against the current version and its file changes." caption="An adopted candidate from the support agent tutorial. Each candidate in a round shows the same fields." />
 
@@ -134,9 +136,11 @@ A failed round shows its cause, the error of the first rollout that failed. Afte
 
 **Pause** lets the active round finish. **Stop learning** cancels the work in progress.
 
-**Automatic revert.** After each adoption, any drop in held-out results raises an alert linked to the round, with a **Roll back this release** button. If the held-out pass rate falls by at least 10 percentage points and at least two tasks go from passing to failing, the service measures both versions again. If the drop holds and the channel still points at the adopted version, the service restores the previous version and blocks the adopted one. The alert says whether it reverted, and the round shows the confirmed scores. Workspace administrators with a verified email address get an email.
+**Automatic revert.** After each adoption, any drop in held-out results raises an alert linked to the round, with a **Roll back this release** button. The revert compares the held-out pass rate, the share of rollouts that pass, not the score with partial credit. It compares the adopted version with the version it replaced and nothing earlier, so a series of smaller drops never trips it. If the pass rate falls by at least 10 percentage points, or by half the previous version's pass rate when that is smaller, and at least two tasks go from passing to failing, the service measures both versions again. A version passing 8% of rollouts reverts at 4% or lower. If the drop holds and the channel still points at the adopted version, the service restores the previous version and blocks the adopted one. The alert says whether it reverted, and the round shows the confirmed scores. Workspace administrators with a verified email address get an email.
 
 **Manual rollback.** While the adopted version is still current, choose **Roll back** on its round and confirm. The channel moves back to the version that round replaced, and the removed version is blocked from future adoption. To allow it again, review its digest and removal note, then choose **Unblock version**.
+
+A rollback does not pause the loop. The next round can start at once from the restored version. The block matches the removed version's exact bytes, so a candidate that differs by one character can be adopted. The optimizer's history does not mark the rollback, and improvement memory keeps the attempt. If a person should look before another round runs, choose **Pause** first, then roll back.
 
 **Restore** on the **Releases** tab also moves a channel back, but does not block the version it replaces. See [Roll back](/docs/guides/release-and-roll-back#roll-back).
 

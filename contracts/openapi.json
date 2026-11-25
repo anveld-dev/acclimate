@@ -311,7 +311,7 @@
             "name": "X-Acclimate-Connection-Id",
             "in": "header",
             "required": false,
-            "description": "Qualify the read by this connection's delivery. A scoped delivery credential implies its own connection.",
+            "description": "Optional with a connection credential, but must name its own connection. With a machine token or session, limits the read to this connection's channel and to versions ever released there: another channel or another version gets 403.",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -437,7 +437,7 @@
             "name": "X-Acclimate-Connection-Id",
             "in": "header",
             "required": false,
-            "description": "Qualify the read by this connection's delivery. A scoped delivery credential implies its own connection.",
+            "description": "Optional with a connection credential, but must name its own connection. With a machine token or session, limits the read to this connection's channel and to versions ever released there: another channel or another version gets 403.",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -570,7 +570,7 @@
             "name": "X-Acclimate-Connection-Id",
             "in": "header",
             "required": false,
-            "description": "Qualify the read by this connection's delivery. A scoped delivery credential implies its own connection.",
+            "description": "Optional with a connection credential, but must name its own connection. With a machine token or session, limits the read to this connection's channel and to versions ever released there: another channel or another version gets 403.",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -1192,12 +1192,8 @@
     },
     "/v1/workspaces/{workspaceId}/connection-observations": {
       "get": {
-        "summary": "GET /v1/workspaces/{workspaceId}/connection-observations",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
+        "operationId": "listConnectionObservations",
+        "description": "Each connection with its latest receipt from the last 30 days, for any workspace reader. No credential metadata.",
         "parameters": [
           {
             "name": "workspaceId",
@@ -1206,18 +1202,86 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
           }
-        ]
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown credential. Connection and receipt credentials are not accepted on this route.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No read right in this workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Other failure, such as 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/workspaces/{workspaceId}/connections": {
       "get": {
-        "summary": "GET /v1/workspaces/{workspaceId}/connections",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
+        "operationId": "listConnections",
+        "description": "Connections with their credential IDs and kinds, never secrets.",
         "parameters": [
           {
             "name": "workspaceId",
@@ -1226,16 +1290,96 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
           }
-        ]
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "nextCursor"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Connection"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": ["string", "null"],
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown credential. Connection and receipt credentials are not accepted on this route.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A machine token needs write and promote, and a signed-in person needs the Administrator role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Other failure, such as 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
       },
       "post": {
-        "summary": "POST /v1/workspaces/{workspaceId}/connections",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
+        "operationId": "createConnection",
         "parameters": [
           {
             "name": "workspaceId",
@@ -1244,18 +1388,107 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[\\x20-\\x7e]+$"
+            }
           }
-        ]
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConnectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Connection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, display name, channel or Idempotency-Key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown credential. Connection and receipt credentials are not accepted on this route.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A machine token needs write and promote, and a signed-in person needs the Administrator role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Channel not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "idempotency_conflict or operation_closed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Other failure, such as 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/revoke": {
       "post": {
-        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/revoke",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
+        "operationId": "revokeConnection",
+        "description": "Disable the connection. Its connection and receipt credentials stop working on the next request and then get 401.",
         "parameters": [
           {
             "name": "workspaceId",
@@ -1270,20 +1503,69 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
-        ]
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Connection"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown credential. Connection and receipt credentials are not accepted on this route.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A machine token needs write and promote, and a signed-in person needs the Administrator role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Connection not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Other failure, such as 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/credentials": {
       "post": {
-        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/credentials",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
+        "operationId": "issueConnectionCredential",
+        "description": "Issue a connection credential (content-read) or a receipt credential (receipt-write). The secret is returned once. Reusing the key never returns it again: the same kind gets 409 credential_already_issued with the credential's ID in details, another kind gets 409 idempotency_conflict.",
         "parameters": [
           {
             "name": "workspaceId",
@@ -1298,20 +1580,110 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[\\x20-\\x7e]+$"
             }
           }
-        ]
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueConnectionCredentialRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedConnectionCredential"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON, an unknown kind or an invalid Idempotency-Key. The message names the problem.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown credential. Connection and receipt credentials are not accepted on this route.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing write and promote or the Administrator role, or the connection is revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "credential_already_issued or idempotency_conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type is not application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Other failure, such as 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/credentials/{credential}/revoke": {
       "post": {
-        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/credentials/{credential}/revoke",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
+        "operationId": "revokeConnectionCredential",
+        "description": "Revoke one credential. Repeating it succeeds. Its next request gets 401.",
         "parameters": [
           {
             "name": "workspaceId",
@@ -1326,7 +1698,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -1334,20 +1707,75 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
-        ]
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["revoked"],
+                  "properties": {
+                    "revoked": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown credential. Connection and receipt credentials are not accepted on this route.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A machine token needs write and promote, and a signed-in person needs the Administrator role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Credential not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Other failure, such as 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/workspaces/{workspaceId}/connections/{connectionId}/receipts": {
       "get": {
-        "summary": "GET /v1/workspaces/{workspaceId}/connections/{connectionId}/receipts",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
+        "operationId": "listDeliveryReceipts",
+        "description": "Receipts received in the last 30 days, newest first. Needs read; a receipt credential cannot list them.",
         "parameters": [
           {
             "name": "workspaceId",
@@ -1362,18 +1790,101 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "eventId of the last receipt on the previous page"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
             }
           }
-        ]
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "nextCursor"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DeliveryReceipt"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": ["string", "null"],
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown credential. Connection and receipt credentials are not accepted on this route.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No read right in this workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Other failure, such as 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
       },
       "post": {
-        "summary": "POST /v1/workspaces/{workspaceId}/connections/{connectionId}/receipts",
-        "responses": {
-          "default": {
-            "description": "Service response"
-          }
-        },
+        "operationId": "reportDeliveryReceipt",
+        "description": "Record one delivery stage with a receipt credential. Sending the same eventId again with the same body returns the stored receipt. Receipts are kept 30 days.",
         "parameters": [
           {
             "name": "workspaceId",
@@ -1388,10 +1899,93 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
-        ]
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeliveryReceiptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded, or the stored receipt for a repeated eventId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON, a missing or unknown field, or a broken rule. The message names the field or rule.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, unknown or revoked credential. A connection or receipt credential whose connection was revoked also gets 401.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A credential that is not this connection's receipt credential, IDs that do not match the connection, another channel, or a version, revision and digest never released together on the connection's channel.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "idempotency_conflict: the eventId was already used with a different body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type is not application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Other failure, such as 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/workspaces": {
@@ -3054,7 +3648,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": false,
                   "required": ["items", "next"],
                   "properties": {
                     "items": {
@@ -4956,7 +5549,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": false,
                   "required": ["baseUrl", "allowedModels", "hasKey", "verification"],
                   "properties": {
                     "baseUrl": {
@@ -5062,7 +5654,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": false,
                   "required": ["baseUrl", "allowedModels", "hasKey", "verification"],
                   "properties": {
                     "baseUrl": {
@@ -5450,14 +6041,12 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": false,
                   "required": ["items"],
                   "properties": {
                     "items": {
                       "type": "array",
                       "items": {
                         "type": "object",
-                        "additionalProperties": false,
                         "required": [
                           "day",
                           "rounds",
@@ -5563,7 +6152,6 @@
                   "type": "array",
                   "items": {
                     "type": "object",
-                    "additionalProperties": false,
                     "required": ["digest", "removedBy", "note", "createdAt"],
                     "properties": {
                       "digest": {
@@ -5757,7 +6345,6 @@
       },
       "Bundle": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
           "id": {
             "type": "string"
@@ -5781,7 +6368,6 @@
       },
       "VersionMetadata": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
           "id": {
             "type": "string"
@@ -5846,7 +6432,6 @@
       },
       "ChannelResolution": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
           "channel": {
             "type": "string"
@@ -5883,7 +6468,6 @@
       },
       "Promotion": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
           "id": {
             "type": "string"
@@ -5938,7 +6522,6 @@
       },
       "PromotionPage": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
           "items": {
             "type": "array",
@@ -5960,13 +6543,238 @@
         },
         "required": ["items", "nextBeforeRevision"]
       },
-      "ApiError": {
+      "CreateConnectionRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": ["displayName", "bundleId", "channel"],
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "bundleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "Connection": {
+        "type": "object",
+        "required": ["id", "workspaceId", "bundleId", "channel", "displayName", "enabled", "createdAt", "credentials"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "bundleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "credentials": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "kind", "createdAt", "revokedAt"],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "kind": {
+                  "enum": ["content-read", "receipt-write"]
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "revokedAt": {
+                  "type": ["string", "null"],
+                  "format": "date-time"
+                }
+              }
+            }
+          }
+        }
+      },
+      "IssueConnectionCredentialRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind"],
+        "properties": {
+          "kind": {
+            "enum": ["content-read", "receipt-write"],
+            "description": "content-read issues a connection credential, receipt-write a receipt credential."
+          }
+        }
+      },
+      "IssuedConnectionCredential": {
+        "type": "object",
+        "required": ["id", "kind", "secret"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "enum": ["content-read", "receipt-write"]
+          },
+          "secret": {
+            "type": "string",
+            "pattern": "^aci_",
+            "description": "Returned once. Stored only as a SHA-256 digest."
+          }
+        }
+      },
+      "DeliveryReceiptRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Unknown fields are rejected, and null counts as absent. channel, revision, resolvedAt and stale are sent together or not at all, and a resolved stage needs them. occurredAt must be no more than 24 hours in the past and 5 minutes in the future, and resolvedAt no more than 5 minutes after occurredAt.",
+        "required": ["eventId", "connectionId", "workspaceId", "bundleId", "versionId", "digest", "stage", "occurredAt", "source"],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Your ID for this event. Resend the same ID to retry."
+          },
+          "connectionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Must match the path and the credential's connection."
+          },
+          "workspaceId": {
+            "type": "string",
+            "description": "Must match the path."
+          },
+          "bundleId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Must be the connection's bundle."
+          },
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "description": "The version's digest. The version and digest must have been released on the connection's channel."
+          },
+          "stage": {
+            "enum": ["resolved", "downloaded", "verified", "prepared", "started"]
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "enum": ["network", "cache", "offline"],
+            "description": "A downloaded stage must use network."
+          },
+          "channel": {
+            "type": ["string", "null"],
+            "description": "Must be the connection's channel."
+          },
+          "revision": {
+            "type": ["string", "null"],
+            "pattern": "^[0-9]+$",
+            "description": "The channel revision the version was resolved at. With the version and digest, it must match a release on the channel."
+          },
+          "resolvedAt": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "stale": {
+            "type": ["boolean", "null"],
+            "description": "True when the channel mapping came from the local cache because the service could not be reached."
+          }
+        }
+      },
+      "DeliveryReceipt": {
+        "type": "object",
+        "description": "The receipt as received, plus the service's receive time.",
+        "required": ["eventId", "connectionId", "workspaceId", "bundleId", "versionId", "digest", "stage", "occurredAt", "source", "receivedAt", "delayed"],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "connectionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "bundleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "type": "string"
+          },
+          "channel": {
+            "type": ["string", "null"]
+          },
+          "revision": {
+            "type": ["string", "null"]
+          },
+          "resolvedAt": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "stale": {
+            "type": ["boolean", "null"]
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "delayed": {
+            "type": "boolean",
+            "description": "Received more than 5 minutes after occurredAt."
+          }
+        }
+      },
+      "ApiError": {
+        "type": "object",
         "properties": {
           "error": {
             "type": "object",
-            "additionalProperties": false,
             "properties": {
               "code": {
                 "type": "string",
@@ -6000,7 +6808,6 @@
         "oneOf": [
           {
             "type": "object",
-            "additionalProperties": false,
             "properties": {
               "status": {
                 "const": "not_observed"
@@ -6013,7 +6820,6 @@
           },
           {
             "type": "object",
-            "additionalProperties": false,
             "properties": {
               "status": {
                 "const": "closed"
@@ -6029,7 +6835,6 @@
           },
           {
             "type": "object",
-            "additionalProperties": false,
             "properties": {
               "status": {
                 "const": "committed"
@@ -6055,7 +6860,6 @@
       },
       "WorkspaceMember": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
           "id": {
             "type": "string",
@@ -6075,7 +6879,6 @@
       },
       "VerifiedUser": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
           "id": {
             "type": "string",
@@ -6096,7 +6899,6 @@
       },
       "WorkspaceMemberPage": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
           "items": {
             "type": "array",
@@ -6126,7 +6928,6 @@
       },
       "MachineToken": {
         "type": "object",
-        "additionalProperties": false,
         "required": [
           "id",
           "workspaceId",
@@ -6209,7 +7010,6 @@
       },
       "MachineTokenPage": {
         "type": "object",
-        "additionalProperties": false,
         "required": ["items"],
         "properties": {
           "items": {
@@ -6222,7 +7022,6 @@
       },
       "MachineTokenEnvelope": {
         "type": "object",
-        "additionalProperties": false,
         "required": ["token"],
         "properties": {
           "token": {
@@ -6232,7 +7031,6 @@
       },
       "IssuedMachineToken": {
         "type": "object",
-        "additionalProperties": false,
         "required": ["token", "secret"],
         "properties": {
           "token": {
@@ -6318,7 +7116,6 @@
       },
       "MachineTokenEvent": {
         "type": "object",
-        "additionalProperties": false,
         "required": [
           "tokenId",
           "tokenName",
@@ -6356,7 +7153,6 @@
       },
       "MachineTokenEventPage": {
         "type": "object",
-        "additionalProperties": false,
         "required": ["items"],
         "properties": {
           "items": {
@@ -6402,7 +7198,6 @@
       },
       "LearningSetting": {
         "type": "object",
-        "additionalProperties": false,
         "required": ["domain", "benchmark", "policyModel"],
         "properties": {
           "domain": {
@@ -6473,7 +7268,6 @@
       },
       "LearningRoundSummary": {
         "type": "object",
-        "additionalProperties": false,
         "required": [
           "id",
           "number",
@@ -6605,7 +7399,6 @@
               },
               {
                 "type": "object",
-                "additionalProperties": false,
                 "required": [
                   "code",
                   "message"
@@ -6703,7 +7496,6 @@
           },
           "progress": {
             "type": "object",
-            "additionalProperties": false,
             "required": ["scored", "total"],
             "properties": {
               "scored": {
@@ -6720,7 +7512,6 @@
       },
       "LearningLoop": {
         "type": "object",
-        "additionalProperties": false,
         "required": [
           "channel",
           "setting",
@@ -6861,7 +7652,6 @@
               },
               {
                 "type": "object",
-                "additionalProperties": false,
                 "required": ["kind", "roundId", "versionId"],
                 "properties": {
                   "kind": { "const": "regression-check-incomplete" },
@@ -6871,7 +7661,6 @@
               },
               {
                 "type": "object",
-                "additionalProperties": false,
                 "required": ["roundId", "previousScore", "score", "flippedTasks", "reverted"],
                 "properties": {
                   "roundId": {
@@ -6904,7 +7693,6 @@
       },
       "LearningRound": {
         "type": "object",
-        "additionalProperties": false,
         "required": [
           "id",
           "number",
@@ -7048,7 +7836,6 @@
               },
               {
                 "type": "object",
-                "additionalProperties": false,
                 "required": [
                   "code",
                   "message"
@@ -7223,7 +8010,6 @@
           },
           "progress": {
             "type": "object",
-            "additionalProperties": false,
             "required": ["scored", "total"],
             "properties": {
               "scored": {
@@ -7240,14 +8026,12 @@
       },
       "LearningDiagnosis": {
         "type": "object",
-        "additionalProperties": false,
         "required": ["problem", "predicted"],
         "properties": {
           "problem": {
             "oneOf": [
               {
                 "type": "object",
-                "additionalProperties": false,
                 "required": ["id"],
                 "properties": {
                   "id": {
@@ -7257,7 +8041,6 @@
               },
               {
                 "type": "object",
-                "additionalProperties": false,
                 "required": ["new"],
                 "properties": {
                   "new": {
@@ -7278,7 +8061,6 @@
       },
       "LearningSelection": {
         "type": "object",
-        "additionalProperties": false,
         "required": ["decision", "sample", "versionId", "digest", "reason", "model", "inputDigest"],
         "properties": {
           "decision": {
@@ -7337,7 +8119,6 @@
       },
       "LearningCandidate": {
         "type": "object",
-        "additionalProperties": false,
         "required": [
           "sample",
           "status",
@@ -7414,7 +8195,6 @@
             "anyOf": [
               {
                 "type": "object",
-                "additionalProperties": false,
                 "required": ["clean", "findings"],
                 "properties": {
                   "clean": {
@@ -7424,7 +8204,6 @@
                     "type": "array",
                     "items": {
                       "type": "object",
-                      "additionalProperties": false,
                       "required": ["rule", "field", "path"],
                       "properties": {
                         "rule": {
@@ -7452,7 +8231,6 @@
             "anyOf": [
               {
                 "type": "object",
-                "additionalProperties": false,
                 "required": ["verdict", "reason"],
                 "properties": {
                   "verdict": {
@@ -7507,14 +8285,12 @@
       },
       "LearningChanges": {
         "type": "object",
-        "additionalProperties": false,
         "required": ["edits", "files"],
         "properties": {
           "edits": {
             "type": "array",
             "items": {
               "type": "object",
-              "additionalProperties": false,
               "required": ["path", "oldText", "newText"],
               "properties": {
                 "path": {
@@ -7535,7 +8311,6 @@
               "oneOf": [
                 {
                   "type": "object",
-                  "additionalProperties": false,
                   "required": ["op", "path", "text"],
                   "properties": {
                     "op": {
@@ -7552,7 +8327,6 @@
                 },
                 {
                   "type": "object",
-                  "additionalProperties": false,
                   "required": ["op", "path"],
                   "properties": {
                     "op": {
@@ -7571,7 +8345,6 @@
       },
       "LearningMemory": {
         "type": "object",
-        "additionalProperties": false,
         "required": [
           "currentRevision",
           "memoryRevision",
@@ -7594,7 +8367,6 @@
           },
           "improvementMemory": {
             "type": "object",
-            "additionalProperties": false,
             "required": ["schemaVersion", "memoryRevision", "problems"],
             "properties": {
               "schemaVersion": {
@@ -7608,7 +8380,6 @@
                 "type": "array",
                 "items": {
                   "type": "object",
-                  "additionalProperties": false,
                   "required": ["id", "rootCause", "openedRound", "attempts"],
                   "properties": {
                     "id": {
@@ -7636,7 +8407,6 @@
             "type": "array",
             "items": {
               "type": "object",
-              "additionalProperties": false,
               "required": ["revision", "problemId", "roundId", "round", "versionId", "provenance"],
               "properties": {
                 "revision": {
@@ -7660,7 +8430,6 @@
                 },
                 "provenance": {
                   "type": "object",
-                  "additionalProperties": false,
                   "required": [
                     "domain",
                     "benchmark",
@@ -7707,7 +8476,6 @@
       },
       "LearningMemoryAttempt": {
         "type": "object",
-        "additionalProperties": false,
         "required": [
           "round",
           "sample",
@@ -7741,7 +8509,6 @@
           },
           "what": {
             "type": "object",
-            "additionalProperties": false,
             "required": ["rationale", "changes"],
             "properties": {
               "rationale": {
@@ -7789,7 +8556,6 @@
           },
           "provenance": {
             "type": "object",
-            "additionalProperties": false,
             "required": ["domain", "benchmark", "policyModel", "round"],
             "properties": {
               "domain": {
@@ -7811,7 +8577,6 @@
       },
       "LearningEvaluation": {
         "type": "object",
-        "additionalProperties": false,
         "required": [
           "id",
           "roundId",
@@ -7930,7 +8695,6 @@
             "type": "array",
             "items": {
               "type": "object",
-              "additionalProperties": false,
               "required": ["caseId", "passedRollouts", "meanScore"],
               "properties": {
                 "caseId": {
@@ -7984,7 +8748,6 @@
       },
       "LearningRollout": {
         "type": "object",
-        "additionalProperties": false,
         "required": ["score", "passed"],
         "properties": {
           "score": {
@@ -8031,14 +8794,12 @@
       },
       "LearningEvaluationReport": {
         "type": "object",
-        "additionalProperties": false,
         "required": ["cases"],
         "properties": {
           "cases": {
             "type": "array",
             "items": {
               "type": "object",
-              "additionalProperties": false,
               "required": ["caseId", "rollouts"],
               "properties": {
                 "caseId": {
@@ -8188,7 +8949,6 @@
       },
       "LearningOutcomeReceipt": {
         "type": "object",
-        "additionalProperties": false,
         "required": ["outcomeId", "taskRevision"],
         "properties": {
           "outcomeId": {

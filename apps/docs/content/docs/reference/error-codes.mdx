@@ -27,7 +27,7 @@ Every error the SDKs raise on purpose has a stable `code`, listed here with its 
 | `transport.unreachable` | `TransportError` | The request failed before a response arrived. Check that the service is running and reachable. |
 | `transport.timeout` | `TransportError` | TypeScript only. The request passed the client's timeout. Python reports it as `transport.unreachable`. |
 
-Only a `TransportError` or an HTTP 503 lets a job with an exact version fall back to the verified cache. See the offline option under [Client](/docs/reference/typescript-sdk#client).
+Only a `TransportError` or an HTTP 502, 503 or 504 lets a job with an exact version fall back to the verified cache. See the offline option under [Client](/docs/reference/typescript-sdk#client).
 
 ## Delivery codes
 
@@ -51,19 +51,30 @@ A `DeliveryError` carries one of these codes. None of them triggers the offline 
 
 ## Service codes
 
-An `ApiError` carries the service's code and the HTTP `status`.
+Every service error has this JSON body. `details` appears only for some codes, such as this one. An `ApiError` carries the `code`, the HTTP `status`, the `requestId` and any `details`.
+
+```json
+{
+  "error": {
+    "code": "credential_already_issued",
+    "message": "The credential was already issued. Confirm its revocation before issuing a replacement.",
+    "requestId": "0b6f3c2e-6a43-4c0e-9f57-2d1f0d4f8a31",
+    "details": { "credentialId": "5d1c7a8e-2f4b-4c39-9a61-0e8b7d3f2c14", "kind": "content-read", "revokedAt": null }
+  }
+}
+```
 
 | Code | Status | Cause | What to do |
 | --- | --- | --- | --- |
-| `unauthenticated` | 401 | No bearer token, or one the service does not know | Check that the token is current and belongs to this service. |
-| `denied` | 403 | The credential has no grant for the workspace or lacks the route's right. A machine token calling a route for signed-in people gets it too. | Use a credential with the needed [right](/docs/reference/credentials#rights). |
+| `unauthenticated` | 401 | No bearer token, or one the service does not know, including an expired or revoked one. A connection or receipt credential gets it on a route that does not accept it. | Check that the token is current and belongs to this service. |
+| `denied` | 403 | The credential has no grant for the workspace or lacks the route's right. A machine token calling a route for signed-in people gets it too, and so does a connection or receipt credential asking for something outside its connection, as [HTTP API](/docs/reference/http-api#authentication) lists. | Use a credential with the needed [right](/docs/reference/credentials#rights). |
 | `not_found` | 404 | The route, bundle, version or other resource does not exist in this workspace | Check the IDs and the workspace. |
-| `invalid_content` | 400 | The request is malformed, such as an ID that is not a UUID or a body with missing fields | Fix the request. The message names the problem. |
+| `invalid_content` | 400 or 415 | The request is malformed, such as an ID that is not a UUID or a body with missing fields. A receipt, credential issue or operation close sent without `Content-Type: application/json` gets 415. | Fix the request. The message names the problem. |
 | `invalid_compatibility` | 400 | A new version's payload does not fit the bundle's compatibility target | Fix the files in `details.issues`. |
 | `revision_conflict` | 409 | A release's `expectedRevision` is not the channel's current revision | Read the channel again, then submit a new release. |
 | `idempotency_conflict` | 409 | The idempotency key or receipt event ID was already used with a different request | Use a new key. To retry, send the same bytes. |
 | `operation_closed` | 409 | The retained result for this key was closed | Send a new request with a new key. |
-| `credential_already_issued` | 409 | The key already issued a connection credential, whose `credentialId` is in `details` | Revoke it before you issue a replacement with a new key. |
+| `credential_already_issued` | 409 | The key already issued a connection or receipt credential, whose `credentialId`, `kind` and `revokedAt` are in `details` | Revoke it before you issue a replacement with a new key. |
 | `payload_too_large` | 413 | A bundle payload is over 1 MiB, a request over 2 MiB or an import over 64 MiB | Send less in one request. |
 | `unavailable` | 503 | The service is busy, a database operation failed, or the request passed 30 seconds (600 for a task import) | Try again later. |
 

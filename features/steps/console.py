@@ -264,11 +264,11 @@ def ui_revoke(context):
     p.get_by_role('tab',name='Delivery reports',exact=True).click()
     expect(p.get_by_text('No delivery report received; status unknown.',exact=False)).to_be_visible()
     p.get_by_role('tab',name='Credentials',exact=True).click()
-    p.get_by_role('button',name=re.compile(r'^Revoke (read|reporting) credential ')).click()
+    p.get_by_role('button',name=re.compile(r'^Revoke (read|receipt) credential ')).click()
     submit_and_wait(p,p.get_by_role('dialog').get_by_role('button',name='Revoke',exact=True))
     row=p.locator('code').filter(has_text=re.compile('^'+re.escape(context.world.ui_credential_id)+'$')).locator('../..')
     expect(row.get_by_text('Read credential · Revoked',exact=True)).to_be_visible()
-    expect(row.get_by_role('button',name=re.compile(r'^Revoke (read|reporting) credential '))).to_have_count(0)
+    expect(row.get_by_role('button',name=re.compile(r'^Revoke (read|receipt) credential '))).to_have_count(0)
 
 
 @then('the closed secret is not displayed and its next fetch is denied')
@@ -276,7 +276,7 @@ def revoked_secret(context):
     w=context.world
     expect(page(context).get_by_label('One-time credential secret',exact=True)).to_have_count(0)
     expect(page(context).get_by_text(w.ui_secret,exact=True)).to_have_count(0)
-    w.call('GET',w.channel,actor='issued-browser',expected=403)
+    w.call('GET',w.channel,actor='issued-browser',expected=401)
 
 
 @then('the page shows the last read and unknown current state without editable content')

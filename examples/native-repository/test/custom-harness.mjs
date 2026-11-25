@@ -1,4 +1,4 @@
-// A custom harness built from the public contract, used by application.test.mjs.
+// A custom harness built from the public contract, used by the starter's tests.
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { prepareNativeFiles } from '@acclimate/sdk/native-files';

@@ -132,11 +132,11 @@ With no approval gate, a person reading an alert would otherwise be the only reg
 
 Automatic revert requires all three conditions:
 
-1. The share of the adopted version's held-out rollouts that pass is at least 0.10 below its parent's.
+1. The share of the adopted version's held-out rollouts that pass is below its parent's by at least 0.10 or half the parent's pass rate, whichever is smaller. A parent passing 8% reverts at 4% or lower.
 2. At least two held-out tasks went from pass to fail.
 3. A second, fresh held-out scoring of both versions shows the same.
 
-The revert judges on the pass rate, not the score. A judged rollout's score gives partial credit, so a task that starts missing one criterion moves the score a little and the pass rate a lot.
+The revert judges on the pass rate, not the score. A judged rollout's score gives partial credit, so a task that starts missing one criterion moves the score a little and the pass rate a lot. Halving the threshold for a low parent keeps a fixed 0.10 from protecting a version that passes few tasks. It compares each adoption with its immediate parent only, so a series of smaller drops never trips it.
 
 On a clear drop the service restores the parent version, blocks the reverted version, and raises the alert. The loop does not pause. The next round runs from the restored version under the normal triggers.
 
@@ -165,6 +165,6 @@ The loop follows the SIM paper. [RRSI](https://github.com/google-research/rrsi) 
 | Screening | The selector screens before execution. Criteria not stated. | A critic rejects task-specific edits, grader gaming and unbounded work. | A scanner, then a screen call with the rules in [screening](#optimizer). |
 | A rollout lost to infrastructure | Stays in the denominator and scores zero. | Scores zero. An evaluation missing more than 10 to 15 percent of its trials is void. | Retried once. If it fails again the evaluation is void: a void incumbent fails the round and a void candidate is skipped. A lost rollout is never a score. |
 | After an adoption | Nothing. A later round may replace the change. | Nothing. | Held-out alert, and an automatic revert on a clear, confirmed drop. |
-| Noise | Not treated. Results are one run per condition outside coding. | The band is twice the standard deviation of the difference between two scorings of an unchanged harness. | The revert needs a drop of 0.10 in the pass rate, two flipped tasks and the same result on a second scoring of both versions. |
+| Noise | Not treated. Results are one run per condition outside coding. | The band is twice the standard deviation of the difference between two scorings of an unchanged harness. | The revert needs a pass-rate drop of 0.10, or half the parent's pass rate if smaller, two flipped tasks and the same result on a second scoring of both versions. |
 
-The three numbers Acclimate adds have no counterpart in the paper: the floor of 20 tasks, the 0.10 pass-rate drop and the daily cap. They are starting values. The floor sits just under the paper's smallest split. At that floor a held-out score rests on 100 rollouts, so two scorings of an unchanged version can differ by several points by chance alone, which is why the revert also needs flipped tasks and a second scoring. RRSI's way of measuring the band, repeated scoring of an unchanged version, is the method to use if the 0.10 is tuned.
+The three numbers Acclimate adds have no counterpart in the paper: the floor of 20 tasks, the pass-rate drop of 0.10 (or half the parent's rate) and the daily cap. They are starting values. The floor sits just under the paper's smallest split. At that floor a held-out score rests on 100 rollouts, so two scorings of an unchanged version can differ by several points by chance alone, which is why the revert also needs flipped tasks and a second scoring. RRSI's way of measuring the band, repeated scoring of an unchanged version, is the method to use if the 0.10 is tuned.

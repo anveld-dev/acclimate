@@ -112,10 +112,11 @@ async function loadEntry(dir: string): Promise<any | null> {
 
 // The client wraps network failures in TransportError. Custom fetchers can still surface
 // the native errors: the fetch deadline rejects with TimeoutError, while an explicit caller abort
-// rejects with AbortError. Only transport failures and 503 permit offline use.
+// rejects with AbortError. Only transport failures and 502, 503 or 504 permit offline use: a reverse
+// proxy in front of a stopped service answers 502 or 504.
 function isTransportFailure(error: unknown): boolean {
   return error instanceof ApiError
-    ? error.status === 503
+    ? error.status === 502 || error.status === 503 || error.status === 504
     : error instanceof TransportError ||
         error instanceof TypeError ||
         (error instanceof DOMException &&

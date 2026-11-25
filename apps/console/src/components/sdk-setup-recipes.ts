@@ -48,8 +48,7 @@ export function agentConnectionRecipes(selection: {
   bundleId: string;
   channel: string;
 }) {
-  const typescript = `// application.mjs exports runAgent for delivery and cases, execute and grade for
-// acclimate-eval. Its execute() calls the same runAgent, so both use one contract.
+  const typescript = `// application.mjs exports runAgent, which runs your agent loop on one job.
 import { runAgent } from './application.mjs';
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -88,8 +87,7 @@ console.log({ versionId, digest,
 from pathlib import Path
 from acclimate import AcclimateClient
 
-# application.py defines run_agent for delivery and cases, execute and grade for
-# python -m acclimate. Its execute() calls the same run_agent.
+# application.py defines run_agent, which runs your agent loop on one job.
 from application import run_agent
 
 for key in ('ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_SCOPE', 'ACCLIMATE_CONNECTION',

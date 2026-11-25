@@ -115,7 +115,7 @@ The held-out digest commitment goes away. Held-out tasks are stored in their own
 - **The task model and the judge do read held-out tasks**, because that is how the tasks are scored. They read them statelessly, through the gateway, with server-side storage refused.
 - **Machine tokens never receive held-out content.** A response to a machine token leaves out held-out task content, held-out trial logs and per-task held-out results. It carries counts and aggregate scores. An import returns drafted cards only to a person signed in to the console. A machine writer who already knows the exact input can infer held-out membership by reimporting it and checking the evolve listing.
 - **People read held-out in the console**, with a session.
-- **Rewriting retires.** A person who rewrites a held-out task into a new evolve task retires the held-out original.
+- **Rewriting retires (not implemented).** The intent is that a person who rewrites a held-out task into a new evolve task retires the held-out original. Today an edit keeps the task's group and split, and nothing retires the original, so people should not reuse held-out content in evolve tasks.
 - **Export.** A person can export held-out tasks, so the set is not locked into the service.
 
 Held-out content is not encrypted. The paper requires that the optimizer never sees it, and the separate table plus the test gives that.

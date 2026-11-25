@@ -1,13 +1,13 @@
 // Template: grade in a container instead of with the host's `node --test`.
 //
-// Use it from application.mjs in place of nodeTestRunner:
+// Pass it to gradeRepositoryTests in place of nodeTestRunner:
 //   import { containerTestRunner } from './container-grader.mjs';
 //   runTests: containerTestRunner({
 //     image: 'registry.example/app-ci@sha256:...', // pin a digest; it is part of the grader identity
 //     command: ['npm', 'test', '--', '--reporter=tap'],
 //     timeoutMs: testTimeoutMs,
 //   }),
-// and add the image digest to `grader.artifactDigest` inputs so a new image needs a new request.
+// and record the image digest with each grade so a new image is never mistaken for the old one.
 import { spawn } from 'node:child_process';
 
 export function containerTestRunner({ image, command, timeoutMs, engine = 'docker', maxLogBytes = 256 * 1024 }) {

@@ -150,7 +150,7 @@ def revoke_credential(context):
 @when('it requests the published bytes')
 def revoked_read(context):
     w = context.world
-    w.call('GET', w.bundle + '/versions/' + w.original['version']['id'] + '/payload', actor='content-reader', expected=403)
+    w.call('GET', w.bundle + '/versions/' + w.original['version']['id'] + '/payload', actor='content-reader', expected=401)
 
 
 @given('I issued both credential kinds')
@@ -168,8 +168,8 @@ def revoke_integration(context):
 @then('neither credential can read or report')
 def revoked(context):
     w = context.world
-    w.call('GET', w.channel, actor='content-reader', expected=403)
-    w.call('POST', w.integration_path + '/receipts', w.delivery_event(), actor='receipt-writer', expected=403)
+    w.call('GET', w.channel, actor='content-reader', expected=401)
+    w.call('POST', w.integration_path + '/receipts', w.delivery_event(), actor='receipt-writer', expected=401)
 
 
 @when('I issue a read credential using an operation ID')

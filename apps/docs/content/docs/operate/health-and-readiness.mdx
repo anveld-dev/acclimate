@@ -38,6 +38,34 @@ On SIGTERM the service stops reporting ready, then finishes open requests and wo
 
 For symptoms with their causes and fixes, see [Troubleshooting](/docs/operate/troubleshooting).
 
+## Monitor the deployment
+
+The service exposes no metrics endpoint. Watch these from outside.
+
+| Alert on | How |
+| --- | --- |
+| API liveness and readiness | `GET /health` and `GET /ready` on the API hostname fail or stay at 503 |
+| Console | `GET /ready` on the console hostname does not return 200 |
+| Containers | `docker compose ps` shows a container that is not `healthy`, or one that keeps restarting |
+| Disk | Free space on the Docker data directory and the backup directory |
+| Certificates | The expiry date of each public certificate. Caddy renews its own before they expire. |
+| Backups | The age of the newest dump |
+
+### Logs
+
+Every container logs to standard output. Compose sets no log rotation, so Docker's default `json-file` driver keeps every line. Limit it in `/etc/docker/daemon.json`, then restart Docker and recreate the containers. The limit applies only to containers created afterwards.
+
+```json title="/etc/docker/daemon.json"
+{
+  "log-driver": "json-file",
+  "log-opts": { "max-size": "10m", "max-file": "5" }
+}
+```
+
+### Data growth
+
+The service deletes integration receipts older than 30 days each time a receipt arrives. It keeps everything else: bundle versions and release history, learning rounds with their rollouts, imported tasks, sessions and the audit log. The database grows with use, so watch disk space and keep enough room for a restored copy during a restore.
+
 ## Read exit codes
 
 Compose restarts a container that exits. `docker compose ps` shows the exit code, and the container's log ends with the error.

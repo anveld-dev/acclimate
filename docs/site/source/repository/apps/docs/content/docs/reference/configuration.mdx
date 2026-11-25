@@ -50,7 +50,15 @@ Three service values must be identical to their console values: `ACCLIMATE_OIDC_
 
 - Each operator pair must be unique. Its `issuer` must equal `ACCLIMATE_OIDC_ISSUER`, and its `subject` must be nonempty and at most 512 bytes.
 - Use `ACCLIMATE_AUTH=[]` for browser-only use, or when every machine token is issued from the console.
-- Remove `ACCLIMATE_MODE` and `CONSOLE_MODE` from older runtime files. The service and the console refuse to start when either is defined.
+
+### Removed settings
+
+The service refuses to start when any of these is defined, even when empty, and names the first one it finds. The console also refuses `ACCLIMATE_MODE` and `CONSOLE_MODE`. Delete them from older runtime files.
+
+| Variables | Log message |
+| --- | --- |
+| `ACCLIMATE_MODE`, `CONSOLE_MODE` | `are obsolete` from the service, `is obsolete` from the console |
+| `ACCLIMATE_CRITIC_MODEL`, `ACCLIMATE_CRITIC_ENDPOINT`, `ACCLIMATE_CRITIC_TOKEN`, `ACCLIMATE_LEARNING_REVIEW_SECONDS`, `ACCLIMATE_LEARNING_PARENT_MAX_REUSES`, `ACCLIMATE_LEARNING_PARENT_MAX_AGE_SECONDS`, `ACCLIMATE_LEARNING_PAIR_BUDGET`, `ACCLIMATE_LEARNING_MAX_REPETITIONS`, `ACCLIMATE_LEARNING_CALIBRATION_REPETITIONS`, `ACCLIMATE_LEARNING_MAX_STEPS_BETWEEN_AUDITS`, `ACCLIMATE_LEARNING_MAX_CHAIN_AGE_SECONDS`, `ACCLIMATE_LEARNING_CALIBRATION_ATTEMPTS`, `ACCLIMATE_LEARNING_FAILURE_WINDOW_SECONDS`, `ACCLIMATE_PROPOSAL_GROWTH_FLOOR_BYTES`, `ACCLIMATE_EVALUATION_ABANDON_SECONDS` | `<name> has been removed` |
 
 ### Static machine grants
 
@@ -197,7 +205,7 @@ Set these in the shell that runs `docker compose`. They tell `compose.yaml` and 
 
 - The password in `ACCLIMATE_POSTGRES_PASSWORD_FILE` must match the URL-encoded password in `DATABASE_URL`.
 - `docker compose` refuses to run without `ACCLIMATE_EXECUTOR_TOKEN_FILE`, even before learning is set up. Compose mounts the file into the executor container and points the executor's own variable at the copy.
-- Pin `ACCLIMATE_VERSION` to the exact Acclimate release without the Git tag's leading `v`, such as `0.1.0`. See [Versioning and compatibility](/docs/reference/versioning).
+- Until the first Acclimate release, build from source with `ACCLIMATE_VERSION=local`. Once releases exist, pin it to the exact release without the Git tag's leading `v`, such as `0.1.0`. See [Versioning and compatibility](/docs/reference/versioning).
 - Compose passes `ACCLIMATE_PROVIDER_HTTP_HOSTS`, `ACCLIMATE_EXECUTOR_CONCURRENCY` and `ACCLIMATE_SANDBOX_RUNTIME` from this shell to the executor. Setting them in the service's runtime file does not reach the executor.
 
 ### Keycloak runtime file

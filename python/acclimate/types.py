@@ -209,7 +209,7 @@ class DeliveryReceipt(DeliveryReceiptRequest):
 
 
 class OfflinePinnedVersion(TypedDict):
-    """Use the cached copy of this exact version after a transport failure or HTTP 503."""
+    """Use the cached copy of this exact version after a transport failure or HTTP 502, 503 or 504."""
 
     pinned_version_id: str
 

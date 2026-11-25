@@ -11,6 +11,7 @@ import {
   ApiError,
   prepareFiles,
   resolveAndCache,
+  systemPrompt,
   type VerifiedVersion,
 } from '../../src/index.js';
 
@@ -173,9 +174,10 @@ test('preparation refuses collisions and cleans only its own files', async () =>
 
 test('an explicitly pinned cached version is available offline after a prior verified fetch', async () => {
   let online = true;
+  let offlineStatus = 503;
   const f = await fixture((req, res) => {
     if (!online) {
-      send(res, 503, { error: { code: 'unavailable', message: 'offline', requestId: 'offline' } });
+      send(res, offlineStatus, { error: { code: 'unavailable', message: 'offline', requestId: 'offline' } });
       return;
     }
     if (req.url?.endsWith('/versions/v1')) send(res, 200, version);
@@ -200,6 +202,16 @@ test('an explicitly pinned cached version is available offline after a prior ver
       bundle.payload.files[0]?.text.trim(),
       'Review the supplied diff and support every finding.',
     );
+    // A reverse proxy in front of a stopped service answers 502 or 504.
+    for (const status of [502, 504]) {
+      offlineStatus = status;
+      const proxied = await resolveAndCache(
+        c,
+        { workspaceId: 'p', bundleId: 'b1', versionId: 'v1' },
+        { ...policy, offline: { pinnedVersionId: 'v1' } },
+      );
+      assert.equal(proxied.stale, true);
+    }
   } finally {
     await f.close();
     await rm(dir, { recursive: true, force: true });
@@ -354,6 +366,7 @@ test('client.prepare pins a real selection, owns per-job files and reports obser
         .map((f) => f.text)
         .join('\n\n'),
     );
+    assert.equal(first.systemPrompt, systemPrompt(first.version.payload));
     assert.deepEqual(
       first.skillFiles,
       first.files.filter((f) => f.kind === 'skill'),

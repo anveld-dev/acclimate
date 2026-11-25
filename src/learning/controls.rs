@@ -398,6 +398,11 @@ struct Measurement {
 pub(super) const MAX_MEASUREMENT_RETRIES: i32 = 2;
 const CLEAR_DROP: f64 = 0.10;
 const MIN_FLIPS: usize = 2;
+/// A clear drop is ten points, or half the parent's pass rate when that is smaller, so a version
+/// that passes few tasks can still lose most of them and revert.
+fn clear_drop(parent_rate: f64) -> f64 {
+    CLEAR_DROP.min(parent_rate / 2.0)
+}
 fn regression(parent: &Measurement, child: &Measurement) -> (bool, usize) {
     let passed: std::collections::HashSet<_> = parent
         .report
@@ -412,8 +417,10 @@ fn regression(parent: &Measurement, child: &Measurement) -> (bool, usize) {
         .iter()
         .filter(|c| passed.contains(&c.case_id) && !evaluations::case_passes(c))
         .count();
+    let parent_rate = pass_rate(parent);
     (
-        pass_rate(child) <= pass_rate(parent) - CLEAR_DROP + f64::EPSILON && flips >= MIN_FLIPS,
+        pass_rate(child) <= parent_rate - clear_drop(parent_rate) + f64::EPSILON
+            && flips >= MIN_FLIPS,
         flips,
     )
 }
@@ -598,15 +605,15 @@ mod tests {
         assert!(enough_changes(12, 112) && !enough_changes(11, 111));
     }
 
-    /// Twenty judged tasks with four criteria. `partial` of them miss one criterion on every
-    /// rollout, so they fail and still score 0.75.
-    fn held_out(partial: usize) -> Measurement {
-        let cases: Vec<_> = (0..20)
+    /// `total` judged tasks with four criteria. Tasks from `passing` on miss one criterion on
+    /// every rollout, so they fail and still score 0.75.
+    fn measured(total: usize, passing: usize) -> Measurement {
+        let cases: Vec<_> = (0..total)
             .map(|i| {
-                let (passed, score) = if i < partial {
-                    (false, 0.75)
-                } else {
+                let (passed, score) = if i < passing {
                     (true, 1.0)
+                } else {
+                    (false, 0.75)
                 };
                 evaluations::CaseReport {
                     case_id: format!("task-{i}"),
@@ -614,10 +621,15 @@ mod tests {
                 }
             })
             .collect();
+        let failing = (total - passing) as f64;
         Measurement {
-            score: 1.0 - 0.25 * partial as f64 / 20.0,
+            score: 1.0 - 0.25 * failing / total as f64,
             report: sqlx::types::Json(evaluations::Report { cases }),
         }
+    }
+    /// Twenty tasks, `partial` of which fail.
+    fn held_out(partial: usize) -> Measurement {
+        measured(20, 20 - partial)
     }
 
     #[test]
@@ -630,5 +642,28 @@ mod tests {
         // One task is below both limits, and no change is no regression.
         assert_eq!(regression(&parent, &held_out(1)), (false, 1));
         assert_eq!(regression(&parent, &held_out(0)), (false, 0));
+    }
+
+    #[test]
+    fn revert_scales_the_drop_to_a_low_pass_rate() {
+        // A parent passing 10 of 130 needs a drop of half its pass rate, not ten points.
+        let parent = measured(130, 10);
+        assert!((clear_drop(pass_rate(&parent)) - 5.0 / 130.0).abs() < 1e-9);
+        assert_eq!(regression(&parent, &measured(130, 5)), (true, 5));
+        assert_eq!(regression(&parent, &measured(130, 4)), (true, 6));
+        assert_eq!(regression(&parent, &measured(130, 6)), (false, 4));
+        assert_eq!(regression(&parent, &measured(130, 8)), (false, 2));
+        // At a high pass rate the ten-point limit applies.
+        assert!((clear_drop(0.9) - CLEAR_DROP).abs() < 1e-9);
+    }
+
+    #[test]
+    fn revert_needs_two_flipped_tasks_at_a_low_pass_rate() {
+        // Two passing tasks falling to one halves the pass rate, but only one task flipped.
+        let parent = measured(130, 2);
+        assert_eq!(regression(&parent, &measured(130, 1)), (false, 1));
+        assert_eq!(regression(&parent, &measured(130, 0)), (true, 2));
+        // A parent that passes nothing has nothing to lose.
+        assert_eq!(regression(&measured(130, 0), &measured(130, 0)), (false, 0));
     }
 }

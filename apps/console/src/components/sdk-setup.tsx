@@ -325,7 +325,7 @@ export function SdkSetup({
                       Python 3.11+ on POSIX and an <code>acclimate-sdk</code> wheel.
                     </>
                   )}{' '}
-                  Use your admin’s release package.
+                  Use your operator’s release package.
                 </p>
               )}
               <InstallSnippet command={installCommand} />
@@ -383,7 +383,8 @@ export function SdkSetup({
                   </p>
                 ) : (
                   <p>
-                    Ask a workspace admin for a connection credential for this bundle and channel.
+                    Ask a workspace administrator for a connection credential for this bundle and
+                    channel.
                   </p>
                 ))}
               {step ? (
@@ -453,8 +454,9 @@ export function SdkSetup({
                   </p>
 
                   <p>
-                    <strong>Delivery:</strong> a workspace admin issues a connection credential in
-                    Connections; optional observations use a separate reporting credential.
+                    <strong>Delivery:</strong> a workspace administrator issues a connection
+                    credential in Connections; optional observations use a separate receipt
+                    credential.
                   </p>
                   <ConsoleLink
                     href={workspaceHref(state.workspaceId, 'delivery')}
@@ -609,22 +611,27 @@ export function SdkSetup({
               <>
                 <p>
                   Install the matching <code>@acclimate/{runtime}-plugin</code> package shown in
-                  step 1. Extract{' '}
+                  step 1 and the tested peer{' '}
+                  <code>
+                    {nativePeer[runtime]}@{releaseMetadata.nativePeers[nativePeer[runtime]]}
+                  </code>
+                  . Your application starts a new {runtimeLabel} session in the plugin’s{' '}
+                  <code>prepared.cwd</code> for each job and cleans up after the session stops.{' '}
+                  <code>{filename}</code> checks that this channel’s version prepares in the{' '}
+                  {runtimeLabel} layout.
+                </p>
+                <p>
+                  To run {runtimeLabel} on an existing repository, extract{' '}
                   <code>
                     {
                       releaseMetadata.starters.find((item) => item.name === 'native-repository')!
                         .file
                     }
                   </code>{' '}
-                  from your release. Its <code>application.mjs</code> already runs {runtimeLabel}{' '}
-                  through a built-in adapter with explicit sandbox defaults: set{' '}
-                  <code>&quot;harness&quot;: &quot;{runtime}&quot;</code> and your model in{' '}
-                  <code>native.json</code>, then install the tested peer{' '}
-                  <code>
-                    {nativePeer[runtime]}@{releaseMetadata.nativePeers[nativePeer[runtime]]}
-                  </code>
-                  . You do not write an adapter. Run <code>node smoke.mjs</code> first for an
-                  offline check with the replay harness.
+                  from your release. Your application calls <code>runRepositoryJob</code> from its{' '}
+                  <code>repository-job.mjs</code> with the {runtimeLabel} adapter from{' '}
+                  <code>harnesses.mjs</code>, which sets explicit sandbox defaults. The starter’s{' '}
+                  <code>smoke.mjs</code> checks only the SDK install.
                 </p>
               </>
             )}
@@ -644,19 +651,20 @@ export function SdkSetup({
               <p>
                 Set <code>ACCLIMATE_CONNECTION</code> to your connection ID to scope the client’s
                 delivery to that connection. To report observations, set{' '}
-                <code>ACCLIMATE_RECEIPT_TOKEN</code> to a separate reporting credential.
+                <code>ACCLIMATE_RECEIPT_TOKEN</code> to a separate receipt credential.
               </p>
               <p>
                 {canManage ? (
                   <>
                     <ConsoleLink href={credentialsHref} className="underline underline-offset-4">
-                      Manage reporting credentials
+                      Manage receipt credentials
                     </ConsoleLink>{' '}
-                    in Connections to create the reporting credential.
+                    in Connections to create the receipt credential.
                   </>
                 ) : (
                   <>
-                    Ask a workspace admin for a connection ID and a separate reporting credential.
+                    Ask a workspace administrator for a connection ID and a separate receipt
+                    credential.
                   </>
                 )}
               </p>

@@ -71,6 +71,48 @@ pub(crate) fn err(status: StatusCode, code: &'static str, msg: impl Into<String>
     ApiErr(status, code, msg.into(), None)
 }
 
+/// Parse a JSON request body with the standard error envelope instead of axum's
+/// plain-text rejections. A field error names the field the body got wrong.
+pub(crate) fn json_body<T: serde::de::DeserializeOwned>(
+    h: &axum::http::HeaderMap,
+    body: &[u8],
+) -> ApiResult<T> {
+    let json = h
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(';').next())
+        .map(|v| v.trim().to_ascii_lowercase())
+        .is_some_and(|v| {
+            v == "application/json" || (v.starts_with("application/") && v.ends_with("+json"))
+        });
+    if !json {
+        return Err(err(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "invalid_content",
+            "Expected Content-Type: application/json",
+        ));
+    }
+    match Json::<T>::from_bytes(body) {
+        Ok(Json(value)) => Ok(value),
+        Err(axum::extract::rejection::JsonRejection::JsonDataError(e)) => {
+            let text = e.body_text();
+            let detail = text
+                .strip_prefix("Failed to deserialize the JSON body into the target type: ")
+                .unwrap_or(&text);
+            Err(err(
+                StatusCode::BAD_REQUEST,
+                "invalid_content",
+                format!("Invalid request body: {detail}"),
+            ))
+        }
+        Err(_) => Err(err(
+            StatusCode::BAD_REQUEST,
+            "invalid_content",
+            "Request body is not valid JSON",
+        )),
+    }
+}
+
 pub(crate) fn encode_payload(p: &BundlePayload) -> Result<Vec<u8>, ApiErr> {
     let mut b = serde_json::to_vec(p).map_err(|_| {
         err(

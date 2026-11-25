@@ -2,30 +2,8 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import type { BundlePayload } from '@acclimate/sdk';
-import { systemPrompt } from '../examples/support-agent/prompt.js';
-// @ts-expect-error The executor's runner is plain JavaScript.
-import { messages } from '../executor/runner/chat.mjs';
 
 const example = (path: string) => readFile(new URL(`../examples/${path}`, import.meta.url));
-
-test('the support agent renders a bundle as the learning executor does', () => {
-  const payload: BundlePayload = {
-    schemaVersion: 1,
-    files: [
-      { path: 'memory/facts.md', kind: 'memory', text: 'Refunds take five days.\n' },
-      { path: 'skills/refunds/SKILL.md', kind: 'skill', text: 'Refund steps.\n' },
-      { path: 'instructions.md', kind: 'instruction', text: 'Answer briefly.\n' },
-    ],
-  };
-  const expected =
-    '# instructions.md\nAnswer briefly.\n\n\n# skills/refunds/SKILL.md\nRefund steps.\n\n\n# memory/facts.md\nRefunds take five days.\n';
-  assert.equal(systemPrompt(payload), expected);
-  assert.deepEqual(messages(payload, 'Hello'), [
-    { role: 'system', content: expected },
-    { role: 'user', content: 'Hello' },
-  ]);
-});
 
 test('the ticket triage tasks import as exact tasks, 32 in each split with every queue on both sides', async () => {
   const data = await example('ticket-triage/tickets.csv');

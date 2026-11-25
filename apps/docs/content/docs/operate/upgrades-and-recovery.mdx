@@ -11,14 +11,18 @@ If your database was last run by a build from before learning moved into the ser
 
 ## Pin an Acclimate release
 
-Set `ACCLIMATE_VERSION` to the release's image tag, which is the Git tag without its leading `v`: `0.1.0` for `v0.1.0`. The default, `latest`, can change between pulls, so always set the pin. It selects the service and console images, and the executor and runner images when the release publishes them. See [Versioning and compatibility](/docs/reference/versioning).
+No Acclimate release has been published yet. Until the first one, build from source with `ACCLIMATE_VERSION=local`, upgrade by switching the checkout to a newer commit, and record the commit you run.
+
+Each release will have a Git tag such as `v0.1.0` and images tagged with the same version without the `v`, such as `0.1.0`, for the service, the console, the executor and the runner. Set `ACCLIMATE_VERSION` to that image tag. The default, `latest`, can change between pulls, so always set the pin. A release publishes no Keycloak image. Compose builds it from `deploy/keycloak/Dockerfile`, which pins the Keycloak version. See [Versioning and compatibility](/docs/reference/versioning).
+
+You can skip releases. The service applies every pending migration in order when it starts. Read the notes of each release you skip, and keep your applications' SDKs within one minor release of the service, as [Match SDK and service versions](/docs/reference/versioning#match-sdk-and-service-versions) explains.
 
 ## Upgrade
 
 Before you start:
 
 - Read the release notes of the new Acclimate release.
-- Note the Git tag and `ACCLIMATE_VERSION` you run now. Keep that checkout state and your private runtime files for a rollback.
+- Note the Git tag or commit and `ACCLIMATE_VERSION` you run now. Keep that checkout state and your private runtime files for a rollback.
 - If you run learning, choose **Pause** on each running loop in the console and wait for its active round to finish. See [Upgrade the executor](/docs/operate/enable-learning#upgrade-the-executor).
 - Run every command from the checkout with your deployment settings loaded.
 
@@ -39,14 +43,14 @@ docker compose stop console service
 
 ### Back up and rehearse a restore
 
-Dump the application database and the Keycloak database to separate archives. Restore the application archive into a separate empty database and verify it with the service build you run now. See [Back up and restore](/docs/operate/backup-and-restore), then return here.
+Dump the application database and the Keycloak database to separate archives, as in [Bundled databases](/docs/operate/backup-and-restore#bundled-databases). Check that the application archive restores: restore it into a separate empty database as in step 2 of [Restore](/docs/operate/backup-and-restore#restore), then remove that database with `dropdb`.
 
 </Step>
 <Step>
 
 ### Start the new release
 
-Switch the checkout to the new release's tag. Set `ACCLIMATE_VERSION` in `compose.env` to its image tag and load the file again. Then start the service and the console while public traffic is still stopped.
+Switch the checkout to the new release's tag, or to the new commit when you build from source. With release images, set `ACCLIMATE_VERSION` in `compose.env` to the new image tag and load the file again. Then start the service and the console while public traffic is still stopped.
 
 ```sh
 git fetch --tags
@@ -57,6 +61,13 @@ docker compose up -d --no-build --wait service console
 ```
 
 If you build from source, replace the last two commands with `docker compose build service console` and `docker compose up -d --wait service console`.
+
+If you co-host Keycloak, rebuild it from the new checkout. Keycloak updates its own database schema when it starts on a new version.
+
+```sh
+docker compose build keycloak
+docker compose up -d --wait keycloak
+```
 
 Keep the same Compose project name, or the new containers get new, empty volumes. Keep one service process per database.
 
@@ -104,10 +115,10 @@ Rolling back means running the previous build against the backup you took before
    docker compose stop console service
    ```
 
-2. Restore the dump you took before the upgrade into a new, empty database that you create. Follow [Restore](/docs/operate/backup-and-restore#restore).
-3. Switch the checkout back with `git switch --detach v<previous-version>`. Set `ACCLIMATE_VERSION` in `compose.env` back to the previous image tag and load the file again.
+2. Restore the dump you took before the upgrade into a new, empty database that you create. Follow [Restore](/docs/operate/backup-and-restore#restore). If Keycloak was upgraded, also restore its dump as in [Restore the co-hosted Keycloak database](/docs/operate/backup-and-restore#restore-the-co-hosted-keycloak-database), after step 3.
+3. Switch the checkout back with `git switch --detach v<previous-version>`, or to the previous commit. Set `ACCLIMATE_VERSION` in `compose.env` back to the previous image tag and load the file again. If you co-host Keycloak, run `docker compose build keycloak`.
 4. In `service.env`, point `DATABASE_URL` at the restored database. Use the private runtime files from before the upgrade, including the same provider encryption key.
-5. Start the previous service and console.
+5. Start the previous service and console. If you build from source, replace these commands as in [Start the new release](#start-the-new-release).
 
    ```sh
    docker compose pull service console

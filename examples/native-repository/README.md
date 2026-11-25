@@ -2,9 +2,9 @@
 
 Use the native repository helpers to run an installed coding agent against a task and a frozen repository snapshot. This starter stages verified version content, retains the agent’s edits and lets your grader test the solution against the original repository inputs.
 
-Node 22.22+, npm 10+ and Linux/macOS (POSIX) are required. Obtain the native starter, matching SDK/plugin tarballs, release manifest and checksums from your release operator; no registry publication or download URL is implied. Verify `SHA256SUMS` in that release directory before extraction. Keep the included private `package.json`: it establishes the application boundary even when extracted beneath another npm workspace. Its empty dependency list deliberately performs no implicit registry resolution.
+Node 22.22+, npm 10+ and Linux/macOS (POSIX) are required. No Acclimate release has been published yet. Until one is, build the starter archive, the SDK and plugin tarballs, the release manifest and `SHA256SUMS` from a source checkout with `npm run pack:verify`, which writes them to `artifacts/releases/<version>/`. Verify `SHA256SUMS` in that release directory before extraction. Keep the included private `package.json`: it establishes the application boundary even when extracted beneath another npm workspace. Its empty dependency list deliberately performs no implicit registry resolution.
 
-Use absolute paths for both directories and the already verified artifacts. For release 0.1.0, install the SDK and whichever plugin you use together (substitute the same release version throughout):
+Use absolute paths for both directories and the already verified artifacts. Install the SDK and whichever plugin you use together, from the same release directory. The commands use version 0.1.0, which a source checkout builds today:
 
 ```sh
 release=/absolute/path/to/verified-release
@@ -16,11 +16,13 @@ node "$app/verify-install.mjs" codex
 
 ## Check the installed SDK
 
-Run `node smoke.mjs` from the extracted starter. It stages a fixture payload, reads its instructions and cleans up the job directory.
+Run `node smoke.mjs` from the extracted starter. It stages a fixed one-file payload with the SDK's `prepareFiles`, reads it back and cleans up. It does not load a plugin or your bundle. `node verify-install.mjs claude` (or `codex`, `pi`, `cursor`, `--all`) checks that the SDK and that plugin are installed inside the starter from one release. To check a plugin's layout against your real channel, run the plugin delivery check from **App setup** in the console.
 
 ## Run a repository job
 
-Use the functions in `repository-job.mjs` and the adapters in `harnesses.mjs` from your application. Prepare the verified bundle for the native SDK, run the task in a private workspace and retain the result before cleanup. For job discovery, put the absolute `stateRoot` and `sourceRoot` in a private `native.json` beside `native.mjs`.
+The starter is a library: your application calls it. Freeze the source with `freezeSourceInventory`, then call `runRepositoryJob` from `repository-job.mjs` with the plugin's `prepare` from `installedHarness(name)` in `harnesses.mjs` and a `runHarness` that runs the matching adapter (`runCodexTask`, `runClaudeTask`, `runPiTask` or `runCursorTask`), for example in its own process group with `runInProcessGroup` from `harness-process.mjs`. Grade the retained result with `gradeRepositoryTests`.
+
+The `jobs`, `check-bundle` and `inventory` commands in `native.mjs` read a private `native.json` beside it. Put the absolute `stateRoot` and `sourceRoot` there. `check-bundle` checks a payload against the agent SDK named by `"harness"` (or each one in `"harnesses"`), Codex by default.
 
 ## Durable jobs and recovery
 

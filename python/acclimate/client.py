@@ -117,7 +117,7 @@ class AcclimateClient:
 
         Each channel job confirms its release online. For an exact version, pass
         ``offline={"pinned_version_id": version_id}`` to permit verified cache fallback
-        after a transport failure or HTTP 503.
+        after a transport failure or HTTP 502, 503 or 504.
         """
         from .delivery import resolve_and_cache, _stage_delivery
 

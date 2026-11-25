@@ -26,7 +26,7 @@ def delivery_rights(context):
     expect(row).to_contain_text('Nothing reported within retention · delivery unknown.')
     assert w.call('GET',w.root+'/connection-observations',actor='member')['items'][0]['id']==connection['id']
     expect(p.get_by_role('link',name='Connections',exact=True)).to_have_count(0)
-    for name in ['Create read credential','Create reporting credential','Create replacement credential',
+    for name in ['Create read credential','Create receipt credential','Create replacement credential',
                  'Create connection','Revoke connection','Revoke credential']:
         expect(p.get_by_role('button',name=name,exact=True)).to_have_count(0)
 

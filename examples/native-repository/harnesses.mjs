@@ -99,7 +99,7 @@ export async function loadHarness(spec, directory = STARTER) {
     throw new Error('native.harness_spec: use a built-in name or { "name", "module", "export"? }');
   const root = await realpath(directory);
   const file = await realpath(path.resolve(root, spec.module)).catch(() => {
-    throw new Error(`native.harness_module: ${JSON.stringify(spec.module)} (not found beside application.mjs)`);
+    throw new Error(`native.harness_module: ${JSON.stringify(spec.module)} (not found in the starter directory)`);
   });
   if (!file.startsWith(root + path.sep))
     throw new Error(`native.harness_module: ${JSON.stringify(spec.module)} (must be inside the starter directory)`);

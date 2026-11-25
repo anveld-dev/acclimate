@@ -27,7 +27,8 @@ const client = new AcclimateClient({
 });
 const prepared = await client.prepare({ workspaceId, bundleId, channel: 'stable' });
 try {
-  await runAgent({ instructions: prepared.instructions, skillFiles: prepared.skillFiles });
+  // systemPrompt renders the bundle exactly as learning rollouts see it.
+  await runAgent({ systemPrompt: prepared.systemPrompt });
 } finally {
   await prepared.cleanup();
 }

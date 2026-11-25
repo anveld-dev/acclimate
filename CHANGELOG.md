@@ -49,7 +49,7 @@ All notable changes to Acclimate will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-11-25
 
 The first release, open source under Apache-2.0. The service and console images, `@acclimate/sdk`, the four plugin packages, the `acclimate-sdk` Python package and the starter archives are all versioned `0.1.0`; the plugins peer-depend on `@acclimate/sdk` `^0.1.0`.
 

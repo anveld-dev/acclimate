@@ -598,6 +598,9 @@ def write_client_files(state, ports, certificate, bundle):
         'NODE_EXTRA_CA_CERTS': state / 'root.crt',
         'SSL_CERT_FILE': state / 'ca-bundle.pem',
         'ACCLIMATE_API': ports.api,
+        # The SDKs and the examples read these two.
+        'ACCLIMATE_URL': ports.api,
+        'ACCLIMATE_WORKSPACE': PROJECT,
     }
     if bundle:
         lines['BUNDLE_ID'] = bundle

@@ -8,7 +8,7 @@ Each line is one row:
 | --- | --- |
 | `request` | The customer message, which becomes the task input. |
 | `ideal_reply` | A reference reply that follows the bundle's instructions. |
-| `rubric` | Three or four pass-or-fail criteria the ideal reply meets, each checkable from the reply alone. |
+| `rubric` | Four pass-or-fail criteria the ideal reply meets, each checkable from the reply alone. |
 
 The requests cover billing, sign-in, bugs, exports, permissions, integrations and ambiguous requests. Because every row has its own rubric, the judge model uses those criteria as written and does not draft new ones.
 
@@ -19,3 +19,5 @@ The requests cover billing, sign-in, bugs, exports, permissions, integrations an
 3. Under **Import material**, choose `example-agent-tasks.jsonl` and select **Import tasks**.
 
 The judge model converts the rows into task cards and the service splits them into evolve and held-out tasks. Each task then passes the admission check before it counts. Review the cards before you start a round. Importing the same file again returns the earlier import, and an edited copy sets aside the rows whose request is already a task with the reason `duplicate`.
+
+The [support agent walkthrough](../../apps/docs/content/docs/examples/support-agent.mdx) runs an application on this bundle before and after a round. The [support agent example](../support-agent/README.md) is that application.

@@ -30,6 +30,7 @@
 
 # Isolated behavior-test dependencies
 /.venv-bdd/
+/.venv/
 
 # Separate private manual Compose workspace
 /.compose-workspace/

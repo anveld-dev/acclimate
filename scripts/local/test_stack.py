@@ -463,6 +463,8 @@ class StackTests(unittest.TestCase):
             self.assertIn(f"export NODE_EXTRA_CA_CERTS='{state / 'root.crt'}'", text)
             self.assertIn(f"export SSL_CERT_FILE='{state / 'ca-bundle.pem'}'", text)
             self.assertIn("export BUNDLE_ID='bundle-1'", text)
+            self.assertIn(f"export ACCLIMATE_URL='{stack.DEFAULT.api}'", text)
+            self.assertIn("export ACCLIMATE_WORKSPACE='local-demo'", text)
 
     def test_keycloak_rejects_replacement_operator_with_same_email(self):
         opener = Mock()

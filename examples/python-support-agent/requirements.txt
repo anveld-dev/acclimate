@@ -1,2 +1,0 @@
-# The example needs only the Acclimate SDK. See README.md for offline and checkout installs.
-acclimate-sdk==0.1.0

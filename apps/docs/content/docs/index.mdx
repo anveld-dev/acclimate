@@ -14,6 +14,8 @@ Your application still runs the agent with its own model credentials.
 
 A **workspace** owns **bundles**, which hold your agent's instructions, skills and memory files, and **connections**, which tell the SDK which bundle and channel an application uses. Each **version** of a bundle is immutable and carries a digest of its exact bytes. A **release** points a **channel**, such as `stable`, at a version, which becomes the channel's **current version**. To undo a release, roll the channel back to an earlier version.
 
+<DeliveryDiagram />
+
 A **job** is one run of your agent. When it starts, the SDK resolves the channel to a version, downloads it, checks the digest and writes the files to a directory for that job. The job keeps that version even if the channel is released again while it runs. The application can send a receipt, so the workspace sees which version each job used. See [Deliver content to jobs](/docs/guides/deliver-content).
 
 ## Learning loop
@@ -36,6 +38,8 @@ The **executor**, a process separate from the service and your application, call
 4. **Evaluate.** Each remaining candidate is scored on the same evolve tasks.
 5. **Select.** One optimizer call adopts a candidate or keeps the current version. An adoption is released to the channel at once, with no approval step, and recorded in improvement memory, the optimizer's record of problems and fixes.
 6. **Score the held-out tasks** for the version now on the channel. After an adoption, a clear drop that a second measurement confirms reverts the release automatically.
+
+<RoundDiagram />
 
 ### How a rollout runs your bundle
 
@@ -71,6 +75,8 @@ Two measured rounds, each evaluating five candidates and adopting one:
 | [Support agent](/docs/tutorials/support-agent) | 60, judged | 1,280 | About 95 minutes, with another example running |
 
 ## Who sees what
+
+<TrustDiagram />
 
 - **The optimizer** receives the bundle, improvement memory and the evolve tasks with their rollouts and judge reasons. When an exact-match evolve task fails, it also receives that task's expected answer. Held-out tasks, scores and logs never reach it.
 - **The task model and the judge model** read tasks from both splits, because they score them.

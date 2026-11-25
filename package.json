@@ -36,6 +36,7 @@
     "test:console": "npm test --workspace @acclimate/console",
     "dev:docs": "npm run dev --workspace @acclimate/docs",
     "build:docs": "npm run build --workspace @acclimate/docs",
+    "deploy:docs": "npm run build:docs && npx --yes wrangler@4.168.0 deploy --config apps/docs/wrangler.jsonc",
     "typecheck:docs": "npm run typecheck --workspace @acclimate/docs",
     "start:console": "tsx scripts/start-production.ts console",
     "qualify:productization": "python3 scripts/productization/qualify.py",

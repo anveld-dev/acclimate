@@ -2,6 +2,8 @@
 
 The product documentation site is built with [Fumadocs](https://fumadocs.dev) on Next.js and exported as static HTML. It is written for developers who integrate Acclimate into an agent application and for operators who deploy the service. Design records, architecture notes and qualification evidence stay in [`docs/`](../../docs/README.md).
 
+The site is published at [acclimate.anveld.dev](https://acclimate.anveld.dev). The `docs` workflow builds and deploys it to Cloudflare on every push to `main` that changes `apps/docs/`, using the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. To deploy by hand with those set, run `npm run deploy:docs`.
+
 ```sh
 npm ci --ignore-scripts
 npm run dev:docs      # http://127.0.0.1:3200

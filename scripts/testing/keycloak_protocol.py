@@ -296,7 +296,8 @@ def qualify(args, prepared_home, build_env):
                 # private listener, with no master-realm account.
                 admin_page = admin_context.new_page()
                 admin_page.goto(f'http://127.0.0.1:{kc_port}/admin/acclimate/console/#/acclimate/users')
-                admin_page.get_by_role('link', name='viewer', exact=True).wait_for(state='visible', timeout=60000)
+                # With email as username, the realm lists the viewer by email.
+                admin_page.get_by_role('link', name=re.compile(r'^viewer(@fixture\.invalid)?$')).wait_for(state='visible', timeout=60000)
                 admin_page.close()
                 assert not any(path.startswith('/admin') for path in auth_proxy.requests)
                 record_check('first person opens the acclimate realm admin console on the private listener and lists users')

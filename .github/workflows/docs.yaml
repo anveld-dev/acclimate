@@ -1,0 +1,29 @@
+name: docs
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/docs/**
+      - package-lock.json
+      - .github/workflows/docs.yaml
+  workflow_dispatch:
+concurrency:
+  group: docs-deploy
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --prefer-offline --no-audit
+      - name: Build and deploy to acclimate.anveld.dev
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npm run deploy:docs

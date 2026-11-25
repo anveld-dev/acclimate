@@ -1,12 +1,22 @@
 """Start a disposable real worker for executor and behavior tests."""
 import os
+import time
 
 from executor.tests.sandbox import docker
 
 
+def remove_volume(volume, wait=30):
+    # A stopped executor removes its sandboxes, but Docker may still be finishing that
+    # removal. Wait for it; a sandbox that really leaks still fails the volume removal.
+    deadline = time.monotonic() + wait
+    while docker("ps", "-aq", "--filter", "volume=" + volume) and time.monotonic() < deadline:
+        time.sleep(1)
+    docker("volume", "rm", volume)
+
+
 def start_worker(cleanup, runner, image, token, internal, concurrency=4):
     volume = docker("volume", "create")
-    cleanup(docker, "volume", "rm", volume)
+    cleanup(remove_volume, volume)
     worker = docker("run", "-d", "--add-host", "host.docker.internal:host-gateway",
         "-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", volume + ":/var/lib/acclimate-executor",
         "-e", "ACCLIMATE_PROVIDER_HTTP_HOSTS=host.docker.internal", "-e", "ACCLIMATE_SANDBOX_VOLUME=" + volume, "-e", "ACCLIMATE_EXECUTOR_TOKEN=" + token,

@@ -54,7 +54,7 @@ npm test
 npm run build
 ```
 
-[Architecture](docs/architecture/README.md) · [HTTP contract](contracts/README.md) · [Behavior tests](features/README.md) · [Product docs site](apps/docs/README.md) · [HTML documentation](docs/site/index.html)
+[Architecture](docs/architecture/README.md) · [HTTP contract](contracts/README.md) · [Behavior tests](features/README.md) · [Product docs](https://acclimate.anveld.dev) ([source](apps/docs/README.md)) · [HTML documentation](docs/site/index.html)
 
 Inspired by [AgentRun](https://github.com/Parcha-ai/agentrun) and [RRSI](https://github.com/google-research/rrsi).
 

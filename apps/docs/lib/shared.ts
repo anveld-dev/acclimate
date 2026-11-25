@@ -1,6 +1,8 @@
 import { createGetUrl } from 'fumadocs-core/source';
 
 export const appName = 'Acclimate';
+/** Where the docs are deployed. Absolute URLs, such as social preview images, use it. */
+export const siteUrl = process.env.DOCS_SITE_URL ?? 'https://acclimate.anveld.dev';
 export const docsRoute = '/docs';
 export const docsImageRoute = '/og/docs';
 export const contentPath = 'apps/docs/content/docs';

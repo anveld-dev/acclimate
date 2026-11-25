@@ -3,21 +3,19 @@ title: HTTP API and wire contract
 description: Find a route, and read how to authenticate, verify a payload and retry a write without an SDK.
 ---
 
-Use this page when you call Acclimate without an SDK, or when you need to read a raw response. It indexes the routes and explains authentication, payload verification and write retries.
+Use this page when you call Acclimate without an SDK, or need to read a raw response. It indexes the routes and covers authentication, payload verification and write retries.
 
 ## Contract files
 
 | File | Describes |
 | --- | --- |
-| [`contracts/openapi.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/openapi.json) | Every route, request and response body, status code and error code, as OpenAPI 3.1. It is the source of truth. |
-| [`contracts/bundle.schema.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/bundle.schema.json) | Bundle payloads. |
-| [`contracts/learning.md`](https://github.com/anveld-dev/acclimate/blob/main/contracts/learning.md#codes-a-script-reads) | The learning status values a script can branch on. |
+| [`contracts/openapi.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/openapi.json) | Every route, body, status and error code, as OpenAPI 3.1. It is the source of truth. |
+| [`contracts/bundle.schema.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/bundle.schema.json) | Bundle payloads |
+| [`contracts/learning.md`](https://github.com/anveld-dev/acclimate/blob/main/contracts/learning.md#codes-a-script-reads) | Learning status values a script can branch on |
 
-The SDKs ship the same shapes as types. In TypeScript, import them from `@acclimate/sdk`. In Python, import them from `acclimate` or `acclimate.types`.
+The SDKs ship the same shapes as types, from `@acclimate/sdk` in TypeScript and `acclimate` or `acclimate.types` in Python. [Versioning and compatibility](/docs/reference/versioning) covers how the contract changes between Acclimate releases.
 
 JSON fields are camelCase on the wire and in both SDKs' request and response objects. Python method names, arguments and attributes are snake_case. For example, the Python `ApiError.request_id` carries the error body's `requestId`.
-
-See [Versioning and compatibility](/docs/reference/versioning) for how the contract changes between Acclimate releases.
 
 ## Authentication
 
@@ -27,11 +25,11 @@ Send the credential as a bearer token, over HTTPS for any remote call:
 Authorization: Bearer <token>
 ```
 
-- A machine token carries rights in a workspace: `read`, `write` or `promote`. See [Credential types](/docs/concepts/credentials#credential-types) for the other credentials and [Rights](/docs/concepts/credentials#rights) for what each right allows.
-- A person calls the API through the console after signing in. On the learning routes, a signed-in person needs the Administrator role wherever a machine token needs `promote`. Releasing a version and publishing a bundle also accept an Editor.
-- A few routes accept only a signed-in person. They refuse a machine token with 403 `denied`. The tables below mark them.
-- A request with no token or an unknown token gets 401 `unauthenticated`. A token without the needed grant gets 403 `denied`. See [Service codes](/docs/reference/error-codes#service-codes).
-- When an SDK client has a connection ID, it sends the ID as `X-Acclimate-Connection-Id` on version, payload and channel reads.
+- A machine token carries `read`, `write` or `promote` rights in a workspace. See [Credential types](/docs/concepts/credentials#credential-types) and [Rights](/docs/concepts/credentials#rights).
+- A person calls the API through the console after signing in. On the learning routes, a person needs the Administrator role wherever a machine token needs `promote`. Releasing a version and publishing a bundle also accept an Editor.
+- Routes marked for a signed-in person refuse a machine token with 403 `denied`.
+- A missing or unknown token gets 401 `unauthenticated`, and a token without the needed grant gets 403 `denied`. See [Service codes](/docs/reference/error-codes#service-codes).
+- An SDK client with a connection ID sends it as `X-Acclimate-Connection-Id` on version, payload and channel reads.
 
 The [health endpoints](/docs/operate/health-and-readiness) `/health` and `/ready` need no token and sit outside `/v1`.
 
@@ -62,11 +60,11 @@ The [health endpoints](/docs/operate/health-and-readiness) `/health` and `/ready
 | Look up a retained write | `GET /operations/{operationId}` |
 | Close a retained write | `POST /operations/{operationId}/close` |
 
-The sign-in, membership and invitation routes serve the console. They are listed only in `contracts/openapi.json`.
+The sign-in, membership and invitation routes serve the console and are listed only in `contracts/openapi.json`.
 
 ## Read and verify a version
 
-1. Resolve the channel. The response holds the channel's revision and the metadata of its version, which never changes. To ask only for a change, send the last `ETag` in `If-None-Match`. HTTP 304 means the channel still points at the same version.
+1. Resolve the channel. The response holds the channel's revision and its version's metadata, which never changes. To ask only for a change, send the last `ETag` in `If-None-Match`. HTTP 304 means the channel still points at the same version.
 2. Fetch the exact stored bytes from the version's `/payload` route.
 3. Check the SHA-256 digest of those bytes against the metadata before you parse them. Parsing and writing a JSON object again can change the bytes.
 4. Validate the parsed payload against the bundle schema.
@@ -88,11 +86,11 @@ A release write takes three fields:
 
 | Field | Value |
 | --- | --- |
-| `versionId` | The version to release. |
-| `expectedRevision` | The channel's current revision, as a string. Use `"0"` for a new channel. |
-| `unevaluatedReason` | The reason recorded with the release. It must not be blank. |
+| `versionId` | The version to release |
+| `expectedRevision` | The channel's current revision as a string, or `"0"` for a new channel |
+| `unevaluatedReason` | Non-blank reason recorded with the release |
 
-When the channel has moved, the write fails with 409 `revision_conflict`. Read the channel again before you submit a new release.
+When the channel has moved, the write fails with 409 `revision_conflict`. Read the channel again, then submit a new release.
 
 ## Retry a write
 
@@ -102,28 +100,26 @@ A write that requires an idempotency key, such as creating a version or a releas
 
 ### Retained results
 
-Bundle setup, version creation and release writes can keep their result, so you can read it after a lost response.
+Bundle setup, version creation and release writes can keep their result for reading after a lost response.
 
 1. Send the write with a UUID as its `Idempotency-Key` and the header `X-Acclimate-Durable-Operation: true`.
-2. If the response is lost, read the result with `GET /operations/{key}?operationPath={path}`. `{key}` is the idempotency key and `{path}` is the full API path of the original request. A bundle setup can be looked up by its key alone.
+2. If the response is lost, read the result with `GET /operations/{key}?operationPath={path}`, where `{path}` is the original request's full API path. A bundle setup can be looked up by its key alone.
 3. To stop the key from being used again, send `POST /operations/{key}/close` with the same `Idempotency-Key` and the JSON body `{"operationPath": "{path}"}`. A later write with that key gets 409 `operation_closed`.
 
 ## Learning
 
-Every route in this section starts with `/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning`, except the model provider. The Right column gives the right a machine token needs.
-
-[Run a learning loop](/docs/guides/learning-loop) explains what the loop does with each call. [Learning codes](/docs/reference/error-codes#learning-codes) lists the codes these routes return.
+Every route in this section except the model provider starts with `/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning`. The Right column gives the right a machine token needs. [Run a learning loop](/docs/guides/learning-loop) explains each call, and [Learning codes](/docs/reference/error-codes#learning-codes) lists the codes these routes return.
 
 ### Loop
 
 | Route | Purpose | Right |
 | --- | --- | --- |
-| `PUT` on the prefix | Turn on learning or change its settings: the channel, `domain` and `benchmark`, the task model, the judge model and `maxRoundsPerDay`. | promote |
-| `GET` on the prefix | Read the loop: its status, why it is waiting or paused, the task counts in each split, the active round and any alert. | read |
-| `POST /start` | Start the loop. Refused with `tasks-required` when a split has fewer than 20 admitted tasks, and with `optimizer-required` when the service has no optimizer. | promote |
-| `POST /pause` | Pause the loop. | promote |
-| `POST /resume` | Resume the loop. Refused for the same reasons as `/start`. | promote |
-| `POST /stop` | Stop the loop. | promote |
+| `PUT` on the prefix | Turn on learning or change the channel, `domain`, `benchmark`, task model, judge model or `maxRoundsPerDay` | promote |
+| `GET` on the prefix | Read the loop's status, waiting or pause reason, task counts per split, active round and any alert | read |
+| `POST /start` | Start the loop, refused with `tasks-required` or `optimizer-required` | promote |
+| `POST /pause` | Pause the loop | promote |
+| `POST /resume` | Resume the loop, refused as `/start` is | promote |
+| `POST /stop` | Stop the loop | promote |
 
 While the loop waits, the `GET` response also holds `waiting`, `nextRoundAt` and `evolveTasksNeeded`. `optimizerConfigured` says whether the service has an optimizer.
 
@@ -131,24 +127,24 @@ While the loop waits, the `GET` response also holds `waiting`, `nextRoundAt` and
 
 | Route | Purpose | Right |
 | --- | --- | --- |
-| `GET /tasks` | List tasks, in pages. Filters: `split`, `source`, `admission`, `flagged` and `confirmed`. | read |
-| `POST /tasks` | Create one task. | write |
-| `PATCH /tasks/{id}` | Edit a task. This creates a new task revision and runs the admission check again. | write |
-| `DELETE /tasks/{id}` | Retire a task. Its rows are kept. | write |
-| `POST /tasks/confirm` | Confirm up to 100 held-out tasks in one change. Returns a result for each ID. | write, signed-in person only |
-| `POST /tasks/{id}/recheck` | Run the admission check again for a task set aside with `check-failed`, without a new revision. Any other state returns 409. | write |
-| `POST /tasks/recheck` | The same for every `check-failed` task, or for the `taskIds` in the body. | write |
-| `GET /held-out-tasks/export` | Download the held-out tasks. | Signed-in person only |
+| `GET /tasks` | List tasks in pages, filtered by `split`, `source`, `admission`, `flagged` or `confirmed` | read |
+| `POST /tasks` | Create one task | write |
+| `PATCH /tasks/{id}` | Edit a task, creating a new revision and rerunning the admission check | write |
+| `DELETE /tasks/{id}` | Retire a task, keeping its rows | write |
+| `POST /tasks/confirm` | Confirm up to 100 held-out tasks at once, with a result for each ID | write, signed-in person only |
+| `POST /tasks/{id}/recheck` | Rerun the admission check on a `check-failed` task without a new revision. Any other state returns 409. | write |
+| `POST /tasks/recheck` | The same for every `check-failed` task, or the body's `taskIds` | write |
+| `GET /held-out-tasks/export` | Download the held-out tasks | Signed-in person only |
 
 ### Imports and trials
 
 | Route | Purpose | Right |
 | --- | --- | --- |
-| `POST /tasks/import` | Upload a spreadsheet, CSV, JSONL or text as a stream. Returns an import with its counts. | write |
-| `GET /tasks/imports` | The 50 most recent imports, newest first, with counts, `createdAt` and `source`. | read |
-| `GET /tasks/imports/{id}` | One import's status and its counts of converted, pending and set-aside rows. | read |
-| `POST /tasks/{id}/try` | Run one task on the executor against the channel's current version. Returns a trial ID. | write |
-| `GET /trials/{id}` | A trial's status, gateway log, output and verdict, and `error.code` when it failed. | read |
+| `POST /tasks/import` | Stream a spreadsheet, CSV, JSONL or text upload. Returns the import with its counts. | write |
+| `GET /tasks/imports` | The 50 newest imports, with counts, `createdAt` and `source` | read |
+| `GET /tasks/imports/{id}` | One import's status and counts of converted, pending and set-aside rows | read |
+| `POST /tasks/{id}/try` | Run one task on the channel's current version. Returns a trial ID. | write |
+| `GET /trials/{id}` | A trial's status, gateway log, output, verdict and any `error.code` | read |
 
 An import sent from a console session also returns the drafted task cards.
 
@@ -156,19 +152,19 @@ An import sent from a console session also returns the drafted task cards.
 
 | Route | Purpose | Right |
 | --- | --- | --- |
-| `GET /rounds` | The round timeline. | read |
-| `GET /rounds/{id}` | One round with its candidates, diffs and diagnoses, and the results on the evolve split. | read |
-| `POST /rollback` | Move the channel back to the version a named round replaced. The removed version is blocked from adoption. | promote |
-| `GET /blocked-versions` | Versions blocked from adoption after a rollback or an automatic revert. | read |
-| `DELETE /blocked-versions/{digest}` | Unblock a version. | promote |
+| `GET /rounds` | The round timeline | read |
+| `GET /rounds/{id}` | One round's candidates, diffs, diagnoses and evolve split results | read |
+| `POST /rollback` | Move the channel back to the version a named round replaced, blocking the removed version from adoption | promote |
+| `GET /blocked-versions` | Versions blocked after a rollback or an automatic revert | read |
+| `DELETE /blocked-versions/{digest}` | Unblock a version | promote |
 
 ### Usage, outcomes and memory
 
 | Route | Purpose | Right |
 | --- | --- | --- |
-| `GET /usage` | Rounds, rollouts and tokens for each day. | read |
-| `POST /outcomes` | Report a production outcome, with an optional `grading`. The SDKs send it from `job.expect()`. | write |
-| `GET /memory` | The improvement memory at a revision. | read |
+| `GET /usage` | Rounds, rollouts and tokens for each day | read |
+| `POST /outcomes` | Report a production outcome with an optional `grading`, as `job.expect()` does | write |
+| `GET /memory` | The improvement memory at a revision | read |
 
 ### Model provider
 
@@ -176,5 +172,5 @@ The workspace's model provider is at `/v1/workspaces/{workspaceId}/model-provide
 
 | Route | Purpose | Right |
 | --- | --- | --- |
-| `GET` | Read the base URL, the allowed models, whether a provider API key is set and the executor's verification result. It never returns the key. | read |
-| `PUT` | Save an OpenAI-compatible base URL, the provider API key and the allowed models. | Signed-in administrator only |
+| `GET` | Read the base URL, allowed models, whether a provider API key is set and the executor's verification result, never the key | read |
+| `PUT` | Save an OpenAI-compatible base URL, provider API key and allowed models | Signed-in administrator only |

@@ -8,21 +8,22 @@ Use `@acclimate/pi-plugin` when your application runs agents with the Pi coding-
 | Requirement | Value |
 | --- | --- |
 | Plugin | `@acclimate/pi-plugin`, with a `/native` entry point for the resource loader |
-| Agent SDK | `@earendil-works/pi-coding-agent` `^1.5.2`, an optional peer of the plugin that only the `/native` entry point loads |
-| Node.js | 22.22 or later. See [Install the SDKs](/docs/get-started/install#prerequisites). |
-| Platform | Linux or macOS |
+| Agent SDK | `@earendil-works/pi-coding-agent` `^1.5.2`, an optional peer that only the `/native` entry point loads |
+| Runtime | Node.js 22.22 or later on Linux or macOS. See [Install the SDKs](/docs/get-started/install#prerequisites). |
 
 ## Install
+
+Install the agent SDK beside the plugin and the Acclimate SDK. The plugin and the Acclimate SDK must come from the same Acclimate release.
 
 ```sh
 npm install @acclimate/sdk @acclimate/pi-plugin @earendil-works/pi-coding-agent
 ```
 
-The plugin and the Acclimate SDK must come from the same Acclimate release. To install them from release files, see [Install from verified release files](/docs/get-started/install#install-from-verified-release-files).
+For release files, see [Install from verified release files](/docs/get-started/install#install-from-verified-release-files).
 
 ## Files the plugin writes
 
-`prepare` creates a new private directory for each job and writes the version's files into it.
+`prepare` writes each job's files into a new private directory. It fails before writing anything if the version breaks the [rules for bundle files](/docs/guides/deliver-content#rules-for-bundle-files).
 
 | Bundle file | Written to |
 | --- | --- |
@@ -32,11 +33,9 @@ The plugin and the Acclimate SDK must come from the same Acclimate release. To i
 
 `prepared.resources` lists every written file with its bundle `path`, `kind` and `absolutePath`. `createPiResourceLoader` from the `/native` entry point builds and loads a Pi resource loader that holds only the instruction, the skills and the memory files you select. It turns off Pi's own discovery of extensions, skills, prompt templates, themes and context files.
 
-A version must follow the [rules for bundle files](/docs/guides/deliver-content#rules-for-bundle-files), or `prepare` fails before it writes anything.
-
 ## Prepare and run a session
 
-Pass the result of `client.prepare()` to the plugin's `prepare`. [Choose a native integration](/docs/guides/deliver-content#choose-a-native-integration) explains what else `prepare` accepts. Your application supplies `client`, the IDs, `provider`, `modelId` and `prompt`.
+Pass the delivery from `client.prepare()` to the plugin's `prepare`, which accepts the inputs in [Choose a native integration](/docs/guides/deliver-content#choose-a-native-integration). Your application supplies `client`, the IDs, `provider`, `modelId` and `prompt`.
 
 ```ts
 import { join } from 'node:path';
@@ -72,14 +71,14 @@ await prepared.cleanup();
 ```
 
 - Create a new session for each job, with the loader that `createPiResourceLoader` returns.
-- Set `tools` explicitly. The list above is the one the native repository starter uses.
-- `prepared.reportStarted()` queues the delivery's start receipt. It returns `null` when `client.prepare()` had no `reporter`. See [Report job starts](/docs/guides/deliver-content#report-job-starts).
-- Save `output` with `prepared.versionId` and `prepared.digest` before you clean up.
-- `prepared.cleanup()` removes the directory and releases the delivery. Call it after the session has stopped using the directory.
+- Set `tools` explicitly. This is the native repository starter's list.
+- `prepared.reportStarted()` queues the start receipt, or returns `null` without a `reporter`. See [Report job starts](/docs/guides/deliver-content#report-job-starts).
+- Save `output` with `prepared.versionId` and `prepared.digest`. Then `prepared.cleanup()` removes the directory and releases the delivery.
+- Clean up only after the session has stopped using the directory.
 
 ## Choose memory
 
-The second argument of `createPiResourceLoader` lists the bundle paths of the memory files to append as context. Replace `memory/selected.md` with a memory path from your bundle. The default list is empty, so no memory is loaded unless you name it. A path that is not a memory file in the version throws an error.
+The second argument of `createPiResourceLoader` lists the bundle paths of the memory files to append as context. Replace `memory/selected.md` with a path from your bundle. The default list is empty, so no memory loads unless you name it. A path that is not a memory file in the version throws an error.
 
 ## Use the native repository starter
 

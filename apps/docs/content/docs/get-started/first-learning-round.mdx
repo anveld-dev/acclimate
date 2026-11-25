@@ -3,20 +3,15 @@ title: Run your first learning round
 description: Give the local stack a model, run the ticket triage example and watch the learning loop release a better bundle.
 ---
 
-This page takes the local stack to its first learning round, in which the service improves a bundle and releases the result. It is for someone evaluating the [learning loop](/docs/concepts/how-it-works#learning-loop) on a laptop.
+This page takes the local stack to its first round of the [learning loop](/docs/concepts/how-it-works#learning-loop), in which the service improves a bundle and releases the result. You need the stack from the [Quickstart](/docs/get-started/quickstart) running, and a Codex sign-in.
 
-You need the stack from the [Quickstart](/docs/get-started/quickstart) running, and a Codex sign-in for the model proxy.
-
-Learning needs two model settings, and neither has a default:
-
-- **The optimizer** proposes and selects changes to the bundle. You set it on the service, in the shell before `npm run local:up`.
-- **The model provider** serves the task model, which answers tasks, and the judge model, which grades them. You set it in the console.
+Learning needs two model settings, and neither has a default. The **optimizer**, set on the service, proposes and selects changes to the bundle. The **model provider**, set in the console, serves the task model, which answers tasks, and the judge model, which grades them.
 
 ## Set up a local model proxy
 
-These steps use [CLIProxyAPI](https://help.router-for.me/) with a Codex sign-in for both settings. Use a fixed build of the proxy. The steps were checked against the revision that the example configuration link points to. The [operator guide](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#cliproxyapi-with-codex-sign-in) has the details.
+These steps use [CLIProxyAPI](https://help.router-for.me/) with a Codex sign-in for both settings. They were checked against one fixed revision of the proxy, so pin your build. The [operator guide](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#cliproxyapi-with-codex-sign-in) has the details.
 
-1. In the proxy's configuration file, set `server.port` to `8317`, put a private key of your choice under `access.api-keys` and set `routing.cooldown.disable-cooling: true`. With one Codex sign-in, cooling would block a model for minutes after one rate-limited reply. The [example configuration](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/config.example.yaml) shows where each setting goes.
+1. In the proxy's configuration file, set `server.port` to `8317`, put a private key of your choice under `access.api-keys` and set `routing.cooldown.disable-cooling: true`. Without that last setting, one rate-limited reply blocks a model for minutes. The [example configuration](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/config.example.yaml) for that revision shows where each setting goes.
 
 2. Sign in, then start the proxy.
 
@@ -25,13 +20,13 @@ These steps use [CLIProxyAPI](https://help.router-for.me/) with a Codex sign-in 
    cli-proxy-api -config /private/config.yaml
    ```
 
-3. Check which model IDs the proxy serves. On Linux, use the address the proxy listens on, as the warning below explains.
+3. List the model IDs the proxy serves. On Linux, use the address the proxy listens on (see the warning below).
 
    ```sh
    curl -H "Authorization: Bearer <proxy-key>" http://127.0.0.1:8317/v1/models
    ```
 
-4. Start the stack with the optimizer settings and the provider allowlist.
+4. Start the stack with the optimizer settings and the provider allowlist. The model IDs on this page are examples, so use IDs from step 3.
 
    ```sh
    export ACCLIMATE_MODEL_ENDPOINT=http://host.docker.internal:8317/v1/chat/completions
@@ -42,9 +37,7 @@ These steps use [CLIProxyAPI](https://help.router-for.me/) with a Codex sign-in 
    npm run local:up
    ```
 
-   The model IDs on this page are examples. Use IDs from step 3. The containers reach the proxy at `host.docker.internal` over plain HTTP. The service and the executor refuse that unless the host is listed in `ACCLIMATE_PROVIDER_HTTP_HOSTS`.
-
-   The stack saves these settings in `.local/stack/service.env` and reuses them on later starts. Export an empty value to clear one.
+   The containers reach the proxy at `host.docker.internal` over plain HTTP, which the service and the executor refuse unless the host is in `ACCLIMATE_PROVIDER_HTTP_HOSTS`. The stack saves these settings in `.local/stack/service.env` and reuses them on later starts. Export an empty value to clear one.
 
 5. In the console, open the workspace's **Members** page and, under **Model provider**, enter:
 
@@ -54,21 +47,21 @@ These steps use [CLIProxyAPI](https://help.router-for.me/) with a Codex sign-in 
    | API key | The proxy key, the same value as `ACCLIMATE_MODEL_TOKEN` |
    | Allowed models | At least two IDs from `/v1/models`, one for tasks and one for the judge |
 
-   The executor verifies each model. `local:up` has already set the provider encryption key that the service needs to store the API key.
+   The executor verifies each model. `local:up` has already set the provider encryption key the service needs to store the API key.
 
-The two URLs differ. `ACCLIMATE_MODEL_ENDPOINT` is the full `…/v1/chat/completions` URL, because the service posts to it as written. The provider's base URL is the `…/v1` base, and the executor adds the path.
+The two URLs differ. `ACCLIMATE_MODEL_ENDPOINT` is the full `…/v1/chat/completions` URL. The provider's base URL ends at `…/v1`, and the executor adds the path.
 
 <Callout type="warn" title="Linux">
-On Docker Desktop, `host.docker.internal` reaches your laptop's loopback, so a proxy on `127.0.0.1` works. On Linux, `host.docker.internal` is the Docker bridge address, such as `172.17.0.1`, and a proxy bound to `127.0.0.1` is unreachable from the containers. Set the proxy's `server.host` to the bridge address. Binding it to all interfaces also works, but exposes the proxy to your network.
+On Docker Desktop, `host.docker.internal` reaches your laptop's loopback. On Linux, it is the Docker bridge address, such as `172.17.0.1`, so a proxy bound to `127.0.0.1` is unreachable from the containers. Set the proxy's `server.host` to the bridge address. Binding it to all interfaces also works, but exposes the proxy to your network.
 </Callout>
 
 ## Run the ticket triage example
 
-`examples/ticket-triage/` teaches an agent to route support tickets to the right queue. One script publishes the bundle, turns on learning, imports 64 labelled tickets, starts the loop and reports each round.
+`examples/ticket-triage/` teaches an agent to route support tickets to the right queue. Its script publishes the bundle, turns on learning, imports 64 labelled tickets, starts the loop and reports each round.
 
-1. Issue a machine token. On the workspace's **Members** page, under **Machine tokens**, choose **Issue token** and tick **Read content**, **Write content** and **Promote releases**. The script needs all three [rights](/docs/concepts/credentials#rights).
+1. On the workspace's **Members** page, under **Machine tokens**, choose **Issue token** and tick **Read content**, **Write content** and **Promote releases**. The script needs all three [rights](/docs/concepts/credentials#rights).
 
-2. In a shell at the root of the checkout, load the stack's settings and export the token and two of the provider's allowed models. Then run the script.
+2. In a shell at the root of the checkout, load the stack's settings, export the token and two of the provider's allowed models, and run the script.
 
    ```sh
    npm ci --ignore-scripts
@@ -78,18 +71,18 @@ On Docker Desktop, `host.docker.internal` reaches your laptop's loopback, so a p
    npx tsx examples/ticket-triage/loop.ts
    ```
 
-The script prints each step, then one line for each finished round. In the measured run, round 1 took 14 minutes and ended with this line:
+The script prints one line per finished round. In the measured run, round 1 took 14 minutes:
 
 ```text
 Round 1 adopted and released version ba6a0ffc-33c7-4d04-a93b-3bfa2690f90e. Evolve tasks: 0% before, 100% for the adopted version. Held-out tasks: 100%.
 ```
 
-The starting instructions do not name the queues, so they passed none of the evolve tasks, which the loop learns from. The adopted version passed all of them, and every held-out task, which the optimizer never sees.
+The starting instructions do not name the queues, so they passed no evolve tasks. The adopted version passed every evolve and held-out task.
 
-Learning runs on the service, so you can stop the script with Ctrl-C after the first adoption. The bundle's **Learning** tab in the console shows the same rounds. If the proxy answers with rate limits, lower the [executor concurrency](/docs/get-started/run-locally#executor-concurrency).
+Learning runs on the service, so you can stop the script with Ctrl-C after the first adoption and follow the rounds on the bundle's **Learning** tab. If the proxy answers with rate limits, lower the [executor concurrency](/docs/get-started/run-locally#executor-concurrency).
 
 ## Next steps
 
-- [Ticket triage](/docs/examples/ticket-triage) walks through the full output and what each call in the script does.
-- [What a round costs](/docs/concepts/how-it-works#what-a-round-costs) explains where the 14 minutes went.
-- [Run a learning loop](/docs/guides/learning-loop) turns on learning for your own bundle from the console.
+- [Ticket triage](/docs/examples/ticket-triage) explains the full output and each call in the script.
+- [What a round costs](/docs/concepts/how-it-works#what-a-round-costs) explains the 14 minutes.
+- [Run a learning loop](/docs/guides/learning-loop) for your own bundle.

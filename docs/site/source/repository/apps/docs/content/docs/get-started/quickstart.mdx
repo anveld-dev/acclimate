@@ -3,7 +3,7 @@ title: Quickstart
 description: Start the local stack and deliver a verified version of the example bundle to a shell on your laptop.
 ---
 
-This page takes you from a source checkout to a running Acclimate stack and one verified delivery. It is for a developer who wants to see delivery work before adding the SDK to an application.
+This page takes a developer from a source checkout to a running Acclimate stack and one verified delivery.
 
 You need:
 
@@ -20,15 +20,13 @@ npm run local:up
 npm run local:trust
 ```
 
-`local:up` starts the service, the console and sign-in. The first start takes a few minutes, or 10 to 20 minutes when it has to build from source. It prints the console URL, a login and the login's initial password.
+`local:up` starts the service, the console and sign-in. The first start takes a few minutes, or 10 to 20 minutes when it builds from source. It prints the console URL, a login and its initial password. `local:trust` makes your browser trust the stack's HTTPS certificate. It asks you to type `trust` and may ask for your password.
 
-`local:trust` makes your browser trust the stack's HTTPS certificate. It asks you to type `trust` and may ask for your password.
-
-Open the printed console URL and sign in. You land in the `local-demo` workspace. It already holds a [bundle](/docs/concepts/glossary) named **Example agent**, which is one instruction file released on the `stable` channel.
+Open the console URL and sign in. The `local-demo` workspace already holds a [bundle](/docs/concepts/glossary) named **Example agent**, with one instruction file released on the `stable` channel.
 
 ## Connect your application
 
-A connection links one application to one bundle and channel. The application needs the connection's ID and a connection credential.
+A connection links one application to one bundle and channel.
 
 1. In the console, open **Connections** and choose **New connection**. Enter a display name, choose the **Example agent** bundle and the `stable` channel, then choose **Create connection**. The console opens the connection's **Setup** tab.
 
@@ -36,16 +34,14 @@ A connection links one application to one bundle and channel. The application ne
 
 3. Open the connection's **Settings** tab and copy the **Connection ID**.
 
-4. In a shell at the root of the checkout, install the Node.js dependencies and load the stack's client settings.
+4. In a shell at the root of the checkout, install the Node.js dependencies and load the stack's client settings. `env.sh` sets `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `BUNDLE_ID`, and makes Node.js and Python trust the stack's certificate.
 
    ```sh
    npm ci --ignore-scripts
    source .local/stack/env.sh
    ```
 
-   `env.sh` sets `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `BUNDLE_ID`. It also makes Node.js and Python trust the stack's certificate.
-
-5. Set the remaining variables and run the delivery check.
+5. Set the remaining variables and run the delivery check. `ACCLIMATE_SCOPE` is a stable name for this application, which keeps its cache separate.
 
    ```sh
    export ACCLIMATE_BUNDLE="$BUNDLE_ID"
@@ -55,15 +51,13 @@ A connection links one application to one bundle and channel. The application ne
    npm run example:delivery
    ```
 
-   `ACCLIMATE_SCOPE` is a stable name for this application. The SDK uses it to keep the application's cache separate.
-
-The check resolves `stable` to a version, downloads it, verifies it against its digest, reads every prepared file and cleans up. It makes no model calls. It prints one line:
+The check, `examples/delivery-check.ts`, resolves `stable` to a version, downloads it, verifies its digest, reads every prepared file and cleans up. It makes no model calls. It prints one line:
 
 ```json
 {"versionId":"<version-id>","digest":"<digest>","files":["instructions.md"],"checkedFiles":1,"reporting":"disabled"}
 ```
 
-`reporting` is `disabled` because the check has no receipt credential. The script is `examples/delivery-check.ts`. The connection's **Setup** tab offers the same check as one file to download for your own application, in TypeScript or Python, under **First delivery**.
+`reporting` is `disabled` because the check has no receipt credential. To run the same check from your own application, download it in TypeScript or Python from the connection's **Setup** tab, under **First delivery**.
 
 ## Publish your own bundle
 
@@ -71,10 +65,10 @@ The check resolves `stable` to a version, downloads it, verifies it against its 
 2. Choose **Write instructions**, **Import files** or **Import JSON**. In imported files, skills go under `skills/` and memory under `memory/`.
 3. Enter a bundle name, an initial channel and a compatibility target: Generic, Codex, Claude, Pi or Cursor.
 
-Creating the bundle publishes its first version and releases it on that channel. Create a connection for it as you did above.
+Creating the bundle publishes its first version and releases it on that channel. Create a connection for it as above.
 
 ## Next steps
 
-- [Run your first learning round](/docs/get-started/first-learning-round) to watch the service improve a bundle.
-- [Deliver content to jobs](/docs/guides/deliver-content) to prepare a version at the start of every job in your application.
-- [Install the SDKs](/docs/get-started/install) in the environment that runs your agent.
+- [Run your first learning round](/docs/get-started/first-learning-round)
+- [Deliver content to jobs](/docs/guides/deliver-content)
+- [Install the SDKs](/docs/get-started/install)

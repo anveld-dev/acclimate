@@ -3,21 +3,19 @@ title: Deliver content to jobs
 description: Prepare a verified version of a bundle for each job, report job starts and stage the files for a coding agent.
 ---
 
-This guide is for a developer whose application runs an agent. It shows how to prepare the released version of a bundle when a job starts, keep that version with the job's result and clean up afterwards.
-
-A job keeps the version it prepared even if a release lands while it runs. See [Delivery](/docs/concepts/how-it-works#delivery).
+This guide is for a developer whose application runs an agent. It shows how to prepare the released version of a bundle for each job, record it with the result and clean up. A job keeps the version it prepared even if a release lands while it runs. See [Delivery](/docs/concepts/how-it-works#delivery).
 
 ## Before you start
 
 - Install the SDK. See [Install the SDKs](/docs/get-started/install).
 - Create a connection for the bundle and channel, and issue its connection credential. See [Connect your application](/docs/get-started/quickstart#connect-your-application) and [Credentials and rights](/docs/concepts/credentials).
-- In the console, open **App setup** on the bundle's channel. It shows the API URL, the workspace ID, the bundle ID, the channel and a recipe to copy.
+- In the console, open **App setup** on the bundle's channel. It shows the API URL, the workspace, bundle and channel and a recipe to copy.
 
-The snippets below read `ACCLIMATE_URL`, `ACCLIMATE_TOKEN`, `ACCLIMATE_SCOPE` and `ACCLIMATE_CONNECTION`. The token is the connection credential. The scope is a stable name for your application, and the connection is the connection ID. They are listed under Application in [Environment variables](/docs/reference/configuration#application).
+The snippets read `ACCLIMATE_URL`, `ACCLIMATE_TOKEN` (the connection credential), `ACCLIMATE_SCOPE` (a stable name for your application) and `ACCLIMATE_CONNECTION` (the connection ID). See [Application](/docs/reference/configuration#application) in the environment variables.
 
 ## Prepare a job
 
-Call `prepare` once for each new job. Give your agent the prepared instructions and skill files. Save the version ID and digest with the result, so you can tell later which version produced it.
+Call `prepare` once for each new job and give your agent the prepared instructions and skill files. Save the version ID and digest with the result, so you can tell later which version produced it.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
@@ -72,28 +70,25 @@ with client.prepare(workspace_id, bundle_id, channel="stable") as prepared:
 </Tab>
 </Tabs>
 
-The IDs, the job's input, the agent call and the result storage belong to your application. The prepared job gives you:
+The IDs, the job input, the agent call and the result storage are your application's. The prepared job has:
 
 | Property | Contents |
 | --- | --- |
-| `instructions` | The instruction files joined into one string. |
-| `skillFiles` (`skill_files` in Python) | The staged skill files, each with `path`, `kind` and `absolutePath`. |
-| `files` | Every staged file, including memory files. Your application chooses which memory to give the agent. |
-| `version` | The verified version. Its ID and digest are in `version.version` (`version["version"]` in Python). |
-| `directory` | The private job directory. |
+| `instructions` | The instruction files joined into one string |
+| `skillFiles` (`skill_files` in Python) | The staged skill files, each with `path`, `kind` and `absolutePath` |
+| `files` | Every staged file, including memory files. Your application chooses which memory the agent gets. |
+| `version` | The verified version, with its ID and digest in `version.version` (`version["version"]` in Python) |
+| `directory` | The private job directory |
 
-Clean up only after the job has stopped and its result is saved:
-
-- For a job that finishes inside this call, use `try` and `finally` as above. In Python, the `with` block cleans up when it exits.
-- For background work, keep the prepared object and call `cleanup()` when the job itself stops.
+Clean up only after the job has stopped and its result is saved. For a job that finishes inside the call, use `try` and `finally` as above, or the Python `with` block. For background work, keep the prepared object and call `cleanup()` when the job stops.
 
 To run an exact version instead of the channel's current one, pass `versionId` (`version_id` in Python) in place of `channel`.
 
-`client.prepare()` works with a connection credential and the IDs from **App setup**. Use `createAcclimate().job()` (`Acclimate.from_env().job()` in Python) when you want the SDK to find the bundle by name and to report production outcomes for the job. See Jobs in the [TypeScript SDK](/docs/reference/typescript-sdk#jobs) and [Python SDK](/docs/reference/python-sdk#jobs) references. [Support agent](/docs/examples/support-agent) is an application built on it.
+To have the SDK find the bundle by name and report production outcomes, use `createAcclimate().job()` (`Acclimate.from_env().job()` in Python) instead. See Jobs in the [TypeScript SDK](/docs/reference/typescript-sdk#jobs) and [Python SDK](/docs/reference/python-sdk#jobs) references, and [Support agent](/docs/examples/support-agent) for an application built on it.
 
 ## Report job starts
 
-A start receipt records which version a job reported using, so the workspace can see what each application ran. Reporting is optional and a failed report never blocks delivery.
+A start receipt records which version a job used, so the workspace can see what each application ran. Reporting is optional, and a failed report never blocks delivery.
 
 1. Give the application a separate receipt credential in `ACCLIMATE_RECEIPT_TOKEN`.
 2. Build a reporter with its own client and pass it to `prepare` as `reporter`.
@@ -154,11 +149,9 @@ reporter.close(0.1)
 </Tab>
 </Tabs>
 
-The console's **App setup** page shows the same recipe for the channel you chose.
-
 ## Choose a native integration
 
-A plugin stages a version in the layout its agent SDK reads. Choose the plugin for the agent SDK you run.
+A plugin stages a version in the layout its agent SDK reads.
 
 | Agent SDK | Prepared layout |
 | --- | --- |
@@ -167,10 +160,10 @@ A plugin stages a version in the layout its agent SDK reads. Choose the plugin f
 | [Pi](/docs/integrations/pi) | `AGENTS.md`, `.agents/skills/` and resource descriptors |
 | [Cursor](/docs/integrations/cursor) | `AGENTS.md` and `.cursor/skills/` |
 
-Each plugin's `prepare` takes a verified version, which is the SDK's checked copy of a version's bytes, and writes it to a fresh private directory. A verified version comes from one of two calls:
+Each plugin's `prepare` writes a verified version, the SDK's checked copy of a version's bytes, to a fresh private directory. It accepts either of these:
 
-- `client.prepare()` resolves the channel, verifies the digest and returns a delivery. Pass the delivery itself to the plugin, so that `prepared.reportStarted()` still records the start receipt.
-- `resolveAndCache(client, selection, { cacheDir })` returns the verified version directly.
+- The delivery from `client.prepare()`. Pass the delivery itself, so that `prepared.reportStarted()` still records the start receipt.
+- The verified version from `resolveAndCache(client, selection, { cacheDir })`.
 
 ```ts
 import { prepare } from '@acclimate/codex-plugin';
@@ -181,11 +174,11 @@ const prepared = await prepare(delivery);
 await prepared.cleanup();
 ```
 
-`prepared.cleanup()` removes the prepared directory and releases the delivery it came from. Each integration page shows the complete job for its agent SDK.
+`prepared.cleanup()` removes the directory and releases the delivery. Each integration page shows a complete job.
 
 ### Map an agent SDK without a plugin
 
-For an agent SDK that has no plugin, call `prepareNativeFiles` from `@acclimate/sdk/native-files` with the paths your agent reads:
+For an agent SDK with no plugin, call `prepareNativeFiles` with the paths your agent reads:
 
 ```ts
 import { prepareNativeFiles } from '@acclimate/sdk/native-files';
@@ -197,23 +190,22 @@ const prepared = await prepareNativeFiles(verifiedVersion, {
 });
 ```
 
-`target` names the rules to enforce before staging. It defaults to `codex`.
+`target` names the rules to enforce before staging, `codex` by default.
 
 ## Rules for bundle files
 
 A plugin refuses a version that breaks one of these rules. Each error names its rule, for example `[skill_metadata]`.
 
-- A file path is relative and has no `.` or `..` segment. No two paths may differ only by case, and no file may sit where another path needs a directory.
+- A file path is relative, with no `.` or `..` segment. No two paths differ only by case, and no file sits where another path needs a directory.
 - A version has at most one instruction file.
-- A skill lives under `skills/<name>/`. The name has at most 64 characters, each a letter, a digit, `_` or `-`. Cursor accepts only lowercase letters, digits and `-`.
-- Two skill names must not differ only by case.
+- A skill lives under `skills/<name>/`. The name has at most 64 letters, digits, `_` or `-`, and does not differ from another only by case. Cursor accepts only lowercase letters, digits and `-`.
 - A skill needs a `SKILL.md` whose frontmatter has exactly one `name`, matching the directory, and exactly one non-empty `description`.
 - Other frontmatter keys such as `license` or `allowed-tools`, and folded `description: >` values, are kept as written.
-- Supporting files of any text type, such as `scripts/check.py` or `config.json`, stay beside the skill.
+- Supporting text files, such as `scripts/check.py` or `config.json`, stay beside the skill.
 
 ## Prepare an existing repository
 
-The native repository starter runs a coding agent on a copy of an existing repository with the prepared files and keeps the agent's edits. It includes an offline replay, so you can check preparation before you install an agent SDK.
+The native repository starter runs a coding agent with the prepared files on a copy of an existing repository and keeps its edits. Its offline replay checks preparation before you install an agent SDK.
 
 1. Extract the starter from the release files. See [Install from verified release files](/docs/get-started/install#install-from-verified-release-files).
 2. Run `node smoke.mjs` in the starter's directory.

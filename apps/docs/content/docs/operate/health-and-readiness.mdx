@@ -3,11 +3,11 @@ title: Check health and readiness
 description: Probe the deployed API and console, read container exit codes, then verify machine access and sign-in.
 ---
 
-This page is for the operator of a self-hosted deployment. Use the probes for monitoring and during an incident. Run the two checks at the end after every deployment and upgrade, through the same HTTPS endpoints your users and applications use.
+This page is for the operator of a self-hosted deployment. Use the probes for monitoring and during an incident, and run the two checks at the end after every deployment and upgrade.
 
 ## Probe the stack
 
-Run these from the checkout with your deployment settings loaded. Replace the variables with your hostnames if you run them elsewhere.
+Run these from the checkout with your deployment settings loaded, or replace the variables with your hostnames.
 
 ```sh
 docker compose ps
@@ -16,17 +16,17 @@ curl -fsS "https://$API_HOST/ready"
 curl -fsS -o /dev/null -w '%{http_code}\n' "https://$CONSOLE_HOST/ready"
 ```
 
-In a healthy deployment, `docker compose ps` shows every container as `healthy`. The three requests return `ok`, `{"ready":true}` and `200`.
+In a healthy deployment, every container is `healthy` and the three requests return `ok`, `{"ready":true}` and `200`.
 
 | Probe | What it checks |
 | --- | --- |
 | API `GET /health` | The service process is running. |
 | API `GET /ready` | The database answers, this process is the only service using the database, its background worker is running and it is not shutting down. |
-| Console `GET /ready` | The console's configuration is valid and the service is ready. |
-| Caddy container health | The proxy process is running with its configuration loaded. |
+| Console `GET /ready` | The console's configuration is valid and the service is ready. It does not contact Keycloak. |
+| Caddy container health | The proxy process is running with its configuration loaded. Caddy starts only after the service and the console are healthy. |
 | Executor container health | The service has answered the executor in the last 120 seconds. See [Check the executor](/docs/operate/enable-learning#check-the-executor). |
 
-An API that is not ready returns HTTP 503 with `{"ready":false}`. A ready service does not show that learning rounds are progressing or that a model provider is reachable. The console's `/ready` does not contact Keycloak on each probe. Caddy starts only after both the service and the console are healthy.
+An API that is not ready returns HTTP 503 with `{"ready":false}`. A ready service does not show that learning rounds are progressing or that a model provider is reachable.
 
 If `/ready` stays unavailable during normal operation, read the service log. Check that the database is reachable, that its migrations completed and that no second service process uses the same database.
 
@@ -34,29 +34,27 @@ If `/ready` stays unavailable during normal operation, read the service log. Che
 docker compose logs --tail 100 service
 ```
 
-When the service receives SIGTERM, it stops reporting ready first. It then finishes open requests and work and releases its hold on the database. Compose gives the service, the console, the databases and Caddy 90 seconds each to stop.
+On SIGTERM the service stops reporting ready, then finishes open requests and work and releases the database. Compose gives each container except the executor 90 seconds to stop.
 
-For a list of symptoms with their causes and fixes, see [Troubleshooting](/docs/operate/troubleshooting).
+For symptoms with their causes and fixes, see [Troubleshooting](/docs/operate/troubleshooting).
 
 ## Read exit codes
 
-Compose restarts a container that exits. While it does, the status column of `docker compose ps` shows the exit code, and the container's log ends with the error.
+Compose restarts a container that exits. `docker compose ps` shows the exit code, and the container's log ends with the error.
 
 | Container | Exit code | Meaning | What to do |
 | --- | --- | --- | --- |
 | `service` | 75 | The service lost its exclusive hold on the database. | Make sure only one service process runs against the database. |
 | `service` | 1 | Any other error, such as invalid configuration or a failed migration. A failed migration stops the service before it listens. | Read `docker compose logs service`. |
-| `acclimate-executor` | 78 | The executor's configuration cannot work: its credential, the runner image or the sandbox runtime is wrong. Restarting does not help. | Follow [Check the executor](/docs/operate/enable-learning#check-the-executor). |
+| `acclimate-executor` | 78 | The executor's credential, runner image or sandbox runtime is wrong. Restarting does not help. | Follow [Check the executor](/docs/operate/enable-learning#check-the-executor). |
 
 ## Verify API access and sign-in
 
-The repository includes two checks for a live deployment. Its own tests run against test certificates and a test issuer only, so run both checks against your deployment before you send it traffic.
-
-Both checks run from a checkout of the repository with Python 3. Each prints a JSON result and exits with a nonzero status unless the check passed. The optional `--output` flag also writes the result to a file, which must not exist yet. Choose a path in a private directory.
+The repository's own tests use test certificates and a test issuer, so run both checks against your deployment before you send it traffic. Each runs from a checkout with Python 3, prints a JSON result and exits nonzero unless it passed. The optional `--output` flag also writes the result to a new file. Choose a path in a private directory.
 
 ### Check API access
 
-You need a [machine token](/docs/concepts/credentials#credential-types) with the read right for one workspace. Put it in an environment variable and pass the variable's name, so the token never appears in the command.
+You need a [machine token](/docs/concepts/credentials#credential-types) with the read right for one workspace. Pass the name of the environment variable that holds it, so the token never appears in the command.
 
 ```sh
 python3 scripts/productization/external.py --execute --gate https \
@@ -68,13 +66,7 @@ The check verifies the API's certificate and hostname, requests `/health` and `/
 
 ### Check sign-in
 
-You need:
-
-- Playwright for Python with its Chromium browser installed
-- a machine with a display, because the check opens a browser window
-- a test account in your Keycloak realm
-
-Pass the public console URL and the exact Keycloak issuer. For the co-hosted Keycloak, the issuer is `https://<keycloak-host>/realms/acclimate`.
+You need Playwright for Python with its Chromium browser, a machine with a display and a test account in your Keycloak realm. Pass the public console URL and the exact issuer, which for the co-hosted Keycloak is `https://<keycloak-host>/realms/acclimate`.
 
 ```sh
 python3 scripts/productization/external.py --execute --gate oidc --interactive \
@@ -82,6 +74,6 @@ python3 scripts/productization/external.py --execute --gate oidc --interactive \
   --output /absolute/private/oidc-check.json
 ```
 
-When the browser opens, sign in with the test account within three minutes. The check confirms that the console sends you to your issuer and that sign-in returns to the console. It then checks that the session cookie is secure and that signing out clears it. The browser session is discarded afterwards.
+When the browser opens, sign in with the test account within three minutes. The check confirms that sign-in goes through your issuer and returns to the console, that the session cookie is secure and that signing out clears it.
 
-Neither check shows that learning works. The repository's guide lists the other checks under [What has been tested](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#what-has-been-tested).
+Neither check shows that learning works. The other checks are listed under [What has been tested](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#what-has-been-tested) in the repository.

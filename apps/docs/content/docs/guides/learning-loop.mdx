@@ -3,30 +3,30 @@ title: Run a learning loop
 description: Turn on learning for a bundle in the console, add tasks, start the loop and handle rounds that wait, fail or need rolling back.
 ---
 
-This guide is for a workspace administrator who wants the learning loop to improve a released bundle. You turn on learning in the console, add tasks, start the loop and handle rounds that wait, fail or need rolling back.
+This guide is for a workspace administrator who wants the learning loop to improve a released bundle. Each round can release a better version to the channel, with no approval step.
 
-Each round can release a better version to the channel, with no approval step. See [What a round does](/docs/concepts/how-it-works#what-a-round-does) for the steps and the [Glossary](/docs/concepts/glossary) for the terms. To run the loop from a script instead of the console, see [Ticket triage](/docs/examples/ticket-triage).
+See [What a round does](/docs/concepts/how-it-works#what-a-round-does) for the steps and the [Glossary](/docs/concepts/glossary) for the terms. To run the loop from a script, see [Ticket triage](/docs/examples/ticket-triage).
 
 ## Before you start
 
-- The operator has set the optimizer and started an executor. See [Enable learning](/docs/operate/enable-learning). On the local stack, see [Run your first learning round](/docs/get-started/first-learning-round). If imports and checks stay queued, ask the operator to check the executor.
+- The operator has set the optimizer and started an executor. See [Enable learning](/docs/operate/enable-learning), or [Run your first learning round](/docs/get-started/first-learning-round) on the local stack.
 - The bundle has a release on the channel you want to improve.
-- You have an OpenAI-compatible model provider: its base URL, an API key and at least two model IDs, one for the task model and a different one for the judge model.
+- You have an OpenAI-compatible model provider with at least two models, one for the task model and another for the judge model.
 - You have examples of the agent's work to import as tasks.
 
 ## Connect a model provider
 
 1. Open the workspace's **Members** page.
-2. Under **Model provider**, save the provider's base URL, an API key and at least two allowed models.
-3. Wait while the executor verifies each model. A model must answer a chat request and report token usage. The page shows the result for each model.
+2. Under **Model provider**, save its base URL, an API key and the allowed model IDs.
+3. Wait while the executor verifies each model. A model passes when it answers a chat request and reports token usage.
 
 The tested setup is CLIProxyAPI with a Codex sign-in. See [Set up a local model proxy](/docs/get-started/first-learning-round#set-up-a-local-model-proxy).
 
 ## Turn on learning
 
 1. Open the bundle's **Learning** tab.
-2. Choose the **Learning channel**, a **Task model** and a different **Judge model**. Use the model your application runs as the task model, so the loop measures the agent you run. See [How a rollout runs your bundle](/docs/concepts/how-it-works#how-a-rollout-runs-your-bundle).
-3. Set **Maximum rounds per day**, which is the daily round limit.
+2. Choose the **Learning channel**, a **Task model** and a different **Judge model**. Use your application's model as the task model, so the loop measures the agent you run. See [How a rollout runs your bundle](/docs/concepts/how-it-works#how-a-rollout-runs-your-bundle).
+3. Set **Maximum rounds per day**, the daily round limit.
 4. Choose **Save learning settings**.
 
 ## Add tasks
@@ -37,141 +37,112 @@ Add tasks on the **Learning** tab in any of three ways:
 - Paste text under **Paste conversations**.
 - Choose **Write a task**. Give an exact answer for a value that must match. For free text, write one criterion per line and optionally a reference answer.
 
-Import about 50 rows for a first round. Start needs 20 admitted tasks in each split, and some rows are usually set aside.
+Import about 50 rows for a first round. Start needs 20 admitted tasks in each split, and some rows are usually set aside. [Improve the bundle with the sample tasks](/docs/examples/support-agent#improve-the-bundle-with-the-sample-tasks) has a ready file of 60 rows.
 
-The service assigns each source group to the evolve split or the held-out split by its hash, so about half of your rows land in each split. Tasks from the same source row, or with the same input, form one [source group](/docs/concepts/glossary#learning) and always stay in one split.
-
-Pasted text and `.txt` files are split on lines that hold only three or more dashes (`---`). Each piece becomes its own row and its own source group. Text with no separator is one row.
+The service assigns each [source group](/docs/concepts/glossary#learning) to the evolve or held-out split by its hash, so about half the rows land in each. Tasks from the same source row, or with the same input, form one source group. Pasted text and `.txt` files are split on lines that hold only three or more dashes (`---`), and each piece is its own row and source group.
 
 The **Imports** section lists past imports, newest first, with their counts and set-aside rows.
 
-For a ready file of 60 rows, see [Improve the bundle with the sample tasks](/docs/examples/support-agent#improve-the-bundle-with-the-sample-tasks).
-
 ### How a row is graded
 
-The shape of a row decides how its answers are graded.
-
-| The row has | How it is graded | Model call |
+| The row has | Graded by | Model call |
 | --- | --- | --- |
-| `input` and `expected`, where the answer is not a string, or is a string of at most 80 characters with no line break | Exact match | None |
-| `input` and `expected`, where the answer is longer or has a line break | Criteria that the judge model drafts from the answer. The answer is kept as the reference. | Judge model |
-| `input`, `expected` and a `grading` field set to `exact` or `criteria` | The way you chose. Any other value rejects the import. | Judge model for `criteria` |
-| Any other fields, such as a request, a reply and a rubric | The judge model converts the row into a task. It keeps criteria the row already has. | Judge model |
+| `input` and `expected`, where the answer is not a string, or is one line of at most 80 characters | Exact match | None |
+| `input` and `expected`, where the answer is longer or has a line break | Criteria the judge model drafts, with the answer kept as the reference | Judge model |
+| `input`, `expected` and `grading` set to `exact` or `criteria` | Your choice. Any other value rejects the import. | Judge model for `criteria` |
+| Other fields, such as a request, a reply and a rubric | The judge model converts the row, keeping its criteria or drafting them from its answer | Judge model |
 
-When the judge model converts a row, it drafts criteria only if the row has an answer and no criteria of its own. A held-out task with drafted criteria waits for a person to confirm it.
+A held-out task with drafted criteria waits for a person to confirm it.
 
 ## Review and confirm tasks
 
 Each task appears as a card with its source row and a short task ID you can copy. The executor checks every task before it counts. The check admits a task when its reference answer passes, an empty answer fails and the judge model grades it consistently.
 
 1. Read the cards and their source rows. Edit any card that is wrong.
-2. Confirm the held-out tasks that wait for you. Check **Needs confirmation** to list them and read their criteria. Then choose **Confirm all shown** to confirm every unconfirmed held-out card in the list.
-3. Choose **Try task** on a card to run the current version on that one task. The card shows the output, the verdict, the reasoning and the gateway log, which records the requests the executor sent to the model provider. A failed trial says why, for example that the model provider was unavailable. Trials do not count toward round scores.
+2. Check **Needs confirmation** to list the held-out tasks that wait for you, and read their criteria. Choose **Confirm all shown** to confirm every unconfirmed held-out card in the list.
+3. Choose **Try task** on a card to run the current version on that task. The card shows the output, the verdict, the reasoning and the gateway log of requests sent to the model provider. A failed trial says why. Trials do not count toward round scores.
 
-A card is pending while it waits for confirmation or for its check. After that it is admitted or set aside. A row can also be set aside at import, before it becomes a task.
+A card is pending until it is confirmed and checked, then admitted or set aside. A row can also be set aside at import.
 
 | Reason | Set aside at | What to do |
 | --- | --- | --- |
-| No usable reference | Import | Add an example answer or explicit criteria to the source row and import it again. |
-| Not converted | Import | The judge model could not map the row to a task. Edit the row and import it again. |
-| Row too large | Import | Shorten the source row and import it again. |
-| Duplicate | Import | The row's input matches a live task or an earlier row in the same import. Do nothing unless you meant a different task. |
-| Reference failed | Check | Make sure the reference answer meets every criterion. |
-| Empty answer passed | Check | Tighten the expected answer or the criteria so an empty answer fails. |
-| Judge unstable | Check | Replace ambiguous criteria with requirements the judge model can observe. |
-| Check failed | Check | Check that the executor and the model provider are available, then choose **Run check again**. |
+| No usable reference | Import | Add an example answer or criteria to the row and import it again. |
+| Not converted | Import | The judge model could not map the row to a task. Edit it and import it again. |
+| Row too large | Import | Shorten the row and import it again. |
+| Duplicate | Import | The input matches a live task or an earlier row. Nothing, unless you meant a different task. |
+| Reference failed | Check | Make the reference answer meet every criterion. |
+| Empty answer passed | Check | Tighten the expected answer or criteria so an empty answer fails. |
+| Judge unstable | Check | Replace ambiguous criteria with requirements the judge can observe. |
+| Check failed | Check | Check that the executor and model provider are up, then choose **Run check again**. |
 
-Editing a set-aside card runs its check again. **Run check again** reruns the check without changing the task, and **Run all failed checks again** does the same for every card set aside because its check failed.
+Editing a set-aside card runs its check again. **Run check again** reruns it without changing the task. **Run all failed checks again** does that for every card whose check failed.
 
 ## Start the loop
 
-Choose **Start**. The button needs three things:
+Choose **Start**. It needs a verified model provider, 20 admitted tasks in each split and an optimizer on the service. Without an optimizer, Start is refused with `optimizer-required`. Ask the operator to [set the optimizer model](/docs/operate/enable-learning#set-the-optimizer-model).
 
-- A verified model provider.
-- An optimizer on the service. Without one, Start is refused with `optimizer-required`. Ask the operator to [set the optimizer model](/docs/operate/enable-learning#set-the-optimizer-model).
-- At least 20 admitted evolve tasks and 20 admitted held-out tasks.
-
-From then on, the service releases each adopted version to the channel automatically, with no approval step. You can roll back the current version.
+From then on, the service releases each adopted version to the channel automatically.
 
 ## Follow the rounds
 
-A round either adopts a candidate, which is one of the five proposed versions, or keeps the current version. A first round often keeps it.
+A round either adopts a candidate, one of the five proposed versions, or keeps the current version. A first round often keeps it. After an adoption the loop runs another round. After two rounds in a row that adopt nothing, it waits for new evidence.
 
-- After an adoption, the loop runs another round.
-- After a round that keeps the current version, the loop runs one more round.
-- After two rounds in a row that adopt nothing, the loop waits for new evidence.
-
-Use the **Learning** tab to follow the rounds:
+On the **Learning** tab:
 
 - The score chart adds a point for each round. Evolve scores explain which candidate was chosen. Held-out scores show regressions.
-- Open a round to see its candidates, the bundle changes each one proposed and the evolve rollouts behind its score. Round details link to the task cards they mention.
+- Open a round to see its candidates, the bundle changes each proposed and the evolve rollouts behind its score. It links to the task cards it mentions.
 - Check **Flagged only** to list tasks with repeated failures, executor errors or inconsistent verdicts. Edit a card and try it again.
 
 ### When the loop waits
 
-A running loop that has no round to run shows why it waits.
+A running loop with no round to run shows why it waits.
 
 | Waiting reason | Code | What happens next |
 | --- | --- | --- |
-| No new evidence | `no-new-evidence` | Add, edit or retire evolve tasks until the loop wakes. |
+| No new evidence | `no-new-evidence` | Add, edit or retire evolve tasks. The loop wakes once at least 5, and at least 10 percent of admitted evolve tasks, have changed since the last round. The console shows how many more it needs. |
 | Daily round limit reached | `daily-cap` | The next round starts when the rolling 24-hour window has room. The console shows when. |
-| Model provider unavailable | `provider-unavailable` | The loop tries again by itself. |
+| Model provider unavailable | `provider-unavailable` | The loop tries again after ten minutes, longer after each further outage. The console shows when. `POST /start` or `POST /resume` runs a round at once. |
 | No executor | `no-executor` | Ask the operator to start a connected executor. |
 | Models no longer allowed | `models-not-allowed` | Choose two currently allowed models in the learning settings. |
 
-A loop that waits for new evidence wakes when at least 5 evolve tasks, and at least 10 percent of the admitted evolve tasks, have been added, edited or retired since the last round. The console shows how many more are needed.
-
-A loop that waits for the model provider tries again ten minutes after the failed round ended. It waits twice as long after each further outage, up to six hours. A `POST /start` or `POST /resume` request through the API runs a round at once.
-
 ### When a round fails
 
-A failed round shows its cause, which is the error of the first rollout that failed.
+A failed round shows its cause, the error of the first rollout that failed. After three failed rounds in a row, by default, the loop pauses and the banner shows the cause. Inspect the recent rounds before you start again.
 
 | Cause | What the loop does | What to do |
 | --- | --- | --- |
-| The model provider was unavailable for every failed rollout of the current version's evaluation | Tries again by itself. The round does not count toward the pause or the daily round limit. | Nothing. |
-| The model provider refused the request, for example because the API key was revoked | Counts the round toward the pause. | Check the model provider on the **Members** page. |
-| A sandbox could not start | Counts the round toward the pause. | Ask the operator to check the executor. |
-| No executor matches the models and runtime the round started with | Fails the round without counting it toward the pause. | Check the executor connection and the model provider settings. |
-| The optimizer ran out of context | Pauses. | Ask the operator to check the optimizer's context limit. |
-
-After repeated failed rounds, three in a row by default, the loop pauses and the paused banner shows the cause. Inspect the recent rounds before you start again.
-
-The loop also pauses when either split falls below 20 admitted tasks. Bring both splits back to 20, then choose **Start**.
+| The model provider was unavailable for every failed rollout of the current version's evaluation | Waits and tries again, without counting the round toward the pause or the daily round limit | Nothing |
+| The model provider refused the request, for example for a revoked API key | Counts the round toward the pause | Check the model provider on the **Members** page |
+| A sandbox could not start | Counts the round toward the pause | Ask the operator to check the executor |
+| No executor matches the round's models and runtime | Fails the round without counting it toward the pause | Check the executor connection and model provider settings |
+| The optimizer ran out of context | Pauses | Ask the operator to check the optimizer's context limit |
+| A split fell below 20 admitted tasks | Pauses | Bring both splits back to 20, then choose **Start** |
 
 ## Pause, stop and roll back
 
 **Pause** lets the active round finish. **Stop learning** cancels the work in progress.
 
-**Automatic revert.** After each adoption, the service compares the held-out results of the adopted version with those of the version it replaced. Any drop raises an alert linked to the round, with a **Roll back this release** button. The service reverts by itself only when the drop is clear:
+**Automatic revert.** After each adoption, any drop in held-out results raises an alert linked to the round, with a **Roll back this release** button. If the held-out pass rate falls by at least 10 percentage points and at least two tasks go from passing to failing, the service measures both versions again. If the drop holds and the channel still points at the adopted version, the service restores the previous version and blocks the adopted one. The alert says whether it reverted, and the round shows the confirmed scores. Workspace administrators with a verified email address get an email.
 
-1. The held-out pass rate falls by at least 10 percentage points, and at least two tasks go from passing to failing.
-2. The service measures both versions a second time.
-3. If the drop holds and the channel still points at the adopted version, the service restores the previous version and blocks the adopted one.
+**Manual rollback.** While the adopted version is still current, choose **Roll back** on its round and confirm. The channel moves back to the version that round replaced, and the removed version is blocked from future adoption. To allow it again, review its digest and removal note, then choose **Unblock version**.
 
-The alert says whether the service reverted, and the round shows the confirmed scores from the second measurement. Workspace administrators with a verified email address get an email about a clear drop.
-
-**Manual rollback.** To undo the current adoption yourself, choose **Roll back** on its round and confirm. The channel moves back to the version that round replaced, and the removed version is blocked from future adoption. This works only while the adopted version is still the current version on the channel.
-
-To allow a blocked version again, review its digest and removal note, then choose **Unblock version**.
-
-**Restore** on the bundle's **Releases** tab also moves a channel to an earlier version, but it does not block the version it replaces. See [Roll back](/docs/guides/release-and-roll-back#roll-back).
+**Restore** on the **Releases** tab also moves a channel back, but does not block the version it replaces. See [Roll back](/docs/guides/release-and-roll-back#roll-back).
 
 ## Report production outcomes
 
-When a person corrects an answer in production, report the correction with `job.expect()` and the request becomes a task. The application needs a machine token with write.
+When a person corrects an answer in production, report it with `job.expect()` and the request becomes a task. The application needs a machine token with write.
 
-1. The SDK sends the input, the expected answer and the version and digest the job ran with. It also sends the agent's output if you pass it.
+1. The SDK sends the input, the expected answer, the version and digest the job ran with and, if you pass it, the agent's output.
 2. The service assigns the outcome to a split and checks it like an imported row. Its `grading` option follows [How a row is graded](#how-a-row-is-graded).
-3. An outcome graded by criteria becomes a task once the judge model has drafted its criteria. A held-out one then waits for you to confirm it.
-4. If drafting fails, the outcome becomes an exact-match task that is set aside, so you can edit it to add criteria.
+3. An outcome graded by criteria becomes a task once the judge model drafts them. A held-out one then waits for you to confirm it.
+4. If drafting fails, the outcome becomes a set-aside exact-match task that you can edit to add criteria.
 
 One outcome does not wake a waiting loop. See [When the loop waits](#when-the-loop-waits).
 
-See [Report a correction](/docs/examples/support-agent#report-a-correction) for a worked example. The signatures are under Jobs in the [TypeScript SDK](/docs/reference/typescript-sdk#jobs) and [Python SDK](/docs/reference/python-sdk#jobs) references.
+[Report a correction](/docs/examples/support-agent#report-a-correction) is a worked example. The signatures are under Jobs in the [TypeScript SDK](/docs/reference/typescript-sdk#jobs) and [Python SDK](/docs/reference/python-sdk#jobs) references.
 
 ## Next steps
 
-- Follow a complete run with sample tasks in [Support agent](/docs/examples/support-agent).
+- Follow a complete run in [Support agent](/docs/examples/support-agent).
 - Read [How answers are scored](/docs/concepts/how-it-works#how-answers-are-scored) and [What a round costs](/docs/concepts/how-it-works#what-a-round-costs).
 - Release or restore a version by hand with [Release and roll back](/docs/guides/release-and-roll-back).

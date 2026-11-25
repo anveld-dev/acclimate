@@ -3,11 +3,11 @@ title: TypeScript SDK
 description: The public entry points, options, methods and command of @acclimate/sdk.
 ---
 
-This page lists what `@acclimate/sdk` exports and the arguments each part takes, for developers who call Acclimate from Node.js. [Install the SDKs](/docs/get-started/install) covers installation and runtime versions.
+This page lists what `@acclimate/sdk` exports and the arguments each part takes, for developers who call Acclimate from Node.js. [Install the SDKs](/docs/get-started/install) covers installation.
 
 ## Entry points
 
-Import only the entry points below. Other paths inside the package are private and can change in any Acclimate release.
+Import only these entry points. Other paths inside the package are private and can change in any Acclimate release.
 
 | Entry point | Runtime exports |
 | --- | --- |
@@ -17,12 +17,10 @@ Import only the entry points below. Other paths inside the package are private a
 | | Receipts: `createReceiptReporter` |
 | | Compatibility: `compatibilityIssues`, `assertCompatible` |
 | | Errors: `AcclimateError`, `AcclimateUsageError`, `TransportError`, `ApiError`, `DeliveryError`, `TaskExecutionError`, `InfrastructureError` |
-| `@acclimate/sdk/validation` | `validatePayload`, `DeliveryError`, `compatibilityIssues`, `assertCompatible`, for checking a payload without the client. |
-| `@acclimate/sdk/native-files` | `prepareNativeFiles`, `nativeSource` and `transcriptTail`, for plugin authors. |
+| `@acclimate/sdk/validation` | `validatePayload`, `DeliveryError`, `compatibilityIssues`, `assertCompatible`, for checking a payload without the client |
+| `@acclimate/sdk/native-files` | `prepareNativeFiles`, `nativeSource` and `transcriptTail`, for plugin authors |
 
-The root entry point also exports every wire type, such as `Bundle`, `VersionMetadata`, `Release` and `Page`, and the option types, such as `ClientOptions`, `CachePolicy`, `OfflinePolicy` and `PrepareDeliveryOptions`. The wire types match the [HTTP API and wire contract](/docs/reference/http-api).
-
-The package also installs the `acclimate` executable. See [acclimate pull](#acclimate-pull).
+The root entry point also exports every wire type, such as `Bundle`, `VersionMetadata`, `Release` and `Page`, and the option types, such as `ClientOptions`, `CachePolicy`, `OfflinePolicy` and `PrepareDeliveryOptions`. The package also installs the `acclimate` executable, described under [acclimate pull](#acclimate-pull).
 
 ## Jobs
 
@@ -38,57 +36,61 @@ const reply = await runAgent(request, job.version.payload);
 await job.expect(correctedReply, { output: reply });
 ```
 
-`createAcclimate(options?)` takes these options. Each of the first three defaults to its environment variable.
+`createAcclimate(options?)` takes these options:
 
 | Option | Default | Value |
 | --- | --- | --- |
-| `baseUrl` | `ACCLIMATE_URL` | Base URL of the API. |
-| `workspaceId` | `ACCLIMATE_WORKSPACE` | Workspace ID. |
-| `token` | `ACCLIMATE_TOKEN` | The credential. |
-| `scope` | The workspace ID | Name that separates this application's cache entries. |
-| `cacheDir` | `~/.cache/acclimate/typescript` | Cache directory. |
+| `baseUrl` | `ACCLIMATE_URL` | Base URL of the API |
+| `workspaceId` | `ACCLIMATE_WORKSPACE` | Workspace ID |
+| `token` | `ACCLIMATE_TOKEN` | The credential |
+| `scope` | The workspace ID | Name that separates this application's cache entries |
+| `cacheDir` | `~/.cache/acclimate/typescript` | Cache directory |
 
 It also accepts the [client options](#options) `retries`, `timeoutMs`, `maxPayloadBytes`, `maxJsonResponseBytes` and `fetch`.
 
-`acclimate.job(bundleName, options)` resolves the release, downloads the version if it is not cached and verifies its digest.
+`acclimate.job(bundleName, options)` resolves the release, downloads the version if it is not cached and verifies its digest. It throws `AcclimateUsageError` when no bundle or more than one has that name.
 
 | Option | Value |
 | --- | --- |
-| `channel` or `versionId` | Exactly one. Use `versionId` to run a job again on the version it first used. |
-| `input` | The job's input, as JSON. `expect` reports it unless you pass another. |
-| `outcomeId` | A UUID for the outcome. Defaults to a random one. |
-
-`job()` throws `AcclimateUsageError` when no bundle or more than one bundle has that name.
+| `channel` or `versionId` | Exactly one. `versionId` reruns a job on the version it first used. |
+| `input` | The job's input as JSON, which `expect` reports unless you pass another |
+| `outcomeId` | The outcome's UUID, random by default |
 
 | Job member | What it is |
 | --- | --- |
-| `version` | The verified version. Its metadata is `version.version`, with `id` and `digest`, and its files are `version.payload.files`. |
-| `outcomeId` | The outcome's UUID. |
-| `prepare(destination, options?)` | Writes the version's files into `destination`. Returns `files` and `cleanup()`. |
-| `prepare(nativePrepare)` | Passes the verified version to a plugin's `prepare`, such as the one from `@acclimate/codex-plugin`, and returns its result. |
-| `expect(expected, { input?, output?, grading? })` | Reports a production outcome and returns its receipt. |
+| `version` | The verified version. Its metadata, with `id` and `digest`, is `version.version`, and its files are `version.payload.files`. |
+| `outcomeId` | The outcome's UUID |
+| `prepare(destination, options?)` | Writes the version's files into `destination` and returns `files` and `cleanup()` |
+| `prepare(nativePrepare)` | Passes the verified version to a plugin's `prepare` and returns its result |
+| `expect(expected, { input?, output?, grading? })` | Reports a production outcome and returns its receipt |
 
-`expect` needs a credential with the `write` right. `grading` is `'exact'` or `'criteria'`. Any other value throws `AcclimateUsageError`. Without it, the service chooses by the shape of the answer. See [How a row is graded](/docs/guides/learning-loop#how-a-row-is-graded). The first valid call fixes the input, expected value and output. Calling `expect` again sends the same outcome with the same ID, so it is safe to retry. [Report production outcomes](/docs/guides/learning-loop#report-production-outcomes) explains what the service does with an outcome.
+About `expect`:
+
+- It needs a credential with the `write` right.
+- `grading` is `'exact'` or `'criteria'`, and any other value throws `AcclimateUsageError`. Without it, the service chooses as [How a row is graded](/docs/guides/learning-loop#how-a-row-is-graded) describes.
+- The first valid call fixes the input, expected value and output. A repeat call sends the same outcome with the same ID, so it is safe to retry.
+
+[Report production outcomes](/docs/guides/learning-loop#report-production-outcomes) explains what the service does with an outcome.
 
 ## Client
 
-`AcclimateClient` calls the workspace API directly. Use it when you already have the bundle ID, when you read for a connection or when you manage bundles and releases. [Deliver content to jobs](/docs/guides/deliver-content) shows it preparing a job, including receipts and background jobs.
+`AcclimateClient` calls the workspace API directly. Use it when you already have the bundle ID, read for a connection or manage bundles and releases. [Deliver content to jobs](/docs/guides/deliver-content) shows it preparing a job.
 
 ### Options
 
 | Option | Default | Value |
 | --- | --- | --- |
-| `baseUrl` | Required | HTTP or HTTPS base URL of the API, with no credentials, query or fragment. |
-| `token` | Required | The credential, sent as a bearer token. |
-| `scope` | Required | Stable name for the application. It separates cache entries. Never use a token. |
-| `connectionId` | None | The connection's UUID, when the application reads for a connection. |
-| `retries` | `2` | From 0 to 3. A write with an idempotency key is sent again after a transport failure or an HTTP 5xx. Reads are not retried. |
-| `timeoutMs` | `30000` | Timeout of each request, up to 120,000. |
-| `maxPayloadBytes` | 1 MiB | Largest payload the client downloads, up to 2 MiB. |
-| `maxJsonResponseBytes` | 4 MiB | Largest JSON response the client reads, up to 8 MiB. |
-| `fetch` | The global `fetch` | A replacement `fetch` function. |
+| `baseUrl` | Required | HTTP or HTTPS base URL of the API, with no credentials, query or fragment |
+| `token` | Required | The credential, sent as a bearer token |
+| `scope` | Required | Stable application name that separates cache entries. Never use a token. |
+| `connectionId` | None | The connection's UUID, when reading for a connection |
+| `retries` | `2` | 0 to 3 resends of a write with an idempotency key after a transport failure or HTTP 5xx. Reads are not retried. |
+| `timeoutMs` | `30000` | Timeout of each request, up to 120,000 |
+| `maxPayloadBytes` | 1 MiB | Largest payload the client downloads, up to 2 MiB |
+| `maxJsonResponseBytes` | 4 MiB | Largest JSON response the client reads, up to 8 MiB |
+| `fetch` | The global `fetch` | A replacement `fetch` function |
 
-`sessionToken` exists for the console's own server. Applications leave it unset. The client refuses redirects, so the token never leaves the configured origin.
+Leave `sessionToken` unset. It exists for the console's own server. The client refuses redirects, so the token never leaves the configured origin.
 
 ### Prepare a job
 
@@ -96,36 +98,34 @@ It also accepts the [client options](#options) `retries`, `timeoutMs`, `maxPaylo
 
 | Option | Default | Value |
 | --- | --- | --- |
-| `workspaceId`, `bundleId` | Required | The bundle to read. |
-| `channel` or `versionId` | Required | Exactly one. |
-| `cacheDir` | `~/.cache/acclimate/typescript` | Cache directory. Keep a separate one for each SDK language. |
-| `destination` | A new temporary directory | Directory for the job's files. |
-| `offline` | `false` | `{ pinnedVersionId }` allows the offline fallback described below. |
-| `maxCacheBytes` | 20 MiB | Size the cache is trimmed to, at most 1 GiB. |
-| `reporter` | None | A receipt reporter from `createReceiptReporter`. |
+| `workspaceId`, `bundleId` | Required | The bundle to read |
+| `channel` or `versionId` | Required | Exactly one |
+| `cacheDir` | `~/.cache/acclimate/typescript` | Cache directory, separate for each SDK language |
+| `destination` | A new temporary directory | Directory for the job's files |
+| `offline` | `false` | `{ pinnedVersionId }` allows the [offline fallback](#cache-and-offline-fallback) |
+| `maxCacheBytes` | 20 MiB | Size the cache is trimmed to, at most 1 GiB |
+| `reporter` | None | A receipt reporter from `createReceiptReporter` |
 
 | Returned member | What it is |
 | --- | --- |
-| `version` | The verified version. Its metadata is `version.version`. |
-| `instructions` | The instruction files joined into one string. |
-| `skillFiles`, `files` | The written skill files, and every written file, each with `path`, `kind` and `absolutePath`. |
-| `directory` | The job's private directory. |
-| `reportStarted()` | Queues the job's start receipt once. Returns `null` without a reporter. |
+| `version` | The verified version, with its metadata at `version.version` |
+| `instructions` | The instruction files joined into one string |
+| `skillFiles`, `files` | The written skill files and all written files, each with `path`, `kind` and `absolutePath` |
+| `directory` | The job's private directory |
+| `reportStarted()` | Queues the job's start receipt once, or returns `null` without a reporter |
 | `cleanup()` | Removes the written files. `await using` calls it for you. |
 
 ### Cache and offline fallback
 
-A job that names a channel always confirms the release with the service. A job that names an exact version can fall back to the verified cache after a transport failure or an HTTP 503:
+A job that names a channel always confirms the release with the service. A job that names an exact version can fall back to the verified cache after a transport failure or an HTTP 503. A denied request, a missing resource or a failed integrity check never falls back.
 
 ```ts
 await client.prepare({ workspaceId, bundleId, versionId: pinned, offline: { pinnedVersionId: pinned } });
 ```
 
-A denied request, a missing resource or a failed integrity check never falls back.
-
 ### Methods
 
-Every method takes `workspaceId` first, then `bundleId` where the route has one. Methods that list return `{ items, nextCursor }` and take `{ cursor, limit }`. Pass `nextCursor` back as `cursor` for the next page.
+Every method takes `workspaceId` first, then `bundleId` where the route has one. List methods take `{ cursor, limit }` and return `{ items, nextCursor }`. Pass `nextCursor` back as `cursor` for the next page.
 
 | Area | Methods |
 | --- | --- |
@@ -143,7 +143,7 @@ Every method takes `workspaceId` first, then `bundleId` where the route has one.
 
 ## Learning
 
-`AcclimateClient` has one method for each route under [Learning](/docs/reference/http-api#learning). That section says what each route does and which right it needs.
+`AcclimateClient` has one method for each route under [Learning](/docs/reference/http-api#learning), which gives each route's purpose and right.
 
 | Area | Methods |
 | --- | --- |
@@ -158,29 +158,29 @@ Every method takes `workspaceId` first, then `bundleId` where the route has one.
 - `enrollLearningLoop`, `pauseLearningLoop`, `resumeLearningLoop` and `stopLearningLoop` take an optional idempotency key. `reportLearningOutcome` uses the outcome ID as its key unless you pass one.
 - `listLearningTasks` takes `{ after, limit, split, source, admission, flagged, confirmed }`.
 - `importLearningTasks(workspaceId, bundleId, data, contentType, filename?)` takes the file's bytes as an `ArrayBuffer`.
-- `confirmLearningTasks`, `exportHeldOutTasks` and `setModelProvider` need a signed-in person, so a machine token cannot use them.
+- `confirmLearningTasks`, `exportHeldOutTasks` and `setModelProvider` need a signed-in person, not a machine token.
 
 ## Lower-level helpers
 
 | Function | Use |
 | --- | --- |
-| `resolveAndCache(client, selection, { cacheDir, offline?, maxCacheBytes?, reporter? })` | Resolve and verify a version without writing job files. Pass the result to a plugin or to `prepareFiles`. |
-| `prepareFiles(version, destination, options?)` | Write a verified version's files into a private directory. |
-| `defaultCacheDir()` | Resolves to the default cache directory, `~/.cache/acclimate/typescript`. |
-| `verifyPayloadBytes(bytes, expectedDigest)` | Check payload bytes against a SHA-256 digest and return the parsed payload. |
-| `validatePayload(value)` | Check a bundle payload without calling the service. |
+| `resolveAndCache(client, selection, { cacheDir, offline?, maxCacheBytes?, reporter? })` | Resolve and verify a version without writing files, for a plugin or `prepareFiles` |
+| `prepareFiles(version, destination, options?)` | Write a verified version's files into a private directory |
+| `defaultCacheDir()` | Returns the default cache directory, `~/.cache/acclimate/typescript` |
+| `verifyPayloadBytes(bytes, expectedDigest)` | Check payload bytes against a SHA-256 digest and return the parsed payload |
+| `validatePayload(value)` | Check a bundle payload without calling the service |
 | `createReceiptReporter({ client, workspaceId, connectionId, maxPending? })` | Build the reporter that `client.prepare` takes. See [Report job starts](/docs/guides/deliver-content#report-job-starts). |
 | `compatibilityIssues(payload, target)` | List the rules a payload breaks for `codex`, `claude`, `pi` or `cursor`. `generic` has none. |
-| `assertCompatible(payload, target)` | Throw when `compatibilityIssues` finds any. |
+| `assertCompatible(payload, target)` | Throw when `compatibilityIssues` finds any |
 | `prepareNativeFiles(version, { mapping, prefix, target })` | Write a version in another agent SDK's layout. See [Choose a native integration](/docs/guides/deliver-content#choose-a-native-integration). |
 
 ## Errors
 
-Every error the SDK throws on purpose extends `AcclimateError` and has a typed `code`. [Error classes](/docs/reference/error-codes#error-classes) lists each class with its fields, and [Error codes](/docs/reference/error-codes) lists each code with its cause.
+Every error the SDK throws on purpose extends `AcclimateError` and has a typed `code`. [Error codes](/docs/reference/error-codes) lists each class, its fields and each code with its cause.
 
 ## acclimate pull
 
-The `acclimate` executable has one command. It saves a channel's released payload to a new JSON file that you can edit.
+The `acclimate` executable has one command, which saves a channel's released payload to a new JSON file you can edit.
 
 ```sh
 npx acclimate pull --config /absolute/path/pull.json --bundle <bundle-id> --channel stable --out payload.json
@@ -188,14 +188,14 @@ npx acclimate pull --config /absolute/path/pull.json --bundle <bundle-id> --chan
 
 | Flag | Value |
 | --- | --- |
-| `--config` | Path to the config file. |
-| `--bundle` | Bundle ID. |
-| `--channel` | Channel name. Defaults to `stable`. |
-| `--out` | A new file. The command refuses to overwrite an existing one. |
+| `--config` | Path to the config file |
+| `--bundle` | Bundle ID |
+| `--channel` | Channel name, `stable` by default |
+| `--out` | A new file. The command never overwrites one. |
 
 The command prints one JSON line with `schemaVersion`, `bundleId`, `channel`, `versionId`, `digest`, `revision`, `files` and `out`. On failure it prints a JSON error and exits with status 1.
 
-The config is a JSON file that only its owner can read, inside a directory that only its owner can access:
+The config is a JSON file only its owner can read, in a directory only its owner can access:
 
 ```json title="pull.json"
 {
@@ -209,6 +209,6 @@ The config is a JSON file that only its owner can read, inside a directory that 
 
 - `serviceUrl` is the API's HTTPS origin with no path. Plain HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]`.
 - `cacheDir` must be an absolute path.
-- The token needs the `read` right. Supply it in one of three ways: the `ACCLIMATE_TOKEN` variable, a `token` field in the config or a `tokenFile` field with the absolute path of a separate owner-only file. `token` and `tokenFile` cannot both be set.
+- The token needs the `read` right. Supply it as the `ACCLIMATE_TOKEN` variable, a `token` field or a `tokenFile` field with the absolute path of an owner-only file, but not both fields.
 
 To publish the edited file, see [Publish a bundle from a file](/docs/guides/release-and-roll-back#publish-a-bundle-from-a-file).

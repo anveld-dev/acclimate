@@ -3,47 +3,45 @@ title: Back up and restore
 description: Back up both databases, the runtime files and the provider encryption key, and restore a dump into a new database.
 ---
 
-This page is for the operator of a self-hosted deployment. It lists what to back up, shows how to dump a database with the repository's script and gives the order of a restore.
+This page is for the operator of a self-hosted deployment. It covers what to back up, how to dump a database with the repository's script and how to restore one.
 
 ## What to back up
 
 | What | How | Why |
 | --- | --- | --- |
-| Acclimate database | [Dump it](#dump-a-database) to an archive | It holds every bundle, version, release history and learning record. |
-| Keycloak database, if you co-host Keycloak | Dump it to its own archive | It holds the realm's users, credentials and every change made since the first start. The realm import file only creates the empty realm. |
-| `service.env`, which holds the provider encryption key | Copy it off the server, apart from the dumps | Without the key, the restored database cannot decrypt the saved model provider API keys. |
-| The other private runtime files | Copy them off the server | They hold the database passwords and the secrets that the service, the console and Keycloak share. |
+| Acclimate database | [Dump it](#dump-a-database) to an archive | Every bundle, version, release history and learning record |
+| Keycloak database, if you co-host Keycloak | Dump it to its own archive | The realm's users, credentials and changes. The realm import file only creates the empty realm. |
+| `service.env`, which holds the provider encryption key | Copy it off the server, apart from the dumps | Without the key, the saved model provider API keys cannot be decrypted. |
+| The other private runtime files | Copy them off the server | The database passwords and the secrets that the service, the console and Keycloak share |
 
 Record the Acclimate release with each dump. A dump is restored with the service build that made it.
 
 ## Dump a database
 
-The repository's script takes a consistent snapshot in PostgreSQL's custom format. You supply the environment it runs in:
+You need:
 
 - A checkout of the repository at the Acclimate release you run, with Python 3.
 - `psql`, `pg_dump` and `pg_restore` from the same PostgreSQL major version as the server. The bundled databases run PostgreSQL 16. The script stops if the versions differ.
-- A network path to the database. In the bundled deployment the databases have no published ports. They listen at `postgres:5432` and `keycloak-db:5432` on the Compose network `backend`, so the tools must run on that network. Keep the database ports private.
+- A network path to the database. The bundled databases publish no ports. They listen at `postgres:5432` and `keycloak-db:5432` on the Compose network `backend`, so the tools must run on that network.
 
 Then:
 
-1. Set `DATABASE_URL` in the environment to the database you want to dump. For the Acclimate database, use the value from `service.env`. For the co-hosted Keycloak, the user and database are both `keycloak` and the host is `keycloak-db`. URL-encode the password. The script passes the connection to the PostgreSQL tools through environment variables, never in command arguments. Protect that environment from other users.
+1. Set `DATABASE_URL` to the database you want to dump. For the Acclimate database, use the value from `service.env`. For the co-hosted Keycloak, the user and database are both `keycloak` and the host is `keycloak-db`. URL-encode the password. Protect this environment from other users.
 2. Run the dump with a new archive path in a private directory. `--pg-bin` names the directory that holds the PostgreSQL tools. Leave it out if they are on your `PATH`.
 
    ```sh
    python3 scripts/operations/backup.py dump /private/backups/acclimate.dump --pg-bin /path/to/postgresql-16/bin
    ```
 
-3. Repeat for the Keycloak database with its own `DATABASE_URL` and its own archive path.
+3. Repeat for the Keycloak database with its own `DATABASE_URL` and archive path.
 
-The script creates the archive with mode 0600 and refuses to overwrite an existing file. The archive contains every bundle and its history, so encrypt it at rest and in transit, set a retention period and protect the copies. It does not contain database roles or grants. Provision those separately, and keep a separate recovery plan for the PostgreSQL server itself.
-
-`DATABASE_URL` accepts the query options `sslmode`, `sslrootcert`, `sslcert`, `sslkey` and `connect_timeout`.
+The script creates the archive with mode 0600 and refuses to overwrite an existing file. Encrypt the archive at rest and in transit, set a retention period and protect the copies. It holds no database roles or grants. Provision those separately, and keep a separate recovery plan for the PostgreSQL server itself. For the connection options the script accepts, see [Backup scripts](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#backup-scripts).
 
 ## Keep the provider encryption key
 
 `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` in `service.env` encrypts the model provider API keys that workspaces save in the database. Back it up whenever you back up the database, and store it apart from the dumps. A dump and the key together reveal every saved provider API key.
 
-The first time the service starts with a key, it stores a check value sealed with that key. A later start with a different key stops with an error. This happens, for example, when you restore a backup without its key. Before a check value exists, the service also refuses a key that opens none of the stored provider API keys. You then have two choices:
+The first time the service starts with a key, it stores a check value sealed with that key. A later start with a different key, for example after you restore a backup without its key, stops with an error. Before a check value exists, the service also refuses a key that opens none of the stored provider API keys. You then have two choices:
 
 - **Restore the original key** in `service.env` and start the service again.
 - **Start over with the new key.** This deletes every saved model provider, with its URL, models and API key.
@@ -54,7 +52,7 @@ The first time the service starts with a key, it stores a check value sealed wit
 
   The command prints `{"removedProviders": n}`. Start the service, then ask each workspace administrator to enter their model provider again.
 
-Without any key, the service starts and logs a warning. Saving a model provider fails with HTTP 503, and saved providers show "Provider key unavailable". When the service cannot decrypt one stored provider API key, it logs the workspace ID. That provider shows "Provider key unavailable" until a workspace administrator enters its API key again.
+Without any key, the service starts and logs a warning. Saving a model provider fails with HTTP 503, and saved providers show "Provider key unavailable". If the service cannot decrypt one stored provider API key, it logs the workspace ID, and that provider shows "Provider key unavailable" until a workspace administrator enters its API key again.
 
 ## Restore
 
@@ -62,24 +60,22 @@ Without any key, the service starts and logs a warning. Saving a model provider 
 Never restore over a live database. The script refuses a target that already has tables. Always restore into a new, empty database and verify it before any service uses it.
 </Callout>
 
-1. Create a new, empty database with the correct owner and grants. The archive holds no roles or grants, so you provision them. This guide has no command for this step, because it depends on where your PostgreSQL runs.
+1. Create a new, empty database with the correct owner and grants. How depends on where your PostgreSQL runs, so this guide has no command for it.
 2. Point `DATABASE_URL` at the new database and run the restore.
 
    ```sh
    python3 scripts/operations/backup.py restore /private/backups/acclimate.dump --pg-bin /path/to/postgresql-16/bin
    ```
 
-   The restore runs as one transaction with `pg_restore --exit-on-error --single-transaction`. If it fails, nothing is restored. Find the cause and retry against a fresh empty database.
+   The restore runs as one transaction. If it fails, nothing is restored. Find the cause and retry against a fresh empty database.
 
 3. Start the service build that matches the dump against the restored database, away from traffic. Use the provider encryption key that was in use when the dump was taken.
 4. Verify the restored data: bundle contents, channel revisions, learning rounds, improvement memory and application access. For Keycloak, verify the realm, the client settings and sign-in with a matching Keycloak version.
-5. To put the database into service, stop the service first. Check `DATABASE_URL` and the machine grants in `service.env`, then start the service.
+5. To put the database into service, stop the service, check `DATABASE_URL` and the machine grants in `service.env`, then start the service.
 6. Run the checks in [Check health and readiness](/docs/operate/health-and-readiness) and watch the service after it starts.
 
 To restore as part of undoing an upgrade, see [Roll back an upgrade](/docs/operate/upgrades-and-recovery#roll-back-an-upgrade).
 
 ## Rehearse a restore
 
-Restore your real archives on a schedule and verify them as in steps 3 and 4. A dump you have never restored is not a tested backup.
-
-The repository also has a script that tests the backup tooling itself against a disposable PostgreSQL server. It does not test your archives. See [Backup scripts](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#backup-scripts) in the repository's guide.
+Restore your real archives on a schedule and verify them as in steps 3 and 4. A dump you have never restored is not a tested backup. The repository's script for testing the backup tooling does not test your archives. See [Backup scripts](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#backup-scripts).

@@ -3,14 +3,14 @@ title: Join a team's workspace
 description: Sign in and connect your agent to a bundle and channel your team manages.
 ---
 
-Use this page when your team already runs Acclimate and has invited you to its workspace. You connect your application to a bundle and channel the team manages. You do not need the local stack.
+Use this page when your team already runs Acclimate and has invited you to its workspace. You connect your application to a bundle and channel the team manages, without the local stack.
 
 ## Before you start
 
-Ask a workspace administrator for two things:
+Ask a workspace administrator for:
 
 - An invitation to the workspace, sent to the email address you sign in with.
-- A connection for the bundle and channel your application will use, with its connection ID and a connection credential. Only a workspace administrator can create them. Receive the credential through your team's private secret channel.
+- A connection for your bundle and channel, with its connection ID and a connection credential. Only a workspace administrator can create them. Receive the credential through your team's private secret channel.
 
 ## Connect your application
 
@@ -24,13 +24,12 @@ Ask a workspace administrator for two things:
    | `ACCLIMATE_URL` | The API URL that **App setup** shows |
    | `ACCLIMATE_TOKEN` | The connection credential |
    | `ACCLIMATE_CONNECTION` | The connection ID |
-   | `ACCLIMATE_SCOPE` | A stable name for your application. The SDK uses it for the cache. |
+   | `ACCLIMATE_SCOPE` | A stable name for your application, used for the cache |
 
-5. Download the delivery check from **App setup** and run it with the command shown beside it. It makes no model calls. It prints the resolved version, its digest and the number of files it checked.
+5. Download the delivery check from **App setup** and run it with the command shown beside it. It makes no model calls, and prints the resolved version, its digest and the number of files it checked.
 6. In your application, call the SDK when each job starts, and keep the version ID and digest with the job's result. See [Deliver content to jobs](/docs/guides/deliver-content).
 
 ## Next steps
 
-- [Deliver content to jobs](/docs/guides/deliver-content) covers preparing a job, cleanup and receipts.
-- [How Acclimate works](/docs/concepts/how-it-works) explains versions, channels and releases.
-- [Credentials and rights](/docs/concepts/credentials) lists each credential type.
+- [How Acclimate works](/docs/concepts/how-it-works)
+- [Credentials and rights](/docs/concepts/credentials)

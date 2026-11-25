@@ -3,62 +3,61 @@ title: Glossary
 description: Definitions of the terms these docs use for delivery, for the learning loop and for people and access.
 ---
 
-This page defines the terms the docs use, for anyone who meets one without its explanation. [How Acclimate works](/docs/concepts/how-it-works) shows how the terms fit together.
+This page defines each term in one line. [How Acclimate works](/docs/concepts/how-it-works) shows how they fit together.
 
 ## Delivery
 
 | Term | Meaning |
 | --- | --- |
-| Workspace | The scope for bundles, connections and the people who can access them. |
+| Workspace | The scope for bundles, connections and their members. |
 | Bundle | A named collection of agent instructions, skills and memory files. |
 | Version | An immutable snapshot of a bundle. |
-| Payload | The document that holds a version's files. The SDK downloads and verifies it. |
-| Digest | A hash of a version's exact bytes. The SDK checks every download against it. |
+| Payload | The document that holds a version's files. |
+| Digest | A hash of a version's exact bytes, which the SDK checks every download against. |
 | Channel | A named reference, such as `stable`, to the version jobs should use. |
-| Release | A move of a channel to a version, with a reason. Rolling back creates a new release that points at the earlier version. |
-| Current version | The version a channel points at now. In a round, it is the version the candidates are compared with, and the API reports its score as `incumbentScore`. |
-| Connection | The link between an application and the workspace, bundle and channel it uses. |
-| Job | One run of your agent in your application. It prepares one version when it starts and keeps that version until it ends. |
-| Receipt | An optional report from the application of which version a job started with. |
-| Plugin | A package, such as `@acclimate/codex-plugin`, that prepares a version's files for one agent SDK: Codex, the Claude Agent SDK, Pi or Cursor. |
+| Release | A move of a channel to a version, with a reason. A rollback is a new release. |
+| Current version | The version a channel points at now. In a round, the API reports its score as `incumbentScore`. |
+| Connection | The link between an application and the bundle and channel it uses. |
+| Job | One run of your agent, which keeps the version it prepared at its start. |
+| Receipt | An optional report of which version a job started with. |
+| Plugin | A package, such as `@acclimate/codex-plugin`, that prepares a version's files for one agent SDK. |
 
 ## Learning
 
 | Term | Meaning |
 | --- | --- |
-| Learning loop | The process on the service that improves one bundle on one channel, one round at a time. |
-| Round | One pass of the loop, which adopts a candidate or keeps the current version. See [What a round does](/docs/concepts/how-it-works#what-a-round-does). |
-| Daily round limit | The most rounds a loop runs in a rolling 24 hours. It is set on the bundle's **Learning** tab and defaults to 4. |
-| Task | One learning example: an input with an exact expected answer or grading criteria. It is a row before import and a task after. |
-| Split | One of the two sets the service assigns each task to: evolve or held-out. The assignment never changes. |
-| Evolve split | The tasks the loop learns from. Their scores, logs and errors reach the optimizer. |
-| Held-out split | The tasks that only measure a released version. Their text and scores never reach the optimizer. |
-| Source group | The unit that stays in one split. Tasks cut from the same source row, such as one conversation, share a group, and so do tasks with the same input, even across imports. A production outcome is its own group. A hash of the group picks the split. |
-| Admission | The check every task passes before it counts toward its split. A task that fails is set aside with a reason. |
-| Outcome | The input of a production job and the answer it should have given, reported by the application with the version the job used. It becomes a task in the split the service assigns. |
-| Rollout | One run of one task against one version, in a fresh sandbox. A round runs five rollouts for each task. |
-| Trial | One **Try task** run of a single task from the console. It does not count toward a round's scores. |
-| Executor | The process that runs rollouts and trials in sandboxes and grades them. It is separate from the service and from your application. |
-| Runner image | The container image that each sandbox runs. |
-| Gateway | The executor's proxy to the model provider. A sandbox has no network and reaches the task model only through the gateway. |
-| Model provider | The OpenAI-compatible endpoint, provider API key and allowed models that a workspace administrator saves for a workspace. It serves the task model and the judge model. |
+| Learning loop | The service process that improves one bundle on one channel, round by round. |
+| Round | One pass of the loop. See [What a round does](/docs/concepts/how-it-works#what-a-round-does). |
+| Daily round limit | The most rounds a loop runs in a rolling 24 hours. It defaults to 4. |
+| Task | One learning example: an input with an expected answer or grading criteria. It is a row before import. |
+| Split | The evolve or held-out set a task belongs to. It never changes. |
+| Evolve split | The tasks the loop learns from. |
+| Held-out split | The tasks that only measure a released version. They never reach the optimizer. |
+| Source group | Tasks that always share a split: those from one source row or with the same input, even across imports. Each production outcome is its own group. |
+| Admission | The check a task passes before it counts. A task that fails is set aside with a reason. |
+| Outcome | A production job's input and the answer it should have given, reported by the application. It becomes a task. |
+| Rollout | One run of one task against one version, in a fresh sandbox. |
+| Trial | One **Try task** run from the console. It does not count toward scores. |
+| Executor | The process that runs rollouts and trials in sandboxes and grades them. |
+| Runner image | The container image each sandbox runs. |
+| Gateway | The executor's proxy to the model provider, the only way out of a sandbox. |
+| Model provider | The OpenAI-compatible endpoint, provider API key and allowed models saved for a workspace. |
 | Task model | The model that answers tasks. |
-| Judge model | A different model that grades answers against criteria. It also converts imported rows into tasks. |
-| Optimizer | The model, set by the operator on the service, that proposes, screens and selects changes to a bundle. |
-| Candidate | One of the five changes proposed in a round, with its diagnosis and the tasks it is predicted to fix. |
-| Screening | The step that drops unsafe or task-specific candidates before evaluation. |
-| Adoption | A round's decision to replace the current version with a candidate. The adopted version is released at once. |
-| Improvement memory | The optimizer-only record of problems and adopted attempts, including predicted fixes and measured results. It is never delivered to jobs. |
+| Judge model | A different model that grades answers against criteria and converts imported rows into tasks. |
+| Optimizer | The model, set on the service, that proposes, screens and selects changes to a bundle. |
+| Candidate | One of the five changes proposed in a round. |
+| Adoption | A round's decision to release a candidate in place of the current version. |
+| Improvement memory | The optimizer's record of problems, attempts and results. It is never delivered to jobs. |
 
 ## People and access
 
+[Credentials and rights](/docs/concepts/credentials) says what each credential can do.
+
 | Term | Meaning |
 | --- | --- |
-| Operator | The person who runs the service. An operator creates workspaces and sets the optimizer. |
-| Workspace administrator | A workspace member with the Administrator role. An administrator manages members, connections, credentials and the model provider. |
-| Connection credential | A secret issued on one connection with **Create read credential**. It reads the released version for that connection's bundle and channel, and nothing else. |
-| Receipt credential | A secret issued on the same connection with **Create reporting credential**. It reports which version a job started with and cannot read a bundle. |
-| Machine token | A credential for scripts and CI that calls the API for one workspace with the rights you tick: read, write or promote. |
-| Executor credential | The secret that lets an executor take learning work from the service. The operator creates it, and it belongs to no workspace. |
-
-See [Credential types](/docs/concepts/credentials#credential-types) and [Rights](/docs/concepts/credentials#rights) for what each credential can do.
+| Operator | The person who runs the service, creates workspaces and sets the optimizer. |
+| Workspace administrator | A member with the Administrator role, who manages members, connections, credentials and the model provider. |
+| Connection credential | A secret that reads the released version for one connection. |
+| Receipt credential | A secret that reports which version a job started with, for one connection. |
+| Machine token | A credential for scripts and CI, with the rights you tick: read, write or promote. |
+| Executor credential | The secret that lets an executor take learning work from the service. |

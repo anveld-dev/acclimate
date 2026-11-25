@@ -7,59 +7,49 @@ This page says what an Acclimate version number promises, for developers who pin
 
 ## One version for every artifact
 
-Each Acclimate release has one `major.minor.patch` version. The service and console images, `@acclimate/sdk`, the four plugin packages, the `acclimate-sdk` Python package and the starter archives all carry it. The release check refuses to build artifacts whose versions differ.
+Each Acclimate release has one `major.minor.patch` version. The service and console images, `@acclimate/sdk`, the four plugin packages, the `acclimate-sdk` Python package and the starter archives all carry it, and the release check refuses artifacts whose versions differ.
 
 Git tags add a leading `v`, such as `v0.1.0`. Image tags and package versions do not, so the same release is `0.1.0` there.
 
 ## What a version number promises
 
-Acclimate is at `0.x`, and `0.1.0` is the first release. These rules apply from that release on. Until `1.0.0`:
+Acclimate is at `0.x`, and `0.1.0` is the first release. From that release until `1.0.0`:
 
 | Release | May contain |
 | --- | --- |
-| Patch, such as `0.1.0` to `0.1.1` | Fixes and additive changes only. Upgrading never requires a code change. |
-| Minor, such as `0.1.x` to `0.2.0` | Breaking changes to SDK APIs, CLI flags or the HTTP contract. Each one is listed under **Breaking** in the [changelog](https://github.com/anveld-dev/acclimate/blob/main/CHANGELOG.md) with its replacement. |
+| Patch, such as `0.1.0` to `0.1.1` | Fixes and additive changes only, never needing a code change |
+| Minor, such as `0.1.x` to `0.2.0` | Breaking changes to SDK APIs, CLI flags or the HTTP contract, each listed under **Breaking** in the [changelog](https://github.com/anveld-dev/acclimate/blob/main/CHANGELOG.md) with its replacement |
 
-From `1.0.0`, Acclimate follows [Semantic Versioning](https://semver.org): breaking changes wait for a major release.
+From `1.0.0`, Acclimate follows [Semantic Versioning](https://semver.org), and breaking changes wait for a major release.
 
 ## Match SDK and service versions
 
 Use the SDK release that matches your service's minor version. The service also accepts the previous minor's SDK where the wire contract remains compatible. An SDK newer than the service is not supported, because it can call routes or send fields the older service rejects.
 
-Upgrade in this order:
-
-1. Upgrade the service and console. See [Upgrade](/docs/operate/upgrades-and-recovery#upgrade).
-2. Upgrade your applications to the matching SDK.
+1. Upgrade the service and console first. See [Upgrade](/docs/operate/upgrades-and-recovery#upgrade).
+2. Then upgrade your applications to the matching SDK.
 
 ## The wire contract
 
-The [HTTP API and wire contract](/docs/reference/http-api) page describes the contract and names its source files. This section says how it may change.
+The versioned API uses the prefix `/v1`. The health endpoints `/health` and `/ready` sit outside it. Within `/v1`, an Acclimate release may add routes, optional request fields, response fields and enumeration values such as a new status or error code, and may relax a limit. Write clients that ignore unknown response fields and treat an unknown enumeration value as unknown instead of failing.
 
-The versioned API uses the prefix `/v1`. The health endpoints `/health` and `/ready` sit outside it. Within `/v1`, an Acclimate release may:
-
-- add routes, optional request fields and response fields
-- add values to an enumeration, such as a new status or error code
-- relax a limit
-
-Write clients that ignore response fields they do not recognize and that treat an unknown enumeration value as unknown instead of failing.
-
-A change that removes or renames a field or route, makes an optional field required or tightens a limit is breaking. It follows the rules above and appears in the changelog. Breaking changes to every route would move to `/v2`, and the service would serve both prefixes for at least one minor release.
+Removing or renaming a field or route, making an optional field required or tightening a limit is breaking. It follows the rules above and appears in the changelog. Breaking changes to every route would move to `/v2`, and the service would serve both prefixes for at least one minor release.
 
 ## Document schema versions
 
-Three JSON documents carry a `schemaVersion` field: bundle payloads, improvement memory and the `acclimate pull` config. All are version `1` today.
+Bundle payloads, improvement memory and the `acclimate pull` config carry a `schemaVersion` field, which is `1` for all three today.
 
-- A document's `schemaVersion` changes only when the document changes incompatibly. Additive fields keep the number.
+- `schemaVersion` changes only when the document changes incompatibly. Additive fields keep the number.
 - Readers reject a `schemaVersion` they do not know instead of guessing.
-- Stored bundle versions are immutable and keep the schema version they were written with. The service keeps reading every schema version it has stored.
-- When a new schema version arrives, the service keeps accepting the previous one for writes for at least one minor release.
+- Stored bundle versions are immutable and keep their schema version. The service keeps reading every schema version it has stored.
+- After a new schema version arrives, the service accepts the previous one for writes for at least one minor release.
 
 ## Deprecation
 
-A deprecated name keeps working until it is removed. The changelog announces each deprecation with its replacement, and removal waits at least one minor release after the announcement. Nothing is deprecated in `0.1.0`.
+A deprecated name keeps working until it is removed. The changelog announces each deprecation with its replacement, and removal waits at least one minor release after that. Nothing is deprecated in `0.1.0`.
 
 | Where | How a deprecation will appear |
 | --- | --- |
-| TypeScript | A `@deprecated` tag that editors and type checkers show. |
-| Python | A `Deprecated.` comment on the alias, and an entry in the [Python SDK](/docs/reference/python-sdk) reference. |
-| HTTP | An entry in the [HTTP API and wire contract](/docs/reference/http-api) reference, with the replacement route. |
+| TypeScript | A `@deprecated` tag that editors and type checkers show |
+| Python | A `Deprecated.` comment on the alias, and an entry in the [Python SDK](/docs/reference/python-sdk) reference |
+| HTTP | An entry in the [HTTP API and wire contract](/docs/reference/http-api) reference, with the replacement route |

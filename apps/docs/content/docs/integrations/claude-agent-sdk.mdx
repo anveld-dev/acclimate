@@ -8,23 +8,22 @@ Use `@acclimate/claude-plugin` when your application runs agents with the Claude
 | Requirement | Value |
 | --- | --- |
 | Plugin | `@acclimate/claude-plugin`, with a `/native` entry point for the session options |
-| Agent SDK | `@anthropic-ai/claude-agent-sdk`. The checked version is 0.3.325. |
-| Node.js | 22.22 or later. See [Install the SDKs](/docs/get-started/install#prerequisites). |
-| Platform | Linux or macOS |
+| Agent SDK | `@anthropic-ai/claude-agent-sdk`, checked at 0.3.325. The plugin does not depend on it. |
+| Runtime | Node.js 22.22 or later on Linux or macOS. See [Install the SDKs](/docs/get-started/install#prerequisites). |
 
 ## Install
 
-The plugin does not depend on the Claude Agent SDK. Install the agent SDK yourself, next to the plugin and the Acclimate SDK.
+Install the agent SDK beside the plugin and the Acclimate SDK. The plugin and the Acclimate SDK must come from the same Acclimate release.
 
 ```sh
 npm install @acclimate/sdk @acclimate/claude-plugin @anthropic-ai/claude-agent-sdk
 ```
 
-The plugin and the Acclimate SDK must come from the same Acclimate release. To install them from release files, see [Install from verified release files](/docs/get-started/install#install-from-verified-release-files).
+For release files, see [Install from verified release files](/docs/get-started/install#install-from-verified-release-files).
 
 ## Files the plugin writes
 
-`prepare` creates a new private directory for each job and writes the version's files into it.
+`prepare` writes each job's files into a new private directory. It fails before writing anything if the version breaks the [rules for bundle files](/docs/guides/deliver-content#rules-for-bundle-files).
 
 | Bundle file | Written to |
 | --- | --- |
@@ -32,13 +31,11 @@ The plugin and the Acclimate SDK must come from the same Acclimate release. To i
 | Skills | `.claude/skills/<name>/`, with their supporting files |
 | Memory | `.acclimate/memory/` |
 
-Claude does not load the memory files. `prepared.memoryFiles` lists each one with its `path`, `text` and `absolutePath`. Add the ones you choose to the prompt.
-
-A version must follow the [rules for bundle files](/docs/guides/deliver-content#rules-for-bundle-files), or `prepare` fails before it writes anything.
+Claude does not load the memory files. Add the ones you choose from `prepared.memoryFiles` to the prompt. Each entry has a `path`, `text` and `absolutePath`.
 
 ## Prepare and run a query
 
-Pass the result of `client.prepare()` to the plugin's `prepare`. [Choose a native integration](/docs/guides/deliver-content#choose-a-native-integration) explains what else `prepare` accepts. Your application supplies `client`, the IDs, `model`, `prompt` and the permissions.
+Pass the delivery from `client.prepare()` to the plugin's `prepare`, which accepts the inputs in [Choose a native integration](/docs/guides/deliver-content#choose-a-native-integration). Your application supplies `client`, the IDs, `model`, `prompt` and the permissions.
 
 ```ts
 import { query } from '@anthropic-ai/claude-agent-sdk';
@@ -64,16 +61,16 @@ for await (const message of query({
 await prepared.cleanup();
 ```
 
-- `claudeSessionOptions` returns `cwd`, `settingSources: ['project']` and the version's skill names as `skills`. It leaves out `skills` when the version has none, because an empty list disables every skill.
-- `prepared.reportStarted()` queues the delivery's start receipt. It returns `null` when `client.prepare()` had no `reporter`. See [Report job starts](/docs/guides/deliver-content#report-job-starts).
-- Save the result with `prepared.versionId` and `prepared.digest` before you clean up.
-- `prepared.cleanup()` removes the directory and releases the delivery. Call it only after the query has finished. If the query rejects, its process may still be running, so keep the files for inspection.
+- `claudeSessionOptions` returns `cwd`, `settingSources: ['project']` and the version's skill names as `skills`. It leaves out `skills` when there are none, because an empty list disables every skill.
+- `prepared.reportStarted()` queues the start receipt, or returns `null` without a `reporter`. See [Report job starts](/docs/guides/deliver-content#report-job-starts).
+- Save the result with `prepared.versionId` and `prepared.digest`. Then `prepared.cleanup()` removes the directory and releases the delivery.
+- Clean up only after the query has finished. If the query rejects, its process may still be running, so keep the files for inspection.
 
-The repository's [`examples/claude-agent.ts`](https://github.com/anveld-dev/acclimate/blob/main/examples/claude-agent.ts) shows the complete job, including receipts and saving the result.
+[`examples/claude-agent.ts`](https://github.com/anveld-dev/acclimate/blob/main/examples/claude-agent.ts) shows the complete job, including receipts and saving the result.
 
 ## Use your repository's settings
 
-The query runs in a new directory, so your repository's `.claude/settings.json`, `.mcp.json`, hooks and subagents do not apply by default. Pass `baseDir` to copy them in:
+The query runs in a new directory, so your repository's settings, MCP servers, hooks and subagents do not apply. Pass `baseDir` to copy them in:
 
 ```ts
 const prepared = await prepare(delivery, { baseDir: '/absolute/path/to/repository' });
@@ -99,6 +96,6 @@ The starter runs Claude with `"harness": "claude"`. See [Prepare an existing rep
 | Check | Result |
 | --- | --- |
 | Written files, the copied settings and receipts | Passed offline |
-| Session options and the example | Typechecked against `@anthropic-ai/claude-agent-sdk` 0.3.325 |
+| Session options and the example | Typechecked against 0.3.325 |
 | The starter's adapter | Passed offline against a fake SDK module |
 | A live Claude session | Not tested |

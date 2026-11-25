@@ -3,19 +3,17 @@ title: How Acclimate works
 description: How each job receives an immutable version of a bundle, and how the learning loop proposes, scores and releases improvements.
 ---
 
-Acclimate has two parts. Delivery gets a fixed version of your agent's files to each job. The learning loop improves those files against tasks you supply. Read this page before you follow a guide. The [Glossary](/docs/concepts/glossary) defines each term.
+Acclimate has two parts. Delivery gets a fixed version of your agent's files to each job, and the learning loop improves those files against tasks you supply. The [Glossary](/docs/concepts/glossary) defines each term.
 
 ## Delivery
 
-A **workspace** owns bundles and connections. A **bundle** holds your agent's instructions, skills and memory files. Each **version** of a bundle is immutable and carries a digest of its exact bytes. A **release** points a **channel**, such as `stable`, at a version. A **connection** tells the SDK which bundle and channel an application uses.
+A **workspace** owns **bundles**, which hold your agent's instructions, skills and memory files, and **connections**, which tell the SDK which bundle and channel an application uses. Each **version** of a bundle is immutable and carries a digest of its exact bytes. A **release** points a **channel**, such as `stable`, at a version.
 
-A **job** is one run of your agent. When a job starts, the SDK resolves the channel to a version, downloads it, checks it against the digest and writes the files to a directory for that job. The job keeps that version even if the channel is released again while it runs. The application can also send a receipt, so the workspace sees which version each job used. See [Deliver content to jobs](/docs/guides/deliver-content).
+A **job** is one run of your agent. When it starts, the SDK resolves the channel to a version, downloads it, checks the digest and writes the files to a directory for that job. The job keeps that version even if the channel is released again while it runs. The application can send a receipt, so the workspace sees which version each job used. See [Deliver content to jobs](/docs/guides/deliver-content).
 
 ## Learning loop
 
-The learning loop improves a released bundle against tasks. A **task** is an input with an exact expected answer or grading criteria. The service puts each task in one of two splits. The loop learns from the **evolve split**. The **held-out split** only measures the result.
-
-Three models take part.
+The learning loop improves a released bundle against tasks. A **task** is an input with an exact expected answer or grading criteria. The service puts each task in one of two splits. The loop learns from the **evolve split**, and the **held-out split** only measures the result.
 
 | Model | What it does | Who sets it |
 | --- | --- | --- |
@@ -23,22 +21,22 @@ Three models take part.
 | Task model | Answers each task | Chosen on the bundle's **Learning** tab, from the models a workspace administrator allowed on the model provider |
 | Judge model | Grades answers against criteria. It must differ from the task model. | Chosen the same way |
 
-The **executor**, a process separate from the service and from your application, calls the task model and the judge model. See [Run a learning loop](/docs/guides/learning-loop) for the console steps.
+The **executor**, a process separate from the service and your application, calls the task model and the judge model. [Run a learning loop](/docs/guides/learning-loop) has the console steps.
 
 ### What a round does
 
 1. **Score the current version** on the evolve tasks.
-2. **Propose.** The optimizer writes five candidates. Each is a change to the bundle with a diagnosis of what it fixes.
+2. **Propose.** The optimizer writes five candidates, each a change to the bundle with a diagnosis of what it fixes.
 3. **Screen.** A scanner checks each candidate for secrets and personal data. Then one optimizer call skips candidates that hard-code particular tasks or address the grader instead of doing the task.
 4. **Evaluate.** Each remaining candidate is scored on the same evolve tasks.
-5. **Select.** One optimizer call adopts a candidate or keeps the current version. An adoption is released to the channel at once, with no approval step, and is added to improvement memory, the optimizer's record of problems and adopted fixes.
+5. **Select.** One optimizer call adopts a candidate or keeps the current version. An adoption is released to the channel at once, with no approval step, and recorded in improvement memory, the optimizer's record of problems and fixes.
 6. **Score the held-out tasks** for the version now on the channel. After an adoption, a clear drop that a second measurement confirms reverts the release automatically.
 
 ### How a rollout runs your bundle
 
 A **rollout** is one run of one task against one version. The executor runs it in a fresh sandbox with no network, and grades it outside the sandbox.
 
-The rollout renders the bundle as one system prompt. Instructions come first, then skills, then memory, and each file sits under a `# path` heading. The task input becomes the user message. The model's reply is the output that is graded.
+The rollout renders the bundle as one system prompt: instructions, then skills, then memory, each file under a `# path` heading. The task input is the user message, and the reply is graded.
 
 If your application builds its prompt differently, or runs a different model from the task model, the loop measures a different agent from the one you run.
 
@@ -53,14 +51,14 @@ If your application builds its prompt differently, or runs a different model fro
 
 ### What a round costs
 
-Count a round in rollouts.
+Count a round in rollouts:
 
 - **Evolve tasks.** Each task runs five times for the current version, and five times for each candidate that passes screening.
-- **Held-out tasks.** After the decision, each task runs five times. After an adoption it runs five times for the old release and five for the new one.
+- **Held-out tasks.** Each task runs five times after the decision. After an adoption it runs five times for the old release and five for the new one.
 
 An exact-match rollout is one task-model call. A judged rollout is one task-model call and three judge calls. A round skips step 1 when the current version already has scores for the same tasks and models.
 
-Two measured rounds, each with five candidates evaluated and one adopted:
+Two measured rounds, each evaluating five candidates and adopting one:
 
 | Example | Tasks | Rollouts | Time |
 | --- | --- | --- | --- |
@@ -70,9 +68,9 @@ Two measured rounds, each with five candidates evaluated and one adopted:
 ## Who sees what
 
 - **The optimizer** receives the bundle, improvement memory and the evolve tasks with their rollouts and judge reasons. When an exact-match evolve task fails, it also receives that task's expected answer. Held-out tasks, scores and logs never reach it.
-- **Held-out tasks** are stored apart from the evolve tasks.
-- **The task model and the judge model** read tasks from both splits, because they score them. The sandbox that runs a rollout receives only the bundle and the task input, never the expected answer or criteria. It reaches the model provider only through the executor's gateway.
+- **The task model and the judge model** read tasks from both splits, because they score them.
+- **The sandbox** receives only the bundle and the task input, never the expected answer or criteria. It reaches the model provider only through the executor's gateway.
 - **The model provider's API key** is stored encrypted by the service. The executor holds it in memory only.
 - **A machine token** receives counts and aggregate scores for held-out tasks, never their text.
-- **Your application** runs its agent with its own model credentials. They never reach Acclimate.
+- **Your application** runs its agent with its own model credentials, which never reach Acclimate.
 - **Improvement memory** is never delivered to jobs.

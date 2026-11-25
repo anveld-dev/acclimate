@@ -3,9 +3,9 @@ title: Ticket triage
 description: Publish a bundle, import labelled tickets, start the learning loop and follow each round from one script.
 ---
 
-`examples/ticket-triage/` teaches an agent to route support tickets to the right queue. One script does everything over the API: it publishes the bundle, turns on learning, imports 64 labelled tickets, starts the loop and reports each round. It is for a developer who wants to run the loop from CI or their own tooling instead of the console.
+This example is for a developer who wants to run the learning loop from CI or their own tooling instead of the console. `examples/ticket-triage/` teaches an agent to route support tickets to the right queue. One script publishes the bundle, turns on learning, imports 64 labelled tickets, starts the loop and reports each round.
 
-The directory holds the starting instructions in `bundle/instructions.md`, the tickets in `tickets.csv` and the same script as `loop.ts` and `loop.py`. The starting instructions do not name the queues:
+The directory holds the starting instructions in `bundle/instructions.md`, the tickets in `tickets.csv` and the script as `loop.ts` and `loop.py`. The instructions do not name the queues:
 
 ```text
 You route support tickets for a small software company.
@@ -13,7 +13,7 @@ You route support tickets for a small software company.
 Read the ticket and reply with the queue it belongs to.
 ```
 
-The tickets do. Each row has an `input` and a short one-line `expected`, so the service imports it as an exact-match task. See [How a row is graded](/docs/guides/learning-loop#how-a-row-is-graded). A rollout passes only when the model's reply is exactly the expected text.
+The tickets do. Each row has an `input` and a short one-line `expected`, so it becomes an [exact-match task](/docs/guides/learning-loop#how-a-row-is-graded): a rollout passes only when the reply is exactly the expected text.
 
 ```csv
 input,expected
@@ -22,11 +22,11 @@ Can you add keyboard shortcuts for moving cards between columns?,feature-request
 "I bought the annual plan by mistake, I wanted monthly. Can I get the difference back?",refunds
 ```
 
-The eight queues are `billing`, `refunds`, `account-access`, `security`, `bug`, `feature-request`, `data-privacy` and `sales`. The starting instructions score zero in the run below. The model invents names such as "Billing Support", "Security queue" and "Feature Requests", and an exact match needs the right queue, spelled the same way. The loop has to work out the queue names and the rules between them from the failed tasks.
+The eight queues are `billing`, `refunds`, `account-access`, `security`, `bug`, `feature-request`, `data-privacy` and `sales`. The starting instructions score zero, because the model invents names such as "Billing Support" and "Security queue". The loop has to learn the names and the rules between them from the failed tasks.
 
 ## Run it
 
-Do the shared setup under [Set up once](/docs/examples#set-up-once) first, including the model proxy and a machine token with all three rights. Then name two of the provider's allowed models. The model IDs on this page are examples. The judge model grades free-text tasks, so this example never calls it, but the learning settings require one.
+Do [Set up once](/docs/examples#set-up-once) first, including the model proxy and a machine token with all three rights. Then name two of the provider's allowed models. The model IDs on this page are examples. This example never calls the judge model, but the learning settings require one.
 
 ```sh
 export TASK_MODEL=gpt-6-luna JUDGE_MODEL=gpt-6.2-sol
@@ -91,49 +91,41 @@ feature-request: Consider a desired new capability, enhancement or roadmap sugge
 Output only the selected queue ID, copied verbatim from before its colon.
 ```
 
-This is a real run, with `gpt-6-luna` answering tickets and `gpt-6.2-astra` as the optimizer. Some `Checking tasks` lines are left out. Your version IDs and the wording of the instructions will differ.
+This is a real run, with `gpt-6-luna` answering tickets and `gpt-6.2-astra` as the optimizer, with some `Checking tasks` lines left out. Your version IDs and instructions will differ. In the output, `incumbent` is the current version when the round started, `selector-kept` means the optimizer kept it after evaluating the candidates, and `daily-cap` is the daily round limit.
 
-Three words in the output are the service's own codes. `incumbent` is the current version, the one released when the round started. `selector-kept` means the optimizer evaluated the candidates and kept that version. `daily-cap` is the daily round limit.
-
-- **Round 1** found that the starting instructions passed none of the 160 evolve rollouts. All five candidates passed every one, and the optimizer adopted one. The released version then passed every held-out rollout, on tickets the optimizer never saw.
-- **Round 2** kept that version, because no candidate did better.
-- **Round 3** adopted a shorter wording of the output rule that scored the same.
-
-The loop then waited, because the script sets a daily round limit of three. Round 1 took 14 minutes and ran 1,280 rollouts. See [What a round costs](/docs/concepts/how-it-works#what-a-round-costs). The later rounds changed little, so you can stop watching after the first adoption.
+Round 1 passed none of the 160 evolve rollouts before the round. All five candidates passed every one, and the adopted version passed every held-out rollout, on tickets the optimizer never saw. It took 14 minutes and ran 1,280 rollouts. See [What a round costs](/docs/concepts/how-it-works#what-a-round-costs). Round 3 adopted a shorter wording of the output rule that scored the same. The loop then waited on the script's daily round limit of three. You can stop watching after the first adoption.
 
 ## What the script does
 
-Each step is one or two client calls, numbered as in the comments of `loop.ts` and `loop.py`. The table shows the TypeScript names. The Python client has the same methods in snake case, such as `enroll_learning_loop`.
+Each step is one or two client calls, numbered as in the script's comments. The table shows TypeScript names. Python uses the same names in snake case, such as `enroll_learning_loop`.
 
 | # | Step | Call | Notes |
 | --- | --- | --- | --- |
-| 1 | Publish the bundle | `listBundles`, `createBundleSetup` | Creates the bundle with its first version and its first release on `stable`. Skipped when a bundle with the name exists. |
+| 1 | Publish the bundle | `listBundles`, `createBundleSetup` | Creates the bundle, its first version and its first release on `stable`, unless a bundle with the name exists |
 | 2 | Check the model provider | `getModelProvider` | Checks that a verified model provider allows both models. Only a signed-in administrator can save one. |
-| 3 | Turn on learning | `getLearningLoop`, `enrollLearningLoop` | Sets the channel, both models and a daily round limit of three. Skipped when learning is already on, so console changes survive a second run. |
+| 3 | Turn on learning | `getLearningLoop`, `enrollLearningLoop` | Sets the channel, both models and a daily round limit of three. Skipped when learning is on, so console changes survive a rerun. |
 | 4 | Import the tickets | `importLearningTasks`, `getLearningImport` | The upload returns at once, so the script polls until no row is pending. The same bytes return the first import. |
-| 5 | Wait for admission | `listLearningTasks` with `admission: 'pending'` | The executor checks every task before it counts. |
-| 6 | Start | `startLearningLoop` | Called only for a loop that has never run. Answers 409 when a split has fewer than 20 admitted tasks or the service has no optimizer. |
-| 7 | Follow the rounds | `getLearningLoop` | `activeRound.state` is the current step, `rounds` holds the finished rounds and `waiting` says why the loop is idle. |
+| 5 | Wait for admission | `listLearningTasks` with `admission: 'pending'` | A machine token gets evolve tasks as `items` and held-out tasks only as `heldOutCount`, so the script adds the two. |
+| 6 | Start | `startLearningLoop` | Only for a loop that has never run. Answers 409 when a split has fewer than 20 admitted tasks or the service has no optimizer. |
+| 7 | Follow the rounds | `getLearningLoop` | `activeRound.state` is the current step, `rounds` the finished rounds and `waiting` why the loop is idle. |
 | 8 | Show the release | `resolveAndCache` | Reads and verifies the version the next job will run. |
-
-In step 5, a machine token gets the evolve tasks as `items` and the held-out tasks only as `heldOutCount`, so the script adds the two.
 
 ### When a round ends
 
 A finished round has a `decision` of `adopted` or `kept`, or a `state` of `failed` or `stopped` with a `reason`. For an adoption the script prints three scores:
 
 - `incumbentScore`, the evolve score of the current version when the round started.
-- `evolveScore`, the evolve score of the adopted version. It equals the first score when the round kept the current version.
+- `evolveScore`, the adopted version's evolve score, or the first score when the round kept the current version.
 - `heldOutScore`, the held-out score of the version released at the end of the round.
 
-The loop then runs another round or waits. See [When the loop waits](/docs/guides/learning-loop#when-the-loop-waits). The learning contract lists every code a script can branch on, under [Codes a script reads](https://github.com/anveld-dev/acclimate/blob/main/contracts/learning.md#codes-a-script-reads).
+The loop then runs another round or [waits](/docs/guides/learning-loop#when-the-loop-waits). The learning contract lists every code a script can branch on under [Codes a script reads](https://github.com/anveld-dev/acclimate/blob/main/contracts/learning.md#codes-a-script-reads).
 
 ### Stop and run again
 
-The script only watches, so you can stop it with Ctrl-C and run it again later. A second run reuses the bundle, its learning settings and the import, and goes back to watching. It starts a loop only when the loop has never run, so a loop you paused or stopped stays that way. To pause or stop learning, use the bundle's **Learning** tab, or call `pauseLearningLoop` or `stopLearningLoop`.
+The script only watches, so you can stop it with Ctrl-C and run it again. A second run reuses the bundle, its learning settings and the import. It starts only a loop that has never run, so a paused or stopped loop stays that way. To pause or stop learning, use the bundle's **Learning** tab, or call `pauseLearningLoop` or `stopLearningLoop`.
 
 ## Adapt it
 
-- **Your own tasks.** Replace `tickets.csv` with your own rows of `input` and `expected`. [Add tasks](/docs/guides/learning-loop#add-tasks) says how many a first round needs. A longer answer is graded by criteria the judge model drafts. A held-out task with drafted criteria stays pending in the script's output until you confirm it in the console.
+- **Your own tasks.** Replace `tickets.csv` with your own rows of `input` and `expected`. [Add tasks](/docs/guides/learning-loop#add-tasks) says how many a first round needs. A longer answer is graded by drafted criteria, and a held-out task with drafted criteria stays pending until you confirm it in the console.
 - **Your own bundle.** Put instruction files in `bundle/`, skills under `bundle/skills/` and memory under `bundle/memory/`. Set `ACCLIMATE_BUNDLE_NAME` to publish under another name.
 - **Your application.** Run jobs on the released version the way the [Support agent](/docs/examples/support-agent) example does.

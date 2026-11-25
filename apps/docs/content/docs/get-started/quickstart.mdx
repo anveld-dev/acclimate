@@ -30,24 +30,19 @@ A connection links one application to one bundle and channel.
 
 1. In the console, open **Connections** and choose **New connection**. Enter a display name, choose the **Example agent** bundle and the `stable` channel, then choose **Create connection**. The console opens the connection's **Setup** tab.
 
-2. Under **Read credential**, choose **Create read credential**. The secret is shown once, so copy it now.
+2. Under **Read credential**, choose **Create read credential**. The secret is shown once. In the dialog, choose **Copy as shell exports**.
 
-3. Open the connection's **Settings** tab and copy the **Connection ID**.
-
-4. In a shell at the root of the checkout, install the Node.js dependencies and load the stack's client settings. `env.sh` sets `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `BUNDLE_ID`, and makes Node.js and Python trust the stack's certificate.
+3. In a shell at the root of the checkout, install the Node.js dependencies and load the stack's client settings. `env.sh` makes Node.js and Python trust the stack's certificate.
 
    ```sh
    npm ci --ignore-scripts
    source .local/stack/env.sh
    ```
 
-5. Set the remaining variables. `ACCLIMATE_SCOPE` is a stable name for this application. It keeps this application's entries in the SDK's disk cache of verified versions apart from other applications'.
+4. Paste the copied line into the same shell. It sets `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE`, `ACCLIMATE_BUNDLE`, `ACCLIMATE_CONNECTION` and `ACCLIMATE_TOKEN`:
 
    ```sh
-   export ACCLIMATE_BUNDLE="$BUNDLE_ID"
-   export ACCLIMATE_CONNECTION='<connection-id>'
-   export ACCLIMATE_TOKEN='<credential-secret>'
-   export ACCLIMATE_SCOPE='quickstart'
+   export ACCLIMATE_URL='<api-url>' ACCLIMATE_WORKSPACE='local-demo' ACCLIMATE_BUNDLE='<bundle-id>' ACCLIMATE_CONNECTION='<connection-id>' ACCLIMATE_TOKEN='<credential-secret>'
    ```
 
 Run the delivery check in the same shell:

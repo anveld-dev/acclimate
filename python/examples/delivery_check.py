@@ -7,12 +7,13 @@ from acclimate import AcclimateClient, DeliveryReporter
 
 
 def main():
-    for key in ("ACCLIMATE_URL", "ACCLIMATE_TOKEN", "ACCLIMATE_SCOPE", "ACCLIMATE_WORKSPACE", "ACCLIMATE_BUNDLE", "ACCLIMATE_CONNECTION"):
+    for key in ("ACCLIMATE_URL", "ACCLIMATE_TOKEN", "ACCLIMATE_WORKSPACE", "ACCLIMATE_BUNDLE", "ACCLIMATE_CONNECTION"):
         if not os.environ.get(key):
             raise ValueError("Set " + key)
     base_url = os.environ["ACCLIMATE_URL"]
     workspace_id, bundle_id = os.environ["ACCLIMATE_WORKSPACE"], os.environ["ACCLIMATE_BUNDLE"]
-    scope = os.environ["ACCLIMATE_SCOPE"]
+    # ACCLIMATE_SCOPE is optional and defaults to the workspace.
+    scope = os.environ.get("ACCLIMATE_SCOPE") or workspace_id
     client = AcclimateClient(base_url, os.environ["ACCLIMATE_TOKEN"], scope, connection_id=os.environ["ACCLIMATE_CONNECTION"])
     reporter = None
     if os.environ.get("ACCLIMATE_RECEIPT_TOKEN"):

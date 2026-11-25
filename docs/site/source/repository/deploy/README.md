@@ -1,6 +1,6 @@
 # Single-host production deployment
 
-This directory holds the files for the single-host Docker Compose deployment. The operator procedures live in the documentation pages listed below. This README keeps what is specific to the repository: how the stack is built, notes for upgrading old databases, the native alternatives and the verification scripts.
+This directory holds the files for the single-host Docker Compose deployment. The operator procedures live in the documentation pages listed below. This README keeps what is specific to the repository: how the stack is built, notes for upgrading old databases, the native alternatives and the verification checks.
 
 Service-specific vocabulary is defined in [Internal terms](../CONTEXT.md#internal-terms).
 
@@ -11,7 +11,7 @@ Service-specific vocabulary is defined in [Internal terms](../CONTEXT.md#interna
 | Bring up a deployment, with the co-hosted Keycloak or an existing one | [Self-host Acclimate](../apps/docs/content/docs/operate/self-host.mdx) |
 | Set the optimizer, register gVisor, start, check, upgrade and rotate the executor | [Enable learning](../apps/docs/content/docs/operate/enable-learning.mdx) |
 | Replace the bundled Caddy | [Use your own reverse proxy](../apps/docs/content/docs/operate/reverse-proxy.mdx) |
-| Probe the stack, read exit codes and run the live checks | [Check health and readiness](../apps/docs/content/docs/operate/health-and-readiness.mdx) |
+| Probe the stack, read exit codes and check the public routes and sign-in | [Check health and readiness](../apps/docs/content/docs/operate/health-and-readiness.mdx) |
 | Back up, restore and keep the provider encryption key | [Back up and restore](../apps/docs/content/docs/operate/backup-and-restore.mdx) |
 | Upgrade to a new Acclimate release or roll back | [Upgrade and recover](../apps/docs/content/docs/operate/upgrades-and-recovery.mdx) |
 | Find the cause of a symptom | [Troubleshooting](../apps/docs/content/docs/operate/troubleshooting.mdx) |
@@ -22,22 +22,27 @@ Service-specific vocabulary is defined in [Internal terms](../CONTEXT.md#interna
 
 | File | Purpose |
 | --- | --- |
+| `init.sh` | Writes the private directory with every secret and the checkout's `.env`. See [Self-host Acclimate](../apps/docs/content/docs/operate/self-host.mdx). |
 | `Dockerfile`, `console.Dockerfile` | Build the service image and the console image. |
 | `Caddyfile` | Caddy configuration for the console and API hostnames. |
 | `console-probe.mjs` | The console container's health check. It requests `/ready` with the public `Host`. |
 | `service.env.example` | Template for the private `service.env`. |
 | `acclimate.service` | systemd unit for the API alone. See [Native and partial alternatives](#native-and-partial-alternatives). |
-| `keycloak/` | The co-hosted Keycloak image, realm template, Caddy configuration and its own guide. |
+| `keycloak/` | The co-hosted Keycloak image, realm and first-person templates, Caddy configuration and its own guide. |
 | `local/` | Caddy configuration for the local stack. |
 | `mailpit.md`, `sign-in.md` | Notes on local email and on the choice of Keycloak. |
+
+The model proxy used for the measured runs in the docs is described in [Development](../docs/development.md).
 
 ## Stack design
 
 `compose.yaml` is the application stack: PostgreSQL 16 with a persistent volume, one service, one built console and Caddy, which terminates public HTTPS. `compose.keycloak.yaml` adds Keycloak with its own PostgreSQL instance. Without it, the stack signs in through an existing Keycloak.
 
-The stack never guesses identity or secrets. No command infers a PostgreSQL role from the OS account, creates machine or human credentials, adopts existing private state, seeds example content or provisions a database from a developer account. The Compose path variables have no insecure defaults. Runtime secrets are never build arguments, and builds need no runtime secrets.
+The stack never guesses identity or secrets. `init.sh` generates every secret and the first person's Keycloak account once, and refuses to run when the private directory or `.env` already exists. No command infers a PostgreSQL role from the OS account, creates machine credentials, adopts existing private state, seeds example content or provisions a database from a developer account. Compose reads the private file paths from `ACCLIMATE_CONFIG_DIR` in `.env` and has no default for it. Runtime secrets are never build arguments, and builds need no runtime secrets.
 
-**Networks.** Only Caddy publishes host ports, 80 and 443.
+The executor and the runner image sit behind the `learning` Compose profile. Every container logs to Docker's `json-file` driver with at most five 10 MB files. Keycloak's admin console is published on `127.0.0.1:${KEYCLOAK_ADMIN_PORT:-8180}` only, and `KC_HOSTNAME_ADMIN` points the console there.
+
+**Networks.** Only Caddy publishes public host ports, 80 and 443.
 
 | Network | Members | Purpose |
 | --- | --- | --- |
@@ -58,18 +63,6 @@ Keep the Docker bridge inaccessible to untrusted processes and firewall the back
 **Shutdown.** PostgreSQL, the service, the console and Caddy use restart policies and a 90-second stop grace period. On SIGTERM the service stops reporting ready, then drains requests and work within 35 seconds and releases its database lock. The lock is held until work stops. Exit code 75 means the service lost its hold on the database. The standalone service wrapper does not invent credentials or silently recover against another database.
 
 **Configuration checks.** After installing the lockfile dependencies, `npm run check:console-config` checks explicit console configuration without starting a process. Neither it nor a build contacts Keycloak. The Vite and built server entrypoints check required configuration again before they listen.
-
-## CLIProxyAPI with Codex sign-in
-
-Acclimate supports OpenAI-compatible Chat Completions endpoints for the optimizer. The reference setup is CLIProxyAPI with a Codex sign-in. The steps are in [Set up a local model proxy](../apps/docs/content/docs/tutorials/first-learning-round.mdx#set-up-a-local-model-proxy), and the optimizer settings are in [Environment variables](../apps/docs/content/docs/reference/configuration.mdx#optimizer). This section keeps the details behind them.
-
-Pin the proxy build. The notes here were checked against the v8 revision that these links point to: the [example configuration](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/config.example.yaml), the [CLI flags](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/cmd/server/main.go) and the [Codex Chat Completions translator](https://github.com/router-for-me/CLIProxyAPI/blob/f5c5681a8361c9da53e93c60b6507816eee7468b/internal/translator/codex/openai/chat-completions/codex_openai_request.go). The proxy's own guide is the [CLIProxyAPI setup guide](https://help.router-for.me/).
-
-- **Listener.** Set `server.port` to `8317`, the default. Set `server.host` to an interface the service can reach on a private network. Use loopback when both processes run directly on the same host. Inside Compose, use the proxy's reachable hostname, because loopback there is the service container itself.
-- **Settings.** `ACCLIMATE_MODEL_ENDPOINT` is the full URL, for example `http://127.0.0.1:8317/v1/chat/completions`. `ACCLIMATE_MODEL_TOKEN` is the proxy client key from `access.api-keys`, which the service sends as a bearer token. The experiment used `ACCLIMATE_MODEL=gpt-6.2-astra` with `ACCLIMATE_MODEL_REASONING_EFFORT=high`.
-- **Request shape.** The optimizer requests JSON mode and sends `max_completion_tokens`, 32,768 by default. The translator maps `max_completion_tokens` to `max_output_tokens` and `reasoning_effort` to `reasoning.effort`. Its format switch has no `json_object` case, so JSON mode is not enforced on that route. The optimizer prompts for JSON and validates the returned content.
-- **Retries.** The service retries HTTP 429, HTTP 5xx, connection errors and timeouts with 5-second and 30-second backoffs, or after the provider's `Retry-After` when that is longer, for up to ten minutes.
-- **Cooling.** With a single Codex sign-in, set `routing.cooldown.disable-cooling: true` in the proxy configuration. By default the proxy blocks a model for the time the upstream names after one overloaded or rate-limited reply, which was about five minutes in testing. It answers every request for that model with HTTP 503 in the meantime. With cooling off, only the affected request waits. The executor's gateway asks again every 30 seconds for up to seven minutes while the provider keeps sending `Retry-After`. The optimizer waits for the `Retry-After` time before it retries.
 
 ## Upgrade to the learning-loop schema
 
@@ -145,11 +138,15 @@ Migrations `0025_import_history.sql`, `0026_round_failure_cause.sql` and `0027_p
 Two things change around them:
 
 - **The provider key check.** On its first start after `0027`, a service with `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` set stores a check value for that key. It refuses to start if the key opens none of the stored provider API keys. See [Keep the provider encryption key](../apps/docs/content/docs/operate/backup-and-restore.mdx#keep-the-provider-encryption-key).
-- **The executor credential file.** `compose.yaml` now requires `ACCLIMATE_EXECUTOR_TOKEN_FILE` and gives the executor a health check. Every `docker compose` command fails without the variable, including `pull`, `up`, `down` and `exec`, even for a deployment that runs no executor. Export it in the deployment shell before you upgrade. Without an executor any path works, for example an empty private file.
+- **The executor credential file.** `compose.yaml` gives the executor a health check and mounts its credential file, `executor-token` in the private directory unless `ACCLIMATE_EXECUTOR_TOKEN_FILE` names another.
 
-The runner image default changes from `acclimate-chat:1` to `ghcr.io/anveld-dev/acclimate-runner:${ACCLIMATE_VERSION:-latest}`. If you rebuild from the checkout, `docker compose build acclimate-runner acclimate-executor` tags the new names. An `ACCLIMATE_RUNNER_IMAGE` you set yourself still names the image for both the runner and the executor.
+The runner image default changes from `acclimate-chat:1` to `ghcr.io/anveld-dev/acclimate-runner:${ACCLIMATE_VERSION:-local}`. If you rebuild from the checkout, `docker compose build acclimate-runner acclimate-executor` tags the new names. An `ACCLIMATE_RUNNER_IMAGE` you set yourself still names the image for both the runner and the executor.
 
 The release workflow publishes `acclimate-executor` and `acclimate-runner` images with the same tags and platforms as the service and console. `compose.yaml` names them through `ACCLIMATE_EXECUTOR_IMAGE` and `ACCLIMATE_RUNNER_IMAGE`. No Acclimate release has been published yet, so no image can be pulled. Until the first release, build every image from the checkout, and do not run `docker compose up --no-build` without service names.
+
+### Compose settings in `.env`
+
+Compose now reads its settings from `.env` in the checkout, which `init.sh` writes for a new deployment. For an existing one, move the `export` lines of your old `compose.env` into `.env` without `export`, and add `ACCLIMATE_CONFIG_DIR` or keep each file variable. Add `COMPOSE_PROFILES=learning` if you run the executor, because without it Compose no longer manages the executor. Image tags now default to `local` rather than `latest`. `KC_BOOTSTRAP_ADMIN_*` in an existing `keycloak.env` keeps working, and the first-person template is skipped because the realm already exists.
 
 ### Service and executor versions
 
@@ -163,33 +160,15 @@ For native execution, build with `cargo build --locked --release` and `npm ci --
 
 ## What has been tested
 
-`scripts/productization/external.py` runs checks against real endpoints. Run `python3 scripts/productization/external.py --help` from the repository root to list them and their options. Each run with `--execute --gate` runs one check. The optional `--output` flag writes the result to a new file. Choose a path in a private directory.
+`scripts/productization/external.py` runs opt-in checks for development and releases. Run `python3 scripts/productization/external.py --help` from the repository root to list them and their options. Each run with `--execute --gate` runs one check. The optional `--output` flag writes the result to a new file. Choose a path in a private directory.
 
 | `--gate` | What it checks | Needs |
 | --- | --- | --- |
-| `https` | The API certificate and hostname, liveness, database and worker readiness, and an authenticated workspace read | A machine token with read access, named by `--token-env` |
-| `oidc` | Sign-in with your configured issuer, secure console session cookies and sign-out | Playwright with its Chromium browser, `--interactive` and a disposable test account |
-| `container` | Builds the deployment images and checks them in a disposable Compose project with a private volume, a test issuer and test certificates | Docker |
+| `container` | Builds the deployment images and checks them in a disposable Compose project with a private volume, a test issuer and test certificates. It also runs the shell blocks of [Back up and restore](../apps/docs/content/docs/operate/backup-and-restore.mdx) and [Upgrade and recover](../apps/docs/content/docs/operate/upgrades-and-recovery.mdx) verbatim and checks which data each keeps. | Docker and Playwright for Python with Chromium |
 | `remote-model` | One bounded `gpt-6-luna` completion against your configured endpoint | `--live`. Can incur model charges. |
 | `native-*` | Prepared files and version pinning with an installed agent SDK | `--live`. Can incur model charges. |
 
-The `container` check and the repository's other tests use test issuers and certificates. Only the `https` and `oidc` checks verify your own deployment's endpoints. The commands for those two are in [Check health and readiness](../apps/docs/content/docs/operate/health-and-readiness.mdx#verify-api-access-and-sign-in).
-
-## Backup scripts
-
-[Back up and restore](../apps/docs/content/docs/operate/backup-and-restore.mdx) has the operator procedure. The bundled databases publish no ports, so that page dumps and restores them with the PostgreSQL tools inside their containers. This section describes the scripts in `scripts/operations/`, which serve a database the host can reach.
-
-`backup.py` needs Python 3 and `psql`, `pg_dump` and `pg_restore` from the same major version as the connected server. `--pg-bin` selects the tools explicitly. `DATABASE_URL` accepts PostgreSQL URLs with the `sslmode`, `sslrootcert`, `sslcert`, `sslkey` and `connect_timeout` query options. The script passes the URL to the tools through libpq environment variables, not command arguments.
-
-The dump is a consistent custom-format snapshot, created exclusively with mode 0600. It is taken without owners or ACLs, so it holds no database roles or grants. Restore refuses a target with existing relations and uses `pg_restore --exit-on-error --single-transaction`, so an SQL error rolls the whole restore back.
-
-For a repeatable local test of the scripts, set `DATABASE_URL` to a disposable PostgreSQL server and a role that may create and drop databases, then run:
-
-```sh
-python3 scripts/operations/qualify.py --pg-bin /path/to/postgresql-16/bin
-```
-
-It creates three randomly named databases, installs the schema and inserts fixture records. It compares all restored table data, including exact binary payloads and history, and tests the refusal of a populated target and a transactional failure. It drops only the databases it created and does not alter the database named by `DATABASE_URL`. A process kill or database outage can interrupt cleanup. If that happens, identify the randomly named `acclimate_ops_…` databases before you remove them. This test does not show that any particular production backup can be restored.
+The `container` check runs every documented block except the `git` commands. Its Keycloak is a stand-in container, so the Keycloak database commands run against the real `keycloak-db` service but no Keycloak upgrade is tested. `test_deployment.py` fails when a page's block no longer matches the one the check runs. To check your own deployment's public routes and sign-in, follow [Verify API access and sign-in](../apps/docs/content/docs/operate/health-and-readiness.mdx#verify-api-access-and-sign-in).
 
 ## Executor internals
 

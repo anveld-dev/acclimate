@@ -6,7 +6,8 @@ import { AcclimateUsageError } from './errors.js';
 import { assertJson } from './json.js';
 import type { Json } from './json.js';
 import { createLearningOutcomeReporter, uuidPattern } from './outcomes.js';
-import type { Bundle, LearningGrading, LearningOutcomeReceipt, LearningOutcomeRequest, VerifiedVersion } from './types.js';
+import { releasePayload, rollbackChannel, type ReleaseOptions, type ReleaseResult, type RollbackOptions } from './release.js';
+import type { Bundle, BundlePayload, LearningGrading, LearningOutcomeReceipt, LearningOutcomeRequest, VerifiedVersion } from './types.js';
 
 export async function findBundle(client: Pick<AcclimateClient, 'listBundles'>, workspaceId: string, name: string) {
   let cursor: string | undefined;
@@ -56,6 +57,20 @@ export function createAcclimate(options: AcclimateOptions = {}) {
     throw new AcclimateUsageError('Set ACCLIMATE_URL, ACCLIMATE_WORKSPACE and ACCLIMATE_TOKEN', 'configuration');
   const client = new AcclimateClient({ ...clientOptions, baseUrl, token, scope });
   return {
+    /**
+     * Upload `payload` as a new version of the named bundle and release it on the channel.
+     * A payload identical to the channel's current version changes nothing and returns it.
+     * A channel that moved during the call is refused with `ApiError` code `revision_conflict`.
+     */
+    async release(bundle: string, payload: BundlePayload, options: ReleaseOptions): Promise<ReleaseResult> {
+      const { id } = await findBundle(client, workspaceId, bundle);
+      return releasePayload(client, workspaceId, id, payload, options);
+    },
+    /** Release the version the channel served before its latest release. */
+    async rollback(bundle: string, options: RollbackOptions): Promise<ReleaseResult> {
+      const { id } = await findBundle(client, workspaceId, bundle);
+      return rollbackChannel(client, workspaceId, id, options);
+    },
     async job(bundle: string, options: JobOptions): Promise<AcclimateJob> {
       const { input, outcomeId = randomUUID(), channel, versionId } = options;
       if (!uuidPattern.test(outcomeId))

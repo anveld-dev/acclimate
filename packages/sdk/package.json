@@ -33,7 +33,7 @@
     }
   },
   "bin": {
-    "acclimate": "./dist/pull-bin.js"
+    "acclimate": "./dist/cli-bin.js"
   },
   "files": [
     "dist",

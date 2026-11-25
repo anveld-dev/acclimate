@@ -30,69 +30,23 @@ Replace `example.com` with your owned domain:
 | Confidential OIDC client | `acclimate-console` |
 | Exact redirect | `https://console.example.com/auth/callback` |
 
-The public [realm template](acclimate-realm.json) uses environment placeholders for the redirect origin and client secret. It enables authorization code flow, requires S256 PKCE and uses RS256 ID tokens. Password grants, implicit grants, service accounts and public signup are disabled. No users or real credentials are included.
+The public [realm template](acclimate-realm.json) uses environment placeholders for the redirect origin and client secret. It enables authorization code flow, requires S256 PKCE and uses RS256 ID tokens. Password grants, implicit grants, service accounts and public signup are disabled. It includes no users or real credentials.
+
+[`acclimate-users-0.json`](acclimate-users-0.json) adds the first person from placeholders: the UUID that `ACCLIMATE_OPERATORS` names, their email as user name, a verified email, a temporary password with `UPDATE_PASSWORD`, and the `realm-management` role `realm-admin`, so they administer this realm without a master-realm account. Only `compose.keycloak.yaml` mounts it. The local stack creates its own user.
 
 Keycloak expands those placeholders on first import. Startup skips a realm that already exists; changing the file or an environment variable does **not** rotate an existing client secret or overwrite a realm. Use the admin API/CLI for deliberate updates. See the official [import behavior](https://www.keycloak.org/server/importExport).
 
 ## Private configuration
 
-Complete the base application settings in the [deployment guide](../README.md). Add:
-
-- `KEYCLOAK_HOST=auth.example.com`, and DNS for that host pointing at Caddy.
-- `ACCLIMATE_KEYCLOAK_ENV`: absolute path to a private file completed from `deploy/keycloak/keycloak.env.example`.
-- `ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE`: absolute path to a private file containing the Keycloak database password. It must match `KC_DB_PASSWORD` in the runtime file.
-
-Use owner-only files and a private parent. Supply a strong bootstrap admin password and a separate client secret. `ACCLIMATE_OIDC_CLIENT_SECRET` in Keycloak's file must equal `CONSOLE_OIDC_CLIENT_SECRET` in the console file. The Rust login-authority and console-transport secrets remain separate.
+`deploy/init.sh` writes `keycloak.env`, `keycloak-postgres-password` and `KEYCLOAK_HOST` with the rest of the deployment, as in [Self-host Acclimate](../../apps/docs/content/docs/operate/self-host.mdx). `keycloak.env.example` lists its variables. `ACCLIMATE_OIDC_CLIENT_SECRET` must equal `CONSOLE_OIDC_CLIENT_SECRET` in the console file, and `KC_DB_PASSWORD` the database password file. There is no `KC_BOOTSTRAP_ADMIN_*`, so Keycloak creates no master-realm administrator.
 
 Set both application issuer fields to the exact realm issuer above. There is no trailing slash in this template. Client ID is `acclimate-console`. The three public hostnames must be distinct. Do not use a container's HTTP address as the issuer.
 
-## Start the identity service first
+Management port 9000 and both PostgreSQL listeners have no host ports. Caddy publishes 80/443, and Compose publishes Keycloak's HTTP port on `127.0.0.1:${KEYCLOAK_ADMIN_PORT:-8180}` for the admin console, with `KC_HOSTNAME_ADMIN` set to that address. The console signs in through the public `/realms/acclimate` routes and calls the admin API on the loopback port, so public `/admin`, the master realm and the management endpoints stay blocked by the supplied Caddy configuration. The master realm's admin console cannot sign in through Caddy for the same reason.
 
-After explicitly injecting the paths and hostnames:
+## The first person
 
-```sh
-export COMPOSE_FILE=compose.yaml:compose.keycloak.yaml
-docker compose config --quiet
-docker compose up -d --build --wait keycloak-db keycloak
-```
-
-This starts only the new identity database and Keycloak. It neither starts nor migrates the existing application database. The optimized image enables readiness and database health checks. Management port 9000, HTTP port 8080 and both PostgreSQL listeners have no published host ports. Only Caddy later publishes 80/443. A private-network HTTP hop is used behind edge TLS; restrict access to the Docker bridge and deployment host.
-
-## Create the first person
-
-The bootstrap identity administrator and the Acclimate deployment operator are separate accounts/capabilities. Use Keycloak's admin CLI inside the private container. Authenticate interactively; the password is not a command argument:
-
-```sh
-docker compose exec keycloak /bin/bash -c 'umask 077; exec /opt/keycloak/bin/kcadm.sh config credentials --config /tmp/acclimate-admin.config --server http://127.0.0.1:8080 --realm master --user bootstrap-admin'
-```
-
-Create an owner-only `/private/initial-user.json` using a secret manager or private editor. Its shape is:
-
-```json
-{
-  "username": "your-login",
-  "enabled": true,
-  "firstName": "Your",
-  "lastName": "Name",
-  "email": "you@example.com",
-  "credentials": [{"type": "password", "value": "REPLACE_PRIVATELY", "temporary": true}]
-}
-```
-
-Pass that file on stdin, then remove the temporary CLI session configuration:
-
-```sh
-docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh create users --config /tmp/acclimate-admin.config -r acclimate -f - < /private/initial-user.json
-docker compose exec keycloak rm -f /tmp/acclimate-admin.config
-```
-
-The returned Keycloak user UUID is the OIDC `sub`. Put that exact UUID into `ACCLIMATE_OPERATORS` with the realm issuer. It is not Acclimate's separate Account user ID. Complete private files before starting the application:
-
-```sh
-docker compose up -d --build --wait
-```
-
-The first browser login requires changing the temporary password. Configure a permanent identity administrator and retire the temporary bootstrap account using Keycloak's documented administration tools. Public `/admin`, the master realm and management endpoints are blocked by the supplied Caddy configuration; administration stays private.
+The first browser sign-in asks for a new password and the name that Keycloak's user profile requires. The person then manages people at `http://127.0.0.1:8180/admin/acclimate/console/` through an SSH tunnel, as in [Manage people](../../apps/docs/content/docs/operate/self-host.mdx#manage-people). Break-glass recovery uses Keycloak's own `bootstrap-admin` command for a temporary master-realm administrator and `kcadm.sh set-password` inside the container, because that administrator cannot use the admin console.
 
 Initial accounts are admin-provisioned. Email verification and forgotten-password flows are off until real SMTP is configured; enable them deliberately in Keycloak before offering those flows. Passkey/MFA policies can be configured there without moving workspace roles out of Rust.
 
@@ -119,7 +73,7 @@ cargo build --locked
 npm run test:identity:keycloak -- --keycloak-home /private/test-tools/keycloak-26.8.2 --java-home /absolute/java21/home --pg-bin /path/to/postgresql/bin --report /private/keycloak-evidence.json
 ```
 
-Fetch verifies the official release asset's SHA256 and refuses an existing output directory. The check covers wrong-password rejection, browser code/PKCE login, callback replay, disabled grants, session rotation, membership removal, PostgreSQL persistence across restart and application logout followed by Keycloak SSO sign-in. Its disposable CA is trusted by Node; only the disposable browser context has a TLS exception. It does not qualify a Docker image or public TLS deployment. `--runtime built` or `--runtime vite` selects a focused run; omit it for full coverage. Reports must use a new path.
+Fetch verifies the official release asset's SHA256 and refuses an existing output directory. It imports the unmodified first-person template without a bootstrap administrator. The first person signs in by email, changes the temporary password and lists users in the realm admin console on the private listener. The check also covers wrong-password rejection, browser code/PKCE login, callback replay, disabled grants, session rotation, membership removal, PostgreSQL persistence across restart and application logout followed by Keycloak SSO sign-in. Its disposable CA is trusted by Node; only the disposable browser context has a TLS exception. It does not qualify a Docker image or public TLS deployment. `--runtime built` or `--runtime vite` selects a focused run; omit it for full coverage. Reports must use a new path.
 
 The [testing guide](../../features/README.md#keycloak-and-sign-in-coverage) separates provider interoperability from generic failure tests and the full product behavior suite. CI runs the Keycloak provider matrix in its own job so a failure in the main behavior suite cannot prevent it from starting.
 

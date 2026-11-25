@@ -3,6 +3,7 @@
 
 import argparse
 import os
+import shlex
 import shutil
 from pathlib import Path
 import subprocess
@@ -65,11 +66,13 @@ with tempfile.TemporaryDirectory(prefix="acclimate-python-package-") as temporar
     )
 
     subprocess.run([str(python), "-I", "-m", "acclimate", "pull", "--help"], cwd=directory, check=True)
-    subprocess.run([str(python.parent / "acclimate"), "pull", "--help"], cwd=directory, check=True)
+    # The only acclimate command on PATH is the TypeScript one; the wheel installs no script.
+    if (python.parent / "acclimate").exists():
+        raise RuntimeError("The wheel must not install an acclimate console script")
 
     subprocess.run([str(python), str(root / "python/tests/test_pull.py")],
                    cwd=directory, check=True,
-                   env={**os.environ, "ACCLIMATE_TEST_PULL_BIN": str(python.parent / "acclimate")})
+                   env={**os.environ, "ACCLIMATE_TEST_PULL_BIN": shlex.join([str(python), "-I", "-m", "acclimate"])})
 
     if args.output:
         args.output.mkdir(parents=True, exist_ok=True, mode=0o700)

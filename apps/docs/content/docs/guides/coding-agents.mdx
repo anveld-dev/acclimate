@@ -261,11 +261,10 @@ The native repository starter runs a coding agent on a frozen copy of an existin
 | `node native.mjs check-bundle PAYLOAD.json` | A payload follows the [rules](#rules-for-bundle-files) of each agent SDK named by `"harness"` or `"harnesses"` in the starter's `native.json`, Codex by default |
 | `claude-delivery-check.mjs`, or another agent's, from **App setup** | Your channel's version prepares in that plugin's layout, without a model call |
 
-For Codex, install the pinned Codex SDK from your approved npm cache, where `$app` is the starter's absolute path. The check prints the Codex CLI version and needs no credentials.
+For Codex, install the pinned Codex SDK, where `$app` is the starter's absolute path. The starter's `.npmrc` turns off install scripts, saves the exact version and installs the Codex CLI's optional platform package. The check prints the Codex CLI version and needs no credentials.
 
 ```sh
-npm install --prefix "$app" --workspaces=false --offline --include=optional --ignore-scripts --no-audit --no-fund \
-  --save-exact @openai/codex-sdk@0.169.0
+npm install --prefix "$app" @openai/codex-sdk@0.169.0
 node "$app/verify-install.mjs" codex --codex-sdk
 ```
 

@@ -59,6 +59,8 @@ fn unknown_credential() -> crate::ApiErr {
 const LIMIT: &str = "limit must be between 1 and 100";
 const NOT_PERMITTED: &str = "Integration credential does not permit this operation";
 const NOT_RELEASED: &str = "This version was never released on the connection's channel";
+const NEVER_RELEASED: &str =
+    "This version, revision and digest were never released together on the connection's channel";
 async fn admin(
     s: &AppState,
     h: &HeaderMap,
@@ -404,6 +406,29 @@ async fn delivery_history(
         .fetch_one(&mut **tx).await.map_err(db)
 }
 
+/// A receipt as sent. The service fills the omitted identifiers from the path, the
+/// credential's connection and the version before it validates or fingerprints the receipt.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ReceiptRequest {
+    event_id: Uuid,
+    #[serde(rename = "connectionId")]
+    integration_id: Option<Uuid>,
+    #[serde(rename = "workspaceId")]
+    project_id: Option<String>,
+    bundle_id: Option<Uuid>,
+    channel: Option<String>,
+    revision: Option<String>,
+    version_id: Uuid,
+    digest: Option<String>,
+    stage: String,
+    occurred_at: DateTime<Utc>,
+    source: String,
+    resolved_at: Option<DateTime<Utc>>,
+    stale: Option<bool>,
+}
+
+/// A complete receipt, as stored and returned.
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Receipt {
@@ -452,12 +477,12 @@ fn validate(b: &Receipt, now: DateTime<Utc>) -> ApiResult<Option<i64>> {
         || mapped != b.stale.is_some()
     {
         return Err(invalid(
-            "channel, revision, resolvedAt and stale must be sent together or not at all",
+            "revision, resolvedAt and stale must be sent together or not at all, and channel only with them",
         ));
     }
     if b.stage == "resolved" && !mapped {
         return Err(invalid(
-            "A resolved receipt needs channel, revision, resolvedAt and stale",
+            "A resolved receipt needs revision, resolvedAt and stale",
         ));
     }
     if b.occurred_at < now - Duration::hours(24) {
@@ -501,14 +526,50 @@ async fn receive(
     if r.get::<String, _>("project_id") != p || r.get::<Uuid, _>("id") != i {
         return Err(denied("This credential belongs to another connection"));
     }
-    let b: Receipt = crate::json_body(&h, &body)?;
-    if b.integration_id != i || b.project_id != p || b.bundle_id != r.get::<Uuid, _>("bundle_id") {
+    let sent: ReceiptRequest = crate::json_body(&h, &body)?;
+    let bundle: Uuid = r.get("bundle_id");
+    let channel: String = r.get("channel");
+    if sent.integration_id.is_some_and(|x| x != i)
+        || sent.project_id.as_ref().is_some_and(|x| x != &p)
+        || sent.bundle_id.is_some_and(|x| x != bundle)
+    {
         return Err(denied(
             "connectionId, workspaceId and bundleId must match the credential's connection",
         ));
     }
+    let digest = match sent.digest {
+        Some(digest) => digest,
+        None => sqlx::query_scalar(
+            "SELECT digest FROM versions WHERE project_id=$1 AND bundle_id=$2 AND id=$3",
+        )
+        .bind(&p)
+        .bind(bundle)
+        .bind(sent.version_id)
+        .fetch_optional(&s.db)
+        .await
+        .map_err(db)?
+        .ok_or_else(|| denied(NEVER_RELEASED))?,
+    };
+    // Fill the omitted fields first, so a minimal body and the complete body with the
+    // same values are the same receipt and share one fingerprint.
+    let b = Receipt {
+        event_id: sent.event_id,
+        integration_id: i,
+        project_id: p.clone(),
+        bundle_id: bundle,
+        channel: sent
+            .channel
+            .or_else(|| sent.revision.is_some().then(|| channel.clone())),
+        revision: sent.revision,
+        version_id: sent.version_id,
+        digest,
+        stage: sent.stage,
+        occurred_at: sent.occurred_at,
+        source: sent.source,
+        resolved_at: sent.resolved_at,
+        stale: sent.stale,
+    };
     let revision = validate(&b, Utc::now())?;
-    let channel: String = r.get("channel");
     if b.channel.as_ref().is_some_and(|c| c != &channel) {
         return Err(denied("channel is not the connection's channel"));
     }
@@ -538,9 +599,7 @@ async fn receive(
     )
     .await?
     {
-        return Err(denied(
-            "This version, revision and digest were never released together on the connection's channel",
-        ));
+        return Err(denied(NEVER_RELEASED));
     }
     // Cooperative retention is applied on each receipt operation, including dedup keys.
     sqlx::query("DELETE FROM integration_receipts WHERE received_at<now()-interval '30 days'")

@@ -1,4 +1,8 @@
-"""pull saves a published payload for local evaluation, without application code."""
+"""pull saves a published payload for local evaluation, without application code.
+
+Set ACCLIMATE_TEST_PULL_BIN to a command, such as the TypeScript ``acclimate`` executable or
+``python -I -m acclimate``, to run the same checks against it.
+"""
 from contextlib import redirect_stderr, redirect_stdout
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -6,6 +10,7 @@ import io
 import json
 from pathlib import Path
 import os
+import shlex
 import subprocess
 import tempfile
 import threading
@@ -31,7 +36,12 @@ class PullTests(unittest.TestCase):
 
             def do_GET(self):
                 route = urlsplit(self.path).path
-                if route.endswith(f"/bundles/{BUNDLE}/channels/stable/releases"):
+                if self.headers.get("Authorization") != "Bearer PRIVATE_CANARY":
+                    data, status = json.dumps({"error": {"code": "unauthenticated", "message": "no", "requestId": "x"}}).encode(), 401
+                elif route.endswith("/workspaces/project/bundles"):
+                    items = [{"id": BUNDLE, "name": "Support agent"}]
+                    data, status = json.dumps({"items": items, "nextCursor": None}).encode(), 200
+                elif route.endswith(f"/bundles/{BUNDLE}/channels/stable/releases"):
                     data, status = json.dumps({"items": [{"channel": "stable", "revision": "3", "version": version}]}).encode(), 200
                 elif route.endswith(f"/versions/{VERSION}/payload"):
                     data, status = body, 200
@@ -66,39 +76,64 @@ class PullTests(unittest.TestCase):
         self.empty = self.root / "no-application"
         self.empty.mkdir()
 
-    def invoke(self, args):
+    def invoke(self, args, env=None):
+        environ = {**os.environ, **(env or {})}
         if command := os.environ.get("ACCLIMATE_TEST_PULL_BIN"):
-            run = subprocess.run([command, *args], cwd=self.empty, text=True, capture_output=True)
+            environ["HOME"] = str(self.root)
+            run = subprocess.run([*shlex.split(command), *args], cwd=self.empty, text=True,
+                                 capture_output=True, env=environ)
             return run.returncode, run.stdout, run.stderr
         output, errors = io.StringIO(), io.StringIO()
-        with redirect_stdout(output), redirect_stderr(errors):
-            status = main(args)
+        saved = dict(os.environ)
+        os.environ.clear()
+        os.environ.update(environ, HOME=str(self.root))
+        try:
+            with redirect_stdout(output), redirect_stderr(errors):
+                status = main(args)
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
         return status, output.getvalue(), errors.getvalue()
 
     def test_pull_writes_a_new_private_payload_without_application_code(self):
         out = self.root / "candidate.json"
-        status, output, _ = self.invoke(["pull", "--config", str(self.config), "--bundle", BUNDLE, "--out", str(out)])
-        self.assertEqual(status, 0)
+        status, output, errors = self.invoke(["pull", "--config", str(self.config), "--bundle", BUNDLE, "--out", str(out)])
+        self.assertEqual(status, 0, output)
         result = json.loads(output)
         self.assertEqual((result["versionId"], result["revision"], result["files"]), (VERSION, "3", 1))
+        self.assertTrue(errors.startswith("Saved stable (version "), errors)
         self.assertEqual(json.loads(out.read_text()), PAYLOAD)
         self.assertEqual(out.stat().st_mode & 0o777, 0o600)
-        status, _, errors = self.invoke(["pull", "--config", str(self.config), "--bundle", BUNDLE, "--out", str(out)])
-        self.assertEqual(status, 1)
+        status, output, errors = self.invoke(["pull", "--config", str(self.config), "--bundle", BUNDLE, "--out", str(out)])
+        self.assertEqual(status, 2)
         self.assertIn("already exists", errors)
-        self.assertEqual(json.loads(errors)["error"]["field"], "--out")
+        self.assertEqual(json.loads(output)["error"]["field"], "--out")
+
+    def test_pull_reads_the_environment_and_finds_the_bundle_by_name(self):
+        out = self.root / "named.json"
+        env = {"ACCLIMATE_URL": f"http://127.0.0.1:{self.server.server_address[1]}",
+               "ACCLIMATE_WORKSPACE": "project", "ACCLIMATE_TOKEN": "PRIVATE_CANARY"}
+        status, output, errors = self.invoke(["pull", "--bundle", "Support agent", "--out", str(out)], env)
+        self.assertEqual(status, 0, output + errors)
+        self.assertEqual(json.loads(output)["bundleId"], BUNDLE)
+        self.assertEqual(json.loads(out.read_text()), PAYLOAD)
+        status, output, _ = self.invoke(["pull", "--bundle", "Nobody", "--out", str(self.root / "none.json")], env)
+        self.assertEqual((status, json.loads(output)["error"]["code"]), (1, "bundle.missing"))
+        status, output, _ = self.invoke(["pull", "--bundle", "Support agent", "--out", str(self.root / "unset.json")],
+                                        {**env, "ACCLIMATE_TOKEN": ""})
+        self.assertEqual((status, json.loads(output)["error"]["code"]), (1, "config.missing"))
 
     def test_pull_explains_usage_and_service_refusals(self):
-        status, _, errors = self.invoke(["pull", "--config", str(self.config), "--bundle", BUNDLE])
+        status, output, _ = self.invoke(["pull", "--config", str(self.config), "--bundle", BUNDLE])
+        self.assertEqual(status, 2)
+        self.assertEqual(json.loads(output)["error"]["code"], "usage.missing_flag")
+        self.assertEqual(json.loads(output)["error"]["field"], "--out")
+        status, output, errors = self.invoke(["pull", "--config", str(self.config), "--bundle", BUNDLE,
+                                              "--channel", "beta", "--out", str(self.root / "beta.json")])
         self.assertEqual(status, 1)
-        self.assertEqual(json.loads(errors)["error"]["code"], "usage.missing_flag")
-        self.assertEqual(json.loads(errors)["error"]["field"], "--out")
-        status, _, errors = self.invoke(["pull", "--config", str(self.config), "--bundle", BUNDLE,
-                                         "--channel", "beta", "--out", str(self.root / "beta.json")])
-        self.assertEqual(status, 1)
-        self.assertEqual(json.loads(errors)["error"]["code"], "bundle.missing")
-        self.assertNotIn("PRIVATE_CANARY", errors)
-
+        self.assertEqual(json.loads(output)["error"]["code"], "bundle.missing")
+        self.assertTrue(errors.startswith("acclimate: "), errors)
+        self.assertNotIn("PRIVATE_CANARY", output + errors)
 
 if __name__ == "__main__":
     unittest.main()

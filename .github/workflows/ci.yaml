@@ -79,7 +79,6 @@ jobs:
       - run: npm run test:starters
       - run: npm audit --audit-level=high
       - run: PYTHONPATH=python python -m unittest discover -s python/tests -v
-      - run: python -m unittest discover -s scripts/operations -p 'test_*.py' -v
   test:
     needs: [changes, build]
     if: needs.changes.outputs.full == 'true'

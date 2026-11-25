@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { archiveStarters } from './starter-artifacts.mjs';
 const inventories = JSON.parse(await readFile(new URL('./starter-files.json', import.meta.url), 'utf8'));
+const npmrc = await readFile(new URL('../../examples/native-repository/.npmrc', import.meta.url), 'utf8');
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'acclimate-starter-archive-test-'));
@@ -13,7 +14,7 @@ async function fixture() {
     for (const file of files) {
       const path = join(root, 'examples', name.endsWith('evaluation') ? `${name}-starter` : name, file);
       await mkdir(dirname(path), { recursive: true });
-      await writeFile(path, file === 'package.json' ? '{}' : 'Public fixture\n');
+      await writeFile(path, file === 'package.json' ? '{}' : file === '.npmrc' ? npmrc : 'Public fixture\n');
     }
   }
   await writeFile(join(root, 'examples/native-repository/package.json'), JSON.stringify({ private: true, version: '0.0.0', dependencies: { '@acclimate/sdk': '0.0.0' } }));
@@ -40,6 +41,10 @@ test('release archives contain installed-app source and native harnesses, exclud
     for (const file of ['smoke.mjs', 'fixture/replay.json', 'fixture/tests/retry.test.mjs'])
       assert.ok(native.includes(`native-repository-starter/${file}`), file);
     assert.ok(!native.includes('native.replay.json'), 'retired replay config shipped');
+    // The starter's npm settings ship so a plain npm install --prefix is safe.
+    assert.equal(execFileSync('tar', ['-xOzf', archive, 'native-repository-starter/.npmrc'], { encoding: 'utf8' }), npmrc);
+    for (const setting of ['ignore-scripts=true', 'audit=false', 'fund=false', 'save-exact=true', 'include=optional'])
+      assert.ok(npmrc.split('\n').includes(setting), setting);
     assert.equal(listing.includes('node_modules'), false);
     const manifest = JSON.parse(execFileSync('tar', ['-xOzf', archive, 'native-repository-starter/package.json'], { encoding: 'utf8' }));
     assert.equal(manifest.version, '1.2.3');
@@ -65,6 +70,14 @@ test('starter bytes are reproducible across source timestamps and output locatio
     await archiveStarters(root, other, metadata);
     for (const starter of metadata.starters)
       assert.deepEqual(await readFile(join(output, starter.file)), await readFile(join(other, starter.file)));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('the starter npm settings cannot carry a registry credential', async () => {
+  const { root, metadata, output } = await fixture();
+  try {
+    await writeFile(join(root, 'examples/native-repository/.npmrc'), npmrc + '//registry.npmjs.org/:_authToken=secret-canary\n');
+    await assert.rejects(archiveStarters(root, output, metadata), /Private configuration or state/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

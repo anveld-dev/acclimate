@@ -50,6 +50,16 @@ class ChannelResolution(TypedDict):
     version: VersionMetadata
 
 
+class ReleaseResult(TypedDict):
+    """What ``Acclimate.release`` or ``Acclimate.rollback`` left on the channel."""
+
+    bundleId: str
+    channel: str
+    revision: str
+    version: VersionMetadata
+    changed: bool
+
+
 class CreateVersionRequest(TypedDict):
     parentVersionId: str | None
     payload: BundlePayload
@@ -769,6 +779,7 @@ __all__ = [
     "Bundle",
     "VersionMetadata",
     "ChannelResolution",
+    "ReleaseResult",
     "CreateVersionRequest",
     "CreateReleaseRequest",
     "Release",

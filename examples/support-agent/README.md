@@ -8,7 +8,7 @@ A small application that answers one support request with the bundle released on
 | --- | --- |
 | `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` | The service address and the workspace. `source .local/stack/env.sh` sets both for the local stack. |
 | `ACCLIMATE_TOKEN` | A machine token with read, and with write to report corrections. |
-| `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `AGENT_MODEL` | An OpenAI-compatible endpoint such as `http://127.0.0.1:8317/v1`, its key, and the model that answers. |
+| `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `AGENT_MODEL` | An OpenAI-compatible base URL such as `https://api.openai.com/v1`, its key, and the model that answers. `env.sh` sets them when the stack was started with a [model provider](../../apps/docs/content/docs/reference/local-stack.mdx#run-learning-rounds). |
 | `ACCLIMATE_BUNDLE_NAME`, `ACCLIMATE_CHANNEL` | Optional. The defaults are `Example agent`, which the local stack publishes, and `stable`. |
 
 From the repository root:

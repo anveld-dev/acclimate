@@ -20,7 +20,6 @@
     "test:e2e": "python3 scripts/productization/service_e2e.py",
     "test:learning-e2e": "python3 executor/tests/central_learning.py",
     "build": "npm run build:packages && npm run build:console",
-    "example:publish": "tsx examples/publish.ts",
     "example:codex": "tsx examples/codex-agent.ts",
     "pack:verify": "node scripts/packaging/verify.mjs",
     "test:codex-session": "tsx examples/codex-session-check.ts",

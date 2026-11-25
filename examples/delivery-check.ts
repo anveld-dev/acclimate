@@ -6,20 +6,20 @@ import { optionalReceipts, settleOptional } from './optional-receipts.js';
 for (const key of [
   'ACCLIMATE_URL',
   'ACCLIMATE_TOKEN',
-  'ACCLIMATE_SCOPE',
   'ACCLIMATE_WORKSPACE',
   'ACCLIMATE_BUNDLE',
   'ACCLIMATE_CONNECTION',
 ]) {
   if (!process.env[key]) throw new Error('Set ' + key);
 }
+const workspaceId = process.env.ACCLIMATE_WORKSPACE!;
 const client = new AcclimateClient({
   baseUrl: process.env.ACCLIMATE_URL!,
   token: process.env.ACCLIMATE_TOKEN!,
-  scope: process.env.ACCLIMATE_SCOPE!,
+  // ACCLIMATE_SCOPE is optional and, as in createAcclimate, defaults to the workspace.
+  scope: process.env.ACCLIMATE_SCOPE || workspaceId,
   connectionId: process.env.ACCLIMATE_CONNECTION!,
 });
-const workspaceId = process.env.ACCLIMATE_WORKSPACE!;
 const reporter = optionalReceipts(process.env, workspaceId);
 try {
   const prepared = await client.prepare({

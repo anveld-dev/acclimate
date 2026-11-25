@@ -244,7 +244,8 @@ def ui_issue(context):
     p.get_by_role('button',name='Create read credential',exact=True).click()
     expect(p.get_by_role('heading',name='Save this credential now',exact=True)).to_be_visible()
     w.ui_secret=p.get_by_role('dialog').get_by_label('One-time credential secret',exact=True).input_value()
-    w.ui_credential_id=p.get_by_role('dialog').locator('code').inner_text()
+    # The dialog also shows code in its help text; the credential ID is the UUID.
+    w.ui_credential_id=p.get_by_role('dialog').locator('code').filter(has_text=re.compile(r'^[0-9a-f-]{36}$')).inner_text()
     w.h.tokens['issued-browser']=w.ui_secret
 
 

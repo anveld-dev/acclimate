@@ -6,6 +6,8 @@
 
 The release workflow checks the tag against the package versions and runs `npm run pack:verify`. It builds each image on native amd64 and arm64 runners, then tags one multi-arch image for each of `ghcr.io/anveld-dev/acclimate-service` and `ghcr.io/anveld-dev/acclimate-console` with the version (for example, `0.1.0`) and `latest`. Each platform image includes BuildKit provenance and SBOM attestations. The arm64 jobs use GitHub's `ubuntu-24.04-arm` hosted runners.
 
+`compose.yaml` names these images with `${ACCLIMATE_VERSION:-local}`, so it needs no change for a release. Without a version, Compose builds and tags `local` images from the checkout, which can never be mistaken for a published release. A self-hoster pins a release with `deploy/init.sh --version 0.1.0` or `ACCLIMATE_VERSION=0.1.0` in `.env`.
+
 After the four images (service, console, executor and runner) build and push, the workflow creates a GitHub Release with the verified tarballs, wheel, manifest and checksums. It uses the matching changelog section when available and GitHub-generated notes otherwise. The tag run does not publish to npm or PyPI. Registry publication is a separate, approved step.
 
 After the first release, set the four GHCR packages to **Public** in their package settings so self-hosters can pull anonymously. GitHub creates new GHCR packages with private visibility by default. [GitHub Container Registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#pushing-container-images)

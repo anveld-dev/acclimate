@@ -23,7 +23,7 @@ These steps make zero live model calls. The TypeScript runner starts private Pos
 
 ## Freeze and run
 
-Set up a private CLIProxyAPI instance with Codex sign-in using the [deployment guide](../../deploy/README.md#cliproxyapi-with-codex-sign-in). Use one Codex credential with access to all three exact model IDs. Keep its configuration and routing fixed through the study. Set `SIM_PROXY_API_KEY` in the driver's environment to the client key configured in CLIProxyAPI. Set the following paths and record the exact revision of the running proxy. The example revision is the one inspected for compatibility.
+Set up a private CLIProxyAPI instance with Codex sign-in using the [contributor notes](../../docs/development.md#use-a-local-model-proxy). Use one Codex credential with access to all three exact model IDs. Keep its configuration and routing fixed through the study. Set `SIM_PROXY_API_KEY` in the driver's environment to the client key configured in CLIProxyAPI. Set the following paths and record the exact revision of the running proxy. The example revision is the one inspected for compatibility.
 
 ```sh
 sim_python=/tmp/w1-sim-venv/bin/python

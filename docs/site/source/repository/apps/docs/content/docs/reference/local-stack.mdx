@@ -45,7 +45,7 @@ API           https://127.0.0.1:24831
 Mailpit       http://localhost:24833
 Pull config   /path/to/acclimate/.local/stack/pull.json
 Local CA      /path/to/acclimate/.local/stack/root.crt
-Optimizer     Not configured. To run learning rounds, set ACCLIMATE_MODEL_ENDPOINT, ACCLIMATE_MODEL_TOKEN and ACCLIMATE_MODEL, then run npm run local:up again.
+Optimizer     Not configured. To run learning rounds, set ACCLIMATE_PROVIDER_URL, ACCLIMATE_PROVIDER_KEY, ACCLIMATE_PROVIDER_MODELS and ACCLIMATE_MODEL, then run npm run local:up again.
 Workspace     local-demo, adopted for operator@acclimate.invalid ("local stack bootstrap")
 Example       bundle 0b6e…41f2 on channel stable
 Initial login password (printed once)  …
@@ -59,7 +59,7 @@ export SSL_CERT_FILE='/path/to/acclimate/.local/stack/ca-bundle.pem'
 export ACCLIMATE_API='https://127.0.0.1:24831'
 export ACCLIMATE_URL='https://127.0.0.1:24831'
 export ACCLIMATE_WORKSPACE='local-demo'
-export BUNDLE_ID='0b6e…41f2'
+export ACCLIMATE_BUNDLE='0b6e…41f2'
 ```
 
 Starting again reuses the ports, databases, login and credentials. All published ports bind to loopback. Keep `.local/stack/` private.
@@ -83,7 +83,8 @@ source /path/to/acclimate/.local/stack/env.sh
 | `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` | The service address and the workspace, which the SDKs and the [examples](/docs/tutorials/first-learning-round) read |
 | `ACCLIMATE_API` | The service address again, for curl |
 | `ACCLIMATE_PULL_CONFIG` | A ready config file for [`acclimate pull`](/docs/reference/typescript-sdk#acclimate-pull) |
-| `BUNDLE_ID` | The ID of the **Example agent** bundle |
+| `ACCLIMATE_BUNDLE` | The ID of the **Example agent** bundle |
+| `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `TASK_MODEL`, `JUDGE_MODEL`, `AGENT_MODEL` | With a [model provider](#run-learning-rounds), its address and key, the first allowed model as task and agent model and the second as judge model, which the examples read |
 
 If the script found no system CA bundle, `local:up` says so. Then point `SSL_CERT_FILE` at a merged bundle before you call an external model provider from Python. curl takes the CA as a flag.
 
@@ -110,11 +111,22 @@ All mail from the stack arrives in Mailpit: invitations, email verification, pas
 
 ## Run learning rounds
 
-The **Learning** tab works as in a deployment, except that each rollout runs in a plain Docker sandbox, which isolates less than the gVisor runtime a deployment uses. Learning also needs an optimizer and a model provider. See [Run your first learning round](/docs/tutorials/first-learning-round).
+The **Learning** tab works as in a deployment, except that each rollout runs in a plain Docker sandbox, which isolates less than the gVisor runtime a deployment uses. Learning also needs an optimizer and a model provider, which `local:up` sets from one OpenAI-compatible provider when you export these first, as in [Connect a model provider](/docs/tutorials/first-learning-round#connect-a-model-provider).
+
+| Variable | What it sets |
+| --- | --- |
+| `ACCLIMATE_PROVIDER_URL` | The provider's base URL, ending in `/v1`. The optimizer calls it with `/chat/completions` added. |
+| `ACCLIMATE_PROVIDER_KEY` | The API key, for the optimizer and the workspace's model provider |
+| `ACCLIMATE_PROVIDER_MODELS` | At least two allowed model IDs, separated by commas |
+| `ACCLIMATE_MODEL` | The optimizer's model ID |
+
+`local:up` saves the provider for `local-demo` with `acclimate-service --set-model-provider` and prints the executor's verification on the `Provider` line. It saves it again only when these settings change, so edits on the console's **Model provider** page survive a restart. The stack keeps the settings for later starts. To clear them, export all three `ACCLIMATE_PROVIDER_` variables empty.
+
+The containers reach a provider on `127.0.0.1` or `localhost` as `host.docker.internal`, which `local:up` adds to `ACCLIMATE_PROVIDER_HTTP_HOSTS`. On Linux that name is the Docker bridge address, so the provider must listen there. `ACCLIMATE_MODEL_ENDPOINT` and `ACCLIMATE_MODEL_TOKEN` override the optimizer's endpoint and key, and the other [optimizer settings](/docs/reference/configuration#optimizer) also apply.
 
 ## Executor concurrency
 
-`ACCLIMATE_EXECUTOR_CONCURRENCY` sets how many rollouts the executor runs at once. The local default is 4. A higher value finishes rounds sooner, but runs more sandboxes and sends more requests to the model provider at once, which a single Codex sign-in may answer with rate limits. Export it before `npm run local:up`. It is not saved, so a later start without it returns to 4.
+`ACCLIMATE_EXECUTOR_CONCURRENCY` sets how many rollouts the executor runs at once. The local default is 4. A higher value finishes rounds sooner, but runs more sandboxes and sends more requests to the model provider at once, which the provider may answer with rate limits. Export it before `npm run local:up`. It is not saved, so a later start without it returns to 4.
 
 ## Stop or reset
 

@@ -1,22 +1,22 @@
 ---
 title: Check health and readiness
-description: Probe the deployed API and console, read container exit codes, then verify machine access and sign-in.
+description: Probe the deployed API and console, read container exit codes, then verify the public routes and sign-in.
 ---
 
-Use the probes for monitoring and during an incident. Run the two checks at the end after every deployment and upgrade.
+Use the probes for monitoring and during an incident. Run the checks at the end after every deployment, upgrade and restore.
 
 ## Probe the stack
 
-Run these from the checkout with your deployment settings loaded, or put in your hostnames.
+Run these from the checkout, with your hostnames.
 
 ```sh
 docker compose ps
-curl -fsS "https://$API_HOST/health"
-curl -fsS "https://$API_HOST/ready"
-curl -fsS -o /dev/null -w '%{http_code}\n' "https://$CONSOLE_HOST/ready"
+curl -fsS https://<api-host>/health
+curl -fsS https://<api-host>/ready
+curl -fsS https://<console-host>/ready
 ```
 
-In a healthy deployment, every container is `healthy` and the three requests return `ok`, `{"ready":true}` and `200`.
+In a healthy deployment, every container is `healthy` and the three requests return `ok`, `{"ready":true}` and `{"status":"ready"}`.
 
 | Probe | What it checks |
 | --- | --- |
@@ -26,7 +26,7 @@ In a healthy deployment, every container is `healthy` and the three requests ret
 | Caddy container health | The proxy is running with its configuration loaded. It starts only after the service and the console are healthy. |
 | Executor container health | See [Check the executor](/docs/operate/enable-learning#check-the-executor). |
 
-An API that is not ready returns HTTP 503 with `{"ready":false}`. Ready does not mean that learning rounds progress or that a model provider is reachable.
+An API that is not ready returns HTTP 503 with `{"ready":false}`, and the console returns 503 with `{"status":"not_ready"}`. Ready does not mean that learning rounds progress or that a model provider is reachable.
 
 If `/ready` stays unavailable, check in the service log that the database is reachable, that migrations completed and that no second service process uses the database.
 
@@ -51,18 +51,11 @@ The service exposes no metrics endpoint, so watch these from outside.
 
 ### Logs
 
-Every container logs to standard output, and Compose sets no rotation, so Docker's default `json-file` driver keeps every line. Limit it in `/etc/docker/daemon.json`, then restart Docker and recreate the containers, because the limit applies only to new containers.
-
-```json title="/etc/docker/daemon.json"
-{
-  "log-driver": "json-file",
-  "log-opts": { "max-size": "10m", "max-file": "5" }
-}
-```
+Compose rotates each container's log at 10 MB and keeps five files, so read recent lines with `docker compose logs <service>` and ship them elsewhere to keep more.
 
 ### Data growth
 
-The service deletes integration receipts older than 30 days each time a receipt arrives. It keeps everything else: bundle versions and release history, learning rounds with their rollouts, imported tasks, sessions and the audit log. Keep enough disk for the growing database and for a restored copy during a restore.
+The service deletes integration receipts older than 30 days each time a receipt arrives. It keeps everything else: bundle versions and release history, learning rounds with their rollouts, imported tasks, sessions and the audit log. Keep enough disk for the growing database and for the copy that a restore or an upgrade keeps.
 
 ## Read exit codes
 
@@ -76,30 +69,10 @@ Compose restarts a container that exits. `docker compose ps` shows the exit code
 
 ## Verify API access and sign-in
 
-The repository's tests use test certificates and a test issuer, so run both checks against your deployment before it takes traffic. Each runs from a checkout with Python 3, prints a JSON result and exits nonzero unless it passed. The optional `--output` flag also writes the result to a new file, in a private directory.
-
-### Check API access
-
-You need a [machine token](/docs/reference/credentials#credential-types) with the read right for one workspace. Pass the name of the environment variable that holds it, so the token stays out of the command.
+The repository's tests use test certificates and a test issuer, so check your own deployment before it takes traffic. From a computer outside the server, run the three requests in [Probe the stack](#probe-the-stack), which also check DNS, the certificates and Caddy. Then check that the issuer publishes its configuration.
 
 ```sh
-python3 scripts/productization/external.py --execute --gate https \
-  --url https://api.example.com --workspace <workspace-id> --token-env ACCLIMATE_CHECK_TOKEN \
-  --output /absolute/private/https-check.json
+curl -fsS https://<auth-host>/realms/acclimate/.well-known/openid-configuration
 ```
 
-The check verifies the API's certificate and hostname, requests `/health` and `/ready`, then lists the workspace's bundles with the token.
-
-### Check sign-in
-
-You need Playwright for Python with Chromium, a display and a test account in your Keycloak realm. Pass the public console URL and the exact issuer, for the co-hosted Keycloak `https://<keycloak-host>/realms/acclimate`.
-
-```sh
-python3 scripts/productization/external.py --execute --gate oidc --interactive \
-  --url https://console.example.com --issuer https://auth.example.com/realms/acclimate \
-  --output /absolute/private/oidc-check.json
-```
-
-Sign in with the test account within three minutes of the browser opening. The check confirms that sign-in goes through your issuer and returns to the console, that the session cookie is secure and that signing out clears it.
-
-Neither check shows that learning works. For the other checks, see [What has been tested](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#what-has-been-tested).
+Its `issuer` must equal `ACCLIMATE_OIDC_ISSUER` in `service.env`. For an existing Keycloak or another provider, request `<issuer>/.well-known/openid-configuration`. Finally, open the console in a private browser window, sign in and sign out. None of these checks shows that learning works. For that, see [Check the executor](/docs/operate/enable-learning#check-the-executor).

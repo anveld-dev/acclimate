@@ -31,6 +31,7 @@ import { ConsoleLink, consoleDestination } from './console-link';
 import { bundleHref, workspaceHref } from '../navigation';
 import { connectionHref as scopedConnectionHref } from '../lib/connection-navigation';
 import { CopyButton } from './copy-button';
+import { credentialShellExports } from '../lib/credential-exports';
 import { PageTitle } from './shared';
 import { Textarea } from './ui/textarea';
 import {
@@ -1305,7 +1306,24 @@ function ConnectionWorkspace({
             value={credential?.secret ?? ''}
             onFocus={(event) => event.currentTarget.select()}
           />
-          {credential && <CopyButton value={credential.secret} label="Copy secret" />}
+          {credential && (
+            <div className="flex flex-wrap gap-2">
+              <CopyButton value={credential.secret} label="Copy secret" />
+              {selected && (
+                <CopyButton
+                  value={credentialShellExports({
+                    url: state.publicApiUrl,
+                    workspaceId: state.workspaceId,
+                    bundleId: selected.bundleId,
+                    connectionId: selected.id,
+                    kind: credential.kind,
+                    secret: credential.secret,
+                  })}
+                  label="Copy as shell exports"
+                />
+              )}
+            </div>
+          )}
           {error && (
             <p role="status" className="text-sm">
               {error}
@@ -1313,7 +1331,8 @@ function ConnectionWorkspace({
           )}
           <p className="text-sm text-muted-foreground">
             The secret stays visible until you close this dialog. You can also select and copy it
-            above.
+            above. <strong>Copy as shell exports</strong> copies one <code>export</code> line with
+            the service URL, workspace, bundle, connection and this secret.
           </p>
           <DialogFooter>
             <Button

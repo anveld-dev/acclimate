@@ -107,3 +107,54 @@ test('expect sends an explicit grading choice and refuses unknown ones', async (
     await rm(cacheDir, { recursive: true, force: true });
   }
 });
+
+test('release uploads a child version, releases it with the read revision and skips an identical payload', async () => {
+  const { fakeService } = await import('./fake-service.js');
+  const { ApiError, payloadDigest } = await import('../../src/index.js');
+  const service = await fakeService();
+  try {
+    const first = { schemaVersion: 1 as const, files: [{ path: 'AGENTS.md', kind: 'instruction' as const, text: 'One.\n' }] };
+    const second = { schemaVersion: 1 as const, files: [{ path: 'AGENTS.md', kind: 'instruction' as const, text: 'Two.\n' }] };
+    const bundle = service.addBundle('support', first);
+    const [initial] = service.releases.get(`${bundle.id}:stable`)!;
+    assert.equal(payloadDigest(first), initial.version.digest);
+    let moveDuringRelease = false;
+    const acclimate = createAcclimate({
+      baseUrl: service.url, token: 'PRIVATE_CANARY', workspaceId: service.workspace, retries: 0,
+      fetch: async (input, init) => {
+        if (moveDuringRelease && init?.method === 'POST' && String(input).endsWith('/versions')) {
+          const response = await fetch(input, init);
+          service.release(bundle.id, 'stable', initial.version.id, 'Someone else');
+          return response;
+        }
+        return fetch(input, init);
+      },
+    });
+    await assert.rejects(acclimate.release('support', second, { reason: ' ' }), /reason is required/);
+    const unchanged = await acclimate.release('support', first, { reason: 'Same' });
+    assert.deepEqual([unchanged.changed, unchanged.version.id, unchanged.revision], [false, initial.version.id, '1']);
+    assert.equal(service.traffic.filter((item) => item.method === 'POST').length, 0);
+    const released = await acclimate.release('support', second, { reason: 'Second' });
+    assert.deepEqual([released.changed, released.revision, released.channel], [true, '2', 'stable']);
+    assert.equal(released.version.parentVersionId, initial.version.id);
+    const [versionWrite, releaseWrite] = service.traffic.filter((item) => item.method === 'POST');
+    assert.equal(releaseWrite.body.expectedRevision, '1');
+    assert.equal(releaseWrite.body.unevaluatedReason, 'Second');
+    assert.ok(versionWrite.key && releaseWrite.key && versionWrite.key !== releaseWrite.key);
+    const beta = await acclimate.release('support', second, { channel: 'beta', reason: 'Try it' });
+    assert.deepEqual([beta.revision, beta.version.parentVersionId], ['1', null]);
+    moveDuringRelease = true;
+    await assert.rejects(
+      acclimate.release('support', { ...first, files: [{ ...first.files[0], text: 'Three.\n' }] }, { reason: 'Third' }),
+      (error: unknown) => error instanceof ApiError && error.code === 'revision_conflict' && error.status === 409,
+    );
+    moveDuringRelease = false;
+    const back = await acclimate.rollback('support', { reason: 'Undo' });
+    assert.equal(back.version.id, released.version.id);
+    assert.equal(back.revision, '4');
+    await assert.rejects(acclimate.rollback('support', { channel: 'canary', reason: 'Undo' }), /no earlier version/);
+    await assert.rejects(acclimate.release('missing', first, { reason: 'x' }), /No bundle with that name/);
+  } finally {
+    await service.close();
+  }
+});

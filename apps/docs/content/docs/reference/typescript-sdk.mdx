@@ -11,16 +11,16 @@ Other paths inside the package are private and can change in any Acclimate relea
 
 | Entry point | Runtime exports |
 | --- | --- |
-| `@acclimate/sdk` | Jobs: `createAcclimate` |
+| `@acclimate/sdk` | Jobs and releases: `createAcclimate` |
 | | Client: `AcclimateClient` |
-| | Delivery: `systemPrompt`, `resolveAndCache`, `prepareFiles`, `defaultCacheDir`, `verifyPayloadBytes`, `validatePayload` |
+| | Delivery: `systemPrompt`, `resolveAndCache`, `prepareFiles`, `defaultCacheDir`, `verifyPayloadBytes`, `validatePayload`, `fileKindForPath`, `payloadDigest` |
 | | Receipts: `createReceiptReporter` |
 | | Compatibility: `compatibilityIssues`, `assertCompatible` |
 | | Errors: `AcclimateError`, `AcclimateUsageError`, `TransportError`, `ApiError`, `DeliveryError`, `TaskExecutionError`, `InfrastructureError` |
-| `@acclimate/sdk/validation` | `validatePayload`, `DeliveryError`, `compatibilityIssues`, `assertCompatible`, for checking a payload without the client |
+| `@acclimate/sdk/validation` | `validatePayload`, `fileKindForPath`, `DeliveryError`, `compatibilityIssues`, `assertCompatible`, for checking a payload without the client |
 | `@acclimate/sdk/native-files` | `prepareNativeFiles`, `nativeSource` and `transcriptTail`, for plugin authors |
 
-The root entry point also exports every wire type, such as `Bundle`, `VersionMetadata`, `Release` and `Page`, and the option types, such as `ClientOptions`, `CachePolicy`, `OfflinePolicy` and `PrepareDeliveryOptions`. The package also installs the [`acclimate` executable](#acclimate-pull).
+The root entry point also exports every wire type, such as `Bundle`, `VersionMetadata`, `Release` and `Page`, and the option types, such as `ClientOptions`, `CachePolicy`, `OfflinePolicy` and `PrepareDeliveryOptions`. The package also installs the [`acclimate` command](#the-acclimate-command).
 
 ## Jobs
 
@@ -38,7 +38,7 @@ await job.expect(correctedReply, { output: reply });
 
 Send `systemPrompt(job.version.payload)` as your system message: it is the message a [learning rollout](/docs#how-a-rollout-runs-your-bundle) sends, so the loop scores the prompt your jobs run with.
 
-`createAcclimate` ignores `ACCLIMATE_SCOPE` and `ACCLIMATE_CONNECTION` and sends no delivery receipts. Use a machine token with read, plus write if you call `expect`. `createAcclimate(options?)` takes these options:
+`createAcclimate` ignores `ACCLIMATE_SCOPE` and `ACCLIMATE_CONNECTION` and sends no delivery receipts. Use a machine token with read, plus write if you call `expect`, and write and promote if you call `release` or `rollback`. `createAcclimate(options?)` takes these options:
 
 | Option | Default | Value |
 | --- | --- | --- |
@@ -65,6 +65,8 @@ On each call, `acclimate.job(bundleName, options)` lists every bundle in the wor
 | `prepare(destination, options?)` | Writes the version's files into `destination` and returns `files` and `cleanup()` |
 | `prepare(nativePrepare)` | Passes the verified version to a plugin's `prepare` and returns its result |
 | `expect(expected, { input?, output?, grading? })` | Reports a production outcome and returns its receipt |
+
+`acclimate.release(bundleName, payload, { channel?, reason })` uploads `payload` as a child of the channel's current version and releases it on `channel`, `stable` by default. `acclimate.rollback(bundleName, { channel?, reason })` releases the version the channel served before its latest release. Both return `{ bundleId, channel, revision, version, changed }`. `changed` is false when the channel already served the same files. A channel that moved during the call throws `ApiError` with code `revision_conflict`.
 
 `grading` is `'exact'` or `'criteria'`, and any other value throws `AcclimateUsageError`. Without it, the service chooses as [How a row is graded](/docs/guides/learning-loop#how-a-row-is-graded) describes. The first valid `expect` call fixes the input, expected value and output, and a repeat sends the same outcome with the same ID, so it is safe to retry. [Report production outcomes](/docs/guides/learning-loop#report-production-outcomes) explains what the service does with an outcome.
 
@@ -175,22 +177,40 @@ Every method takes `workspaceId` first, then `bundleId` where the route has one.
 
 Every error the SDK throws on purpose extends `AcclimateError` and has a typed `code`. See [Error codes](/docs/reference/error-codes).
 
-## acclimate pull
+## The acclimate command
 
-The `acclimate` executable has one command. It saves a channel's released payload to a new JSON file you can edit.
+The package installs `acclimate`, which saves, publishes and releases bundles. Every command reads `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN`. `--url` and `--workspace` override the first two. `--bundle` takes a name or ID, and `--channel` defaults to `stable`.
 
-```sh
-npx acclimate pull --config /absolute/path/pull.json --bundle <bundle-id> --channel stable --out payload.json
+| Command | Flags | What it does |
+| --- | --- | --- |
+| `pull` | `--bundle`, `--out`, `--channel`, `--config` | Saves the channel's released payload to `--out`, a new file only you can read |
+| `publish <file or folder>` | `--bundle`, `--create`, `--channel`, `--reason` | Releases a payload file or folder as `release()` does. `--create` creates a missing bundle. |
+| `release <version-id>` | `--bundle`, `--channel`, `--reason` | Points the channel at an existing version |
+| `rollback` | `--bundle`, `--channel`, `--reason` | Points the channel at the version it served before its latest release |
+
+Each command prints one JSON line on stdout, with `bundleId`, `channel`, `versionId`, `digest` and `revision`, and a sentence on stderr. On failure, the line is `{"error":{"code":...,"message":...}}` and the exit status is 1, or 2 for a usage error.
+
+The token needs read for `pull`, and read, write and promote for the others. In GitHub Actions, in a repository that depends on `@acclimate/sdk`:
+
+```yaml
+- run: npm ci
+- run: npx acclimate publish bundle --bundle "Support agent" --reason "Commit ${{ github.sha }}"
+  env:
+    ACCLIMATE_URL: ${{ vars.ACCLIMATE_URL }}
+    ACCLIMATE_WORKSPACE: ${{ vars.ACCLIMATE_WORKSPACE }}
+    ACCLIMATE_TOKEN: ${{ secrets.ACCLIMATE_TOKEN }}
 ```
 
-| Flag | Value |
-| --- | --- |
-| `--config` | Path to the config file |
-| `--bundle` | Bundle ID |
-| `--channel` | Channel name, `stable` by default |
-| `--out` | A new file. The command never overwrites one. |
+### acclimate pull
 
-The command prints one JSON line with `schemaVersion`, `bundleId`, `channel`, `versionId`, `digest`, `revision`, `files` and `out`. On failure it prints a JSON error and exits with status 1. The config is a JSON file only its owner can read, in a directory only its owner can access.
+`pull` saves a payload to edit and publish again. It never overwrites a file.
+
+```sh
+npx acclimate pull --bundle "Support agent" --out payload.json
+npx acclimate publish payload.json --bundle "Support agent" --reason "Edited instructions"
+```
+
+Instead of the environment, `--config` can name a JSON file only its owner can read, in a directory only its owner can access:
 
 ```json title="pull.json"
 {
@@ -204,6 +224,4 @@ The command prints one JSON line with `schemaVersion`, `bundleId`, `channel`, `v
 
 - `serviceUrl` is the API's HTTPS origin with no path. Plain HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]`.
 - `cacheDir` must be an absolute path.
-- The token needs the `read` right. Supply it as the `ACCLIMATE_TOKEN` variable, a `token` field or a `tokenFile` field with the absolute path of an owner-only file, but not both fields.
-
-To publish the edited file, see [Publish a bundle from a file](/docs/guides/release-and-roll-back#publish-a-bundle-from-a-file).
+- Supply the token as the `ACCLIMATE_TOKEN` variable, a `token` field or a `tokenFile` field with the absolute path of an owner-only file, but not both fields.

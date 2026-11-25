@@ -404,6 +404,85 @@ async fn opt_in_credentials_are_scoped_revocable_and_receipts_idempotent() {
         call(&app, "POST", &receipt, write, bad).await.0,
         StatusCode::FORBIDDEN
     );
+    // The service fills connectionId, workspaceId, bundleId, channel and digest, so a
+    // minimal body is accepted and stored complete.
+    let minimal = json!({"eventId":Uuid::new_v4(),"versionId":v,"stage":"resolved","source":"network",
+        "occurredAt":now,"revision":"1","resolvedAt":now,"stale":false});
+    let (status, stored) = call(&app, "POST", &receipt, write, minimal.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{stored}");
+    for (field, value) in [
+        ("connectionId", json!(ids[0])),
+        ("workspaceId", json!(p)),
+        ("bundleId", json!(b)),
+        ("channel", json!("stable")),
+        ("digest", json!(digest)),
+    ] {
+        assert_eq!(stored[field], value, "{field}: {stored}");
+    }
+    // The complete body for the same event is the same receipt, not a conflict.
+    let mut full = minimal.clone();
+    for (field, value) in [
+        ("connectionId", json!(ids[0])),
+        ("workspaceId", json!(p)),
+        ("bundleId", json!(b)),
+        ("channel", json!("stable")),
+        ("digest", json!(digest)),
+    ] {
+        full[field] = value;
+    }
+    let (status, again) = call(&app, "POST", &receipt, write, full.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{again}");
+    assert_eq!(again, stored);
+    // A minimal body without a channel mapping stores no channel.
+    let unmapped = json!({"eventId":Uuid::new_v4(),"versionId":v,"stage":"started","source":"cache","occurredAt":now});
+    let (status, stored) = call(&app, "POST", &receipt, write, unmapped.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{stored}");
+    assert!(
+        stored["channel"].is_null() && stored["revision"].is_null(),
+        "{stored}"
+    );
+    assert_eq!(stored["digest"], json!(digest));
+    // Explicit values must still match.
+    for (field, value, status) in [
+        ("bundleId", json!(Uuid::new_v4()), StatusCode::FORBIDDEN),
+        ("workspaceId", json!("another"), StatusCode::FORBIDDEN),
+        ("connectionId", json!(ids[1]), StatusCode::FORBIDDEN),
+        (
+            "digest",
+            json!(format!("sha256:{}", "b".repeat(64))),
+            StatusCode::FORBIDDEN,
+        ),
+        ("channel", json!("beta"), StatusCode::BAD_REQUEST),
+    ] {
+        let mut bad = unmapped.clone();
+        bad["eventId"] = json!(Uuid::new_v4());
+        bad[field] = value;
+        let (got, body) = call(&app, "POST", &receipt, write, bad).await;
+        assert_eq!(got, status, "{field}: {body}");
+    }
+    let mut bad = full.clone();
+    bad["eventId"] = json!(Uuid::new_v4());
+    bad["channel"] = json!("beta");
+    assert_eq!(
+        call(&app, "POST", &receipt, write, bad).await.0,
+        StatusCode::FORBIDDEN
+    );
+    // A version the bundle does not have cannot supply a digest.
+    let mut bad = unmapped.clone();
+    bad["eventId"] = json!(Uuid::new_v4());
+    bad["versionId"] = json!(Uuid::new_v4());
+    let (got, body) = call(&app, "POST", &receipt, write, bad).await;
+    assert_eq!(got, StatusCode::FORBIDDEN, "{body}");
+    assert!(message(&body).contains("never released"), "{body}");
+    // A resolved receipt still needs its revision.
+    let mut bad = minimal.clone();
+    bad["eventId"] = json!(Uuid::new_v4());
+    for field in ["revision", "resolvedAt", "stale"] {
+        bad.as_object_mut().unwrap().remove(field);
+    }
+    let (got, body) = call(&app, "POST", &receipt, write, bad).await;
+    assert_eq!(got, StatusCode::BAD_REQUEST, "{body}");
+    assert!(message(&body).contains("resolved receipt"), "{body}");
     let (status, first) = call(&app, "POST", &receipt, write, event.clone()).await;
     assert_eq!(status, StatusCode::OK);
     let (_, second) = call(&app, "POST", &receipt, write, event.clone()).await;

@@ -1,9 +1,9 @@
 ---
 title: Use your own reverse proxy
-description: Replace the bundled Caddy with nginx, Traefik or an ingress while keeping Acclimate's HTTPS origins, private listeners and trusted proxy headers.
+description: Replace the bundled Caddy with your own proxy while keeping Acclimate's HTTPS origins, private listeners and trusted proxy headers.
 ---
 
-To replace the bundled Caddy with nginx, Traefik or a Kubernetes ingress, your proxy must do what Caddy does. [Self-host Acclimate](/docs/operate/self-host) needs no proxy changes.
+To replace the bundled Caddy with your own proxy, such as nginx or Traefik, it must do what Caddy does. No replacement proxy has been tested. [Self-host Acclimate](/docs/operate/self-host) needs no proxy changes.
 
 ## Match the bundled proxy
 
@@ -35,18 +35,18 @@ With the co-hosted Keycloak, your proxy also serves the Keycloak hostname.
 
 - Forward only `/realms/acclimate`, `/realms/acclimate/*`, `/resources/*` and `/robots.txt` to `keycloak:8080`, and answer every other path yourself, as the bundled configuration does with a 404.
 - Apply the same header rules with the Keycloak hostname.
-- Keep `/admin`, the master realm and the management listener private.
+- Keep `/admin`, the master realm and the management listener private. The admin console is on Keycloak's loopback port, as in [Manage people](/docs/operate/self-host#manage-people).
 - Containers on the private network reach the issuer at its public HTTPS name, which `compose.keycloak.yaml` gives the `proxy` container as an alias on the `backend` network. Your proxy needs the same alias.
 
 ## Run without the bundled proxy
 
-`compose.yaml` defines Caddy as the `proxy` service. To leave it out, start the other services by name, for example with release images:
+`compose.yaml` defines Caddy as the `proxy` service. To leave it out, start the other services by name:
 
 ```sh
-docker compose up -d --no-build --wait postgres service console
+docker compose up -d --build --wait postgres service console
 ```
 
-- Compose still refuses every command unless `CONSOLE_HOST`, `API_HOST` and `ACME_EMAIL` are set.
+- Compose still needs `CONSOLE_HOST`, `API_HOST` and `ACME_EMAIL` in `.env`.
 - The console and the service listen only on the internal Compose network `backend`, which has no outside route. Your proxy must join it, with a second network or the host's ports for public traffic, as the bundled proxy does with `edge`.
 
 ## Run behind a load balancer
@@ -55,13 +55,11 @@ Keep Caddy and send the balancer's traffic to it. Caddy routes by hostname, so t
 
 | Balancer mode | Caddy's certificates |
 | --- | --- |
-| TCP passthrough on 443 and 80. Caddy terminates TLS. | ACME works unchanged while the internet reaches both ports through the balancer. |
-| TLS termination at the balancer, then HTTPS to Caddy on 443 | The balancer holds your public certificate. Caddy needs one the balancer accepts: its own ACME certificate, which needs port 80 forwarded from the internet, or yours. |
-| TLS termination, then plain HTTP to Caddy | Not supported. The bundled Caddyfile redirects HTTP to HTTPS. |
+| TCP passthrough on 443 and 80 | Caddy's ACME certificates work unchanged. |
+| TLS termination, then HTTPS to Caddy on 443 | Caddy needs a certificate the balancer accepts: its own, with port 80 forwarded from the internet, or yours. |
+| TLS termination, then plain HTTP to Caddy | Not supported. Caddy redirects HTTP to HTTPS. |
 
-To give Caddy your own certificate, copy `deploy/Caddyfile`, or `deploy/keycloak/Caddyfile` with the co-hosted Keycloak, to your private directory. Add a `tls` line with the paths as Caddy sees them to each site block, such as `tls /etc/caddy/certs/console.pem /etc/caddy/certs/console.key`, and Caddy requests no certificate for that site. The console reaches a co-hosted Keycloak through Caddy and trusts only public certificate authorities, so the Keycloak hostname's certificate must come from one.
-
-To accept traffic only from the balancer, publish Caddy's ports on a private interface. Put the overrides in a file in your private directory and add its path to `COMPOSE_FILE` in `compose.env`. This example also mounts the copied Caddyfile and your certificates.
+To change Caddy's ports or certificates, write an override file in the private directory and append its absolute path to `COMPOSE_FILE` in `.env`, after a `:`. This one accepts traffic only on a private address and mounts a copy of `deploy/keycloak/Caddyfile`, or of `deploy/Caddyfile` without the co-hosted Keycloak, with a `tls <certificate> <key>` line in each site block. The console trusts only public certificate authorities, so a co-hosted Keycloak's certificate must come from one.
 
 ```yaml title="~/.config/acclimate/compose.edge.yaml"
 services:
@@ -74,77 +72,6 @@ services:
       - /home/ops/.config/acclimate/certs:/etc/caddy/certs:ro
 ```
 
-Use absolute paths and your server's private address. Check the merged result with `docker compose config --quiet`, then run `docker compose up -d --wait proxy`.
-
-## Example nginx configuration
-
-<Callout type="warn" title="This example is untested">
-The repository's tests cover no replacement proxy, including this one. Verify your routing, TLS, headers and sign-in before you switch traffic.
-</Callout>
-
-This example assumes nginx runs at the public edge and resolves both service names on the private network. It needs the [headers-more module](https://github.com/openresty/headers-more-nginx-module) to remove headers by wildcard. Add your own certificate paths and HTTP redirects. Each proxy location includes the common directives from one file.
-
-```nginx title="/etc/nginx/acclimate-proxy.inc"
-more_clear_input_headers 'Forwarded' 'X-Forwarded-*';
-proxy_http_version 1.1;
-proxy_set_header X-Forwarded-Proto https;
-proxy_set_header X-Forwarded-For $remote_addr;
-proxy_connect_timeout 5s;
-proxy_next_upstream off;
-```
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name console.example.com;
-    ssl_certificate /etc/nginx/tls/console.fullchain.pem;
-    ssl_certificate_key /etc/nginx/tls/console.key;
-    client_max_body_size 2m;
-    proxy_send_timeout 35s;
-    proxy_read_timeout 35s;
-    location / {
-        include /etc/nginx/acclimate-proxy.inc;
-        proxy_set_header Host console.example.com;
-        proxy_set_header X-Forwarded-Host console.example.com;
-        proxy_pass http://console:3100;
-    }
-    location = /learning-import {
-        include /etc/nginx/acclimate-proxy.inc;
-        proxy_set_header Host console.example.com;
-        proxy_set_header X-Forwarded-Host console.example.com;
-        client_max_body_size 64m;
-        proxy_send_timeout 615s;
-        proxy_read_timeout 615s;
-        proxy_pass http://console:3100;
-    }
-}
-
-server {
-    listen 443 ssl;
-    server_name api.example.com;
-    ssl_certificate /etc/nginx/tls/api.fullchain.pem;
-    ssl_certificate_key /etc/nginx/tls/api.key;
-    client_max_body_size 2m;
-    proxy_send_timeout 35s;
-    proxy_read_timeout 35s;
-    location / {
-        include /etc/nginx/acclimate-proxy.inc;
-        proxy_set_header Host api.example.com;
-        proxy_set_header X-Forwarded-Host api.example.com;
-        proxy_pass http://service:3000;
-    }
-    location ~ ^/v1/workspaces/[^/]+/bundles/[^/]+/learning/tasks/import$ {
-        include /etc/nginx/acclimate-proxy.inc;
-        proxy_set_header Host api.example.com;
-        proxy_set_header X-Forwarded-Host api.example.com;
-        client_max_body_size 64m;
-        proxy_send_timeout 605s;
-        proxy_read_timeout 605s;
-        proxy_pass http://service:3000;
-    }
-}
-```
-
-Reject unmatched hosts with a default virtual host. nginx timeouts measure inactivity between reads and writes, while the service enforces a total deadline for each request. See the [nginx proxy module reference](https://nginx.org/en/docs/http/ngx_http_proxy_module.html).
+Check the result with `docker compose config --quiet`, then run `docker compose up -d --wait proxy`.
 
 When your proxy is in place, run the checks in [Verify API access and sign-in](/docs/operate/health-and-readiness#verify-api-access-and-sign-in) through it.

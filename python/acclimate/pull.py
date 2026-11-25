@@ -1,68 +1,102 @@
-"""Save a channel's published payload to a JSON file."""
+"""``python -m acclimate pull``: save a channel's released payload to a new JSON file."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
-import sys
-
+import re
 import stat
+import sys
 from urllib.parse import urlsplit
+
 from .errors import AcclimateError
 from .client import AcclimateClient, ApiError
 from .delivery import resolve_and_cache
 
-USAGE = "pull --config CONFIG --bundle ID [--channel CHANNEL] --out FILE  Save the published bundle as a payload to edit."
+USAGE = "pull --bundle <name or id> --out <file> [--channel <name>] [--config <file>]"
+_UUID = re.compile(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$", re.IGNORECASE)
 
 
-def pull_payload(*, config_path, bundle_id, channel, out):
-    """Write a new private payload file."""
-    config = read_pull_config(config_path)
-    try:
-        client = AcclimateClient(
-            config["serviceUrl"], token=config["token"], scope=config["scope"]
+class PullError(Exception):
+    """A failure the command reports with a stable ``code``."""
+
+    def __init__(self, code, message, **detail):
+        self.detail = {"code": code, "message": message, **detail}
+        super().__init__(message)
+
+
+def _target(flags):
+    """The client, workspace and cache directory from --config, or from the environment."""
+    if flags.get("config"):
+        config = read_pull_config(flags["config"])
+        client = AcclimateClient(config["serviceUrl"], token=config["token"], scope=config["scope"])
+        return client, config["workspaceId"], config["cacheDir"]
+    url = flags.get("url") or os.getenv("ACCLIMATE_URL")
+    workspace = flags.get("workspace") or os.getenv("ACCLIMATE_WORKSPACE")
+    token = os.getenv("ACCLIMATE_TOKEN")
+    if not (url and workspace and token):
+        raise PullError(
+            "config.missing", "Set ACCLIMATE_URL, ACCLIMATE_WORKSPACE and ACCLIMATE_TOKEN.",
+            hint="--url and --workspace can replace the first two. The token is read only from ACCLIMATE_TOKEN.",
         )
-        source = client.inspect_source(config["workspaceId"], bundle_id, channel)
+    scope = "python:" + hashlib.sha256(token.encode()).hexdigest()
+    cache = Path.home().resolve() / ".cache" / "acclimate" / "python"
+    return AcclimateClient(url, token, scope), workspace, str(cache)
+
+
+def _bundle_id(client, workspace, value):
+    """Find a bundle by name, or take a UUID as its ID."""
+    if _UUID.match(value):
+        return value
+    matches, cursor = [], None
+    while True:
+        page = client.list_bundles(workspace, cursor=cursor, limit=100)
+        matches += [bundle["id"] for bundle in page["items"] if bundle["name"] == value]
+        cursor = page["nextCursor"]
+        if cursor is None:
+            break
+    if len(matches) > 1:
+        raise PullError("bundle.ambiguous", f"More than one bundle is named {json.dumps(value)}.",
+                        field="--bundle", hint="Pass the bundle ID instead.")
+    if not matches:
+        raise PullError("bundle.missing", f"No bundle is named {json.dumps(value)} in this workspace.",
+                        field="--bundle", hint="Check the name and ACCLIMATE_WORKSPACE.")
+    return matches[0]
+
+
+def pull_payload(flags):
+    """Write a new private payload file and return the command's result."""
+    client, workspace, cache_dir = _target(flags)
+    channel = flags.get("channel") or "stable"
+    out = flags["out"]
+    bundle_id = _bundle_id(client, workspace, flags["bundle"])
+
+    def missing(**detail):
+        return PullError("bundle.missing", f"No version of this bundle is released on {json.dumps(channel)}.",
+                         field="--bundle", hint="Check the bundle, the --channel and the workspace.", **detail)
+
+    try:
+        source = client.inspect_source(workspace, bundle_id, channel)
         if not source:
-            raise PullError(
-                "bundle.missing",
-                field="--bundle",
-                reason="This channel has no release.",
-            )
+            raise missing()
         resolved = resolve_and_cache(
-            client,
-            config["workspaceId"],
-            bundle_id,
-            version_id=source["version"]["id"],
-            cache_dir=config["cacheDir"],
+            client, workspace, bundle_id, version_id=source["version"]["id"], cache_dir=cache_dir,
         )
     except ApiError as error:
         if error.status == 404:
-            raise PullError(
-                "bundle.missing",
-                field="--bundle",
-                http_status=error.status,
-                reason=f"No published version of this bundle on channel {json.dumps(channel)}.",
-                hint="Check the bundle ID, the --channel and the pull config workspace.",
-            ) from None
+            raise missing(httpStatus=404) from None
         raise
     target = os.path.abspath(out)
     try:
-        fd = os.open(
-            target, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600
-        )
+        fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
     except FileExistsError:
-        raise PullError(
-            "usage.invalid_flag",
-            field="--out",
-            reason=f"{out} already exists. Choose a new --out file.",
-        ) from None
+        raise PullError("usage.invalid_flag", f"{out} already exists. Choose a new --out file.",
+                        field="--out") from None
     with os.fdopen(fd, "w", encoding="utf-8") as stream:
-        stream.write(
-            json.dumps(resolved["payload"], indent=2, ensure_ascii=False) + "\n"
-        )
+        stream.write(json.dumps(resolved["payload"], indent=2, ensure_ascii=False) + "\n")
         stream.flush()
         os.fsync(stream.fileno())
     return {
@@ -77,41 +111,16 @@ def pull_payload(*, config_path, bundle_id, channel, out):
     }
 
 
-def pull_command(flags):
-    """Save the requested payload and return a machine-readable receipt."""
-    for name in ("config", "bundle", "out"):
-        if not flags.get(name):
-            raise PullError("usage.missing_flag", field="--" + name, hint=USAGE)
-    channel = flags.get("channel") or "stable"
-    result = pull_payload(
-        config_path=flags["config"],
-        bundle_id=flags["bundle"],
-        channel=channel,
-        out=flags["out"],
-    )
-    if sys.stderr.isatty():
-        noun = "file" if result["files"] == 1 else "files"
-        print(
-            f"Saved {channel} (version {result['versionId']}, {result['files']} {noun}) to {result['out']}.",
-            file=sys.stderr,
-        )
-    return 0, result
-
-
-class PullError(Exception):
-    def __init__(self, code, **detail):
-        self.detail = {"code": code, **detail}
-        super().__init__(code)
-
-
 def _private_text(filename, limit):
     path = Path(filename).absolute()
-    parent = path.parent.stat()
-    if path.resolve() != path or parent.st_mode & 0o077 or parent.st_uid != os.getuid():
-        raise PullError("config.permissions")
-    with os.fdopen(
-        os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    ) as stream:
+    try:
+        parent = path.parent.stat()
+        resolved = path.resolve(strict=True)
+    except FileNotFoundError:
+        raise PullError("config.unreadable", f"Cannot read {filename}.", field="--config") from None
+    if resolved != path or parent.st_mode & 0o077 or parent.st_uid != os.getuid():
+        raise _permissions()
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)) as stream:
         info = os.fstat(stream.fileno())
         if (
             not stat.S_ISREG(info.st_mode)
@@ -119,21 +128,33 @@ def _private_text(filename, limit):
             or info.st_uid != parent.st_uid
             or info.st_size > limit
         ):
-            raise PullError("config.permissions")
+            raise _permissions()
         return stream.read(limit + 1)
 
 
+def _permissions():
+    return PullError("config.permissions", "Keep the pull config and token file private to their owner.",
+                     field="--config")
+
+
+def _schema():
+    return PullError("config.schema", "The pull config is not valid.", field="--config")
+
+
 def read_pull_config(filename):
-    config = json.loads(_private_text(filename, 65536))
+    try:
+        config = json.loads(_private_text(filename, 65536))
+    except json.JSONDecodeError:
+        raise _schema() from None
     if not isinstance(config, dict):
-        raise PullError("config.schema")
+        raise _schema()
     if "tokenFile" in config:
         if (
             "token" in config
             or not isinstance(config["tokenFile"], str)
             or not Path(config["tokenFile"]).is_absolute()
         ):
-            raise PullError("config.schema")
+            raise _schema()
         config["token"] = (
             _private_text(config["tokenFile"], 8192)
             .removesuffix("\n")
@@ -149,7 +170,7 @@ def read_pull_config(filename):
         )
         or not Path(config["cacheDir"]).is_absolute()
     ):
-        raise PullError("config.schema")
+        raise _schema()
     url = urlsplit(config["serviceUrl"])
     if (
         url.username
@@ -163,22 +184,45 @@ def read_pull_config(filename):
             and url.hostname in ("localhost", "127.0.0.1", "::1")
         )
     ):
-        raise PullError("config.url")
+        raise PullError("config.url", "serviceUrl must be an HTTPS origin, or HTTP on localhost.",
+                        field="--config")
     return config
 
 
+def _failure(error):
+    if isinstance(error, PullError):
+        return error.detail
+    if isinstance(error, ApiError):
+        detail = {"code": error.code, "message": str(error), "httpStatus": error.status}
+        if error.request_id:
+            detail["requestId"] = error.request_id
+        return detail
+    if isinstance(error, AcclimateError):
+        return {"code": error.code, "message": str(error)}
+    return {"code": "cli.failed", "message": "The command failed. Check the command, the settings and the service."}
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="acclimate")
-    pull = parser.add_subparsers(dest="command", required=True).add_parser("pull")
-    for field in ("config", "bundle", "channel", "out"):
+    """Run ``pull`` and return its exit status: 0, 1 for a failure, 2 for a usage error."""
+    parser = argparse.ArgumentParser(prog="python -m acclimate")
+    pull = parser.add_subparsers(dest="command", required=True).add_parser("pull", usage=USAGE)
+    for field in ("config", "bundle", "channel", "out", "url", "workspace"):
         pull.add_argument("--" + field)
     flags = vars(parser.parse_args(argv))
     try:
-        _, result = pull_command(flags)
+        for name in ("bundle", "out"):
+            if not flags.get(name):
+                raise PullError("usage.missing_flag", f"--{name} is required.", field="--" + name,
+                                hint="Usage: " + USAGE)
+        result = pull_payload(flags)
+        noun = "file" if result["files"] == 1 else "files"
         print(json.dumps(result))
+        print(f"Saved {result['channel']} (version {result['versionId']}, {result['files']} {noun}) to {result['out']}.",
+              file=sys.stderr)
         return 0
-    except PullError as error:
-        print(json.dumps({"error": error.detail}), file=sys.stderr)
-    except (OSError, ValueError, TypeError, KeyError, AcclimateError):
-        print(json.dumps({"error": {"code": "pull.failed"}}), file=sys.stderr)
-    return 1
+    except (PullError, OSError, ValueError, TypeError, KeyError, AcclimateError) as error:
+        detail = _failure(error)
+        print(json.dumps({"error": detail}))
+        hint = detail.get("hint")
+        print(f"acclimate: {detail['message']}" + (f" {hint}" if hint else ""), file=sys.stderr)
+        return 2 if detail["code"].startswith("usage.") else 1

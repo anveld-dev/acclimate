@@ -16,6 +16,8 @@ from scripts.local import stack
 
 SUBJECT = 'cd97b433-08d2-460d-ba9b-0a6d063be018'
 ROOT = stack.ROOT
+PROVIDER = dict(ACCLIMATE_PROVIDER_URL='http://127.0.0.1:8317/v1/', ACCLIMATE_PROVIDER_KEY='provider-key',
+                ACCLIMATE_PROVIDER_MODELS='task-model, judge-model', ACCLIMATE_MODEL='optimizer-model')
 
 
 def FREE(port):
@@ -102,6 +104,134 @@ class StackTests(unittest.TestCase):
             self.assertEqual(cleared['ACCLIMATE_MODEL'], 'other')
             stack.write_application(state, values, SUBJECT, environ={})
             self.assertNotIn('ACCLIMATE_PROVIDER_HTTP_HOSTS', env_file(state / 'service.env'))
+
+    def test_provider_sets_the_optimizer_and_reaches_a_loopback_host_from_the_containers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            for url, base, hosts in (
+                    ('http://127.0.0.1:8317/v1/', 'http://host.docker.internal:8317/v1', 'host.docker.internal'),
+                    ('http://localhost:8317/v1', 'http://host.docker.internal:8317/v1', 'host.docker.internal'),
+                    ('http://[::1]:8000/v1', 'http://host.docker.internal:8000/v1', 'host.docker.internal'),
+                    ('http://10.0.0.5/v1', 'http://10.0.0.5/v1', '10.0.0.5'),
+                    ('https://api.openai.com/v1', 'https://api.openai.com/v1', None)):
+                with self.subTest(url=url):
+                    chosen = stack.learning_settings(state, dict(PROVIDER, ACCLIMATE_PROVIDER_URL=url))
+                    self.assertEqual(chosen['ACCLIMATE_MODEL_ENDPOINT'], base + '/chat/completions')
+                    self.assertEqual(chosen['ACCLIMATE_MODEL_TOKEN'], 'provider-key')
+                    self.assertEqual(chosen['ACCLIMATE_MODEL'], 'optimizer-model')
+                    self.assertEqual(chosen.get('ACCLIMATE_PROVIDER_HTTP_HOSTS'), hosts)
+            provider = stack.provider_settings(state, PROVIDER)
+            self.assertEqual(provider.url, 'http://127.0.0.1:8317/v1')
+            self.assertEqual(provider.document(), {'baseUrl': 'http://host.docker.internal:8317/v1',
+                                                   'apiKey': 'provider-key',
+                                                   'allowedModels': ['task-model', 'judge-model']})
+            # Explicit optimizer settings override the provider, and listed hosts are kept.
+            chosen = stack.learning_settings(state, dict(
+                PROVIDER, ACCLIMATE_MODEL_ENDPOINT='https://optimizer.example/v1/chat/completions',
+                ACCLIMATE_MODEL_TOKEN='optimizer-key', ACCLIMATE_PROVIDER_HTTP_HOSTS='models.lan,HOST.docker.internal'))
+            self.assertEqual(chosen['ACCLIMATE_MODEL_ENDPOINT'], 'https://optimizer.example/v1/chat/completions')
+            self.assertEqual(chosen['ACCLIMATE_MODEL_TOKEN'], 'optimizer-key')
+            self.assertEqual(chosen['ACCLIMATE_PROVIDER_HTTP_HOSTS'], 'models.lan,HOST.docker.internal')
+
+    def test_provider_is_kept_for_later_starts_and_replaced_by_a_new_one(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            values = stack.credentials(state)
+            stack.save_provider(state, stack.provider_settings(state, PROVIDER))
+            self.assertEqual(stat.S_IMODE((state / 'provider.json').stat().st_mode), 0o600)
+            stack.write_application(state, values, SUBJECT, environ=PROVIDER)
+            first = env_file(state / 'service.env')
+            # A later start from a shell without the settings keeps everything.
+            stack.write_application(state, values, SUBJECT, environ={})
+            self.assertEqual(env_file(state / 'service.env'), first)
+            self.assertEqual(stack.provider_settings(state, {}), stack.provider_settings(state, PROVIDER))
+            # A new provider replaces the saved endpoint and token, but not the model or the hosts.
+            stack.write_application(state, values, SUBJECT, environ=dict(
+                ACCLIMATE_PROVIDER_URL='https://api.openai.com/v1', ACCLIMATE_PROVIDER_KEY='new-key',
+                ACCLIMATE_PROVIDER_MODELS='a,b'))
+            second = env_file(state / 'service.env')
+            self.assertEqual(second['ACCLIMATE_MODEL_ENDPOINT'], 'https://api.openai.com/v1/chat/completions')
+            self.assertEqual(second['ACCLIMATE_MODEL_TOKEN'], 'new-key')
+            self.assertEqual(second['ACCLIMATE_MODEL'], 'optimizer-model')
+            self.assertEqual(second['ACCLIMATE_PROVIDER_HTTP_HOSTS'], 'host.docker.internal')
+            # Exporting all three empty removes the provider and the optimizer it set.
+            cleared = {name: '' for name in stack.PROVIDER_SETTINGS}
+            self.assertIsNone(stack.provider_settings(state, cleared))
+            stack.save_provider(state, None)
+            self.assertFalse((state / 'provider.json').exists())
+            stack.write_application(state, values, SUBJECT, environ=cleared)
+            self.assertNotIn('ACCLIMATE_MODEL_ENDPOINT', env_file(state / 'service.env'))
+
+    def test_provider_settings_are_checked_before_anything_starts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            for changes, message in (
+                    (dict(ACCLIMATE_PROVIDER_KEY=''), 'Set ACCLIMATE_PROVIDER_KEY as well'),
+                    (dict(ACCLIMATE_PROVIDER_MODELS='only-one'), 'at least two distinct'),
+                    (dict(ACCLIMATE_PROVIDER_MODELS='a,a'), 'at least two distinct'),
+                    (dict(ACCLIMATE_PROVIDER_URL='https://api.openai.com/v1/chat/completions'),
+                     'Remove /chat/completions'),
+                    (dict(ACCLIMATE_PROVIDER_URL='ftp://models.example/v1'), 'http or https base URL'),
+                    (dict(ACCLIMATE_PROVIDER_URL='https://user:pass@models.example/v1'), 'http or https base URL'),
+                    (dict(ACCLIMATE_PROVIDER_URL='http://127.0.0.1:99999/v1'), 'http or https base URL'),
+                    (dict(ACCLIMATE_PROVIDER_KEY='a\nb'), 'single line'),
+                    (dict(ACCLIMATE_MODEL=''), 'Set ACCLIMATE_MODEL')):
+                with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, message):
+                    stack.learning_settings(state, dict(PROVIDER, **changes))
+
+    def test_provider_is_stored_once_through_the_service_and_its_verification_printed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            provider = stack.provider_settings(state, PROVIDER)
+            stack.save_provider(state, provider)
+            calls = []
+
+            def compose(root, *args, **options):
+                calls.append((args, options.get('input')))
+
+            pending = {'baseUrl': 'http://host.docker.internal:8317/v1',
+                       'allowedModels': ['task-model', 'judge-model'], 'hasKey': True,
+                       'verification': {'status': 'pending', 'checkedAt': None, 'models': []}}
+            verified = dict(pending, verification={'status': 'verified', 'models': []})
+            opener = Mock()
+            opener.open.side_effect = [Response(pending), Response(verified), Response(verified)]
+            with patch.object(stack, 'compose', compose), patch.object(stack.time, 'sleep'), \
+                    redirect_stdout(io.StringIO()):
+                first = stack.apply_provider(ROOT, state, stack.DEFAULT, 'build', opener, 'runtime', provider)
+                second = stack.apply_provider(ROOT, state, stack.DEFAULT, 'build', opener, 'runtime', provider)
+            self.assertEqual(calls, [(('exec', '-T', 'service', '/usr/local/bin/acclimate-service',
+                                       '--set-model-provider', 'local-demo'),
+                                      json.dumps(provider.document()).encode())])
+            self.assertEqual(first, 'Verified at http://host.docker.internal:8317/v1 (task-model, judge-model)')
+            self.assertEqual(second, first)
+            request = opener.open.call_args.args[0]
+            self.assertEqual(request.full_url, stack.API + '/v1/workspaces/local-demo/model-provider')
+            self.assertEqual(request.get_header('Authorization'), 'Bearer runtime')
+            self.assertEqual(stack.saved_provider(state)['applied'], provider.digest())
+            # A changed provider is stored again, and a failed check names each model.
+            changed = stack.provider_settings(state, dict(PROVIDER, ACCLIMATE_PROVIDER_MODELS='a,b'))
+            stack.save_provider(state, changed, stack.saved_provider(state)['applied'])
+            failed = dict(pending, verification={'status': 'failed', 'models': [
+                {'model': 'a', 'ok': False, 'usage': False, 'message': 'HTTP 404'},
+                {'model': 'b', 'ok': True, 'usage': True, 'message': None}]})
+            opener.open.side_effect = [Response(failed)]
+            with patch.object(stack, 'compose', compose), redirect_stdout(io.StringIO()):
+                result = stack.apply_provider(ROOT, state, stack.DEFAULT, 'build', opener, 'runtime', changed)
+            self.assertEqual(len(calls), 2)
+            self.assertIn('Verification failed', result)
+            self.assertIn('a: HTTP 404', result)
+            self.assertNotIn('b:', result)
+
+    def test_a_refused_provider_is_reported_and_tried_again_next_start(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            provider = stack.provider_settings(state, PROVIDER)
+            stack.save_provider(state, provider)
+            refused = stack.subprocess.CalledProcessError(1, 'exec')
+            with patch.object(stack, 'compose', side_effect=refused):
+                result = stack.apply_provider(ROOT, state, stack.DEFAULT, 'build', Mock(), 'runtime', provider)
+            self.assertIn('Could not save it for local-demo', result)
+            self.assertNotIn('applied', stack.saved_provider(state))
 
     def test_older_credentials_gain_a_provider_key_once(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -462,9 +592,28 @@ class StackTests(unittest.TestCase):
             self.assertIn(f"export ACCLIMATE_PULL_CONFIG='{state / 'pull.json'}'", text)
             self.assertIn(f"export NODE_EXTRA_CA_CERTS='{state / 'root.crt'}'", text)
             self.assertIn(f"export SSL_CERT_FILE='{state / 'ca-bundle.pem'}'", text)
-            self.assertIn("export BUNDLE_ID='bundle-1'", text)
+            self.assertIn("export ACCLIMATE_BUNDLE='bundle-1'", text)
+            self.assertNotIn('BUNDLE_ID', text)
             self.assertIn(f"export ACCLIMATE_URL='{stack.DEFAULT.api}'", text)
             self.assertIn("export ACCLIMATE_WORKSPACE='local-demo'", text)
+            self.assertNotIn('OPENAI_', text)
+
+    def test_client_files_export_the_provider_for_the_examples(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            provider = stack.provider_settings(state, dict(PROVIDER, ACCLIMATE_PROVIDER_KEY="it's-secret"))
+            with patch.object(stack, 'system_ca_bundle', return_value=(None, b'')):
+                text, _ = stack.write_client_files(state, stack.DEFAULT, b'local', None, provider)
+            self.assertEqual(stat.S_IMODE((state / 'env.sh').stat().st_mode), 0o600)
+            self.assertNotIn('ACCLIMATE_BUNDLE', text)
+            # The examples run on this machine, so they keep the loopback address.
+            self.assertIn("export OPENAI_BASE_URL='http://127.0.0.1:8317/v1'\n", text)
+            self.assertIn("export TASK_MODEL='task-model'\n", text)
+            self.assertIn("export JUDGE_MODEL='judge-model'\n", text)
+            self.assertIn("export AGENT_MODEL='task-model'\n", text)
+            shell = stack.subprocess.run(['sh', '-c', '. "$1" && printf %s "$OPENAI_API_KEY"', 'sh',
+                                          str(state / 'env.sh')], capture_output=True, text=True, check=True)
+            self.assertEqual(shell.stdout, "it's-secret")
 
     def test_keycloak_rejects_replacement_operator_with_same_email(self):
         opener = Mock()

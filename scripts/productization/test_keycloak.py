@@ -1,9 +1,10 @@
-"""Keycloak deployment contracts; no daemon startup, identity provisioning or secrets."""
+"""Keycloak deployment contracts; no daemon startup. Secrets are generated only in temporary directories."""
 import hashlib
 import io
 import json
 import os
 from pathlib import Path
+import re
 import runpy
 import subprocess
 import sys
@@ -11,6 +12,7 @@ import tarfile
 import tempfile
 import threading
 import unittest
+import uuid
 from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -59,18 +61,14 @@ class KeycloakDeployment(unittest.TestCase):
                 runpy.run_path(str(ROOT/'scripts/testing/fetch_keycloak.py'), run_name='__main__')
 
     def resolve(self, directory, missing=None):
-        for name in ('service.env', 'console.env', 'keycloak.env', 'password', 'kc-password', 'empty.env',
-                     'executor-token'):
+        # The file names deploy/init.sh writes in the private directory.
+        for name in ('service.env', 'console.env', 'keycloak.env', 'postgres-password',
+                     'keycloak-postgres-password', 'empty.env', 'executor-token'):
             path = directory/name
             path.write_text('')
             path.chmod(0o600)
-        env = dict(PATH=os.environ['PATH'],
-                   ACCLIMATE_SERVICE_ENV=str(directory/'service.env'),
-                   ACCLIMATE_CONSOLE_ENV=str(directory/'console.env'),
-                   ACCLIMATE_KEYCLOAK_ENV=str(directory/'keycloak.env'),
-                   ACCLIMATE_POSTGRES_PASSWORD_FILE=str(directory/'password'),
-                   ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE=str(directory/'kc-password'),
-                   ACCLIMATE_EXECUTOR_TOKEN_FILE=str(directory/'executor-token'),
+        env = dict(PATH=os.environ['PATH'], ACCLIMATE_CONFIG_DIR=str(directory),
+                   COMPOSE_PROFILES='learning',
                    CONSOLE_HOST='console.fixture.invalid', API_HOST='api.fixture.invalid',
                    KEYCLOAK_HOST='auth.fixture.invalid', ACME_EMAIL='fixture@example.invalid')
         if missing:
@@ -81,8 +79,7 @@ class KeycloakDeployment(unittest.TestCase):
         return json.loads(subprocess.check_output(command, env=env, stderr=subprocess.PIPE, timeout=15))
 
     def test_missing_identity_config_cannot_resolve_a_deployment(self):
-        for missing in ('KEYCLOAK_HOST', 'ACCLIMATE_KEYCLOAK_ENV',
-                        'ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE'):
+        for missing in ('KEYCLOAK_HOST', 'ACCLIMATE_CONFIG_DIR'):
             with self.subTest(missing=missing), tempfile.TemporaryDirectory() as temporary:
                 with self.assertRaises(subprocess.CalledProcessError) as failure:
                     self.resolve(Path(temporary), missing=missing)
@@ -102,17 +99,29 @@ class KeycloakDeployment(unittest.TestCase):
             if name != 'acclimate-executor':
                 self.assertEqual(service['stop_grace_period'], '1m30s')
             self.assertEqual(service['restart'], 'unless-stopped')
-            if name != 'proxy':
+            if name == 'keycloak':
+                # The admin console's private route: loopback on the host only.
+                self.assertEqual([(p['host_ip'], p['target']) for p in service['ports']], [('127.0.0.1', 8080)])
+            elif name != 'proxy':
                 self.assertFalse(service.get('ports'))
+            self.assertEqual(service['logging'], dict(driver='json-file', options={'max-size': '10m', 'max-file': '5'}))
         self.assertNotEqual(services['postgres']['volumes'][0]['source'], services['keycloak-db']['volumes'][0]['source'])
         self.assertTrue(config['networks']['backend']['internal'])
         self.assertEqual(services['keycloak']['environment']['KC_DB'], 'postgres')
         self.assertEqual(services['keycloak']['environment']['KC_DB_URL'], 'jdbc:postgresql://keycloak-db:5432/keycloak')
         self.assertEqual(services['keycloak-db']['environment']['POSTGRES_PASSWORD_FILE'], '/run/secrets/keycloak_postgres_password')
         self.assertEqual(services['keycloak']['environment']['KC_HOSTNAME'], 'https://auth.fixture.invalid')
+        self.assertEqual(services['keycloak']['environment']['KC_HOSTNAME_ADMIN'], 'http://127.0.0.1:8180')
+        self.assertNotIn('KC_BOOTSTRAP_ADMIN_USERNAME', services['keycloak']['environment'])
+        imports = {v['target']: Path(v['source']) for v in services['keycloak']['volumes']}
+        self.assertEqual(imports, {
+            '/opt/keycloak/data/import/acclimate-realm.json': ROOT/'deploy/keycloak/acclimate-realm.json',
+            '/opt/keycloak/data/import/acclimate-users-0.json': ROOT/'deploy/keycloak/acclimate-users-0.json'})
         self.assertEqual(services['keycloak']['environment']['KC_CACHE'], 'local')
         self.assertIn('auth.fixture.invalid', services['proxy']['networks']['backend']['aliases'])
         self.assertEqual(services['keycloak']['command'], ['start', '--optimized', '--import-realm'])
+        # An upgrade's plain up rebuilds Keycloak from the new checkout, and pull skips it.
+        self.assertEqual(services['keycloak']['pull_policy'], 'build')
         self.assertIn('keycloak', services['proxy']['depends_on'])
         caddy = next(v for v in services['proxy']['volumes'] if v['target'] == '/etc/caddy/Caddyfile')
         self.assertEqual(Path(caddy['source']), ROOT/'deploy/keycloak/Caddyfile')
@@ -132,6 +141,86 @@ class KeycloakDeployment(unittest.TestCase):
         self.assertEqual(client['redirectUris'], ['${ACCLIMATE_CONSOLE_ORIGIN}/auth/callback'])
         self.assertEqual(client['attributes']['pkce.code.challenge.method'], 'S256')
         self.assertEqual(client['attributes']['id.token.signed.response.alg'], 'RS256')
+
+    def test_first_person_template_forces_a_password_change_and_manages_only_this_realm(self):
+        template = json.loads((ROOT/'deploy/keycloak/acclimate-users-0.json').read_text())
+        self.assertEqual(template['realm'], 'acclimate')
+        person, = template['users']
+        self.assertEqual(person['id'], '${ACCLIMATE_FIRST_USER_ID}')
+        self.assertEqual(person['username'], '${ACCLIMATE_FIRST_USER_EMAIL}')
+        self.assertEqual(person['email'], '${ACCLIMATE_FIRST_USER_EMAIL}')
+        self.assertIs(person['emailVerified'], True)
+        self.assertEqual(person['requiredActions'], ['UPDATE_PASSWORD'])
+        self.assertEqual(person['credentials'], [dict(type='password', value='${ACCLIMATE_FIRST_USER_PASSWORD}', temporary=True)])
+        self.assertEqual(person['clientRoles'], {'realm-management': ['realm-admin']})
+        self.assertEqual(person['realmRoles'], ['default-roles-acclimate'])
+        # The local stack imports the realm without this person and creates its own.
+        self.assertNotIn('acclimate-users-0.json', (ROOT/'compose.local.yaml').read_text())
+
+    def test_init_writes_every_import_value_and_a_resolvable_deployment(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            checkout, home = Path(temporary)/'checkout', Path(temporary)/'home'
+            for name in ('compose.yaml', 'compose.keycloak.yaml'):
+                (checkout/name).parent.mkdir(parents=True, exist_ok=True)
+                (checkout/name).write_bytes((ROOT/name).read_bytes())
+            subprocess.run(['cp', '-R', str(ROOT/'deploy'), str(checkout/'deploy')], check=True)
+            env = dict(PATH=os.environ['PATH'], HOME=str(home))
+            init = ['sh', str(checkout/'deploy/init.sh'), '--domain', 'fixture.invalid', '--email', 'owner@fixture.invalid']
+            result = subprocess.run(init, cwd=temporary, env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            private = home/'.config/acclimate'
+            self.assertEqual(private.stat().st_mode & 0o777, 0o700)
+            names = {'service.env', 'console.env', 'keycloak.env', 'postgres-password',
+                     'keycloak-postgres-password', 'executor-token'}
+            self.assertEqual({path.name for path in private.iterdir()}, names)
+            for name in names:
+                self.assertEqual((private/name).stat().st_mode & 0o777, 0o600)
+            def values(path):
+                return dict(line.split('=', 1) for line in path.read_text().splitlines()
+                            if line and not line.startswith('#'))
+            service, console, keycloak = (values(private/name) for name in ('service.env', 'console.env', 'keycloak.env'))
+            dotenv = values(checkout/'.env')
+            # Every realm import placeholder has a value, and nothing else is left to fill in.
+            templates = ''.join((ROOT/'deploy/keycloak'/name).read_text()
+                                for name in ('acclimate-realm.json', 'acclimate-users-0.json'))
+            self.assertLessEqual(set(re.findall(r'\$\{([A-Z_]+)\}', templates)), set(keycloak))
+            self.assertNotIn('KC_BOOTSTRAP_ADMIN_USERNAME', keycloak)
+            self.assertNotIn('REPLACE', ''.join((private/name).read_text() for name in names))
+            self.assertIn(keycloak['ACCLIMATE_FIRST_USER_PASSWORD'], result.stdout)
+            self.assertEqual(keycloak['ACCLIMATE_FIRST_USER_EMAIL'], 'owner@fixture.invalid')
+            self.assertEqual(str(uuid.UUID(keycloak['ACCLIMATE_FIRST_USER_ID'])), keycloak['ACCLIMATE_FIRST_USER_ID'])
+            self.assertEqual(uuid.UUID(keycloak['ACCLIMATE_FIRST_USER_ID']).version, 4)
+            issuer = 'https://auth.fixture.invalid/realms/acclimate'
+            self.assertEqual(json.loads(service['ACCLIMATE_OPERATORS']),
+                             [dict(issuer=issuer, subject=keycloak['ACCLIMATE_FIRST_USER_ID'])])
+            self.assertEqual(service['ACCLIMATE_OIDC_ISSUER'], console['CONSOLE_OIDC_ISSUER'])
+            self.assertEqual(console['CONSOLE_OIDC_ISSUER'], issuer)
+            self.assertEqual(console['CONSOLE_OIDC_CLIENT_SECRET'], keycloak['ACCLIMATE_OIDC_CLIENT_SECRET'])
+            self.assertEqual(console['CONSOLE_ORIGIN'], keycloak['ACCLIMATE_CONSOLE_ORIGIN'])
+            self.assertEqual(console['CONSOLE_LOGIN_TOKEN'], service['ACCLIMATE_LOGIN_TOKEN'])
+            self.assertEqual(console['CONSOLE_SERVICE_TOKEN'], service['ACCLIMATE_CONSOLE_TOKEN'])
+            self.assertNotEqual(service['ACCLIMATE_LOGIN_TOKEN'], service['ACCLIMATE_CONSOLE_TOKEN'])
+            self.assertEqual(service['DATABASE_URL'], 'postgresql://acclimate:%s@postgres:5432/acclimate'
+                             % (private/'postgres-password').read_text().strip())
+            self.assertEqual(keycloak['KC_DB_PASSWORD'], (private/'keycloak-postgres-password').read_text().strip())
+            self.assertRegex(service['ACCLIMATE_PROVIDER_ENCRYPTION_KEY'], r'^[0-9a-f]{64}$')
+            self.assertEqual((private/'executor-token').read_text(), '')
+            self.assertEqual(dotenv, dict(COMPOSE_FILE='compose.yaml:compose.keycloak.yaml',
+                CONSOLE_HOST='console.fixture.invalid', API_HOST='api.fixture.invalid',
+                KEYCLOAK_HOST='auth.fixture.invalid', ACME_EMAIL='owner@fixture.invalid',
+                ACCLIMATE_CONFIG_DIR=str(private), ACCLIMATE_VERSION='local'))
+            # Compose reads .env itself: no other variable is needed.
+            for profiles, expected in (('', set()), ('learning', {'acclimate-executor', 'acclimate-runner'})):
+                config = json.loads(subprocess.check_output(['docker', 'compose', 'config', '--format', 'json'],
+                    cwd=checkout, env=dict(env, COMPOSE_PROFILES=profiles), stderr=subprocess.PIPE, timeout=15))
+                self.assertEqual(set(config['services']), {'postgres', 'service', 'console', 'proxy',
+                                                           'keycloak', 'keycloak-db'} | expected)
+                self.assertEqual(config['services']['service']['image'], 'ghcr.io/anveld-dev/acclimate-service:local')
+            # A second run never replaces existing secrets.
+            again = subprocess.run(init, cwd=temporary, env=env, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(again.returncode, 0)
+            self.assertIn('already exists', again.stderr)
+            self.assertEqual(values(private/'keycloak.env'), keycloak)
 
     def test_templates_pin_same_realm_issuer_and_separate_authority_credentials(self):
         def env(path):

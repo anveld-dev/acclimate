@@ -1,6 +1,6 @@
 ---
 title: Release and roll back
-description: Upload a new version of a bundle, point a channel at it and move the channel back to an earlier version.
+description: Release new files as a version of a bundle and move a channel back to an earlier version.
 ---
 
 A release points a channel such as `stable` at an immutable version and records the reason. This guide changes a channel by hand.
@@ -9,79 +9,39 @@ To undo a version the learning loop adopted, use **Roll back** on its round inst
 
 ## Release a version
 
-Creating a bundle in the console makes its first release. To release a new version, use the SDK or the [HTTP API](/docs/reference/http-api) with a machine token that has read, write and promote.
+Creating a bundle in the console makes its first release. To release new files, use the [`acclimate` command](/docs/reference/typescript-sdk#the-acclimate-command) or `release()` in either SDK. Both need `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and a machine token with read, write and promote in `ACCLIMATE_TOKEN`.
 
-1. Read the channel's current revision and version (read).
-2. Upload the new files as a version (write).
-3. Release that version to the channel with the revision you read and a reason in `unevaluatedReason` (promote).
+```sh
+npx acclimate publish payload.json --bundle "Example agent" --reason "Ship updated instructions"
+```
+
+The source is a [payload file](#publish-a-bundle-from-a-file) or a folder. In a folder, files under `skills/` are skills, files under `memory/` are memory and every other file is an instruction, as in the console's **Import files**. The command uploads the files as a new version on top of the channel's current one, releases it on `stable` or the `--channel` you pass, and prints one JSON line with `versionId` and `revision`.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
 
 ```ts
-import { randomUUID } from 'node:crypto';
+import { createAcclimate } from '@acclimate/sdk';
 
-const current = await client.inspectSource(workspaceId, bundleId, 'stable');
-if (!current) throw new Error('The channel has no release yet');
-
-const version = await client.createVersion(
-  workspaceId,
-  bundleId,
-  { parentVersionId: current.version.id, payload },
-  randomUUID(),
-);
-
-const release = await client.createRelease(
-  workspaceId,
-  bundleId,
-  'stable',
-  {
-    versionId: version.id,
-    expectedRevision: current.revision,
-    unevaluatedReason: 'Ship updated instructions',
-  },
-  randomUUID(),
-);
+const acclimate = createAcclimate();
+const result = await acclimate.release('Example agent', payload, { reason: 'Ship updated instructions' });
 ```
 
 </Tab>
 <Tab value="Python">
 
 ```python
-import uuid
+from acclimate import Acclimate
 
-current = client.inspect_source(workspace_id, bundle_id, "stable")
-if current is None:
-    raise RuntimeError("The channel has no release yet")
-
-version = client.create_version(
-    workspace_id,
-    bundle_id,
-    {"parentVersionId": current["version"]["id"], "payload": payload},
-    str(uuid.uuid4()),
-)
-
-release = client.create_release(
-    workspace_id,
-    bundle_id,
-    "stable",
-    {
-        "versionId": version["id"],
-        "expectedRevision": current["revision"],
-        "unevaluatedReason": "Ship updated instructions",
-    },
-    str(uuid.uuid4()),
-)
+result = Acclimate.from_env().release("Example agent", payload, reason="Ship updated instructions")
 ```
 
 </Tab>
 </Tabs>
 
-`client` is an `AcclimateClient`, and `payload` has the shape shown in [Publish a bundle from a file](#publish-a-bundle-from-a-file). The last argument of each write is its idempotency key. Reuse a key only to retry the same request ([Retry a write](/docs/reference/http-api#retry-a-write)).
+When the channel already serves the same files, nothing is written and `changed` is false. When the channel moved during the release, it is refused with `revision_conflict`. Check the channel's new version, then run the release again if you still want it.
 
-If the channel moved after you read it, the release is refused with `revision_conflict`. Read the revision again and decide whether to release.
-
-New jobs resolve to the released version. Prepared jobs keep theirs.
+New jobs resolve to the released version. Prepared jobs keep theirs. To write the version and the release yourself, see [Read and verify a version](/docs/reference/http-api#read-and-verify-a-version), which describes both writes.
 
 ## Roll back
 
@@ -89,9 +49,9 @@ Rolling back creates a new release that points the channel at an earlier version
 
 1. Open the bundle's **Releases** tab.
 2. Select the earlier release and inspect its files.
-3. Choose **Restore**, enter a reason and confirm.
+3. Choose **Restore**, enter a reason and choose **Restore version**.
 
-From a script, release the earlier version's ID with `createRelease` (`create_release` in Python).
+`npx acclimate rollback --bundle "Example agent"`, and `rollback()` in the SDKs, release the version the channel served before its latest release. To release any other earlier version, pass its ID: `npx acclimate release <version-id> --bundle "Example agent"`.
 
 If the console shows **Restore needs confirmation**, the restore may still have gone through. Do not submit a new one yet:
 
@@ -101,7 +61,7 @@ If the console shows **Restore needs confirmation**, the restore may still have 
 
 ## Publish a bundle from a file
 
-To create a bundle from a script instead of the console's **Bundles** page, publish a payload file: a JSON object that holds the bundle's files. A file's `kind` is `instruction`, `skill` or `memory`.
+To create a bundle from a script instead of the console's **Bundles** page, add `--create` to `acclimate publish`. A payload file is a JSON object that holds the bundle's files. A file's `kind` is `instruction`, `skill` or `memory`.
 
 ```json title="payload.json"
 {
@@ -116,13 +76,11 @@ To create a bundle from a script instead of the console's **Bundles** page, publ
 }
 ```
 
-From a source checkout, with `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` set, run:
-
 ```sh
-ACCLIMATE_SCOPE=examples npm run example:publish -- payload.json "Example agent" "First version"
+npx acclimate publish payload.json --bundle "Support agent" --create --reason "First version"
 ```
 
-The arguments are the payload file, the bundle's name and the reason for its first release. The command creates the bundle, its first version and its first release on `stable`, then prints their IDs. Set `ACCLIMATE_CHANNEL` for another channel. The machine token needs write and promote ([Rights](/docs/reference/credentials#rights)).
+The command creates the bundle with the `generic` compatibility target, its first version and its first release, then prints their IDs. Without `--create`, a bundle name the workspace does not have is an error, so a typo never creates a bundle.
 
 ## Next steps
 

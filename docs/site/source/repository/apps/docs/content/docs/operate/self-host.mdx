@@ -1,6 +1,6 @@
 ---
 title: Self-host Acclimate
-description: Set up a single Linux server with PostgreSQL, Keycloak and Caddy, then deliver a bundle to your application.
+description: Set up a single Linux server with PostgreSQL, Keycloak and Caddy in three commands, then deliver a bundle to your application.
 ---
 
 Run the service, the console, PostgreSQL, Keycloak for sign-in and Caddy for HTTPS on one Linux server with Docker Compose. If you already run Keycloak, read [Use an existing Keycloak](#use-an-existing-keycloak) first. Before you plan for production, read [Limits of this deployment](#limits-of-this-deployment). For a disposable stack on your laptop, see [The local stack](/docs/reference/local-stack).
@@ -14,196 +14,62 @@ Run the service, the console, PostgreSQL, Keycloak for sign-in and Caddy for HTT
 
 The server needs:
 
-- 64-bit Linux on x86-64 (amd64) or AArch64 (arm64).
-- Git, OpenSSL and Python 3.
-- [Docker Engine](https://docs.docker.com/engine/install/) 28 or newer and the [Compose plugin](https://docs.docker.com/compose/install/linux/) v2.39 or newer, for `docker compose up --wait`.
-- 4 vCPUs, 8 GiB RAM and 40 GiB of SSD storage to start, with more as bundle history and backups grow or if you build images on the host.
+- 64-bit Linux on x86-64 (amd64) or AArch64 (arm64), with Git.
+- [Docker Engine](https://docs.docker.com/engine/install/) 28 or newer and the [Compose plugin](https://docs.docker.com/compose/install/linux/) v2.39 or newer.
+- 4 vCPUs, 8 GiB RAM and 40 GiB of SSD storage to start, with more as bundle history and backups grow.
 
-Point DNS A records for three distinct names, such as `console.example.com`, `api.example.com` and `auth.example.com`, at the server. Add AAAA records only if the server is reachable over IPv6.
+Point DNS A records for `console.`, `api.` and `auth.` under your domain at the server. Add AAAA records only if the server is reachable over IPv6.
 
 | Direction | Ports |
 | --- | --- |
 | Inbound, open | TCP 80 and 443, for Caddy and certificate issuance |
-| Inbound, private | 3000 and 3001 (service), 3100 (console), 8080 and 9000 (Keycloak) and both databases. Compose publishes none, so add no port mappings. For a load balancer, see [Run behind a load balancer](/docs/operate/reverse-proxy#run-behind-a-load-balancer). |
-| Outbound | DNS and HTTPS, for image pulls, certificate issuance (ACME) and sign-in (OIDC), plus any model endpoint or SMTP relay you configure |
-
-No Acclimate release has been published yet, so clone the default branch and record the commit you run. Once releases exist, check out the one you run, such as `git switch --detach v0.1.0`, so the Compose files match its images, and check that it has images for your platform.
-
-```sh
-git clone https://github.com/anveld-dev/acclimate.git
-cd acclimate
-git rev-parse HEAD
-```
+| Inbound, private | Every other port. Compose publishes only Caddy's ports and Keycloak's admin console on `127.0.0.1:8180`. For a load balancer, see [Run behind a load balancer](/docs/operate/reverse-proxy#run-behind-a-load-balancer). |
+| Outbound | DNS and HTTPS, for image pulls, certificates and sign-in, plus any model endpoint or SMTP relay you configure |
 
 </Step>
 <Step>
 
 ## Create the private runtime files
 
-From the checkout, save the hostnames and file paths in a file you can load again, with your own hostnames and email address.
+Clone the repository and run `deploy/init.sh` with your domain and your email address.
 
 ```sh
-umask 077
-private_dir="$HOME/.config/acclimate"
-mkdir -p "$private_dir"
-chmod 700 "$private_dir"
-
-cat > "$private_dir/compose.env" <<EOF_COMPOSE
-export COMPOSE_FILE=compose.yaml:compose.keycloak.yaml
-export CONSOLE_HOST=console.example.com
-export API_HOST=api.example.com
-export KEYCLOAK_HOST=auth.example.com
-export ACME_EMAIL=ops@example.com
-export ACCLIMATE_SERVICE_ENV="$private_dir/service.env"
-export ACCLIMATE_CONSOLE_ENV="$private_dir/console.env"
-export ACCLIMATE_POSTGRES_PASSWORD_FILE="$private_dir/postgres-password"
-export ACCLIMATE_KEYCLOAK_ENV="$private_dir/keycloak.env"
-export ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE="$private_dir/keycloak-postgres-password"
-export ACCLIMATE_EXECUTOR_TOKEN_FILE="$private_dir/executor-token"
-EOF_COMPOSE
-. "$private_dir/compose.env"
+git clone https://github.com/anveld-dev/acclimate.git
+cd acclimate
+deploy/init.sh --domain example.com --email you@example.com
 ```
 
-`compose.env` holds settings and paths, not secrets. Every `docker compose` command needs it, so start each later session from the checkout with `. ~/.config/acclimate/compose.env`.
+The script writes every secret to `~/.config/acclimate`, with mode 0700 for the directory and 0600 for each file, and the non-secret settings to `.env` in the checkout, which Compose reads itself. Run every later `docker compose` command from the checkout. The script refuses to run if either already exists.
 
-On a fresh installation, run the next block once. It generates every secret and writes the runtime files.
+It also creates your Keycloak account with your email address and prints its temporary password once. Your account is an operator, who can create workspaces, and administers the `acclimate` realm in Keycloak.
 
-```sh
-openssl rand -hex 32 > "$ACCLIMATE_POSTGRES_PASSWORD_FILE"
-openssl rand -hex 32 > "$ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE"
-login_token=$(openssl rand -hex 32)
-transport_token=$(openssl rand -hex 32)
-oidc_client_secret=$(openssl rand -hex 32)
-bootstrap_password=$(openssl rand -hex 32)
-provider_key=$(openssl rand -hex 32)
-database_password_url=$(python3 -c 'import sys; from urllib.parse import quote; print(quote(sys.stdin.read().rstrip("\n"), safe=""))' < "$ACCLIMATE_POSTGRES_PASSWORD_FILE")
-issuer="https://$KEYCLOAK_HOST/realms/acclimate"
+| Option | Default |
+| --- | --- |
+| `--console-host`, `--api-host`, `--auth-host` | `console.`, `api.` and `auth.` plus `--domain` |
+| `--version` | `local`, for images built from this checkout |
+| `--config-dir` | `~/.config/acclimate` |
 
-cat > "$ACCLIMATE_SERVICE_ENV" <<EOF_SERVICE
-DATABASE_URL=postgresql://acclimate:${database_password_url}@postgres:5432/acclimate
-ACCLIMATE_OIDC_ISSUER=$issuer
-ACCLIMATE_LOGIN_TOKEN=$login_token
-ACCLIMATE_CONSOLE_TOKEN=$transport_token
-ACCLIMATE_OPERATORS=[{"issuer":"$issuer","subject":"REPLACE_WITH_USER_UUID"}]
-ACCLIMATE_AUTH=[]
-ACCLIMATE_PROVIDER_ENCRYPTION_KEY=$provider_key
-EOF_SERVICE
-
-cat > "$ACCLIMATE_CONSOLE_ENV" <<EOF_CONSOLE
-CONSOLE_ORIGIN=https://$CONSOLE_HOST
-CONSOLE_SERVICE_URL=http://service:3000
-CONSOLE_PUBLIC_API_URL=https://$API_HOST
-CONSOLE_OIDC_ISSUER=$issuer
-CONSOLE_OIDC_CLIENT_ID=acclimate-console
-CONSOLE_OIDC_CLIENT_SECRET=$oidc_client_secret
-CONSOLE_LOGIN_TOKEN=$login_token
-CONSOLE_SERVICE_TOKEN=$transport_token
-CONSOLE_ALLOW_EDITS=true
-EOF_CONSOLE
-
-cat > "$ACCLIMATE_KEYCLOAK_ENV" <<EOF_KEYCLOAK
-KC_DB_PASSWORD=$(cat "$ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE")
-KC_BOOTSTRAP_ADMIN_USERNAME=bootstrap-admin
-KC_BOOTSTRAP_ADMIN_PASSWORD=$bootstrap_password
-ACCLIMATE_CONSOLE_ORIGIN=https://$CONSOLE_HOST
-ACCLIMATE_OIDC_CLIENT_SECRET=$oidc_client_secret
-EOF_KEYCLOAK
-
-touch "$ACCLIMATE_EXECUTOR_TOKEN_FILE"
-
-unset login_token transport_token oidc_client_secret bootstrap_password database_password_url provider_key
-```
-
-Keep these files outside the checkout with mode 0600. Printing the Compose configuration or a container's environment shows the secrets. The executor credential file stays empty until you [enable learning](/docs/operate/enable-learning), but `compose.yaml` requires its path. For each setting, see [Environment variables](/docs/reference/configuration).
-
-<Callout type="warn" title="Back up the provider encryption key">
-`ACCLIMATE_PROVIDER_ENCRYPTION_KEY` encrypts the provider API keys that workspaces save. Store a copy off this server, apart from database backups. See [Keep the provider encryption key](/docs/operate/backup-and-restore#keep-the-provider-encryption-key).
+<Callout type="warn" title="Back up the private directory">
+It holds `ACCLIMATE_PROVIDER_ENCRYPTION_KEY`, which encrypts the provider API keys that workspaces save. Store a copy off this server, apart from database backups. See [Keep the provider encryption key](/docs/operate/backup-and-restore#keep-the-provider-encryption-key).
 </Callout>
-
-</Step>
-<Step>
-
-## Start Keycloak and create your user
-
-Start only Keycloak and its database. On first start, Keycloak imports the `acclimate` realm with its `acclimate-console` client. For realm updates and email, see the repository's [Keycloak setup](https://github.com/anveld-dev/acclimate/blob/main/deploy/keycloak/README.md).
-
-```sh
-docker compose config --quiet
-docker compose up -d --build --wait keycloak-db keycloak
-```
-
-Sign in to the Keycloak admin CLI inside the container with the `KC_BOOTSTRAP_ADMIN_PASSWORD` value from `keycloak.env`.
-
-```sh
-docker compose exec keycloak /bin/bash -c 'umask 077; exec /opt/keycloak/bin/kcadm.sh config credentials --config /tmp/acclimate-admin.config --server http://127.0.0.1:8080 --realm master --user bootstrap-admin'
-```
-
-In a private editor, create `$private_dir/initial-user.json` with mode 0600, your own login and email and a temporary password.
-
-```json
-{
-  "username": "your-login",
-  "enabled": true,
-  "firstName": "Your",
-  "lastName": "Name",
-  "email": "you@example.com",
-  "credentials": [{"type": "password", "value": "REPLACE_PRIVATELY", "temporary": true}]
-}
-```
-
-Create the user, then remove the CLI session file and the JSON file. The CLI prints the new user's UUID, which is your OIDC subject.
-
-```sh
-docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh create users --config /tmp/acclimate-admin.config -r acclimate -f - < "$private_dir/initial-user.json"
-docker compose exec keycloak rm -f /tmp/acclimate-admin.config
-rm -f "$private_dir/initial-user.json"
-```
-
-Put that UUID into `ACCLIMATE_OPERATORS` in `service.env` to make your user an operator, who can create workspaces. `bootstrap-admin` only administers Keycloak.
-
-```sh
-sed -i 's/REPLACE_WITH_USER_UUID/<user-uuid>/' "$ACCLIMATE_SERVICE_ENV"
-```
 
 </Step>
 <Step>
 
 ## Start Acclimate and create a workspace
 
-<Tabs items={['Build from source', 'Release images (after a release)']}>
-<Tab value="Build from source">
-
-The `local` tag keeps locally built images apart from published release tags.
-
 ```sh
-echo 'export ACCLIMATE_VERSION=local' >> ~/.config/acclimate/compose.env
-. ~/.config/acclimate/compose.env
-docker compose up -d --build --wait postgres service console proxy
+docker compose up -d --build --wait
 ```
 
-</Tab>
-<Tab value="Release images (after a release)">
+On its first start, Keycloak imports the `acclimate` realm with the console's client and your account. Then:
 
-These images exist only once an Acclimate release is published. Set `ACCLIMATE_VERSION` to its image tag, the Git tag without the leading `v`.
+1. Open your console URL and sign in with your email address and the temporary password. Keycloak asks for a new password and your name.
+2. Choose **New workspace**, set a name and workspace ID, then choose **Create workspace**.
+3. Before you send traffic, run the checks in [Check health and readiness](/docs/operate/health-and-readiness).
+4. [Back up](/docs/operate/backup-and-restore) both databases and the private directory.
 
-```sh
-echo 'export ACCLIMATE_VERSION=<version>' >> ~/.config/acclimate/compose.env
-. ~/.config/acclimate/compose.env
-docker compose pull postgres service console proxy
-docker compose up -d --no-build --wait postgres service console proxy
-```
-
-</Tab>
-</Tabs>
-
-Name the services in every `docker compose up`. A bare one also starts the executor, which cannot run until you [enable learning](/docs/operate/enable-learning). Then finish the deployment:
-
-1. Check that `docker compose ps` shows every container `healthy`.
-2. Open your console URL, sign in as the user you created and change the temporary password.
-3. Choose **New workspace**, set a name and workspace ID, then choose **Create workspace**.
-4. [Replace the bootstrap administrator](#replace-the-bootstrap-administrator) with a permanent one.
-5. Before you send traffic, run the checks in [Check health and readiness](/docs/operate/health-and-readiness).
-6. [Back up](/docs/operate/backup-and-restore) both databases and the private runtime files.
+Once an Acclimate release is published, check out its tag, such as `git switch --detach v0.1.0`, pass `--version 0.1.0` to `deploy/init.sh`, and start with `docker compose pull` and `docker compose up -d --wait` instead.
 
 An operator sees an existing workspace only once a workspace administrator adds them. To take over a workspace with no members, adopt it in the console with its exact ID and a reason, which is recorded.
 
@@ -214,36 +80,54 @@ An operator sees an existing workspace only once a workspace administrator adds 
 
 Open **Bundles**, import a bundle and choose its initial channel. Create a connection, issue a connection credential and follow its **Setup** tab. See [Deliver content to jobs](/docs/guides/deliver-content).
 
+## Manage people
+
+Keycloak holds each person's account, password and MFA. Acclimate holds who belongs to each workspace, and with which role.
+
+Keycloak's admin console has no public route. Compose publishes it on the server's loopback address only, so open an SSH tunnel from your computer and keep it running.
+
+```sh
+ssh -N -L 8180:127.0.0.1:8180 <user>@<server>
+```
+
+Open `http://127.0.0.1:8180/admin/acclimate/console/` and sign in with your Acclimate email address and password. To add a person:
+
+1. In Keycloak, open **Users** and choose **Add user**. Enter their email address as **Username** and **Email**, turn on **Email verified**, then choose **Create**.
+2. On the **Credentials** tab, choose **Set password**. Enter a temporary password, leave **Temporary** on and choose **Save**. Send the password to them privately.
+3. In Acclimate, open **Members** in the workspace and choose **Invite member** with the same email address. Invitations need [invitation email](/docs/reference/configuration#invitation-email).
+
+To stop someone signing in, turn off **Enabled** on their **Details** tab in Keycloak. That does not end a console session they already have, so also remove them in **Members**. MFA policies are under **Authentication**.
+
+To let a second person administer Keycloak, open their **Role mapping** tab, choose **Assign role** and assign the `realm-management` client role `realm-admin`. Either of you can then reset the other's password. If nobody can sign in, create a temporary master-realm administrator with Keycloak's [`bootstrap-admin`](https://www.keycloak.org/server/bootstrap-admin-recovery) command, then set a temporary password for your account. The second command asks for the new password first, then the administrator's.
+
+```sh
+docker compose run --rm keycloak bootstrap-admin user --optimized
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh set-password --no-config --server http://127.0.0.1:8080 --realm master --user <admin> -r acclimate --username you@example.com --temporary
+```
+
 ## Use an existing Keycloak
 
-Follow the steps above with these changes. The stack then uses `compose.yaml` alone.
+Register a confidential console client in your realm with the authorization code flow, S256 PKCE and the redirect URI `https://<console-host>/auth/callback`. Create DNS records for the console and API names only, and allow outbound HTTPS to your issuer. Then run `deploy/init.sh` as above and edit what it wrote before you start:
 
-**In your Keycloak realm**, register a confidential console client with the authorization code flow, S256 PKCE and the redirect URI `https://<console-host>/auth/callback`, using the exact public console origin.
+| File | Change |
+| --- | --- |
+| `.env` | Set `COMPOSE_FILE=compose.yaml` and remove `KEYCLOAK_HOST` |
+| `service.env` | Set `ACCLIMATE_OIDC_ISSUER` to your realm's exact issuer, including any trailing slash. In `ACCLIMATE_OPERATORS`, set the same issuer and your user ID in that realm as the subject. |
+| `console.env` | Set `CONSOLE_OIDC_ISSUER` to the same issuer, and `CONSOLE_OIDC_CLIENT_ID` and `CONSOLE_OIDC_CLIENT_SECRET` to your client's |
 
-**In step 1**, create DNS records for the console and API names only, and allow outbound HTTPS to your Keycloak issuer.
-
-**In step 2**, change both blocks:
-
-- Set `COMPOSE_FILE=compose.yaml`. Leave out `KEYCLOAK_HOST`, `ACCLIMATE_KEYCLOAK_ENV` and `ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE`.
-- Set `issuer` to your realm's exact HTTPS issuer, including any trailing slash. The service and the console must get the same value.
-- Set `oidc_client_secret` to your client's secret, and replace `acclimate-console` with your client's ID.
-- Leave out the Keycloak database password, `bootstrap_password` and the whole `keycloak.env` block.
-
-**Skip step 3**, but put your user's ID in your realm, the OIDC subject, into `ACCLIMATE_OPERATORS` with its `sed` command. See also [Find a person's subject](#find-a-persons-subject).
-
-**Step 4** is unchanged.
+Delete `keycloak.env` and `keycloak-postgres-password`, which only the co-hosted Keycloak reads.
 
 ## Use another OIDC provider
 
-The console can sign in through any OpenID Connect provider with discovery, such as Okta or Microsoft Entra ID. Only Keycloak has been tested: the repository's checks run Keycloak 26.8.2 and a test issuer. Follow [Use an existing Keycloak](#use-an-existing-keycloak) with your provider's issuer, client ID and client secret.
+The console can sign in through any OpenID Connect provider with discovery, such as Okta or Microsoft Entra ID. Only Keycloak has been tested: the repository's checks run Keycloak 26.8.2 and a test issuer. Follow [Use an existing Keycloak](#use-an-existing-keycloak) with your provider's issuer and client.
 
 | Requirement | Value |
 | --- | --- |
 | Issuer | HTTPS, with `<issuer>/.well-known/openid-configuration` reachable from the console and returning an `issuer` equal to `CONSOLE_OIDC_ISSUER` |
-| Client | Confidential, authorization code with S256 PKCE. The console sends its secret in the token request body (`client_secret_post`). |
+| Client | Confidential, authorization code with S256 PKCE, secret sent in the token request body (`client_secret_post`) |
 | Redirect URI | `CONSOLE_ORIGIN` plus `/auth/callback` |
 | Scopes | `openid profile email` |
-| ID token | Signed with an algorithm in the discovery document's `id_token_signing_alg_values_supported`, or RS256 when it lists none |
+| ID token | Signed with an algorithm the discovery document lists in `id_token_signing_alg_values_supported`, or RS256 when it lists none |
 | `sub` claim | Required, at most 512 characters and stable for each person |
 | Optional claims | `name` or `preferred_username` for display. Without `email` and `email_verified: true`, a person can sign in but cannot accept an invitation or receive alert email. |
 
@@ -251,31 +135,7 @@ Acclimate identifies a person by issuer and `sub`, so keep the issuer stable. If
 
 ### Find a person's subject
 
-The service records everyone who signs in. Ask the person to sign in once, then read their subject.
-
-```sh
-docker compose exec -T postgres psql -U acclimate -d acclimate -c 'SELECT subject, email, display_name FROM users'
-```
-
-After you change `ACCLIMATE_OPERATORS`, apply it with `docker compose up -d --wait service`.
-
-## Replace the bootstrap administrator
-
-Keycloak's admin console has no public route, so use the admin CLI. Sign in as `bootstrap-admin` as in [Start Keycloak and create your user](#start-keycloak-and-create-your-user). Create `$private_dir/admin-user.json` with mode 0600, shaped like `initial-user.json` but with `"temporary": false`. Then create the administrator in the `master` realm with the `admin` role.
-
-```sh
-docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh create users --config /tmp/acclimate-admin.config -r master -f - < "$private_dir/admin-user.json"
-docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh add-roles --config /tmp/acclimate-admin.config -r master --uusername <admin-login> --rolename admin
-rm -f "$private_dir/admin-user.json"
-```
-
-Sign in to the CLI again with `--user <admin-login>`. If that works, delete `bootstrap-admin` by the ID that `get users` prints, then remove the CLI session file.
-
-```sh
-docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh get users --config /tmp/acclimate-admin.config -r master -q username=bootstrap-admin --fields id,username
-docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh delete users/<id> --config /tmp/acclimate-admin.config -r master
-docker compose exec keycloak rm -f /tmp/acclimate-admin.config
-```
+In the console, the account menu shows your **Subject** and **Issuer** under **Sign-in details**. In Keycloak, the subject is the user's **ID** on their **Details** tab. After you change `ACCLIMATE_OPERATORS`, apply it with `docker compose up -d --wait service`.
 
 ## Use an external PostgreSQL
 
@@ -287,26 +147,29 @@ The service can use any PostgreSQL server it can reach. CI tests PostgreSQL 16, 
 | Connections | At most 10 from the service |
 | TLS | Add `sslmode=require` to `DATABASE_URL`, or `sslmode=verify-full` with `sslrootcert=<path>` for a private CA, mounted into the service container |
 | Pooling | Direct, or a pooler in session mode. Transaction or statement pooling, as in PgBouncer, breaks the advisory lock that keeps one service per database. |
-| Compose | `ACCLIMATE_POSTGRES_PASSWORD_FILE` must still name a file. The service still waits for the bundled `postgres` unless you add the file below to `COMPOSE_FILE` and leave `postgres` out of `docker compose up`. |
 | Backups | Your provider's backups, or [Other PostgreSQL servers](/docs/operate/backup-and-restore#other-postgresql-servers) |
+
+Set `DATABASE_URL` in `service.env`. Save this file in the private directory and append its absolute path to `COMPOSE_FILE` in `.env`, after a `:`, so the bundled `postgres` no longer starts.
 
 ```yaml title="~/.config/acclimate/compose.external-db.yaml"
 services:
+  postgres:
+    profiles: [bundled-database]
   service:
     depends_on: !reset {}
 ```
 
 ## Rotate secrets
 
-Generate each new value with `openssl rand -hex 32` and edit the files in a private editor. For the executor credential, see [Rotate the executor credential](/docs/operate/enable-learning#rotate-the-executor-credential).
+Generate each new value with `openssl rand -hex 32` and edit the files in the private directory. For the executor credential, see [Rotate the executor credential](/docs/operate/enable-learning#rotate-the-executor-credential).
 
 | Secret | Set one new value in | Then run |
 | --- | --- | --- |
 | Login token | `ACCLIMATE_LOGIN_TOKEN` in `service.env` and `CONSOLE_LOGIN_TOKEN` in `console.env` | `docker compose up -d --wait service console` |
 | Console token | `ACCLIMATE_CONSOLE_TOKEN` in `service.env` and `CONSOLE_SERVICE_TOKEN` in `console.env` | `docker compose up -d --wait service console` |
-| OIDC client secret | Regenerate it in your provider (below for the co-hosted Keycloak), then copy it to `CONSOLE_OIDC_CLIENT_SECRET` in `console.env` and any `ACCLIMATE_OIDC_CLIENT_SECRET` in `keycloak.env` | `docker compose up -d --wait console` |
-| Acclimate database password | The `ACCLIMATE_POSTGRES_PASSWORD_FILE` file, the role's password (below) and the password part of `DATABASE_URL` | `docker compose up -d --wait service` |
-| Keycloak database password | The `ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE` file, the role's password (below) and `KC_DB_PASSWORD` in `keycloak.env` | `docker compose up -d --wait keycloak` |
+| OIDC client secret | Regenerate it in your provider, then copy it to `CONSOLE_OIDC_CLIENT_SECRET` in `console.env`. In the co-hosted Keycloak, open **Clients**, then `acclimate-console`, then **Credentials**, and choose **Regenerate**. | `docker compose up -d --wait console` |
+| Acclimate database password | The `postgres-password` file, the role's password (below) and the password part of `DATABASE_URL` | `docker compose up -d --wait service` |
+| Keycloak database password | The `keycloak-postgres-password` file, the role's password (below) and `KC_DB_PASSWORD` in `keycloak.env` | `docker compose up -d --wait keycloak` |
 | Static machine token | Add a grant with the new token to `ACCLIMATE_AUTH`, move the application to it, then remove the old grant | `docker compose up -d --wait service` after each edit |
 
 People stay signed in through each rotation. Sign-in fails between the two steps of an OIDC secret rotation.
@@ -315,14 +178,6 @@ PostgreSQL reads a password file only when it creates its volume, so also set th
 
 ```sh
 docker compose exec postgres psql -U acclimate -d acclimate -c '\password acclimate'
-```
-
-To regenerate the co-hosted Keycloak's client secret, sign in to the admin CLI as in [Replace the bootstrap administrator](#replace-the-bootstrap-administrator). Find the client's internal ID, generate a secret, then read it.
-
-```sh
-docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh get clients --config /tmp/acclimate-admin.config -r acclimate -q clientId=acclimate-console --fields id
-docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh create clients/<id>/client-secret --config /tmp/acclimate-admin.config -r acclimate
-docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh get clients/<id>/client-secret --config /tmp/acclimate-admin.config -r acclimate
 ```
 
 ## Limits of this deployment

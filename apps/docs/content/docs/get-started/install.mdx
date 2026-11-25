@@ -10,7 +10,7 @@ Install the SDK where your agent runs. No Acclimate release has been published y
 | To use | You need |
 | --- | --- |
 | The TypeScript SDK and its `acclimate` command | Node.js 22.22 or later |
-| The Python SDK and its `acclimate` command | Python 3.11 or later |
+| The Python SDK | Python 3.11 or later |
 | Preparing files for a job | Linux or macOS, and a private local directory to stage the files in |
 
 `@acclimate/sdk` is an ES module only. CommonJS code loads it with `await import('@acclimate/sdk')`.
@@ -37,8 +37,6 @@ This needs only Python. Write the output outside the checkout:
 
 ```sh
 python3.11 -m pip wheel --no-deps --wheel-dir /tmp/acclimate-wheel ./python
-# or, with uv
-uv build --wheel --out-dir /tmp/acclimate-wheel ./python
 ```
 
 The build downloads the `flit_core` build backend unless your index or cache has it. You can also install straight from the checkout with `pip install ./python`.
@@ -54,7 +52,7 @@ The SDK tarball has no npm runtime dependencies.
 
 ```sh
 npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz
-./node_modules/.bin/acclimate pull --help
+./node_modules/.bin/acclimate --help
 ```
 
 </Tab>
@@ -63,7 +61,7 @@ npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0
 ```sh
 python3.11 -m venv .venv
 .venv/bin/python -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
-.venv/bin/acclimate --help
+.venv/bin/python -m acclimate pull --help
 ```
 
 </Tab>
@@ -78,7 +76,7 @@ Once an Acclimate release is on npm and PyPI:
 
 ```sh
 npm install @acclimate/sdk
-npx acclimate pull --help
+npx acclimate --help
 ```
 
 To run Codex, the Claude Agent SDK, Pi or Cursor on the delivered files, also install the matching plugin, such as `@acclimate/codex-plugin` ([Choose a native integration](/docs/guides/coding-agents#choose-a-native-integration)).
@@ -91,10 +89,10 @@ The SDK uses only the standard library and needs no Node.js.
 ```sh
 python3.11 -m venv .venv
 .venv/bin/python -m pip install acclimate-sdk
-.venv/bin/acclimate --help
+.venv/bin/python -m acclimate pull --help
 ```
 
-The distribution is `acclimate-sdk`, imported as `acclimate`. `python -m acclimate` runs the same CLI as `acclimate`. On Python 3.10 or earlier, the import fails with a message that names the version it found.
+The distribution is `acclimate-sdk`, imported as `acclimate`. On Python 3.10 or earlier, the import fails with a message that names the version it found.
 
 </Tab>
 </Tabs>

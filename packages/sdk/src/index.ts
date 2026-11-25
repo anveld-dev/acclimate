@@ -4,6 +4,7 @@ export { AcclimateError, AcclimateUsageError, TransportError } from './errors.js
 export type { UsageErrorCode, TransportErrorCode } from './errors.js';
 export type { ClientOptions, ChannelOptions, ChannelResult } from './client.js';
 export { resolveAndCache, validatePayload, DeliveryError } from './cache.js';
+export { fileKindForPath } from './validation.js';
 export type { DeliveryErrorCode } from './validation.js';
 export { verifyPayloadBytes } from './verification.js';
 export type { Selection, CachePolicy, OfflinePolicy } from './cache.js';
@@ -25,3 +26,5 @@ export { compatibilityIssues, assertCompatible } from './compatibility.js';
 export type { CompatibilityIssue } from './compatibility.js';
 export { createAcclimate } from './jobs.js';
 export type { AcclimateJob, AcclimateOptions, JobOptions } from './jobs.js';
+export { payloadDigest } from './release.js';
+export type { ReleaseOptions, ReleaseResult, RollbackOptions } from './release.js';

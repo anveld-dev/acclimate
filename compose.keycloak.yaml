@@ -1,7 +1,13 @@
 # Co-hosted Keycloak. Merge with compose.yaml; existing application volumes are preserved.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
 services:
   keycloak-db:
     image: postgres:16-alpine
+    logging: *logging
     environment:
       POSTGRES_USER: keycloak
       POSTGRES_DB: keycloak
@@ -17,17 +23,23 @@ services:
       timeout: 3s
       retries: 20
   keycloak:
+    logging: *logging
+    # No image is published. Every up rebuilds it from this checkout, from cache when unchanged,
+    # so an upgrade applies the Keycloak version the checkout pins.
+    pull_policy: build
     build:
       context: .
       dockerfile: deploy/keycloak/Dockerfile
     command: ["start", "--optimized", "--import-realm"]
     env_file:
-      - ${ACCLIMATE_KEYCLOAK_ENV:?Set ACCLIMATE_KEYCLOAK_ENV to a private Keycloak runtime file}
+      - ${ACCLIMATE_KEYCLOAK_ENV:-${ACCLIMATE_CONFIG_DIR:?Run deploy/init.sh, or set ACCLIMATE_CONFIG_DIR to the private directory}/keycloak.env}
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
       KC_DB_USERNAME: keycloak
       KC_HOSTNAME: https://${KEYCLOAK_HOST:?Set KEYCLOAK_HOST to the public identity hostname}
+      # The admin console has no public route. Reach it through this loopback-only port.
+      KC_HOSTNAME_ADMIN: http://127.0.0.1:${KEYCLOAK_ADMIN_PORT:-8180}
       KC_HOSTNAME_STRICT: "true"
       KC_HTTP_ENABLED: "true"
       KC_PROXY_HEADERS: xforwarded
@@ -37,6 +49,9 @@ services:
       KC_CACHE: local
     volumes:
       - ./deploy/keycloak/acclimate-realm.json:/opt/keycloak/data/import/acclimate-realm.json:ro
+      - ./deploy/keycloak/acclimate-users-0.json:/opt/keycloak/data/import/acclimate-users-0.json:ro
+    ports:
+      - "127.0.0.1:${KEYCLOAK_ADMIN_PORT:-8180}:8080"
     depends_on:
       keycloak-db:
         condition: service_healthy
@@ -67,4 +82,4 @@ volumes:
   keycloak-postgres-data:
 secrets:
   keycloak_postgres_password:
-    file: ${ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE:?Set ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE to a private database password file}
+    file: ${ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE:-${ACCLIMATE_CONFIG_DIR:?Run deploy/init.sh, or set ACCLIMATE_CONFIG_DIR to the private directory}/keycloak-postgres-password}

@@ -43,8 +43,10 @@ Send `system_prompt(job.version["payload"])` as your system message, as [Jobs](/
 | `Acclimate.from_env(*, cache_dir=None)` | Reads the three environment variables |
 | `Acclimate(url=None, workspace=None, token=None, *, cache_dir=None)` | Takes the values as arguments, each falling back to its variable when `None` |
 | `acclimate.job(bundle, *, channel="stable", input)` | Finds the bundle, resolves the release, downloads and verifies the version and returns a `Job` |
+| `acclimate.release(bundle, payload, *, channel="stable", reason)` | Uploads and releases the payload, as [`release`](/docs/reference/typescript-sdk#jobs) does in TypeScript |
+| `acclimate.rollback(bundle, *, channel="stable", reason)` | Releases the version the channel served before its latest release |
 
-On each call, `job()` lists the workspace's bundles page by page and uses the first one with that name. It raises `UsageError` when none has it. `acclimate.client` is the underlying `AcclimateClient`.
+On each call, `job()`, `release()` and `rollback()` list the workspace's bundles page by page and use the first one with that name. They raise `UsageError` when none has it. `release()` and `rollback()` return a `ReleaseResult` dictionary with the TypeScript keys, and a moved channel raises `ApiError` with code `revision_conflict`. `acclimate.client` is the underlying `AcclimateClient`.
 
 | Job member | What it is |
 | --- | --- |
@@ -138,11 +140,10 @@ A failed report is kept, not retried. Only `flush()` sends kept reports again, w
 
 Every error the SDK raises on purpose is an `AcclimateError` with a stable `code`. See [Error codes](/docs/reference/error-codes).
 
-## acclimate pull
+## python -m acclimate pull
 
-The package installs the `acclimate` command, which `python -m acclimate` also runs. Its flags, config file and output are those of [acclimate pull](/docs/reference/typescript-sdk#acclimate-pull) in TypeScript.
+The package has no `acclimate` executable. The [`acclimate` command](/docs/reference/typescript-sdk#the-acclimate-command) comes with the TypeScript SDK. `python -m acclimate pull` runs its `pull` command in Python, with the same flags, environment variables, config file and output:
 
 ```sh
-acclimate pull --config /absolute/path/pull.json --bundle <bundle-id> --channel stable --out payload.json
-python -m acclimate pull --help
+python -m acclimate pull --bundle "Support agent" --out payload.json
 ```

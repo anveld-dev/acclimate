@@ -7,9 +7,13 @@ In this tutorial you run a support agent on the version released on a channel, i
 
 ## Before you start
 
-Follow [Before you start](/docs/tutorials/first-learning-round#before-you-start) in the first tutorial, but give the machine token only **Read content** and **Write content**. From the root of the checkout:
+Follow [Connect a model provider](/docs/tutorials/first-learning-round#connect-a-model-provider) in the first tutorial, but give the machine token only **Read content** and **Write content**. From the root of the checkout:
 
 ```sh
+export ACCLIMATE_PROVIDER_URL='<provider-base-url>'
+export ACCLIMATE_PROVIDER_KEY='<provider-api-key>'
+export ACCLIMATE_PROVIDER_MODELS='<task-model-id>,<judge-model-id>'
+export ACCLIMATE_MODEL='<optimizer-model-id>'
 npm run local:up
 npm run local:trust
 source .local/stack/env.sh
@@ -19,15 +23,7 @@ npm ci --ignore-scripts
 
 For Python, run `python3.11 -m venv .venv` and `.venv/bin/python -m pip install ./python` instead of `npm ci`.
 
-The application calls an OpenAI-compatible model itself. These values fit the [local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy):
-
-```sh
-export OPENAI_BASE_URL=http://127.0.0.1:8317/v1
-export OPENAI_API_KEY='<proxy-key>'
-export AGENT_MODEL=gpt-6-luna
-```
-
-The model ID is an example. On Linux, use the address the proxy listens on. With a provider API key instead, set `OPENAI_BASE_URL` to the provider's base URL, such as `https://api.openai.com/v1`, and `OPENAI_API_KEY` to the key.
+The application calls the model provider itself. `env.sh` sets `OPENAI_BASE_URL` and `OPENAI_API_KEY` to the provider's address and key, and `AGENT_MODEL` to the first allowed model, which is also the task model.
 
 ## Answer a request
 
@@ -152,7 +148,7 @@ You provide first-party support for our workspace web app. Unless the customer e
 
 The held-out results moved much less. A 95% evolve and 8% held-out pass rate is overfitting: the change fits the tasks the optimizer saw, so this round is no evidence that the loop's changes generalize. Most requests turn on a company fact of their own, and the guide lacks the facts held-out tasks ask about. To close the gap, add tasks or [corrections](#report-a-correction) that cover them, or write the facts into the bundle.
 
-The round ran 1,280 rollouts in about 95 minutes on one Codex sign-in with four rollouts at a time, while another example was also running.
+The round ran 1,280 rollouts in about 95 minutes with four rollouts at a time, while another example was also running.
 
 ### Run the application again
 

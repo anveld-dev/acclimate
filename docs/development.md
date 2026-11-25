@@ -22,6 +22,32 @@ Inject runtime environment from your secret manager. `npm start` starts the buil
 
 Rust validates PostgreSQL/access/issuer configuration before listening, holds exclusive queue ownership, initializes the schema and registers the workspaces named in explicit machine grants. That registration never grants human membership. The console validates its own required settings before built or development listening. Use the public console URL through the configured TLS proxy, not its private listener.
 
+## Use a local model proxy
+
+The measured runs in the docs used [CLIProxyAPI](https://help.router-for.me/) with a Codex sign-in as the model provider. To reproduce them, pin the proxy to revision [`f5c5681`](https://github.com/router-for-me/CLIProxyAPI/tree/f5c5681a8361c9da53e93c60b6507816eee7468b), which the runs were checked against.
+
+1. In the proxy's configuration file, set `server.port` to `8317`, put a private key of your choice under `access.api-keys` and set `routing.cooldown.disable-cooling: true`. Without it, one rate-limited reply blocks a model for minutes.
+2. Sign in, start the proxy and list the model IDs it serves.
+
+   ```sh
+   cli-proxy-api -config /private/config.yaml -codex-login
+   cli-proxy-api -config /private/config.yaml
+   curl -H "Authorization: Bearer <proxy-key>" http://127.0.0.1:8317/v1/models
+   ```
+
+3. Start the stack with the models of the recorded runs.
+
+   ```sh
+   export ACCLIMATE_PROVIDER_URL=http://127.0.0.1:8317/v1
+   export ACCLIMATE_PROVIDER_KEY='<proxy-key>'
+   export ACCLIMATE_PROVIDER_MODELS=gpt-6-luna,gpt-6.2-sol
+   export ACCLIMATE_MODEL=gpt-6.2-astra
+   export ACCLIMATE_MODEL_REASONING_EFFORT=high
+   npm run local:up
+   ```
+
+`local:up` gives the containers `http://host.docker.internal:8317/v1` and adds that host to `ACCLIMATE_PROVIDER_HTTP_HOSTS`. `env.sh` keeps `127.0.0.1` for the examples, which run on the host. On Linux, `host.docker.internal` is the Docker bridge address, such as `172.17.0.1`, so set the proxy's `server.host` to that address. Binding it to all interfaces also works, but exposes the proxy to your network. One Codex sign-in reaches its rate limits quickly. If rounds fail with `provider-unavailable`, lower `ACCLIMATE_EXECUTOR_CONCURRENCY`.
+
 ## Access and startup
 
 The exact operator identities configured for the pinned issuer may create workspaces. To recover an existing machine-created workspace with no human memberships, an operator reviews its exact ID, their verified identity and a reason, then explicitly adopts it. The immutable audit never silently restores access on retry. Other access changes use current workspace admins and verified user IDs.
@@ -34,15 +60,16 @@ HTTP requests have a 2 MiB limit, 30-second deadline and 64-handler concurrency 
 
 ## Publish and consume content
 
-Configure `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE`, `ACCLIMATE_SCOPE` and `ACCLIMATE_TOKEN` for the workspace. To publish the first version of a new bundle, supply your bundle JSON, its name and the reason for the initial release.
+Configure `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN` for the workspace. To publish the first version of a new bundle from a payload file or folder, build the packages and run the `acclimate` command.
 
 ```sh
-npm run example:publish -- "$BUNDLE_FILE" "$BUNDLE_NAME" "$INITIAL_RELEASE_REASON"
+npm run build:packages
+npx acclimate publish "$BUNDLE_FILE" --bundle "$BUNDLE_NAME" --create --reason "$INITIAL_RELEASE_REASON"
 ```
 
-The service creates the bundle, version and channel in one operation. The channel defaults to `stable`. Set `ACCLIMATE_CHANNEL` to choose another, or `ACCLIMATE_OPERATION_ID` to reuse the same operation on retry.
+The service creates the bundle, version and release in one operation. The channel defaults to `stable`. Pass `--channel` to choose another.
 
-Set `ACCLIMATE_BUNDLE` to the printed bundle ID. Pass a task from your application to start a paid Codex session.
+Set `ACCLIMATE_BUNDLE` to the printed `bundleId`. Pass a task from your application to start a paid Codex session.
 
 ```sh
 npm run example:codex -- --live "$TASK"

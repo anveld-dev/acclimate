@@ -96,8 +96,6 @@ These service variables set the optimizer, the model that changes bundles in a l
 - An invalid timeout, token limit or reasoning effort stops the service at startup, even without an endpoint. An unset, zero or invalid failed-round limit uses `3`.
 - The service retries HTTP 429, HTTP 5xx and connection or timeout errors twice.
 
-To try the optimizer on your own machine, see [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy).
-
 ## Model provider
 
 The task model and the judge model come from the model provider a workspace administrator saves in the console. These service variables control how it is stored and reached.
@@ -140,7 +138,7 @@ The executor runs learning rollouts in sandboxes. In the bundled deployment, Com
 | Variable | Required | Default | Value |
 | --- | --- | --- | --- |
 | `ACCLIMATE_EXECUTOR_SERVICE` | Yes | None | Base URL of the service's executor listener. Compose sets `http://service:3001`. |
-| `ACCLIMATE_EXECUTOR_TOKEN_FILE` | One of the two | None | File that holds the executor credential. A missing, unreadable or empty file stops the executor. |
+| `ACCLIMATE_EXECUTOR_TOKEN_FILE` | One of the two | None | File that holds the executor credential, as the token alone or the JSON that `--create-executor-token` prints. A missing, unreadable or empty file stops the executor. |
 | `ACCLIMATE_EXECUTOR_TOKEN` | One of the two | None | The executor credential itself, read only when the file variable is unset |
 | `ACCLIMATE_SANDBOX_RUNTIME` | No | `runsc` | `runsc` for gVisor, or `docker` |
 | `ACCLIMATE_RUNNER_IMAGE` | No | `acclimate-chat:1` | Runner image each sandbox runs, present at startup. Compose sets the release's `acclimate-runner`. |
@@ -180,52 +178,59 @@ The executor runs learning rollouts in sandboxes. In the bundled deployment, Com
 
 ## Compose
 
-Set these in the shell that runs `docker compose`, for `compose.yaml` and the Keycloak overlay `compose.keycloak.yaml`. Every path is absolute. Each `*_IMAGE` variable defaults to the GHCR image at `ACCLIMATE_VERSION`.
+Compose reads these from `.env` in the checkout, for `compose.yaml` and the Keycloak overlay `compose.keycloak.yaml`. `deploy/init.sh` writes `COMPOSE_FILE`, the hostnames, `ACME_EMAIL`, `ACCLIMATE_CONFIG_DIR` and `ACCLIMATE_VERSION`. Every path is absolute.
 
 | Variable | Required | Default | Value |
 | --- | --- | --- | --- |
+| `COMPOSE_FILE` | No | `compose.yaml` | Compose files to merge, separated by `:`. `init.sh` adds the overlay. |
 | `CONSOLE_HOST` | Yes | None | Public hostname of the console, with no scheme or path |
 | `API_HOST` | Yes | None | Public hostname of the API, different from `CONSOLE_HOST` |
-| `ACME_EMAIL` | Yes | None | Contact email for the certificates Caddy requests |
-| `ACCLIMATE_SERVICE_ENV` | Yes | None | Private runtime file with the service's variables |
-| `ACCLIMATE_CONSOLE_ENV` | Yes | None | Private runtime file with the console's variables |
-| `ACCLIMATE_POSTGRES_PASSWORD_FILE` | Yes | None | Private file with the raw PostgreSQL password |
-| `ACCLIMATE_EXECUTOR_TOKEN_FILE` | Yes | None | Private executor credential file on the host, outside the checkout |
-| `ACCLIMATE_VERSION` | No | `latest` | Tag of the service, console, executor and runner images |
-| `ACCLIMATE_SERVICE_IMAGE`, `ACCLIMATE_CONSOLE_IMAGE`, `ACCLIMATE_EXECUTOR_IMAGE`, `ACCLIMATE_RUNNER_IMAGE` | No | GHCR | Full image reference. The runner image is also passed to the executor. |
 | `KEYCLOAK_HOST` | With the overlay | None | Public hostname of Keycloak, different from the other two |
-| `ACCLIMATE_KEYCLOAK_ENV` | With the overlay | None | Private Keycloak runtime file |
-| `ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE` | With the overlay | None | Private file with Keycloak's raw database password |
+| `ACME_EMAIL` | Yes | None | Contact email for the certificates Caddy requests |
+| `ACCLIMATE_CONFIG_DIR` | Unless every file below is set | None | Private directory with the runtime files |
+| `ACCLIMATE_VERSION` | No | `local` | Tag of the service, console, executor and runner images. `local` names images built from the checkout. |
+| `COMPOSE_PROFILES` | No | None | `learning` adds the executor and the runner. See [Enable learning](/docs/operate/enable-learning). |
+| `ACCLIMATE_SERVICE_ENV` | No | `service.env` in the private directory | Service runtime file |
+| `ACCLIMATE_CONSOLE_ENV` | No | `console.env` | Console runtime file |
+| `ACCLIMATE_POSTGRES_PASSWORD_FILE` | No | `postgres-password` | The raw PostgreSQL password |
+| `ACCLIMATE_EXECUTOR_TOKEN_FILE` | No | `executor-token` | The executor credential |
+| `ACCLIMATE_KEYCLOAK_ENV` | No | `keycloak.env` | Keycloak runtime file |
+| `ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE` | No | `keycloak-postgres-password` | Keycloak's raw database password |
+| `KEYCLOAK_ADMIN_PORT` | No | `8180` | Port of Keycloak's admin console on the host's `127.0.0.1` |
+| `ACCLIMATE_SERVICE_IMAGE`, `ACCLIMATE_CONSOLE_IMAGE`, `ACCLIMATE_EXECUTOR_IMAGE`, `ACCLIMATE_RUNNER_IMAGE` | No | GHCR at `ACCLIMATE_VERSION` | Full image reference. The runner image is also passed to the executor. |
 
-- The password in `ACCLIMATE_POSTGRES_PASSWORD_FILE` must match the URL-encoded password in `DATABASE_URL`.
-- `docker compose` refuses to run without `ACCLIMATE_EXECUTOR_TOKEN_FILE`, even before learning is set up. Compose mounts the file into the executor and points the executor's own variable at it.
-- Until the first Acclimate release, build from source with `ACCLIMATE_VERSION=local`. Once releases exist, pin it to the exact release without the Git tag's leading `v`, such as `0.1.0`. See [Versioning and compatibility](/docs/reference/versioning).
-- Compose passes `ACCLIMATE_PROVIDER_HTTP_HOSTS`, `ACCLIMATE_EXECUTOR_CONCURRENCY` and `ACCLIMATE_SANDBOX_RUNTIME` from this shell to the executor, not from the service's runtime file.
+- The password in `postgres-password` must match the URL-encoded password in `DATABASE_URL`. `init.sh` writes hex passwords, which need no encoding.
+- Until the first Acclimate release, keep `ACCLIMATE_VERSION=local`. Once releases exist, set the exact release without the Git tag's leading `v`, such as `0.1.0`. See [Versioning and compatibility](/docs/reference/versioning).
+- Compose passes `ACCLIMATE_PROVIDER_HTTP_HOSTS`, `ACCLIMATE_EXECUTOR_CONCURRENCY` and `ACCLIMATE_SANDBOX_RUNTIME` from `.env` to the executor, not from the service's runtime file.
+- Every container keeps at most five 10 MB log files, so Docker needs no log rotation setting.
 
 ### Keycloak runtime file
 
-The file that `ACCLIMATE_KEYCLOAK_ENV` names holds these for the co-hosted Keycloak. [Self-host Acclimate](/docs/operate/self-host) creates it. The first realm import reads the last two.
+`keycloak.env` holds these for the co-hosted Keycloak. Keycloak reads all but `KC_DB_PASSWORD` only when it first imports the realm.
 
 | Variable | Value |
 | --- | --- |
-| `KC_DB_PASSWORD` | Raw password from the `ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE` file |
-| `KC_BOOTSTRAP_ADMIN_USERNAME` | User name of the temporary administrator |
-| `KC_BOOTSTRAP_ADMIN_PASSWORD` | Password of the temporary administrator |
+| `KC_DB_PASSWORD` | Raw password from the `keycloak-postgres-password` file |
 | `ACCLIMATE_CONSOLE_ORIGIN` | The console's `CONSOLE_ORIGIN` |
 | `ACCLIMATE_OIDC_CLIENT_SECRET` | The console's `CONSOLE_OIDC_CLIENT_SECRET` |
+| `ACCLIMATE_FIRST_USER_ID` | UUID of the first person, also their subject in `ACCLIMATE_OPERATORS` |
+| `ACCLIMATE_FIRST_USER_EMAIL` | The first person's email address and Keycloak user name |
+| `ACCLIMATE_FIRST_USER_PASSWORD` | The first person's temporary password |
 
 ## Service commands
 
-Every command except `--check-grants` connects to the database, so run it with the service's `DATABASE_URL`. In the bundled deployment, run it through `docker compose exec -T service /usr/local/bin/acclimate-service`. [Enable learning](/docs/operate/enable-learning) gives the order for the executor commands.
+Every command except `--check-grants` connects to the database, so run it with the service's `DATABASE_URL`. In the bundled deployment, run it through `docker compose exec -T service acclimate-service`. When the service will not stay up, use `docker compose run --rm service <command>` instead. [Enable learning](/docs/operate/enable-learning) gives the order for the executor commands.
 
 | Command | What it does |
 | --- | --- |
 | `acclimate-service --create-executor-token` | Creates an executor credential and prints it as JSON with `id` and `token` |
 | `acclimate-service --list-executor-tokens` | Prints a JSON array of executor credentials, never their tokens |
 | `acclimate-service --revoke-executor-token <id>` | Revokes one executor credential |
+| `acclimate-service --set-model-provider <workspace-id>` | Saves the workspace's model provider from a JSON document on standard input |
 | `acclimate-service --reset-provider-keys --confirm` | Deletes every stored model provider and the key check value, then prints `{"removedProviders": n}` |
 | `acclimate-service --check-grants` | Checks an `ACCLIMATE_AUTH` value from standard input, without starting the service |
 
 - `--list-executor-tokens` prints each credential's `id`, `createdAt`, `lastSeenAt`, declared `runtime`, `revoked` and `revokedAt`.
+- `--set-model-provider` reads up to 1 MiB of `{"baseUrl": "…", "allowedModels": ["…"], "apiKey": "…"}` with no other field, and prints nothing. It needs `ACCLIMATE_PROVIDER_ENCRYPTION_KEY`, applies the [provider address](#provider-addresses) rules and replaces any provider the workspace has. A loop cannot start until the executor has verified the new provider.
 - `--reset-provider-keys` deletes each provider's URL, allowed models and provider API key. Use it only to start again with a new provider encryption key, after which each workspace administrator enters the model provider again. Without `--confirm`, it deletes nothing.
 - `--check-grants` reads up to 1 MiB of JSON and never echoes it. It prints `{"schemaVersion":1,"valid":true}` and exits 0, or prints `{"schemaVersion":1,"valid":false,"code":"grants.invalid"}` to standard error and exits with a failure status.

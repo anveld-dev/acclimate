@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { validatePayload } from '@acclimate/sdk/validation';
+import { fileKindForPath, validatePayload } from '@acclimate/sdk/validation';
 import type { BundleFile, BundlePayload } from '@acclimate/sdk';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -78,15 +78,7 @@ async function readPlannedBatch(
       throw Error(`Cannot read “${path}” as UTF-8 text.`);
     }
     if (text.includes('\0')) throw Error(`Binary content: ${path}`);
-    imported.push({
-      path,
-      text,
-      kind: path.startsWith('skills/')
-        ? 'skill'
-        : path.startsWith('memory/')
-          ? 'memory'
-          : 'instruction',
-    });
+    imported.push({ path, text, kind: fileKindForPath(path) });
   }
   const combined = { ...payload, files: [...payload.files, ...imported] };
   validatePayload(combined);

@@ -10,13 +10,13 @@ One script that runs a learning loop end to end over the API. It publishes a bun
 
 ## Run it
 
-The script needs a service with an optimizer model, an executor, and a verified model provider on the workspace. The [local stack](../../apps/docs/content/docs/reference/local-stack.mdx) with a [local model proxy](../../apps/docs/content/docs/tutorials/first-learning-round.mdx) has all three.
+The script needs a service with an optimizer model, an executor, and a verified model provider on the workspace. The [local stack](../../apps/docs/content/docs/reference/local-stack.mdx) started with a [model provider](../../apps/docs/content/docs/tutorials/first-learning-round.mdx#connect-a-model-provider) has all three.
 
 | Variable | Value |
 | --- | --- |
 | `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` | The service address and the workspace. `source .local/stack/env.sh` sets both for the local stack. |
 | `ACCLIMATE_TOKEN` | A machine token with read, write and promote. With it, the task list holds evolve tasks only and counts the held-out ones. |
-| `TASK_MODEL`, `JUDGE_MODEL` | Two different models from the provider's allowed models. |
+| `TASK_MODEL`, `JUDGE_MODEL` | Two different models from the provider's allowed models. `env.sh` sets them to the first two of `ACCLIMATE_PROVIDER_MODELS`. |
 | `ACCLIMATE_BUNDLE_NAME`, `ACCLIMATE_SCOPE`, `ACCLIMATE_CACHE` | Optional. The bundle's name (`Ticket triage`), the client's cache scope, and the directory that caches verified versions. |
 
 From the repository root:

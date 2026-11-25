@@ -1,5 +1,5 @@
 import { AcclimateError } from './errors.js';
-import type { BundlePayload } from './types.js';
+import type { BundlePayload, FileKind } from './types.js';
 export type { CompatibilityTarget } from './types.js';
 export { compatibilityIssues, assertCompatible } from './compatibility.js';
 export type { CompatibilityIssue } from './compatibility.js';
@@ -24,6 +24,14 @@ export class DeliveryError extends AcclimateError<DeliveryErrorCode> {
     super(code, message);
     this.name = 'DeliveryError';
   }
+}
+/**
+ * The kind of an imported file, from its path in the bundle: files under `skills/` are skills,
+ * files under `memory/` are memory, and every other file is an instruction. The console's
+ * import and `acclimate publish` both use this rule.
+ */
+export function fileKindForPath(path: string): FileKind {
+  return path.startsWith('skills/') ? 'skill' : path.startsWith('memory/') ? 'memory' : 'instruction';
 }
 const MAX_PAYLOAD = 1024 * 1024,
   MAX_FILES = 128,

@@ -100,6 +100,10 @@ def qualify(args, prepared_home, build_env):
         issuer = auth_proxy.base+'/realms/acclimate'
         users = {name: str(uuid.uuid4()) for name in ('operator', 'viewer')}
         passwords = {name: secrets.token_urlsafe(32) for name in users}
+        # The operator is the template's first person, who signs in by email with a
+        # temporary password. The viewer is an ordinary user added to the realm.
+        logins = dict(operator='operator@fixture.invalid', viewer='viewer')
+        temporary_password = secrets.token_hex(12)
         client_secret = secrets.token_urlsafe(32)
         h.env.update(ACCLIMATE_OIDC_ISSUER=issuer,
                      ACCLIMATE_OPERATORS=json.dumps([dict(issuer=issuer, subject=users['operator'])]))
@@ -118,16 +122,17 @@ def qualify(args, prepared_home, build_env):
         if getattr(args, 'email', False):
             realm.update(registrationAllowed=True, registrationEmailAsUsername=True, verifyEmail=True, resetPasswordAllowed=True,
                 smtpServer=dict(host='127.0.0.1',port=str(smtp_port), **{'from':'noreply@acclimate.local'},fromDisplayName='Acclimate',ssl='false',starttls='false',auth='false'))
-        realm['users'] = [dict(id=users[name], username=name, enabled=True,
-                              email=name+'@fixture.invalid', emailVerified=True,
-                              firstName=name, lastName='Qualification',
-                              credentials=[dict(type='password', value=passwords[name], temporary=False)])
-                          for name in users]
+        realm['users'] = [dict(id=users['viewer'], username='viewer', enabled=True,
+                              email='viewer@fixture.invalid', emailVerified=True,
+                              firstName='viewer', lastName='Qualification',
+                              credentials=[dict(type='password', value=passwords['viewer'], temporary=False)])]
         imports = home/'data/import'
         imports.mkdir(parents=True, exist_ok=True, mode=0o700)
         realm_path = imports/'acclimate-realm.json'
         realm_path.write_text(json.dumps(realm))
         realm_path.chmod(0o600)
+        # The first person comes from the unmodified template that compose.keycloak.yaml mounts.
+        shutil.copyfile(ROOT/'deploy/keycloak/acclimate-users-0.json', imports/'acclimate-users-0.json')
         env = dict(build_env,
                    KC_DB_URL=f'jdbc:postgresql://127.0.0.1:{h.pg_port}/keycloak',
                    KC_DB_USERNAME='qualification', KC_DB_PASSWORD='',
@@ -135,10 +140,14 @@ def qualify(args, prepared_home, build_env):
                    KC_HTTP_PORT=str(kc_port), KC_HTTP_MANAGEMENT_HOST='127.0.0.1',
                    KC_HTTP_MANAGEMENT_PORT=str(management_port), KC_HTTP_MANAGEMENT_SCHEME='http',
                    KC_HOSTNAME=auth_proxy.base, KC_HOSTNAME_STRICT='true', KC_PROXY_HEADERS='xforwarded',
-                   KC_BOOTSTRAP_ADMIN_USERNAME='fixture-bootstrap',
-                   KC_BOOTSTRAP_ADMIN_PASSWORD=secrets.token_urlsafe(32),
+                   # As in compose.keycloak.yaml: the admin console only on the private listener,
+                   # and no bootstrap administrator.
+                   KC_HOSTNAME_ADMIN=f'http://127.0.0.1:{kc_port}',
                    ACCLIMATE_CONSOLE_ORIGIN=console_proxy.base,
-                   ACCLIMATE_OIDC_CLIENT_SECRET=client_secret)
+                   ACCLIMATE_OIDC_CLIENT_SECRET=client_secret,
+                   ACCLIMATE_FIRST_USER_ID=users['operator'],
+                   ACCLIMATE_FIRST_USER_EMAIL=logins['operator'],
+                   ACCLIMATE_FIRST_USER_PASSWORD=temporary_password)
         kc_log = open(h.dir/'keycloak.log', 'w')
         logs.append(kc_log)
         stage = 'verify-keycloak-version'
@@ -164,7 +173,7 @@ def qualify(args, prepared_home, build_env):
         # Prove identity rows were written to PostgreSQL rather than a fallback database.
         keycloak_database = h.env['DATABASE_URL'].rsplit('/', 1)[0]+'/keycloak'
         stored_users = h.pg('psql', keycloak_database, '-XAt', '-v', 'ON_ERROR_STOP=1',
-                           '-c', "SELECT count(*) FROM public.user_entity WHERE username IN ('operator','viewer')").stdout.strip()
+                           '-c', "SELECT count(*) FROM public.user_entity WHERE username IN ('operator@fixture.invalid','viewer')").stdout.strip()
         assert stored_users == '2'
         ca = h.dir/'console-trust.pem'
         ca.write_bytes(auth_proxy.ca_path.read_bytes()+console_proxy.ca_path.read_bytes())
@@ -207,9 +216,12 @@ def qualify(args, prepared_home, build_env):
                             if response.url.startswith(console_proxy.base+'/auth/callback?') else None)
                     page.goto(console_proxy.base+'/auth/login')
                     if credentials:
-                        page.locator('input[name="username"]').fill(name)
-                        page.locator('input[name="password"]').fill(passwords[name])
+                        first = name == 'operator' and temporary_password is not None
+                        page.locator('input[name="username"]').fill(logins[name])
+                        page.locator('input[name="password"]').fill(temporary_password if first else passwords[name])
                         page.locator('#kc-login').click()
+                    if credentials and first:
+                        complete_first_sign_in(page)
                     stage = 'login-'+name+'-callback'
                     page.wait_for_url(lambda url: url.startswith(console_proxy.base+'/') and
                                       '/auth/' not in url, timeout=30000)
@@ -222,6 +234,27 @@ def qualify(args, prepared_home, build_env):
                     assert context.request.get(callbacks[0], max_redirects=0).status == 400
                     page.close()
                     return cookie['value']
+
+                def complete_first_sign_in(page):
+                    nonlocal stage, temporary_password
+                    # The template forces a new password, then Keycloak asks for the
+                    # name its user profile requires.
+                    stage = 'login-operator-update-password'
+                    page.locator('input[name="password-new"]').wait_for(state='visible', timeout=30000)
+                    page.locator('input[name="password-new"]').fill(passwords['operator'])
+                    page.locator('input[name="password-confirm"]').fill(passwords['operator'])
+                    page.locator('input[type="submit"], button[type="submit"]').first.click()
+                    stage = 'login-operator-profile'
+                    profile = page.locator('input[name="firstName"]')
+                    try:
+                        profile.wait_for(state='visible', timeout=10000)
+                    except Exception:
+                        profile = None
+                    if profile is not None and urlsplit(page.url).netloc == urlsplit(auth_proxy.base).netloc:
+                        profile.fill('operator')
+                        page.locator('input[name="lastName"]').fill('Qualification')
+                        page.locator('input[type="submit"], button[type="submit"]').first.click()
+                    temporary_password = None
 
                 def api(context, secret, method, route, body=None):
                     return context.request.fetch(h.base+route, method=method, data=body,
@@ -257,6 +290,16 @@ def qualify(args, prepared_home, build_env):
                 assert person['displayName'] == 'operator Qualification'
                 assert person['canCreateWorkspace'] is True
                 record_check('real Keycloak login, exact issuer/subject, bounded secure cookie and callback replay denial')
+                record_check('template first person signs in by email, changes the temporary password and is the operator')
+                stage = 'realm-admin-console'
+                # The first person manages people in the realm's own admin console on the
+                # private listener, with no master-realm account.
+                admin_page = admin_context.new_page()
+                admin_page.goto(f'http://127.0.0.1:{kc_port}/admin/acclimate/console/#/acclimate/users')
+                admin_page.get_by_role('link', name='viewer', exact=True).wait_for(state='visible', timeout=60000)
+                admin_page.close()
+                assert not any(path.startswith('/admin') for path in auth_proxy.requests)
+                record_check('first person opens the acclimate realm admin console on the private listener and lists users')
                 stage = 'reauthentication'
                 previous = operator
                 operator = login('operator', admin_context, credentials=False)

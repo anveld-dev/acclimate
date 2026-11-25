@@ -3,6 +3,9 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -30,7 +33,7 @@ class ExternalGateTests(unittest.TestCase):
 
     def test_failure_does_not_print_endpoint_secret(self):
         with patch.object(external, 'run', side_effect=RuntimeError('Bearer private-secret')), contextlib.redirect_stdout(io.StringIO()) as out:
-            self.assertEqual(external.main(['--execute', '--gate', 'https']), 1)
+            self.assertEqual(external.main(['--execute', '--gate', 'remote-model']), 1)
         self.assertNotIn('private-secret', out.getvalue())
 
     def test_https_rejects_credential_urls(self):
@@ -43,28 +46,22 @@ class ExternalGateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 external.NoRedirect().redirect_request(request, None, 302, 'Found', {}, target)
 
-    def test_https_gate_checks_readiness_in_addition_to_liveness(self):
-        def response(url, token=None, body=None):
-            if url.endswith('/health'): return b'ok'
-            if url.endswith('/ready'): return b'{"ready":true}'
-            self.assertEqual(token, 'private-fixture')
-            return b'{"items":[]}'
-        with patch.dict(external.os.environ, {'FIXTURE_TOKEN':'private-fixture'}), \
-             patch.object(external, 'request', side_effect=response) as request, \
-             contextlib.redirect_stdout(io.StringIO()) as output:
-            self.assertEqual(external.main(['--execute','--gate','https','--url','https://api.example',
-                '--workspace','fixture','--token-env','FIXTURE_TOKEN']), 0)
-        self.assertEqual([row.args[0] for row in request.call_args_list], [
-            'https://api.example/health','https://api.example/ready','https://api.example/v1/workspaces/fixture/bundles'])
-        self.assertNotIn('private-fixture', output.getvalue())
-
-    def test_oidc_predicates_accept_actual_playwright_string_urls(self):
-        self.assertTrue(external.matches_issuer('https://identity.example/authorize?state=private', 'https://identity.example/tenant'))
-        self.assertFalse(external.matches_issuer('http://identity.example/authorize', 'https://identity.example'))
-        self.assertFalse(external.matches_issuer('https://attacker.example/authorize', 'https://identity.example'))
-        self.assertTrue(external.returned_console('https://console.example/setup', 'https://console.example'))
-        self.assertFalse(external.returned_console('https://console.example/auth/callback?code=private', 'https://console.example'))
-        self.assertFalse(external.returned_console('https://console.example.attacker/setup', 'https://console.example'))
+    def test_failed_check_fails_under_python_optimize(self):
+        # python -O strips assert statements, so a check written as one would pass unchecked.
+        driver = ('import json, sys\n'
+                  'config = json.load(sys.stdin)\n'
+                  'print(json.dumps(dict(provider=config["provider"], model=config["model"], marker=config["marker"],\n'
+                  '    actualProviderSession=True, checks=dict(instruction=True, skill=False, memory=True,\n'
+                  '    freshVersion=True, oldWorkspacePinned=True))))\n')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'driver.py'
+            path.write_text(driver)
+            result = subprocess.run([sys.executable, '-O', str(Path(__file__).with_name('external.py')),
+                                     '--execute', '--gate', 'native-pi', '--live', '--driver', sys.executable, str(path)],
+                                    capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        gate = json.loads(result.stdout)['gates']['native-pi']
+        self.assertEqual(gate, {'status': 'blocked', 'reason': 'Native evidence failed a prepared-file or pinning check'})
 
 
 if __name__ == '__main__':

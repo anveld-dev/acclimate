@@ -7,6 +7,18 @@ const inventories = JSON.parse(await readFile(new URL('./starter-files.json', im
 
 const excluded = new Set(['node_modules', '__pycache__', '.cache', '.local', 'dist', '.DS_Store']);
 const privateNames = new Set(['evaluator.json', 'reader.json', 'intent.json', 'attempt.json', 'attempt.python.json', 'ownership.lock', 'job.json', 'handoff.json']);
+// The starter's npm settings ship, but only these keys, so a registry token can never ride along.
+const npmSettings = new Set(['ignore-scripts', 'audit', 'fund', 'save-exact', 'include']);
+
+async function checkNpmSettings(filename) {
+  for (const line of (await readFile(filename, 'utf8')).split('\n')) {
+    const setting = line.trim();
+    if (!setting || setting.startsWith('#') || setting.startsWith(';')) continue;
+    const match = /^([a-z-]+)\s*=\s*[a-z]+$/.exec(setting);
+    if (!match || !npmSettings.has(match[1]))
+      throw new Error('Private configuration or state must not enter a starter archive');
+  }
+}
 
 async function checkSource(directory, inventory, omitted, relative = '') {
   const root = await lstat(directory);
@@ -14,13 +26,15 @@ async function checkSource(directory, inventory, omitted, relative = '') {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (!relative && omitted.has(entry.name)) continue;
     if (excluded.has(entry.name) || entry.name.endsWith('.pyc')) continue;
-    if (entry.name.startsWith('.') || privateNames.has(entry.name.toLowerCase()) || /\.(?:key|pem|lock)$/i.test(entry.name) || /\.origin\.json$/i.test(entry.name))
-      throw new Error('Private configuration or state must not enter a starter archive');
     const filename = join(directory, entry.name);
     const publicPath = relative ? `${relative}/${entry.name}` : entry.name;
+    const npmrc = publicPath === '.npmrc' && inventory.has(publicPath);
+    if ((entry.name.startsWith('.') && !npmrc) || privateNames.has(entry.name.toLowerCase()) || /\.(?:key|pem|lock)$/i.test(entry.name) || /\.origin\.json$/i.test(entry.name))
+      throw new Error('Private configuration or state must not enter a starter archive');
     const info = await lstat(filename);
     if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile()))
       throw new Error('Starter source contains an unsupported filesystem entry');
+    if (npmrc) await checkNpmSettings(filename);
     if (info.isDirectory()) await checkSource(filename, inventory, omitted, publicPath);
     else if (!inventory.has(publicPath)) throw new Error('Unreviewed file must not enter a starter archive');
   }

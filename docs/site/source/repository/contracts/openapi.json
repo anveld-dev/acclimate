@@ -6649,8 +6649,8 @@
       "DeliveryReceiptRequest": {
         "type": "object",
         "additionalProperties": false,
-        "description": "Unknown fields are rejected, and null counts as absent. channel, revision, resolvedAt and stale are sent together or not at all, and a resolved stage needs them. occurredAt must be no more than 24 hours in the past and 5 minutes in the future, and resolvedAt no more than 5 minutes after occurredAt.",
-        "required": ["eventId", "connectionId", "workspaceId", "bundleId", "versionId", "digest", "stage", "occurredAt", "source"],
+        "description": "Unknown fields are rejected, and null counts as absent. The service fills an omitted connectionId, workspaceId, bundleId, channel or digest from the path, the credential's connection and the version before it checks or stores the receipt, so a minimal body and the complete one are the same receipt. revision, resolvedAt and stale are sent together or not at all, channel only with them, and a resolved stage needs them. occurredAt must be no more than 24 hours in the past and 5 minutes in the future, and resolvedAt no more than 5 minutes after occurredAt.",
+        "required": ["eventId", "versionId", "stage", "occurredAt", "source"],
         "properties": {
           "eventId": {
             "type": "string",
@@ -6660,16 +6660,16 @@
           "connectionId": {
             "type": "string",
             "format": "uuid",
-            "description": "Must match the path and the credential's connection."
+            "description": "Optional. Taken from the path when omitted, and must match it when sent."
           },
           "workspaceId": {
             "type": "string",
-            "description": "Must match the path."
+            "description": "Optional. Taken from the path when omitted, and must match it when sent."
           },
           "bundleId": {
             "type": "string",
             "format": "uuid",
-            "description": "Must be the connection's bundle."
+            "description": "Optional. The connection's bundle when omitted, and must be it when sent."
           },
           "versionId": {
             "type": "string",
@@ -6678,7 +6678,7 @@
           "digest": {
             "type": "string",
             "pattern": "^sha256:[0-9a-f]{64}$",
-            "description": "The version's digest. The version and digest must have been released on the connection's channel."
+            "description": "Optional. The version's digest when omitted. The version and digest must have been released on the connection's channel."
           },
           "stage": {
             "enum": ["resolved", "downloaded", "verified", "prepared", "started"]
@@ -6693,7 +6693,7 @@
           },
           "channel": {
             "type": ["string", "null"],
-            "description": "Must be the connection's channel."
+            "description": "Optional. The connection's channel when revision is sent, and must be it when sent."
           },
           "revision": {
             "type": ["string", "null"],

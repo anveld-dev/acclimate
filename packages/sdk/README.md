@@ -42,7 +42,7 @@ try {
 | `@acclimate/sdk/validation` | Payload and native compatibility checks without Node file APIs. |
 | `@acclimate/sdk/native-files` | Inspect and prepare bundle files for native harnesses. |
 
-Use `acclimate pull --config /absolute/path/pull.json --bundle ID --channel stable --out payload.json` to save a released payload. Use a new output path. The config is an owner-only JSON file inside an owner-only directory with `schemaVersion` set to 1, `serviceUrl`, `workspaceId`, `scope` and an absolute `cacheDir`. Supply the read credential through `ACCLIMATE_TOKEN` or the private config’s `token` field.
+The `acclimate` command saves, publishes and releases bundles: `acclimate pull`, `publish`, `release` and `rollback`. It reads `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN`, takes a bundle name with `--bundle` and prints one JSON line. Run `acclimate --help` for the flags.
 
 ## Documentation
 

@@ -521,7 +521,22 @@ fn preflight_message(stage: &PreflightStage, runtime: &str, image: &str) -> Stri
 }
 /// Exit status for configuration the executor cannot run with (EX_CONFIG).
 const EXIT_CONFIG: i32 = 78;
-const CREDENTIAL_HELP: &str = "Create a credential with `acclimate-service --create-executor-token`, save its token in the file that ACCLIMATE_EXECUTOR_TOKEN_FILE names, and restart the executor.";
+const CREDENTIAL_HELP: &str = "Create a credential with `acclimate-service --create-executor-token`, save its output in the file that ACCLIMATE_EXECUTOR_TOKEN_FILE names, and restart the executor.";
+/// The credential file holds a bare token or the `{"id":…,"token":…}` JSON that
+/// `acclimate-service --create-executor-token` prints. An empty file gives an empty token.
+fn credential_token(text: &str) -> Option<String> {
+    let text = text.trim();
+    if !text.starts_with('{') {
+        return Some(text.to_owned());
+    }
+    #[derive(Deserialize)]
+    struct Created {
+        token: String,
+    }
+    serde_json::from_str::<Created>(text)
+        .ok()
+        .map(|created| created.token.trim().to_owned())
+}
 fn fatal(message: impl std::fmt::Display) -> ! {
     eprintln!("{message}");
     std::process::exit(EXIT_CONFIG)
@@ -783,15 +798,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )),
     }
     let token = match env::var_os("ACCLIMATE_EXECUTOR_TOKEN_FILE") {
-        Some(path) => fs::read_to_string(&path)
-            .unwrap_or_else(|error| {
+        Some(path) => {
+            let text = fs::read_to_string(&path).unwrap_or_else(|error| {
                 fatal(format!(
                     "Cannot read the executor credential file {} that ACCLIMATE_EXECUTOR_TOKEN_FILE names: {error}. {CREDENTIAL_HELP}",
                     Path::new(&path).display()
                 ))
+            });
+            credential_token(&text).unwrap_or_else(|| {
+                fatal(format!(
+                    "The executor credential file {} is neither a token nor the JSON that `acclimate-service --create-executor-token` prints. {CREDENTIAL_HELP}",
+                    Path::new(&path).display()
+                ))
             })
-            .trim()
-            .to_owned(),
+        }
         None => env::var("ACCLIMATE_EXECUTOR_TOKEN").unwrap_or_default(),
     };
     if token.is_empty() {
@@ -928,6 +948,22 @@ mod tests {
         // Removing a container that does not exist succeeds, and a missing Docker is logged.
         remove_sandboxes().await;
         assert!(!SANDBOXES.lock().unwrap().contains(&name));
+    }
+    #[test]
+    fn credential_file_holds_a_bare_token_or_the_created_json() {
+        assert_eq!(
+            credential_token("secret-token\n").as_deref(),
+            Some("secret-token")
+        );
+        assert_eq!(credential_token("").as_deref(), Some(""));
+        let created = r#"{"id":"7d3c1a52-6c1f-4d2e-9a43-1f0b8d2c9e10","token":"secret-token"}"#;
+        assert_eq!(
+            credential_token(&format!("{created}\n")).as_deref(),
+            Some("secret-token")
+        );
+        assert_eq!(credential_token(r#"{"id":"x"}"#), None);
+        assert_eq!(credential_token(r#"{"token":7}"#), None);
+        assert_eq!(credential_token("{not json"), None);
     }
     #[test]
     fn only_a_refused_credential_stops_the_executor() {

@@ -228,8 +228,13 @@ class ParityTest(unittest.TestCase):
 
 class ReferenceDocsTest(unittest.TestCase):
     def test_python_reference_lists_every_client_method(self):
-        reference = (ROOT / "apps" / "docs" / "content" / "docs" / "reference" / "python-sdk.mdx").read_text()
-        documented = set(re.findall(r"`([a-z_]+)`", reference))
+        references = ROOT / "apps" / "docs" / "content" / "docs" / "reference"
+        documented = set(re.findall(r"`([a-z_]+)`", (references / "python-sdk.mdx").read_text()))
+        # The Python reference names each method as the snake_case form of a TypeScript one.
+        documented |= {
+            re.sub(r"(?<!^)([A-Z])", r"_\1", name).lower()
+            for name in re.findall(r"`([a-z][A-Za-z]+)`", (references / "typescript-sdk.mdx").read_text())
+        }
         aliases = {
             name for name, value in vars(AcclimateClient).items()
             if callable(value) and value.__name__ != name

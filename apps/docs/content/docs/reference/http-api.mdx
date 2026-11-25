@@ -32,7 +32,7 @@ Authorization: Bearer <token>
 | Credential | Accepted on | 403 `denied` when |
 | --- | --- | --- |
 | Connection credential | Resolving a channel, and reading a version's metadata or payload | The workspace, bundle or channel is not its connection's, `X-Acclimate-Connection-Id` names another connection, or the version was never released on its channel. A receipt credential reading content gets 403 too. |
-| Receipt credential | `POST /connections/{connectionId}/receipts` | The path names another workspace or connection, the body's `connectionId`, `workspaceId` or `bundleId` do not match it, `channel` is another channel, or the version, `revision` and `digest` were never released together on its channel. A connection credential or machine token sending a receipt gets 403 too. |
+| Receipt credential | `POST /connections/{connectionId}/receipts` | The path names another workspace or connection, a `connectionId`, `workspaceId` or `bundleId` in the body does not match it, `channel` is another channel, or the version, `revision` and `digest` were never released together on its channel. A connection credential or machine token sending a receipt gets 403 too. |
 
 An SDK client with a connection ID sends it as `X-Acclimate-Connection-Id` on those three reads.
 
@@ -120,12 +120,9 @@ A receipt records one stage of a delivery, such as the start of a job, for the c
 
 ```sh
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-jq -n --arg event "$(uuidgen)" --arg connection "$CONNECTION_ID" --arg workspace "$WORKSPACE_ID" \
-  --arg now "$NOW" --slurpfile r resolution.json '{
-    eventId: $event, connectionId: $connection, workspaceId: $workspace,
-    bundleId: $r[0].version.bundleId, versionId: $r[0].version.id, digest: $r[0].version.digest,
-    stage: "started", source: "network", occurredAt: $now,
-    channel: $r[0].channel, revision: $r[0].revision, resolvedAt: $now, stale: false
+jq -n --arg event "$(uuidgen)" --arg now "$NOW" --slurpfile r resolution.json '{
+    eventId: $event, versionId: $r[0].version.id, stage: "started", source: "network",
+    occurredAt: $now, revision: $r[0].revision, resolvedAt: $now, stale: false
   }' > receipt.json
 
 curl -fsS -X POST "$ACCLIMATE_URL/v1/workspaces/$WORKSPACE_ID/connections/$CONNECTION_ID/receipts" \
@@ -136,13 +133,13 @@ curl -fsS -X POST "$ACCLIMATE_URL/v1/workspaces/$WORKSPACE_ID/connections/$CONNE
 
 | Field | Rule |
 | --- | --- |
-| `eventId` | Required UUID you choose. The same body again returns the stored receipt, and a different body with the same ID gets 409 `idempotency_conflict`. |
-| `connectionId`, `workspaceId`, `bundleId` | Required. They must match the path and the credential's connection. |
-| `versionId`, `digest` | Required. `digest` is `sha256:` and 64 lowercase hex characters. They must have been released together on the connection's channel. |
+| `eventId` | Required UUID you choose. The same receipt again returns the stored one, and a different receipt with the same ID gets 409 `idempotency_conflict`. |
+| `versionId` | Required. It must have been released on the connection's channel. |
 | `stage` | Required: `resolved`, `downloaded`, `verified`, `prepared` or `started` |
 | `source` | Required: `network`, `cache` or `offline`. A `downloaded` stage needs `network`. |
 | `occurredAt` | Required RFC 3339 time, no more than 24 hours in the past or 5 minutes in the future |
-| `channel`, `revision`, `resolvedAt`, `stale` | Send all four or none. A `resolved` stage needs them. `channel` is the connection's channel, `revision` a string of digits, `resolvedAt` no more than 5 minutes after `occurredAt`, and `stale` true when the mapping came from a local cache. |
+| `revision`, `resolvedAt`, `stale` | Send all three or none. A `resolved` stage needs them. `revision` is a string of digits that released the version on the channel, `resolvedAt` no more than 5 minutes after `occurredAt`, and `stale` true when the mapping came from a local cache. |
+| `connectionId`, `workspaceId`, `bundleId`, `channel`, `digest` | Optional. The service fills them from the path, the credential's connection and the version, and stores the complete receipt. A value you send must match, and `channel` only comes with `revision`. |
 
 Unknown fields are rejected, and `null` counts as absent. A broken rule gets 400 `invalid_content`, whose message names it. The response is the receipt with `receivedAt` and `delayed`, true when it arrived more than 5 minutes after `occurredAt`. The service keeps receipts for 30 days, and a token with read can list them with `GET` on the same path.
 

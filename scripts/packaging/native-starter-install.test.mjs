@@ -74,7 +74,8 @@ for (const nested of [false, true]) {
       await run('tar', ['-xzf', path.join(output, file), '-C', destination]);
       const app = path.join(destination, directory);
       assert.equal(JSON.parse(await readFile(path.join(app, 'package.json'), 'utf8')).version, metadata.version);
-      await run('npm', ['install', '--prefix', app, '--workspaces=false', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--save-exact', ...archives], { cwd: nested ? enclosing : scratch, timeout: 90_000 });
+      // The starter's .npmrc supplies the install settings, and --prefix keeps npm out of the enclosing workspace.
+      await run('npm', ['install', '--prefix', app, '--offline', ...archives], { cwd: nested ? enclosing : scratch, timeout: 90_000 });
       const { stdout } = await run(process.execPath, [path.join(app, 'verify-install.mjs'), '--all'], { cwd: enclosing });
       const imports = JSON.parse(stdout);
       assert.equal(imports.length, 5);

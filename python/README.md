@@ -64,7 +64,7 @@ export ACCLIMATE_CONNECTION=YOUR_CONNECTION_ID
 PYTHONPATH=python python3.11 python/examples/delivery_check.py
 ```
 
-Use `acclimate pull --config /absolute/path/pull.json --bundle ID --channel stable --out payload.json` to save a released payload. Use a new output path. The config is an owner-only JSON file inside an owner-only directory with `schemaVersion` set to 1, `serviceUrl`, `workspaceId`, `scope` and an absolute `cacheDir`. Supply the read credential through `ACCLIMATE_TOKEN` or the private config’s `token` field.
+Use `python -m acclimate pull --bundle NAME --out payload.json` to save a released payload to a new file. It reads `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN`, or a private config file passed with `--config`. To publish and release bundles from a shell, use the `acclimate` command of the TypeScript SDK.
 
 ## Develop the SDK
 

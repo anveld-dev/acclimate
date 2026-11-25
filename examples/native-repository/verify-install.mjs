@@ -46,7 +46,7 @@ export async function verifyInstalledArtifacts(names, { codexSdk = false } = {})
     const tarball = `${specifier.slice(1).replace('/', '-')}-<version>.tgz`;
     const installedDirectory = await realpath(path.join(boundary, specifier)).catch(error => {
       if (error.code === 'ENOENT')
-        throw new Error(`install.package_missing: ${specifier}. Install it from your verified release: npm install --prefix "${consumer}" --workspaces=false --offline --ignore-scripts "$release/${tarball}"`);
+        throw new Error(`install.package_missing: ${specifier}. Install it from your verified release: npm install --prefix "${consumer}" --offline "$release/${tarball}"`);
       throw error;
     });
     const outside = `install.outside_consumer: ${specifier}. Reinstall it from the release tarball into ${boundary}; symlinked checkout packages are not supported`;

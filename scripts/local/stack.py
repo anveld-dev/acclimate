@@ -4,6 +4,7 @@ import argparse
 from contextlib import contextmanager
 import fcntl
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -19,7 +20,7 @@ import sys
 import tempfile
 import time
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 from typing import NamedTuple
 from urllib.request import HTTPSHandler, ProxyHandler, Request, build_opener
 from uuid import UUID, uuid4
@@ -99,11 +100,19 @@ SECRET_NAMES = (
     'oidc_client', 'login', 'console', 'runtime', 'provider_key',
 )
 # Learning needs a model endpoint for the optimizer, and an allowlist when the workspace
-# provider is a local proxy. Both come from the shell that runs local:up and are then kept.
+# provider is on this machine. Both come from the shell that runs local:up and are then kept.
 LEARNING_SETTINGS = (
     'ACCLIMATE_MODEL_ENDPOINT', 'ACCLIMATE_MODEL_TOKEN', 'ACCLIMATE_MODEL',
     'ACCLIMATE_MODEL_REASONING_EFFORT', 'ACCLIMATE_PROVIDER_HTTP_HOSTS',
 )
+# One OpenAI-compatible provider serves the optimizer, the workspace's task and judge models
+# and the examples. The optimizer settings above override what is derived from it.
+PROVIDER_SETTINGS = ('ACCLIMATE_PROVIDER_URL', 'ACCLIMATE_PROVIDER_KEY', 'ACCLIMATE_PROVIDER_MODELS')
+DERIVED_SETTINGS = ('ACCLIMATE_MODEL_ENDPOINT', 'ACCLIMATE_MODEL_TOKEN')
+# Containers reach a provider on this machine by this name. compose.local.yaml maps it on Linux.
+CONTAINER_HOST = 'host.docker.internal'
+SERVICE_BINARY = '/usr/local/bin/acclimate-service'
+PROVIDER_VERIFY_SECONDS = 120
 
 
 def directory(path, private=False):
@@ -310,18 +319,144 @@ def write_infrastructure(state, values, ports=DEFAULT):
     ))
 
 
+def single_line(name, value):
+    if any(character in value for character in '\r\n'):
+        raise ValueError(f'{name} must be a single line')
+    return value
+
+
+def loopback(host):
+    if host == 'localhost' or host.endswith('.localhost'):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def private_address(host):
+    try:
+        return ipaddress.ip_address(host).is_private
+    except ValueError:
+        return False
+
+
+class Provider(NamedTuple):
+    """The model provider, at the address this machine reaches it by."""
+
+    url: str
+    key: str
+    models: tuple
+
+    def container(self):
+        """The base URL the containers use, and the hosts they must allow for it."""
+        parts = urlsplit(self.url)
+        if loopback(parts.hostname):
+            netloc = CONTAINER_HOST + (f':{parts.port}' if parts.port else '')
+            return urlunsplit(parts._replace(netloc=netloc)), [CONTAINER_HOST]
+        # Plain HTTP and private addresses are refused unless the host is listed.
+        listed = parts.scheme == 'http' or private_address(parts.hostname)
+        return self.url, [parts.hostname] if listed else []
+
+    def document(self):
+        return dict(baseUrl=self.container()[0], apiKey=self.key, allowedModels=list(self.models))
+
+    def digest(self):
+        return hashlib.sha256(json.dumps(self.document(), sort_keys=True).encode()).hexdigest()
+
+
+def provider_url(value):
+    value = value.strip().rstrip('/')
+    parts = urlsplit(value)
+    try:
+        # Reading the port checks it.
+        valid_port = parts.port is None or parts.port > 0
+    except ValueError:
+        valid_port = False
+    if (not valid_port or parts.scheme not in ('http', 'https') or not parts.hostname
+            or parts.username or parts.password or parts.query or parts.fragment):
+        raise ValueError('ACCLIMATE_PROVIDER_URL must be an http or https base URL, '
+                         'such as https://api.openai.com/v1')
+    if parts.path.endswith('/chat/completions'):
+        raise ValueError('ACCLIMATE_PROVIDER_URL is the base URL, such as https://api.openai.com/v1. '
+                         'Remove /chat/completions.')
+    return value
+
+
+def saved_provider(state):
+    saved = existing_file(state / 'provider.json', 0o600) if state.exists() else None
+    data = json.loads(saved) if saved is not None else {}
+    if not isinstance(data, dict) or any(not isinstance(value, str) for value in data.values()):
+        raise ValueError(f'Invalid model provider settings in {state / "provider.json"}')
+    return data
+
+
+def provider_settings(state, environ):
+    """The model provider from the shell, or the one saved by an earlier start."""
+    kept = saved_provider(state)
+    raw = {}
+    for name in PROVIDER_SETTINGS:
+        # As for the learning settings, an exported empty value clears the saved one.
+        value = environ[name] if name in environ else kept.get(name)
+        if value and value.strip():
+            raw[name] = single_line(name, value.strip())
+    if not raw:
+        return None
+    missing = [name for name in PROVIDER_SETTINGS if name not in raw]
+    if missing:
+        raise ValueError(f'Set {" and ".join(missing)} as well. The three ACCLIMATE_PROVIDER_ '
+                         'variables go together. Export all three empty to remove the provider.')
+    models = tuple(model.strip() for model in raw['ACCLIMATE_PROVIDER_MODELS'].split(',') if model.strip())
+    if len(models) < 2 or len(set(models)) != len(models):
+        raise ValueError('ACCLIMATE_PROVIDER_MODELS needs at least two distinct model IDs separated by '
+                         'commas, the first for tasks and the second for the judge.')
+    return Provider(provider_url(raw['ACCLIMATE_PROVIDER_URL']), raw['ACCLIMATE_PROVIDER_KEY'], models)
+
+
+def save_provider(state, provider, applied=None):
+    """Keep the provider for later starts, with the digest of the copy the workspace holds."""
+    path = state / 'provider.json'
+    if provider is None:
+        path.unlink(missing_ok=True)
+        return
+    data = dict(ACCLIMATE_PROVIDER_URL=provider.url, ACCLIMATE_PROVIDER_KEY=provider.key,
+                ACCLIMATE_PROVIDER_MODELS=','.join(provider.models))
+    if applied:
+        data['applied'] = applied
+    write_file(path, (json.dumps(data, indent=2) + '\n').encode())
+
+
 def learning_settings(state, environ):
     """Optional learning settings from the shell, or the ones saved by an earlier start."""
     saved = existing_file(state / 'service.env', 0o600)
     kept = dict(line.split('=', 1) for line in saved.decode().splitlines()) if saved else {}
+    provider = provider_settings(state, environ)
+    # A provider set in this shell replaces the optimizer endpoint and token saved from an
+    # earlier one, unless this shell sets them too.
+    fresh = any(name in environ for name in PROVIDER_SETTINGS)
     chosen = {}
     for name in LEARNING_SETTINGS:
         # An exported empty value clears the saved one; an unset name keeps it.
-        value = environ[name] if name in environ else kept.get(name)
+        if name in environ:
+            value = environ[name]
+        elif fresh and name in DERIVED_SETTINGS:
+            value = None
+        else:
+            value = kept.get(name)
         if value:
-            if any(character in value for character in '\r\n'):
-                raise ValueError(f'{name} must be a single line')
-            chosen[name] = value
+            chosen[name] = single_line(name, value)
+    if provider is not None:
+        base, hosts = provider.container()
+        chosen.setdefault('ACCLIMATE_MODEL_ENDPOINT', base + '/chat/completions')
+        chosen.setdefault('ACCLIMATE_MODEL_TOKEN', provider.key)
+        listed = [host.strip() for host in chosen.get('ACCLIMATE_PROVIDER_HTTP_HOSTS', '').split(',')
+                  if host.strip()]
+        listed += [host for host in hosts if host.lower() not in {item.lower() for item in listed}]
+        if listed:
+            chosen['ACCLIMATE_PROVIDER_HTTP_HOSTS'] = ','.join(listed)
+    if 'ACCLIMATE_MODEL_ENDPOINT' in chosen and 'ACCLIMATE_MODEL' not in chosen:
+        raise ValueError('Set ACCLIMATE_MODEL to the model ID the optimizer uses, '
+                         'such as one your provider serves.')
     return chosen
 
 
@@ -382,10 +517,10 @@ def compose_command(root):
             f'acclimate-local-{project_suffix(root)}', '-f', 'compose.local.yaml']
 
 
-def compose(root, *args, capture=False, ports=DEFAULT, source='build', environment=None):
+def compose(root, *args, capture=False, ports=DEFAULT, source='build', environment=None, input=None):
     return subprocess.run(
         [*compose_command(root), *args],
-        cwd=root, check=True, stdout=subprocess.PIPE if capture else None,
+        cwd=root, check=True, stdout=subprocess.PIPE if capture else None, input=input,
         env={**os.environ, **ports.environment(), **image_environment(root, source),
              **(environment or {})},
     ).stdout
@@ -560,6 +695,49 @@ def bootstrap_workspace(opener, values, subject, ports):
             pass
 
 
+def apply_provider(root, state, ports, source, opener, token, provider):
+    """Give local-demo the model provider, then report what the executor's check found.
+
+    The operator command stores the provider as the console's Model provider page does. It
+    runs again only when the provider changed, so a later start keeps edits made in the console.
+    """
+    digest = provider.digest()
+    if saved_provider(state).get('applied') != digest:
+        try:
+            compose(root, 'exec', '-T', 'service', SERVICE_BINARY, '--set-model-provider', PROJECT,
+                    ports=ports, source=source, input=json.dumps(provider.document()).encode())
+        except subprocess.CalledProcessError as error:
+            return (f'Could not save it for {PROJECT} (acclimate-service exited with status '
+                    f'{error.returncode}). Check the ACCLIMATE_PROVIDER_ variables, then run npm run '
+                    'local:up again.')
+        save_provider(state, provider, digest)
+        print('Waiting for the executor to verify the model provider.', flush=True)
+    route = f'/v1/workspaces/{PROJECT}/model-provider'
+    deadline = time.monotonic() + PROVIDER_VERIFY_SECONDS
+    try:
+        while True:
+            stored = api(opener, ports, 'GET', route, token)
+            verification = stored['verification']
+            if verification['status'] != 'pending' or time.monotonic() >= deadline:
+                break
+            time.sleep(2)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        return f'Saved for {PROJECT}, but its verification could not be read ({error}).'
+    where = f'{stored["baseUrl"]} ({", ".join(stored["allowedModels"])})'
+    if verification['status'] == 'verified':
+        return f'Verified at {where}'
+    if verification['status'] == 'pending':
+        return (f'{where} is still being verified. See Model provider under Settings in the console.')
+    failed = ', '.join(f'{result["model"]}: {result.get("message") or "no token usage"}'
+                       for result in verification.get('models', []) if not (result['ok'] and result['usage']))
+    return (f'Verification failed at {where}. {failed}. Fix the ACCLIMATE_PROVIDER_ variables and run '
+            'npm run local:up again, or edit Model provider under Settings in the console.')
+
+
+def shell_value(value):
+    return "'" + str(value).replace("'", "'\\''") + "'"
+
+
 CA_BUNDLE_CANDIDATES = (
     '/etc/ssl/cert.pem',
     '/etc/ssl/certs/ca-certificates.crt',
@@ -586,7 +764,7 @@ def system_ca_bundle():
     return None, b''
 
 
-def write_client_files(state, ports, certificate, bundle):
+def write_client_files(state, ports, certificate, bundle, provider=None):
     """Write a merged CA bundle and ready-to-source client variables."""
     source, system = system_ca_bundle()
     if source is not None and source.resolve() == (state / 'ca-bundle.pem').resolve():
@@ -603,8 +781,13 @@ def write_client_files(state, ports, certificate, bundle):
         'ACCLIMATE_WORKSPACE': PROJECT,
     }
     if bundle:
-        lines['BUNDLE_ID'] = bundle
-    text = ''.join(f"export {key}='{value}'\n" for key, value in lines.items())
+        lines['ACCLIMATE_BUNDLE'] = bundle
+    if provider is not None:
+        # The examples run on this machine, so they use the provider's own address.
+        lines.update(OPENAI_BASE_URL=provider.url, OPENAI_API_KEY=provider.key,
+                     TASK_MODEL=provider.models[0], JUDGE_MODEL=provider.models[1],
+                     AGENT_MODEL=provider.models[0])
+    text = ''.join(f'export {key}={shell_value(value)}\n' for key, value in lines.items())
     write_file(state / 'env.sh', text.encode(), mode=0o600)
     return text, source
 
@@ -613,7 +796,7 @@ def start_executor(root, state, ports, source, environ=os.environ):
     """Give the executor a credential on first start, then run it beside the service."""
     path = state / 'executor-token'
     if existing_file(path, 0o600) is None:
-        created = compose(root, 'exec', '-T', 'service', '/usr/local/bin/acclimate-service',
+        created = compose(root, 'exec', '-T', 'service', SERVICE_BINARY,
                           '--create-executor-token', capture=True, ports=ports, source=source)
         write_file(path, json.loads(created)['token'].encode() + b'\n')
     # The executor applies the same provider allowlist as the service.
@@ -661,6 +844,10 @@ def stack_running(root):
 
 def up(root, state, requested_source=None):
     directory(state, private=True)
+    # Check the model settings before any container starts.
+    provider = provider_settings(state, os.environ)
+    learning_settings(state, os.environ)
+    save_provider(state, provider, saved_provider(state).get('applied'))
     saved_ports = saved_endpoints(state)
     running = stack_running(root)
     if running and saved_ports is None:
@@ -714,7 +901,10 @@ def up(root, state, requested_source=None):
             workspace, bootstrap_error = dict(adopted=False, bundle=None), error
         if workspace['adopted']:
             write_file(state / 'workspace.json', (json.dumps(workspace) + '\n').encode())
-    env, ca_source = write_client_files(state, ports, certificate, workspace.get('bundle'))
+    provider_status = None
+    if provider is not None:
+        provider_status = apply_provider(root, state, ports, source, opener, values['runtime'], provider)
+    env, ca_source = write_client_files(state, ports, certificate, workspace.get('bundle'), provider)
 
     print(f'\nConsole       {ports.console}\nLogin         {OPERATOR}\nAPI           {ports.api}')
     print(f'Mailpit       {ports.mailpit}\nPull config   {state / "pull.json"}\n'
@@ -724,8 +914,11 @@ def up(root, state, requested_source=None):
         print(f'Optimizer     {learning.get("ACCLIMATE_MODEL", "model not set")} at '
               f'{learning["ACCLIMATE_MODEL_ENDPOINT"]}')
     else:
-        print('Optimizer     Not configured. To run learning rounds, set ACCLIMATE_MODEL_ENDPOINT, '
-              'ACCLIMATE_MODEL_TOKEN and ACCLIMATE_MODEL, then run npm run local:up again.')
+        print('Optimizer     Not configured. To run learning rounds, set ACCLIMATE_PROVIDER_URL, '
+              'ACCLIMATE_PROVIDER_KEY, ACCLIMATE_PROVIDER_MODELS and ACCLIMATE_MODEL, '
+              'then run npm run local:up again.')
+    if provider_status is not None:
+        print(f'Provider      {provider_status}')
     if workspace['adopted']:
         print(f'Workspace     {PROJECT}, adopted for {OPERATOR} ("{ADOPTION_REASON}")')
         if workspace.get('bundle'):
@@ -740,7 +933,11 @@ def up(root, state, requested_source=None):
         write_file(marker, subject.encode())
     print(f'Initial password is stored as "operator" in {state / "credentials.json"}.')
     print(f'\nClient settings for this shell, also saved in {state / "env.sh"}:\n')
-    print(env.rstrip())
+    # The provider key stays out of the terminal.
+    print(''.join(line for line in env.splitlines(True)
+                  if not line.startswith('export OPENAI_API_KEY=')).rstrip())
+    if provider is not None:
+        print('env.sh also sets OPENAI_API_KEY to the provider key.')
     if ca_source is None:
         print('\nNo system CA bundle was found, so ca-bundle.pem trusts only the local CA. '
               'Point SSL_CERT_FILE at a merged bundle before calling an external model provider.')

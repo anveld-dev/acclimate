@@ -32,9 +32,6 @@ Source = "https://github.com/anveld-dev/acclimate/tree/main/python"
 Changelog = "https://github.com/anveld-dev/acclimate/blob/main/CHANGELOG.md"
 Issues = "https://github.com/anveld-dev/acclimate/issues"
 
-[project.scripts]
-acclimate = "acclimate.pull:main"
-
 [tool.flit.module]
 name = "acclimate"
 

@@ -8,15 +8,21 @@ import secrets
 import signal
 import subprocess
 import time
-from urllib.parse import urlsplit, quote
+from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 ROOT = Path(__file__).resolve().parents[2]
-GATES = ('https', 'oidc', 'remote-model', 'native-codex', 'native-claude', 'native-pi', 'native-cursor', 'container')
+GATES = ('remote-model', 'native-codex', 'native-claude', 'native-pi', 'native-cursor', 'container')
 
 
 class Blocked(ValueError):
     """Only authored allowlisted diagnostics may be written to evidence."""
+
+
+def check(condition, failure):
+    # Not assert: python -O removes asserts, and the gate would pass without checking.
+    if not condition:
+        raise Blocked(failure)
 
 
 def native_process(command, config=None):
@@ -55,15 +61,6 @@ def https_url(value):
     return value.rstrip('/')
 
 
-def matches_issuer(url, issuer):
-    parsed, expected = urlsplit(url), urlsplit(issuer)
-    return parsed.scheme == 'https' and parsed.netloc == expected.netloc
-
-
-def returned_console(url, base):
-    return url.startswith(base + '/') and urlsplit(url).path not in ('/auth/login', '/auth/callback')
-
-
 def request(url, token=None, body=None):
     headers = {'Content-Type': 'application/json'}
     if token:
@@ -79,16 +76,6 @@ def request(url, token=None, body=None):
 
 def run(args):
     gate = args.gate
-    if gate == 'https':
-        base = https_url(args.url)
-        token = os.environ.get(args.token_env) if args.token_env else None
-        if not token or not args.workspace:
-            raise Blocked('Requires --token-env and --workspace for authenticated readiness')
-        assert request(base + '/health') == b'ok'
-        assert json.loads(request(base + '/ready')) == {'ready': True}
-        data = json.loads(request(base + '/v1/workspaces/' + quote(args.workspace, safe='') + '/bundles', token))
-        assert isinstance(data.get('items'), list)
-        return ['verified certificate/hostname', 'process liveness', 'database/owner/worker readiness', 'authenticated scoped bundle read']
     if gate == 'remote-model':
         if not args.live:
             raise Blocked('Paid gate requires --live')
@@ -100,48 +87,19 @@ def run(args):
         data = json.loads(request(url, token, dict(model='gpt-6-luna', max_tokens=128,
                     messages=[dict(role='user', content='Return exactly: ' + marker)])))
         choice = data['choices'][0]
-        assert choice['finish_reason'] == 'stop' and marker in choice['message']['content']
+        check(choice['finish_reason'] == 'stop' and marker in choice['message']['content'],
+              'The completion did not finish with the random marker')
         return ['direct remote TLS request', 'one bounded gpt-6-luna completion', 'successful finish and random marker']
-    if gate == 'oidc':
-        if not args.interactive:
-            raise Blocked('OIDC requires --interactive and a test account to complete sign-in')
-        from playwright.sync_api import sync_playwright
-        base = https_url(args.url)
-        https_url(args.issuer)
-        issuer = args.issuer
-        discovery = json.loads(request(issuer.rstrip('/') + '/.well-known/openid-configuration'))
-        if discovery.get('issuer') != issuer:
-            raise Blocked('OIDC discovery issuer differs from the explicitly configured issuer')
-        authorization = https_url(discovery.get('authorization_endpoint'))
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=False)
-            try:
-                context = browser.new_context()
-                page = context.new_page()
-                observed_authorization = []
-                page.on('request', lambda request: observed_authorization.append(True)
-                        if request.is_navigation_request() and matches_issuer(request.url, authorization) else None)
-                page.goto(base + '/auth/login')
-                if not observed_authorization:
-                    raise Blocked('Console did not navigate to the discovered HTTPS authorization endpoint')
-                print('Complete the provider sign-in using the disposable qualification account.', flush=True)
-                page.wait_for_url(lambda url: returned_console(url, base), timeout=180000)
-                cookies = [c for c in context.cookies() if c['name'] == 'acclimate_session']
-                assert len(cookies) == 1 and cookies[0]['secure'] and cookies[0]['httpOnly'] and cookies[0]['sameSite'] == 'Lax'
-                response = context.request.post(base + '/auth/logout', headers={'Origin': base}, max_redirects=0)
-                assert response.status == 303
-                assert not any(c['name'] == 'acclimate_session' for c in context.cookies())
-            finally:
-                browser.close()
-        return ['real provider redirect and callback', 'secure session cookie', 'logout cleared cookie']
     if gate.startswith('native-'):
         if not args.live:
             raise Blocked('Native provider gate requires --live; only gpt-6-luna is permitted')
         if gate == 'native-codex':
             evidence = native_process(['node', '--import', 'tsx', 'examples/codex-session-check.ts'])
-            assert evidence['model'] == 'gpt-6-luna' and len(evidence['observations']) == 3
+            check(evidence['model'] == 'gpt-6-luna' and len(evidence['observations']) == 3,
+                  'Codex evidence did not report three Luna turns')
             for row in evidence['observations']:
-                assert all(row['expectedMarkersPresent'].values()) and not any(row['otherVersionMarkersPresent'].values())
+                check(all(row['expectedMarkersPresent'].values()) and not any(row['otherVersionMarkersPresent'].values()),
+                      'Codex evidence missed a prepared marker or saw another version')
             return ['actual Codex SDK', 'three Luna turns', 'prepared instruction/skill/memory markers', 'resumed old workspace stayed pinned']
         driver = args.driver or ['node', '--import', 'tsx', 'scripts/productization/native-driver.mjs', '--live']
         # Explicit installed driver owns provider credentials/session APIs. No shell,
@@ -150,9 +108,11 @@ def run(args):
         config = {'schemaVersion': 1, 'provider': gate.removeprefix('native-'), 'model': 'gpt-6-luna',
                   'maxTurns': 3, 'marker': secrets.token_hex(16)}
         evidence = native_process(driver, config)
-        assert evidence['provider'] == config['provider'] and evidence['model'] == config['model'] and evidence['marker'] == config['marker']
-        assert evidence['actualProviderSession'] is True
-        assert all(evidence['checks'].get(k) is True for k in ('instruction', 'skill', 'memory', 'freshVersion', 'oldWorkspacePinned'))
+        check(evidence['provider'] == config['provider'] and evidence['model'] == config['model'] and evidence['marker'] == config['marker'],
+              'Native evidence did not echo the requested provider, model and marker')
+        check(evidence['actualProviderSession'] is True, 'Native evidence did not come from a provider session')
+        check(all(evidence['checks'].get(k) is True for k in ('instruction', 'skill', 'memory', 'freshVersion', 'oldWorkspacePinned')),
+              'Native evidence failed a prepared-file or pinning check')
         return ['actual installed native SDK session driver', 'Luna only; three sessions, at most three assistant turns each', 'instruction/skill/memory', 'fresh version and old workspace pin']
     if gate == 'container':
         from container_check import qualify
@@ -165,8 +125,7 @@ def main(argv=None):
     parser.add_argument('--gate', choices=GATES)
     parser.add_argument('--execute', action='store_true')
     parser.add_argument('--live', action='store_true')
-    parser.add_argument('--interactive', action='store_true')
-    for flag in ('url', 'issuer', 'workspace', 'token-env'):
+    for flag in ('url', 'token-env'):
         parser.add_argument('--' + flag)
     parser.add_argument('--driver', nargs='+')
     parser.add_argument('--output', type=Path)

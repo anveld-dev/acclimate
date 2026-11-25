@@ -1,28 +1,33 @@
 import type { ReactNode } from 'react';
 
 // Hand-drawn diagrams for the docs. Colours come from the theme's variables, so each
-// diagram follows the light and dark themes. Every label is short; the caption under
-// each figure carries the explanation.
+// diagram follows the light and dark themes. Labels stay short; the caption under each
+// figure carries the explanation. Connectors run on a grid with rounded corners.
 
 const ink = 'var(--color-fd-foreground)';
 const muted = 'var(--color-fd-muted-foreground)';
-const line = 'var(--color-fd-muted-foreground)';
 const border = 'var(--color-fd-border)';
 const card = 'var(--color-fd-card)';
 const page = 'var(--color-fd-background)';
+const zone = 'var(--color-fd-muted)';
+const accent = 'var(--color-fd-info)';
 const warn = 'var(--color-fd-error)';
+const good = 'var(--color-fd-success)';
+const mono = 'var(--font-mono, ui-monospace, SFMono-Regular, monospace)';
 
-type Tone = 'default' | 'warn' | 'quiet';
+type Tone = 'default' | 'accent' | 'warn' | 'good';
+type Point = [number, number];
+
+const toneColor = (tone: Tone, fallback: string) =>
+  tone === 'accent' ? accent : tone === 'warn' ? warn : tone === 'good' ? good : fallback;
 
 function Figure({
-  id,
   width,
   height,
   label,
   caption,
   children,
 }: {
-  id: string;
   width: number;
   height: number;
   label: string;
@@ -31,91 +36,31 @@ function Figure({
 }) {
   return (
     <figure className="not-prose my-8">
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label={label}
-        className="h-auto w-full"
-        style={{ maxWidth: width, fontFamily: 'inherit' }}
-      >
-        {children}
-      </svg>
-      <figcaption className="mt-3 text-sm text-fd-muted-foreground">{caption}</figcaption>
+      <div className="rounded-xl border bg-fd-card/40 p-3 sm:p-5">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          role="img"
+          aria-label={label}
+          className="mx-auto h-auto w-full"
+          style={{ maxWidth: width, fontFamily: 'inherit' }}
+        >
+          {children}
+        </svg>
+      </div>
+      <figcaption className="mt-3 text-sm leading-relaxed text-fd-muted-foreground">{caption}</figcaption>
     </figure>
   );
 }
 
-// Arrowheads are polygons at the end of the path's last segment, so no ids are shared
-// between the figures on a page.
-function head(d: string, color: string) {
-  const n = d.match(/-?\d+(\.\d+)?/g)!.map(Number);
-  const [x1, y1, x2, y2] = n.slice(-4);
-  const a = Math.atan2(y2 - y1, x2 - x1);
-  const point = (r: number, t: number) => `${x2 - r * Math.cos(a + t)},${y2 - r * Math.sin(a + t)}`;
-  return <polygon points={`${x2},${y2} ${point(9, 0.4)} ${point(9, -0.4)}`} fill={color} />;
-}
-
-function Box({
-  x,
-  y,
-  w,
-  h,
-  title,
-  lines = [],
-  mono = false,
-  tone = 'default',
-}: {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  title: string;
-  lines?: string[];
-  mono?: boolean;
-  tone?: Tone;
-}) {
-  const count = 1 + lines.length;
-  const first = y + h / 2 - ((count - 1) * 15) / 2 + 4;
-  return (
-    <g>
-      <rect
-        x={x}
-        y={y}
-        width={w}
-        height={h}
-        rx={6}
-        fill={card}
-        stroke={tone === 'warn' ? warn : border}
-        strokeWidth={tone === 'warn' ? 1.5 : 1.25}
-      />
-      <text
-        x={x + w / 2}
-        y={first}
-        textAnchor="middle"
-        fontSize={13}
-        fontWeight={600}
-        fill={tone === 'warn' ? warn : ink}
-        fontFamily={mono ? 'var(--font-mono, ui-monospace, monospace)' : undefined}
-      >
-        {title}
-      </text>
-      {lines.map((text, i) => (
-        <text key={text} x={x + w / 2} y={first + 15 * (i + 1)} textAnchor="middle" fontSize={11.5} fill={muted}>
-          {text}
-        </text>
-      ))}
-    </g>
-  );
-}
-
+/** A shaded region, such as a process or a network, with a small label in its corner. */
 function Zone({ x, y, w, h, label, note }: { x: number; y: number; w: number; h: number; label: string; note?: string }) {
   return (
     <g>
-      <rect x={x} y={y} width={w} height={h} rx={10} fill="none" stroke={border} strokeWidth={1.25} strokeDasharray="5 4" />
-      <text x={x + 12} y={y + 18} fontSize={11.5} fontWeight={600} fill={muted} letterSpacing={0.4}>
-        {label}
+      <rect x={x} y={y} width={w} height={h} rx={12} fill={zone} fillOpacity={0.7} stroke={border} strokeOpacity={0.9} />
+      <text x={x + 14} y={y + 22} fontSize={10.5} fontWeight={650} letterSpacing={0.9} fill={muted}>
+        {label.toUpperCase()}
         {note && (
-          <tspan fontWeight={400} dx={6}>
+          <tspan fontWeight={400} letterSpacing={0.2} dx={8}>
             {note}
           </tspan>
         )}
@@ -124,24 +69,88 @@ function Zone({ x, y, w, h, label, note }: { x: number; y: number; w: number; h:
   );
 }
 
-function Arrow({
-  d,
-  label,
-  lx,
-  ly,
-  anchor = 'middle',
-  dashed = false,
+function Box({
+  x,
+  y,
+  w,
+  h,
+  title,
+  sub = [],
+  code = false,
   tone = 'default',
 }: {
-  d: string;
-  label?: string;
-  lx?: number;
-  ly?: number;
-  anchor?: 'start' | 'middle' | 'end';
-  dashed?: boolean;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  title: string;
+  sub?: string[];
+  code?: boolean;
   tone?: Tone;
 }) {
-  const color = tone === 'warn' ? warn : line;
+  const lines = 1 + sub.length;
+  const first = y + h / 2 - ((lines - 1) * 15) / 2 + 4.5;
+  const edge = toneColor(tone, border);
+  return (
+    <g>
+      <rect x={x} y={y} width={w} height={h} rx={8} fill={card} stroke={edge} strokeWidth={tone === 'default' ? 1 : 1.5} />
+      {tone !== 'default' && <rect x={x} y={y + 8} width={3} height={h - 16} rx={1.5} fill={edge} />}
+      <text
+        x={x + w / 2}
+        y={first}
+        textAnchor="middle"
+        fontSize={13}
+        fontWeight={600}
+        fill={ink}
+        fontFamily={code ? mono : undefined}
+      >
+        {title}
+      </text>
+      {sub.map((text, i) => (
+        <text key={text} x={x + w / 2} y={first + 15 * (i + 1)} textAnchor="middle" fontSize={11} fill={muted}>
+          {text}
+        </text>
+      ))}
+    </g>
+  );
+}
+
+/** A path through the given points, with rounded corners and an arrowhead at the end. */
+function Line({
+  points,
+  tone = 'default',
+  dashed = false,
+  head = true,
+}: {
+  points: Point[];
+  tone?: Tone;
+  dashed?: boolean;
+  head?: boolean;
+}) {
+  const color = toneColor(tone, muted);
+  const r = 8;
+  let d = `M${points[0][0]} ${points[0][1]}`;
+  for (let i = 1; i < points.length; i++) {
+    const [x, y] = points[i];
+    const next = points[i + 1];
+    if (!next) {
+      d += ` L${x} ${y}`;
+      break;
+    }
+    const [px, py] = points[i - 1];
+    const inLen = Math.hypot(x - px, y - py);
+    const outLen = Math.hypot(next[0] - x, next[1] - y);
+    const k = Math.min(r, inLen / 2, outLen / 2);
+    const ax = x - ((x - px) / inLen) * k;
+    const ay = y - ((y - py) / inLen) * k;
+    const bx = x + ((next[0] - x) / outLen) * k;
+    const by = y + ((next[1] - y) / outLen) * k;
+    d += ` L${ax} ${ay} Q${x} ${y} ${bx} ${by}`;
+  }
+  const [x1, y1] = points[points.length - 2];
+  const [x2, y2] = points[points.length - 1];
+  const a = Math.atan2(y2 - y1, x2 - x1);
+  const tip = (len: number, t: number) => `${x2 - len * Math.cos(a + t)},${y2 - len * Math.sin(a + t)}`;
   return (
     <g>
       <path
@@ -149,14 +158,11 @@ function Arrow({
         fill="none"
         stroke={color}
         strokeWidth={1.5}
-        strokeDasharray={dashed ? '5 4' : undefined}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray={dashed ? '4 4' : undefined}
       />
-      {head(d, color)}
-      {label && (
-        <Label x={lx ?? 0} y={ly ?? 0} anchor={anchor} tone={tone}>
-          {label}
-        </Label>
-      )}
+      {head && <polygon points={`${x2},${y2} ${tip(8, 0.42)} ${tip(8, -0.42)}`} fill={color} />}
     </g>
   );
 }
@@ -179,117 +185,163 @@ function Label({
       x={x}
       y={y}
       textAnchor={anchor}
-      fontSize={11.5}
-      fill={tone === 'warn' ? warn : muted}
-      stroke={page}
-      strokeWidth={4}
-      strokeLinejoin="round"
-      paintOrder="stroke"
+      fontSize={11}
+      fontWeight={tone === 'default' ? 400 : 550}
+      fill={tone === 'default' ? muted : toneColor(tone, muted)}
     >
       {children}
     </text>
   );
 }
 
+/** A numbered step marker. */
+function Step({ x, y, n }: { x: number; y: number; n: number }) {
+  return (
+    <g>
+      <circle cx={x} cy={y} r={8.5} fill={accent} />
+      <text x={x} y={y + 3.8} textAnchor="middle" fontSize={10.5} fontWeight={700} fill={page}>
+        {n}
+      </text>
+    </g>
+  );
+}
+
+/** A blocked crossing: a circle with a cross, on a line that must never carry data. */
+function Blocked({ x, y }: { x: number; y: number }) {
+  return (
+    <g>
+      <circle cx={x} cy={y} r={9} fill={page} stroke={warn} strokeWidth={1.5} />
+      <path
+        d={`M${x - 3.5} ${y - 3.5} L${x + 3.5} ${y + 3.5} M${x + 3.5} ${y - 3.5} L${x - 3.5} ${y + 3.5}`}
+        stroke={warn}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+      />
+    </g>
+  );
+}
+
 export function DeliveryDiagram() {
   return (
     <Figure
-      id="delivery"
       width={760}
       height={300}
-      label="A workspace holds bundles and connections. A release points the stable channel at a version. A job resolves the channel through its connection, downloads that version and verifies its digest."
+      label="A workspace holds a bundle and a connection. A release points the stable channel at a version. A job resolves the channel through its connection, downloads that version, verifies its digest and can report a receipt."
       caption={
         <>
-          A release points a channel at one immutable version. Rolling back is a new release that points the channel
-          at an earlier version. Each job resolves the channel through its connection, downloads and verifies that
-          version, and keeps it until the job ends.
+          A release points a channel at one immutable version, and rolling back is a new release that points it at an
+          earlier one. Each job resolves the channel through its connection, downloads and verifies that version, and
+          keeps it until the job ends.
         </>
       }
     >
-      <Zone x={10} y={10} w={496} h={280} label="WORKSPACE" />
-      <Zone x={26} y={40} w={300} h={236} label="BUNDLE" />
-      <Box x={40} y={66} w={86} h={48} title="Version 1" lines={['immutable']} />
-      <Box x={138} y={66} w={86} h={48} title="Version 2" lines={['immutable']} />
-      <Box x={236} y={66} w={86} h={48} title="Version 3" lines={['sha256 digest']} />
-      <Box x={40} y={200} w={96} h={40} title="stable" mono />
-      <Label x={88} y={258}>
-        channel
+      <Zone x={10} y={10} w={466} h={280} label="Workspace" />
+      <Zone x={26} y={42} w={270} h={232} label="Bundle" />
+      <Box x={42} y={70} w={120} h={46} title="Version 1" sub={['sha256:4a1e…']} />
+      <Box x={42} y={128} w={120} h={46} title="Version 2" sub={['sha256:9ba1…']} />
+      <Box x={42} y={186} w={120} h={46} title="Version 3" sub={['sha256:7073…']} />
+      <Box x={206} y={186} w={74} h={46} title="stable" sub={['channel']} code />
+      <Line points={[[206, 209], [162, 209]]} tone="accent" />
+      <Label x={184} y={202} tone="accent">
+        current
       </Label>
-      <Arrow d="M128 200 L276 116" label="current release" lx={222} ly={172} anchor="start" />
-      <Arrow d="M92 200 L178 116" dashed label="earlier release" lx={104} ly={152} anchor="end" />
-      <Box x={350} y={176} w={140} h={84} title="Connection" lines={['names bundle + channel', 'connection credential', 'receipt credential']} />
-      <Arrow d="M350 220 L138 220" label="names" lx={248} ly={213} />
+      <Line points={[[243, 186], [243, 151], [162, 151]]} dashed />
+      <Label x={250} y={170} anchor="start">
+        earlier
+      </Label>
 
-      <Zone x={530} y={10} w={220} h={280} label="YOUR APPLICATION" />
-      <Box x={566} y={120} w={160} h={64} title="Job" lines={['the version’s files', 'in a private directory']} />
-      <Arrow d="M566 172 L492 198" label="1 resolve channel" lx={606} ly={214} />
-      <Arrow d="M324 90 L564 120" label="2 download, verify digest" lx={446} ly={92} />
-      <Arrow d="M690 184 L690 250 L492 250" dashed label="3 receipt (optional)" lx={620} ly={270} />
+      <Box x={312} y={128} w={140} h={104} title="Connection" sub={['names bundle + channel', 'connection credential', 'receipt credential']} />
+      <Line points={[[312, 209], [280, 209]]} />
+
+      <Zone x={500} y={10} w={250} h={280} label="Your application" />
+      <Box x={566} y={128} w={164} h={104} title="Job" sub={['the version’s files', 'in a private directory']} />
+
+      <Line points={[[566, 150], [452, 150]]} tone="accent" />
+      <Step x={540} y={140} n={1} />
+      <Label x={509} y={168}>
+        resolve channel
+      </Label>
+      <Line points={[[102, 232], [102, 262], [648, 262], [648, 232]]} tone="accent" />
+      <Step x={372} y={262} n={2} />
+      <Label x={388} y={279} anchor="start">
+        download, verify digest
+      </Label>
+      <Line points={[[566, 212], [452, 212]]} dashed />
+      <Step x={540} y={202} n={3} />
+      <Label x={509} y={228}>
+        receipt (optional)
+      </Label>
     </Figure>
   );
 }
 
 export function RoundDiagram() {
-  const x = 120;
-  const w = 210;
-  const h = 34;
-  const rows = ['scoring_incumbent', 'proposing', 'screening', 'evaluating', 'selecting', 'scoring_held_out', 'completed'];
-  const notes = [
-    'current version scored',
-    'five candidates written',
-    'secrets scan, hard-coding check',
-    'survivors scored',
-    'adopt or keep',
-    'held-out tasks scored',
+  const x = 150;
+  const w = 236;
+  const h = 46;
+  const gap = 22;
+  const y = (i: number) => 16 + i * (h + gap);
+  const mid = (i: number) => y(i) + h / 2;
+  const cx = x + w / 2;
+  const states: [string, string][] = [
+    ['scoring_incumbent', 'score the current version'],
+    ['proposing', 'the optimizer writes five candidates'],
+    ['screening', 'secrets scan, hard-coding check'],
+    ['evaluating', 'score the candidates that pass'],
+    ['selecting', 'adopt one or keep the current version'],
+    ['scoring_held_out', 'score the version on the channel'],
+    ['completed', 'run another round or wait'],
   ];
-  const y = (i: number) => 20 + i * 62;
-  const mid = x + w / 2;
-  const side = 500;
+  const side = 476;
+  const sw = 264;
   return (
     <Figure
-      id="round"
       width={760}
-      height={440}
+      height={y(6) + h + 16}
       label="A round moves through scoring_incumbent, proposing, screening, evaluating, selecting and scoring_held_out to completed. It fails if the current version cannot be scored, skips to held-out scoring when no candidate survives, releases an adopted candidate at once, and restores the previous version after a confirmed held-out drop."
       caption={
         <>
-          The left column is the round&apos;s <code>activeRound.state</code> in the API. A round with no candidates,
-          or none that pass screening, keeps the current version and goes straight to held-out scoring. A stop
-          request can end a round at any step, as <code>stopped</code>.
+          Each box is a value of the round&apos;s <code>activeRound.state</code> in the API. A round with no
+          candidates, or none that pass screening, keeps the current version and goes straight to held-out scoring. A
+          stop request can end a round at any step, as <code>stopped</code>.
         </>
       }
     >
-      {rows.map((state, i) => (
-        <Box key={state} x={x} y={y(i)} w={w} h={h} title={state} mono />
+      {states.map(([state, note], i) => (
+        <Box key={state} x={x} y={y(i)} w={w} h={h} title={state} sub={[note]} code tone={i === 6 ? 'good' : 'default'} />
       ))}
-      {notes.map((note, i) => (
-        <g key={note}>
-          <Arrow d={`M${mid} ${y(i) + h} L${mid} ${y(i + 1)}`} />
-          <Label x={mid + 10} y={y(i + 1) - 10} anchor="start">
-            {note}
-          </Label>
-        </g>
+      {states.slice(0, -1).map(([state], i) => (
+        <Line key={state} points={[[cx, y(i) + h], [cx, y(i + 1)]]} />
       ))}
 
-      <Arrow d={`M${x} ${y(2) + h / 2} L${x - 22} ${y(2) + h / 2} L${x - 22} ${y(5) + h / 2} L${x} ${y(5) + h / 2}`} dashed />
-      <Label x={x - 28} y={y(3) + 34} anchor="end">
-        none
+      <Line points={[[x, mid(2)], [x - 30, mid(2)], [x - 30, mid(5)], [x, mid(5)]]} dashed />
+      <Label x={x - 40} y={mid(3) + 10} anchor="end">
+        nothing
       </Label>
-      <Label x={x - 28} y={y(3) + 49} anchor="end">
-        survive
-      </Label>
-
-      <Box x={side} y={y(0) - 4} w={240} h={42} title="failed" mono tone="warn" lines={['incumbent-evaluation-failed']} />
-      <Arrow d={`M${x + w} ${y(0) + h / 2} L${side} ${y(0) + h / 2}`} tone="warn" label="cannot score" lx={414} ly={y(0) + h / 2 - 7} />
-      <Label x={side + 120} y={y(0) + 56}>
-        or provider-unavailable, retried later
+      <Label x={x - 40} y={mid(3) + 24} anchor="end">
+        survives
       </Label>
 
-      <Box x={side} y={y(4) - 4} w={240} h={42} title="Release to the channel" lines={['at once, no approval step']} />
-      <Arrow d={`M${x + w} ${y(4) + h / 2} L${side} ${y(4) + h / 2}`} label="adopt" lx={414} ly={y(4) + h / 2 - 7} />
+      <Box x={side} y={y(0)} w={sw} h={h} title="Round fails" sub={['incumbent-evaluation-failed']} tone="warn" />
+      <Line points={[[x + w, mid(0)], [side, mid(0)]]} tone="warn" />
+      <Label x={(x + w + side) / 2} y={mid(0) - 8} tone="warn">
+        cannot score
+      </Label>
+      <Label x={side + sw / 2} y={y(0) + h + 16}>
+        provider-unavailable is retried later
+      </Label>
 
-      <Box x={side} y={y(5) + 30} w={240} h={56} title="Restore the previous version" lines={['after a clear drop that a', 'second measurement confirms']} tone="warn" />
-      <Arrow d={`M${x + w} ${y(5) + h / 2} L420 ${y(5) + h / 2} L420 ${y(5) + 58} L${side} ${y(5) + 58}`} tone="warn" label="drop" lx={430} ly={y(5) + 51} anchor="start" />
+      <Box x={side} y={y(4)} w={sw} h={h} title="Release to the channel" sub={['at once, with no approval step']} tone="accent" />
+      <Line points={[[x + w, mid(4)], [side, mid(4)]]} tone="accent" />
+      <Label x={(x + w + side) / 2} y={mid(4) - 8} tone="accent">
+        adopt
+      </Label>
+
+      <Box x={side} y={y(5) + 34} w={sw} h={h} title="Restore the previous version" sub={['a clear drop, measured twice']} tone="warn" />
+      <Line points={[[x + w, mid(5)], [430, mid(5)], [430, y(5) + 34 + h / 2], [side, y(5) + 34 + h / 2]]} tone="warn" />
+      <Label x={438} y={mid(5) - 8} anchor="start" tone="warn">
+        held-out drop
+      </Label>
     </Figure>
   );
 }
@@ -297,10 +349,9 @@ export function RoundDiagram() {
 export function TrustDiagram() {
   return (
     <Figure
-      id="trust"
       width={760}
-      height={380}
-      label="The optimizer receives the bundle, improvement memory and evolve tasks, never held-out tasks. The executor receives tasks from both splits and the provider key, and its sandboxes reach the model provider only through the gateway. Your application's model credentials never reach Acclimate."
+      height={400}
+      label="The optimizer receives the bundle, improvement memory and evolve results, never held-out tasks. The executor receives tasks from both splits and the provider key, and its sandboxes reach the model provider only through the gateway. Your application's model credentials never reach Acclimate."
       caption={
         <>
           Held-out tasks go only to the executor, which grades rollouts outside the sandbox. The sandbox gets the
@@ -309,37 +360,49 @@ export function TrustDiagram() {
         </>
       }
     >
-      <Zone x={10} y={10} w={170} h={360} label="YOUR APPLICATION" />
-      <Box x={24} y={150} w={142} h={64} title="Agent" lines={['its own model', 'credentials']} />
-      <Arrow d="M212 62 L120 62 L120 150" label="released version" lx={160} ly={54} />
+      <Zone x={10} y={10} w={196} h={256} label="Your application" />
+      <Box x={30} y={116} w={156} h={52} title="Agent" sub={['runs each job']} />
+      <Box x={30} y={300} w={156} h={52} title="Your model" sub={['your own credentials']} />
+      <Line points={[[108, 168], [108, 300]]} />
 
-      <Zone x={200} y={10} w={200} h={262} label="ACCLIMATE SERVICE" />
-      <Box x={212} y={40} w={176} h={44} title="Bundles and versions" />
-      <Box x={212} y={96} w={176} h={44} title="Evolve tasks" />
-      <Box x={212} y={152} w={176} h={44} title="Held-out tasks" lines={['stored separately']} />
-      <Box x={300} y={208} w={88} h={44} title="API key" lines={['encrypted']} />
-
-      <Box x={212} y={296} w={176} h={44} title="Optimizer model" lines={['operator’s endpoint']} />
-      <Arrow d="M212 118 L204 118 L204 318 L212 318" />
-      <Label x={300} y={360}>
-        bundle, memory, evolve rollouts
+      <Zone x={226} y={10} w={270} h={256} label="Acclimate service" />
+      <Box x={252} y={44} w={228} h={42} title="Bundles and versions" />
+      <Box x={252} y={98} w={228} h={42} title="Evolve tasks" />
+      <Box x={252} y={152} w={228} h={46} title="Held-out tasks" sub={['stored separately']} />
+      <Box x={366} y={210} w={114} h={42} title="API key" sub={['encrypted']} />
+      <Line points={[[252, 65], [108, 65], [108, 116]]} tone="accent" />
+      <Label x={180} y={57} tone="accent">
+        released version
       </Label>
-      <Arrow d="M250 196 L250 296" tone="warn" dashed />
-      <Label x={250} y={254} tone="warn">
+
+      <Box x={252} y={300} w={228} h={52} title="Optimizer model" sub={['the operator’s endpoint']} />
+      <Line points={[[252, 119], [238, 119], [238, 326], [252, 326]]} tone="accent" />
+      <Label x={366} y={374}>
+        bundle, memory and evolve results
+      </Label>
+      <Line points={[[310, 198], [310, 300]]} tone="warn" dashed />
+      <Blocked x={310} y={246} />
+      <Label x={322} y={282} anchor="start" tone="warn">
         never
       </Label>
 
-      <Zone x={460} y={10} w={290} h={232} label="EXECUTOR" />
-      <Box x={476} y={34} w={258} h={58} title="Grader" lines={['tasks from both splits, with', 'answers and criteria']} />
-      <Box x={476} y={106} w={258} h={50} title="Gateway" lines={['holds the API key in memory']} />
-      <Box x={476} y={172} w={258} h={50} title="Sandbox, no network" lines={['bundle and task input only']} />
-      <Arrow d="M388 118 L476 64" />
-      <Arrow d="M388 174 L476 76" />
-      <Arrow d="M388 230 L476 138" label="key" lx={440} ly={204} />
-      <Arrow d="M605 172 L605 156" />
+      <Zone x={516} y={10} w={234} h={256} label="Executor" />
+      <Box x={532} y={44} w={202} h={52} title="Grader" sub={['answers and criteria stay here']} />
+      <Box x={532} y={112} w={202} h={52} title="Gateway" sub={['holds the key in memory']} />
+      <Box x={532} y={190} w={202} h={52} title="Sandbox" sub={['bundle and input, no network']} />
+      <Line points={[[480, 119], [498, 119], [498, 70], [532, 70]]} />
+      <Line points={[[480, 175], [498, 175], [498, 119]]} head={false} />
+      <Label x={506} y={88} anchor="start">
+        both
+      </Label>
+      <Line points={[[480, 231], [508, 231], [508, 138], [532, 138]]} />
+      <Line points={[[633, 190], [633, 164]]} />
 
-      <Box x={476} y={290} w={258} h={46} title="Model provider" lines={['task and judge models']} />
-      <Arrow d="M734 131 L744 131 L744 313 L734 313" label="only way out" lx={738} ly={270} anchor="end" />
+      <Box x={532} y={300} w={202} h={52} title="Model provider" sub={['task and judge models']} />
+      <Line points={[[734, 138], [744, 138], [744, 326], [734, 326]]} tone="accent" />
+      <Label x={738} y={286} anchor="end" tone="accent">
+        only way out
+      </Label>
     </Figure>
   );
 }
@@ -347,46 +410,59 @@ export function TrustDiagram() {
 export function TopologyDiagram() {
   return (
     <Figure
-      id="topology"
       width={760}
-      height={430}
-      label="Caddy publishes ports 80 and 443 and routes the console, API and identity hosts on the internal backend network. The service also joins the internal executor network on port 3001. The executor mounts the host's Docker socket to start sandboxes and reaches model providers over its own egress network."
+      height={450}
+      label="Caddy publishes ports 80 and 443 and routes the console and API hosts on the internal backend network. The executor joins the service on the internal executor network on port 3001, starts sandboxes through the host's Docker socket and reaches model providers over its own egress network."
       caption={
         <>
           Only Caddy publishes ports. The <code>backend</code> and <code>executor</code> networks are internal, so
-          PostgreSQL and the executor listener have no route out. The service, the console and Keycloak reach the
-          identity issuer, the optimizer and mail over a separate outbound network. The Docker socket gives the
-          executor administrator authority on the host.
+          PostgreSQL and the executor listener have no route out. The console, the service and a co-hosted Keycloak
+          reach the identity issuer, the optimizer and mail over a separate outbound network, and Caddy also serves
+          Keycloak&apos;s sign-in pages. The Docker socket gives the executor administrator authority on the host.
         </>
       }
     >
-      <Box x={10} y={129} w={110} h={60} title="Internet" lines={['browsers, apps']} />
-      <Box x={156} y={129} w={112} h={60} title="Caddy" lines={['ports 80, 443']} />
-      <Arrow d="M120 159 L156 159" />
+      <Box x={10} y={125} w={112} h={56} title="Internet" sub={['browsers, apps']} />
+      <Box x={150} y={125} w={112} h={56} title="Caddy" sub={['ports 80 and 443']} tone="accent" />
+      <Line points={[[122, 153], [150, 153]]} tone="accent" />
 
-      <Zone x={296} y={10} w={270} h={290} label="backend" note="internal" />
-      <Box x={316} y={40} w={124} h={46} title="Console" lines={[':3100']} />
-      <Box x={316} y={136} w={124} h={46} title="Service" lines={['API :3000']} />
-      <Box x={456} y={136} w={96} h={46} title="PostgreSQL" />
-      <Box x={456} y={232} w={96} h={46} title="Keycloak" lines={['optional']} />
-      <Arrow d="M268 140 L316 66" label="console host" lx={284} ly={100} anchor="end" />
-      <Arrow d="M268 159 L316 159" label="API host" lx={292} ly={177} />
-      <Arrow d="M268 180 L456 252" label="identity host" lx={300} ly={236} anchor="start" />
-      <Arrow d="M440 159 L456 159" />
+      <Zone x={300} y={10} w={300} h={300} label="backend" note="internal" />
+      <Box x={320} y={50} w={130} h={46} title="Console" sub={[':3100']} />
+      <Box x={320} y={130} w={130} h={46} title="Service" sub={['API :3000']} />
+      <Box x={480} y={130} w={104} h={46} title="PostgreSQL" sub={['no route out']} />
+      <Line points={[[262, 136], [282, 136], [282, 73], [320, 73]]} tone="accent" />
+      <Label x={276} y={104} anchor="end" tone="accent">
+        console host
+      </Label>
+      <Line points={[[262, 153], [320, 153]]} tone="accent" />
+      <Label x={295} y={146} tone="accent">
+        API host
+      </Label>
+      <Line points={[[450, 153], [480, 153]]} />
 
-      <Zone x={296} y={320} w={270} h={100} label="executor" note="internal" />
-      <Box x={316} y={350} w={124} h={52} title="Executor" lines={['root, outbound']} tone="warn" />
-      <Arrow d="M378 350 L378 182" label=":3001" lx={386} ly={314} anchor="start" />
+      <Zone x={300} y={330} w={300} h={110} label="executor" note="internal" />
+      <Box x={320} y={366} w={150} h={56} title="Executor" sub={['root, outbound access']} tone="warn" />
+      <Line points={[[385, 366], [385, 176]]} />
+      <Label x={393} y={322} anchor="start">
+        :3001
+      </Label>
 
-      <Box x={606} y={40} w={144} h={64} title="Outbound" lines={['identity issuer,', 'optimizer, mail']} />
-      <Arrow d="M440 72 L606 72" label="outbound network" lx={522} ly={65} />
-      <Arrow d="M420 136 L420 112 L606 96" />
+      <Box x={630} y={50} w={120} h={56} title="Outbound" sub={['issuer, optimizer, mail']} />
+      <Line points={[[450, 73], [630, 73]]} />
+      <Label x={540} y={66}>
+        outbound network
+      </Label>
 
-      <Box x={606} y={250} w={144} h={64} title="Host Docker" lines={['starts sandboxes', 'with no network']} tone="warn" />
-      <Arrow d="M440 366 L606 296" tone="warn" label="Docker socket" lx={540} ly={312} />
-
-      <Box x={606} y={350} w={144} h={52} title="Model providers" />
-      <Arrow d="M440 388 L606 378" label="executor-egress" lx={522} ly={400} />
+      <Box x={630} y={300} w={120} h={56} title="Host Docker" sub={['starts sandboxes']} tone="warn" />
+      <Line points={[[470, 382], [612, 382], [612, 328], [630, 328]]} tone="warn" />
+      <Label x={540} y={375} tone="warn">
+        Docker socket
+      </Label>
+      <Box x={630} y={384} w={120} h={46} title="Model providers" />
+      <Line points={[[470, 407], [630, 407]]} />
+      <Label x={540} y={425}>
+        executor-egress
+      </Label>
     </Figure>
   );
 }

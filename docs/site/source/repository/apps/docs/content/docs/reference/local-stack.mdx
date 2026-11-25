@@ -3,7 +3,7 @@ title: The local stack
 description: What the local stack scripts start, print and store, and how to trust, stop, reset and move the stack.
 ---
 
-The local stack runs a complete Acclimate deployment on one laptop: the service, the console and the executor, with PostgreSQL 16, Keycloak sign-in, a Mailpit inbox and a Caddy HTTPS proxy. This page covers its requirements, its `npm run local:*` scripts and their output, and its settings. The [Quickstart](/docs/get-started/quickstart) uses it for a first delivery.
+The local stack runs a complete Acclimate deployment on one laptop: the service, the console and the executor, with PostgreSQL 16, Keycloak sign-in, a Mailpit inbox and a Caddy HTTPS proxy. The [Quickstart](/docs/get-started/quickstart) uses it for a first delivery.
 
 ## Prerequisites
 
@@ -12,11 +12,11 @@ The local stack runs a complete Acclimate deployment on one laptop: the service,
 - An Acclimate checkout, with Node.js and npm, and Python 3.9 or later to run the stack scripts.
 - For a build from source, several GB of memory for Docker. Docker Desktop's default can be too small to compile the service.
 
-The SDKs have their own runtime versions. See [Install the SDKs](/docs/get-started/install).
+[Install the SDKs](/docs/get-started/install) gives the SDKs' runtime versions.
 
 ## Start the stack
 
-From the checkout, run:
+From the checkout, run this.
 
 ```sh
 npm run local:up
@@ -28,7 +28,7 @@ npm run local:up
 | First start from source | Builds everything from the checkout. | 10 to 20 minutes |
 | Later starts | Reuses the images. | A minute or two |
 
-`local:up` uses the released images for the checkout's version, and builds from source when none are published. The executor image is always built from the checkout. To test changes to the service or console, build from the checkout. `local:up` remembers the choice, and `--release` switches back.
+`local:up` uses the released images for the checkout's version, and builds from source when none are published. The executor image is always built from the checkout. To test changes to the service or console, build from the checkout with `--build`. `local:up` remembers the choice, and `--release` switches back.
 
 ```sh
 npm run local:up -- --build
@@ -36,7 +36,7 @@ npm run local:up -- --build
 
 ### What `local:up` prints
 
-`local:up` starts the executor with its own credential and waits for its health check. Then it prints the URLs, a verified login with its initial password, the example bundle and the client settings:
+`local:up` starts the executor with its own credential and waits for its health check, then prints the URLs, a verified login with its initial password, the example bundle and the client settings.
 
 ```text
 Console       https://localhost:24830
@@ -66,11 +66,11 @@ Starting again reuses the ports, databases, login and credentials. All published
 
 ## Trust the local certificate
 
-Caddy serves HTTPS with its own local certificate authority (CA), stored at `.local/stack/root.crt`. The CLI, the SDKs and your browser each need to trust it.
+Caddy serves HTTPS with its own local certificate authority (CA) at `.local/stack/root.crt`. The CLI, the SDKs and your browser each need to trust it.
 
 ### In a shell
 
-Load the client settings in each shell that runs the CLI, an SDK or an example:
+Load the client settings in each shell that runs the CLI, an SDK or an example.
 
 ```sh
 source /path/to/acclimate/.local/stack/env.sh
@@ -78,16 +78,14 @@ source /path/to/acclimate/.local/stack/env.sh
 
 | Variable | What it does |
 | --- | --- |
-| `NODE_EXTRA_CA_CERTS` | Adds the local CA for Node.js. |
-| `SSL_CERT_FILE` | Points Python at `ca-bundle.pem`, which holds the local CA and any system CA bundle the script found. |
-| `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` | The service address and the workspace, which the SDKs and the [examples](/docs/tutorials/first-learning-round) read. |
-| `ACCLIMATE_API` | The service address again, for curl. |
-| `ACCLIMATE_PULL_CONFIG` | A ready config file for [`acclimate pull`](/docs/reference/typescript-sdk#acclimate-pull). |
-| `BUNDLE_ID` | The ID of the **Example agent** bundle. |
+| `NODE_EXTRA_CA_CERTS` | Adds the local CA for Node.js |
+| `SSL_CERT_FILE` | Points Python at `ca-bundle.pem`, which holds the local CA and any system CA bundle the script found |
+| `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` | The service address and the workspace, which the SDKs and the [examples](/docs/tutorials/first-learning-round) read |
+| `ACCLIMATE_API` | The service address again, for curl |
+| `ACCLIMATE_PULL_CONFIG` | A ready config file for [`acclimate pull`](/docs/reference/typescript-sdk#acclimate-pull) |
+| `BUNDLE_ID` | The ID of the **Example agent** bundle |
 
-If the script found no system CA bundle, `local:up` says so. Then point `SSL_CERT_FILE` at a merged bundle before you call an external model provider from Python.
-
-curl takes the CA as a flag:
+If the script found no system CA bundle, `local:up` says so. Then point `SSL_CERT_FILE` at a merged bundle before you call an external model provider from Python. curl takes the CA as a flag.
 
 ```sh
 curl --cacert .local/stack/root.crt "$ACCLIMATE_API/ready"
@@ -104,11 +102,11 @@ The script shows the CA's fingerprint and the commands it will run, and asks you
 - On macOS it adds the CA to your login keychain, and macOS asks for your password.
 - On Linux it adds the CA to the system store with `sudo`, and to the Chrome and Firefox certificate databases when `certutil` is installed.
 
-Restart your browser afterwards. To undo it, run `npm run local:trust -- --remove`. To trust it by hand instead, import `.local/stack/root.crt` as a trusted certificate authority, or accept a certificate exception for the console URL and the Keycloak sign-in URL.
+Restart your browser afterwards. To undo it, run `npm run local:trust -- --remove`. By hand, import `.local/stack/root.crt` as a trusted certificate authority, or accept a certificate exception for the console URL and the Keycloak sign-in URL.
 
 ## Read mail
 
-All mail from the stack arrives in Mailpit: invitations, email verification, password resets and the alert email for a held-out regression. Self-registration is on in the local realm, so you can test invitations. A new account has no workspace access until a workspace administrator invites it.
+All mail from the stack arrives in Mailpit: invitations, email verification, password resets and the alert email for a held-out regression. Self-registration is on in the local realm, so you can test invitations, but a new account has no workspace access until a workspace administrator invites it.
 
 ## Run learning rounds
 
@@ -116,9 +114,7 @@ The **Learning** tab works as in a deployment, except that each rollout runs in 
 
 ## Executor concurrency
 
-`ACCLIMATE_EXECUTOR_CONCURRENCY` sets how many rollouts the executor runs at once. The local default is 4. A higher value finishes rounds sooner, but runs more sandboxes and sends more requests to the model provider at once, which a single Codex sign-in may answer with rate limits.
-
-Export it before `npm run local:up`. It is not saved, so a later start without it returns to 4.
+`ACCLIMATE_EXECUTOR_CONCURRENCY` sets how many rollouts the executor runs at once. The local default is 4. A higher value finishes rounds sooner, but runs more sandboxes and sends more requests to the model provider at once, which a single Codex sign-in may answer with rate limits. Export it before `npm run local:up`. It is not saved, so a later start without it returns to 4.
 
 ## Stop or reset
 
@@ -131,7 +127,7 @@ npm run local:reset
 
 ## Choose ports before the first start
 
-Each checkout gets its own Compose project, volumes and default block of four ports between 10000 and 30000, so checkouts side by side do not collide. If a port in the block is busy, `local:up` moves to the next free block.
+Each checkout gets its own Compose project, volumes and block of four ports between 10000 and 30000, so checkouts side by side do not collide. If a port in the block is busy, `local:up` moves to the next free block.
 
 To choose ports yourself, set `ACCLIMATE_LOCAL_PORT` for the console on the first start. The API, Keycloak and Mailpit take the next three ports, unless you set `ACCLIMATE_LOCAL_MAIL_PORT` for Mailpit. If a port you chose is busy, `local:up` stops and prints a free alternative.
 

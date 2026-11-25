@@ -3,9 +3,7 @@ title: Install the SDKs
 description: Install the TypeScript or Python SDK from a source checkout, or from its registry or verified release files once an Acclimate release is published.
 ---
 
-This page installs the TypeScript or Python SDK in the environment that runs your agent. No Acclimate release has been published yet, so the SDKs are not on npm or PyPI. Until one is, build them from a source checkout. The registry and release-file sections apply once an Acclimate release is published.
-
-Use the SDK version that matches your service's version. See [Versioning and compatibility](/docs/reference/versioning).
+Install the SDK where your agent runs. No Acclimate release has been published yet, so the SDKs are not on npm or PyPI: build them from a source checkout. Use the SDK version that matches your service's ([Versioning and compatibility](/docs/reference/versioning)).
 
 ## Prerequisites
 
@@ -19,8 +17,6 @@ Use the SDK version that matches your service's version. See [Versioning and com
 
 ## Build from a source checkout
 
-Clone the repository:
-
 ```sh
 git clone https://github.com/anveld-dev/acclimate.git
 cd acclimate
@@ -28,18 +24,16 @@ cd acclimate
 
 ### Build every artifact
 
-From the repository root, build every artifact and check it against isolated consumers:
-
 ```sh
 npm ci --ignore-scripts
 npm run pack:verify
 ```
 
-The command writes the SDK and plugin tarballs, the Python wheel, the starter archives, the manifest and the checksums to `artifacts/releases/<version>/`. To build the same version again, add `-- --output /path/to/new-release`. Install the tarball or the wheel as in [Install the files](#install-the-files).
+This writes the SDK and plugin tarballs, the Python wheel, the starter archives, the manifest and the checksums to `artifacts/releases/<version>/`, and checks them against isolated consumers. To build the same version again, add `-- --output /path/to/new-release`.
 
 ### Build only the Python wheel
 
-Building the wheel needs only Python. Write the output outside the checkout:
+This needs only Python. Write the output outside the checkout:
 
 ```sh
 python3.11 -m pip wheel --no-deps --wheel-dir /tmp/acclimate-wheel ./python
@@ -47,11 +41,11 @@ python3.11 -m pip wheel --no-deps --wheel-dir /tmp/acclimate-wheel ./python
 uv build --wheel --out-dir /tmp/acclimate-wheel ./python
 ```
 
-The build downloads the `flit_core` build backend unless your index or cache already has it. Install the wheel as in [Install the files](#install-the-files), or install straight from the checkout with `pip install ./python`.
+The build downloads the `flit_core` build backend unless your index or cache has it. You can also install straight from the checkout with `pip install ./python`.
 
 ### Install the files
 
-Run this from your application's directory. `/absolute/path/to/release` is `artifacts/releases/<version>/` in your checkout, or the directory you downloaded release files into. The examples use version 0.1.0, the version a source build produces today.
+Run this from your application's directory. `/absolute/path/to/release` is `artifacts/releases/<version>/` in your checkout, or the directory holding downloaded release files. A source build produces version 0.1.0 today.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
@@ -77,7 +71,7 @@ python3.11 -m venv .venv
 
 ## Install from the registry
 
-Once an Acclimate release is published to npm and PyPI:
+Once an Acclimate release is on npm and PyPI:
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
@@ -87,7 +81,7 @@ npm install @acclimate/sdk
 npx acclimate pull --help
 ```
 
-[`acclimate pull`](/docs/reference/typescript-sdk#acclimate-pull) saves a released version to a file. To run Codex, the Claude Agent SDK, Pi or Cursor on the delivered files, also install the matching plugin, such as `@acclimate/codex-plugin`. See [Choose a native integration](/docs/guides/coding-agents#choose-a-native-integration).
+To run Codex, the Claude Agent SDK, Pi or Cursor on the delivered files, also install the matching plugin, such as `@acclimate/codex-plugin` ([Choose a native integration](/docs/guides/coding-agents#choose-a-native-integration)).
 
 </Tab>
 <Tab value="Python">
@@ -100,12 +94,12 @@ python3.11 -m venv .venv
 .venv/bin/acclimate --help
 ```
 
-The distribution is `acclimate-sdk`, imported as `acclimate`. The `acclimate` command and `python -m acclimate` run the same CLI. See [acclimate pull](/docs/reference/python-sdk#acclimate-pull). On Python 3.10 or earlier, the import fails with a message that names the version it found.
+The distribution is `acclimate-sdk`, imported as `acclimate`. `python -m acclimate` runs the same CLI as `acclimate`. On Python 3.10 or earlier, the import fails with a message that names the version it found.
 
 </Tab>
 </Tabs>
 
-An Acclimate release can reach GitHub Releases before npm and PyPI. If yours is not on the registry yet, install from the release files.
+An Acclimate release can reach GitHub Releases before the registries. Until it does, install from the release files.
 
 ## Install from verified release files
 
@@ -113,7 +107,7 @@ Once an Acclimate release is published:
 
 1. Choose a version on the [GitHub Releases page](https://github.com/anveld-dev/acclimate/releases).
 2. Download `manifest.json`, `SHA256SUMS` and every file that `SHA256SUMS` lists into one directory.
-3. From that directory, verify the files before you install anything.
+3. From that directory, verify the files.
 
    ```sh
    sha256sum --check SHA256SUMS        # Linux

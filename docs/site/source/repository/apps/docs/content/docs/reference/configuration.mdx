@@ -3,13 +3,13 @@ title: Environment variables
 description: Every environment variable that an application, the service, the executor, the console and the Compose files read, and the service's operator commands.
 ---
 
-This page lists every environment variable Acclimate reads, grouped by the process that reads it. Developers need only [Application](#application). The rest is for operators, and [Self-host Acclimate](/docs/operate/self-host) shows where each runtime file lives.
+Variables are grouped by the process that reads them. Developers need only [Application](#application). The rest is for operators, and [Self-host Acclimate](/docs/operate/self-host) shows where each runtime file lives.
 
 ## Application
 
 ### Read by the SDKs
 
-`createAcclimate()` in TypeScript and `Acclimate.from_env()` in Python read these three variables, and you can pass each value as an option instead. `acclimate pull` reads `ACCLIMATE_TOKEN` when its config file names no token.
+`createAcclimate()` and `Acclimate.from_env()` read these, or take each value as an option. `acclimate pull` reads `ACCLIMATE_TOKEN` when its config names no token.
 
 | Variable | Required | Value |
 | --- | --- | --- |
@@ -19,22 +19,22 @@ This page lists every environment variable Acclimate reads, grouped by the proce
 
 ### Used by convention
 
-The SDKs do not read these. The console's **App setup** code and the repository examples use them, and pass the values to the client.
+The SDKs do not read these. The console's **App setup** code and the repository examples pass them to the client.
 
 | Variable | Value |
 | --- | --- |
-| `ACCLIMATE_SCOPE` | Stable application name, passed as `scope`. It namespaces the local cache. Never use a token. |
+| `ACCLIMATE_SCOPE` | Stable application name, passed as `scope` to namespace the local cache. Never use a token. |
 | `ACCLIMATE_BUNDLE` | Bundle ID |
 | `ACCLIMATE_CHANNEL` | Channel name, such as `stable` |
 | `ACCLIMATE_CONNECTION` | Connection ID, passed as `connectionId` |
-| `ACCLIMATE_RECEIPT_TOKEN` | Optional receipt credential, kept apart from `ACCLIMATE_TOKEN`. See [Report job starts](/docs/guides/deliver-content#report-job-starts). |
+| `ACCLIMATE_RECEIPT_TOKEN` | Optional [receipt credential](/docs/guides/deliver-content#report-job-starts), kept apart from `ACCLIMATE_TOKEN` |
 | `ACCLIMATE_CACHE` | Cache directory, in place of the SDK's default |
 | `ACCLIMATE_JOB_DIR` | Directory the job's files are written to |
 | `AGENT_TASK` | Task text for the console's connected agent example |
 
 ## Service
 
-Three service values must be identical to their console values: `ACCLIMATE_OIDC_ISSUER` to `CONSOLE_OIDC_ISSUER`, `ACCLIMATE_LOGIN_TOKEN` to `CONSOLE_LOGIN_TOKEN`, and `ACCLIMATE_CONSOLE_TOKEN` to `CONSOLE_SERVICE_TOKEN`. The login token, the console token and every static machine token must differ from each other.
+The issuer and the login and console tokens must equal their [console](#console) values. The login token, the console token and every static machine token must differ from each other.
 
 | Variable | Required | Default | Value |
 | --- | --- | --- | --- |
@@ -49,11 +49,11 @@ Three service values must be identical to their console values: `ACCLIMATE_OIDC_
 | `ACCLIMATE_SERVICE_BINARY` | No | `target/release/acclimate-service` under the checkout | Executable path, read only by the `npm start` wrapper outside a container |
 
 - Each operator pair must be unique. Its `issuer` must equal `ACCLIMATE_OIDC_ISSUER`, and its `subject` must be nonempty and at most 512 bytes.
-- Use `ACCLIMATE_AUTH=[]` for browser-only use, or when every machine token is issued from the console.
+- Use `ACCLIMATE_AUTH=[]` when every machine token is issued from the console, or none is needed.
 
 ### Removed settings
 
-The service refuses to start when any of these is defined, even when empty, and names the first one it finds. The console also refuses `ACCLIMATE_MODE` and `CONSOLE_MODE`. Delete them from older runtime files.
+The service refuses to start when any of these is defined, even when empty, and names the first one it finds. The console also refuses the first two. Delete them from older runtime files.
 
 | Variables | Log message |
 | --- | --- |
@@ -62,7 +62,7 @@ The service refuses to start when any of these is defined, even when empty, and 
 
 ### Static machine grants
 
-`ACCLIMATE_AUTH` holds machine tokens fixed in the service's environment. Changing it needs a restart, unlike tokens issued from the console.
+`ACCLIMATE_AUTH` holds machine tokens fixed in the service's environment. Changing it needs a restart.
 
 ```json
 [
@@ -75,13 +75,12 @@ The service refuses to start when any of these is defined, even when empty, and 
 ]
 ```
 
-- `rights` holds any of `read`, `write` and `promote`. See [Rights](/docs/reference/credentials#rights).
-- A token identifies one principal and can appear once for each workspace.
-- A `principalId` must not contain a colon.
+- `rights` holds any of `read`, `write` and [`promote`](/docs/reference/credentials#rights).
+- A token identifies one principal and can appear once for each workspace. A `principalId` must not contain a colon.
 
 ## Optimizer
 
-These service variables set the optimizer, the model that changes bundles in a learning round. Without them, delivery still works and starting a loop is refused with `optimizer-required`. See [Set the optimizer model](/docs/operate/enable-learning#set-the-optimizer-model).
+These service variables set the optimizer, the model that changes bundles in a learning round. Without them, delivery works but starting a loop gets `optimizer-required`. See [Set the optimizer model](/docs/operate/enable-learning#set-the-optimizer-model).
 
 | Variable | Required | Default | Value |
 | --- | --- | --- | --- |
@@ -94,14 +93,14 @@ These service variables set the optimizer, the model that changes bundles in a l
 | `ACCLIMATE_LEARNING_MAX_FAILED_ROUNDS` | No | `3` | Consecutive failed rounds before the loop pauses, 1 to 4,294,967,295 |
 
 - A round pins `ACCLIMATE_MODEL` and `ACCLIMATE_MODEL_REASONING_EFFORT` when it starts.
-- An invalid timeout, token limit or reasoning effort stops the service at startup, even without an endpoint. An unset, zero or invalid failed-round limit uses the default.
+- An invalid timeout, token limit or reasoning effort stops the service at startup, even without an endpoint. An unset, zero or invalid failed-round limit uses `3`.
 - The service retries HTTP 429, HTTP 5xx and connection or timeout errors twice.
 
 To try the optimizer on your own machine, see [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy).
 
 ## Model provider
 
-The task model and the judge model come from the model provider a workspace administrator saves in the console. Two service variables control how the service stores and reaches it.
+The task model and the judge model come from the model provider a workspace administrator saves in the console. These service variables control how it is stored and reached.
 
 | Variable | Required | Default | Value |
 | --- | --- | --- | --- |
@@ -112,7 +111,7 @@ Without the provider encryption key, the service starts but cannot save a model 
 
 ### Provider addresses
 
-Set `ACCLIMATE_PROVIDER_HTTP_HOSTS` to the same value on the service and the executor. Each entry is an exact hostname or IP address, compared without case. The service checks a provider's base URL when it is saved, and the executor checks it again against the addresses the host resolves to.
+Set `ACCLIMATE_PROVIDER_HTTP_HOSTS` to the same value on the service and the executor. Each entry is an exact hostname or IP address, compared without case. The service checks a provider's base URL when it is saved, and the executor checks the addresses the host resolves to.
 
 - The base URL must use HTTPS, or plain HTTP for a listed host. It must not contain a user name, password, query or fragment.
 - Loopback addresses, `localhost` and `*.localhost`, private IPv4, carrier-grade NAT (`100.64.0.0/10`) and IPv6 unique-local addresses need the host on the list, even over HTTPS.
@@ -120,7 +119,7 @@ Set `ACCLIMATE_PROVIDER_HTTP_HOSTS` to the same value on the service and the exe
 
 ## Invitation email
 
-Set `ACCLIMATE_SMTP_HOST` on the service to send workspace invitations by email. Keycloak's own email is configured separately.
+Set these on the service to send workspace invitations by email. Keycloak's own email is configured separately.
 
 | Variable | Required | Default | Value |
 | --- | --- | --- | --- |
@@ -136,7 +135,7 @@ Set `ACCLIMATE_SMTP_HOST` on the service to send workspace invitations by email.
 
 ## Executor
 
-The executor runs learning rollouts in sandboxes. In the bundled deployment, Compose sets most of these variables. See [Enable learning](/docs/operate/enable-learning).
+The executor runs learning rollouts in sandboxes. In the bundled deployment, Compose sets most of these. See [Enable learning](/docs/operate/enable-learning).
 
 | Variable | Required | Default | Value |
 | --- | --- | --- | --- |
@@ -152,7 +151,7 @@ The executor runs learning rollouts in sandboxes. In the bundled deployment, Com
 | `ACCLIMATE_PROVIDER_HTTP_HOSTS` | No | Empty | The service's value. See [Provider addresses](#provider-addresses). |
 
 - `acclimate-executor --health` exits 0 when the health file is at most 120 seconds old.
-- A wrong credential, runner image or sandbox runtime, or a failed startup sandbox check, makes the executor exit with status 78 and a message that names the fault. See [Check the executor](/docs/operate/enable-learning#check-the-executor).
+- A wrong credential, runner image or sandbox runtime, or a failed startup sandbox check, makes the executor exit with status 78 and a message naming the fault. See [Check the executor](/docs/operate/enable-learning#check-the-executor).
 
 ## Console
 
@@ -166,24 +165,22 @@ The executor runs learning rollouts in sandboxes. In the bundled deployment, Com
 | `CONSOLE_OIDC_ISSUER` | Yes | None | The service's `ACCLIMATE_OIDC_ISSUER` |
 | `CONSOLE_OIDC_CLIENT_ID` | Yes | None | Confidential OIDC client ID. The bundled realm uses `acclimate-console`. |
 | `CONSOLE_OIDC_CLIENT_SECRET` | Yes | None | Secret of that client |
-| `CONSOLE_ALLOW_EDITS` | No | Disabled | The literal `true` lets members with the right role make changes in the console |
-| `CONSOLE_WORKSPACE` | No | Unset | Fallback workspace when the user has no saved selection |
+| `CONSOLE_ALLOW_EDITS` | No | Disabled | The literal `true` lets members with the right role make changes. Otherwise the console is read-only. |
+| `CONSOLE_WORKSPACE` | No | Unset | Fallback workspace when the user has no saved selection. Prefer choosing in the console. |
 | `CONSOLE_BUNDLE` | No | Unset | Fallback bundle in the same case |
 | `CONSOLE_CHANNEL` | No | Unset | Fallback channel in the same case. Many operations use `stable` without one. |
 | `HOST` | No | `127.0.0.1` | Listener address. Compose sets `0.0.0.0`. |
 | `PORT` | No | `3100` | Listener port, 1 to 65,535 |
 | `NODE_ENV` | No | None | The console image runs with `production` |
 
-- Without `CONSOLE_ALLOW_EDITS=true`, the console only shows bundles, releases, connections, tasks, the model provider and learning.
 - The trusted proxy must send the host of `CONSOLE_ORIGIN` as `Host`.
 - Register `CONSOLE_ORIGIN` plus `/auth/callback` as the OIDC client's redirect URI.
-- Prefer choosing the workspace, bundle and channel in the console over the fallback variables.
 - `CONSOLE_SESSION_TOKEN` is not a setting. The console derives it from each request's session cookie.
-- Leave Nitro's `NITRO_HOST`, `NITRO_PORT`, `NITRO_UNIX_SOCKET`, `NITRO_SSL_CERT` and `NITRO_SSL_KEY` unset in the bundled deployment, so its health check and proxy can reach the private HTTP listener.
+- In the bundled deployment, leave Nitro's `NITRO_HOST`, `NITRO_PORT`, `NITRO_UNIX_SOCKET`, `NITRO_SSL_CERT` and `NITRO_SSL_KEY` unset, so the health check and proxy reach the private HTTP listener.
 
 ## Compose
 
-Set these in the shell that runs `docker compose`. They tell `compose.yaml` and the Keycloak overlay `compose.keycloak.yaml` where your private files are and which images to run. Every path is absolute. Each `*_IMAGE` variable defaults to the GHCR image at `ACCLIMATE_VERSION`.
+Set these in the shell that runs `docker compose`, for `compose.yaml` and the Keycloak overlay `compose.keycloak.yaml`. Every path is absolute. Each `*_IMAGE` variable defaults to the GHCR image at `ACCLIMATE_VERSION`.
 
 | Variable | Required | Default | Value |
 | --- | --- | --- | --- |
@@ -195,22 +192,19 @@ Set these in the shell that runs `docker compose`. They tell `compose.yaml` and 
 | `ACCLIMATE_POSTGRES_PASSWORD_FILE` | Yes | None | Private file with the raw PostgreSQL password |
 | `ACCLIMATE_EXECUTOR_TOKEN_FILE` | Yes | None | Private executor credential file on the host, outside the checkout |
 | `ACCLIMATE_VERSION` | No | `latest` | Tag of the service, console, executor and runner images |
-| `ACCLIMATE_SERVICE_IMAGE` | No | GHCR | Full service image reference |
-| `ACCLIMATE_CONSOLE_IMAGE` | No | GHCR | Full console image reference |
-| `ACCLIMATE_EXECUTOR_IMAGE` | No | GHCR | Full executor image reference |
-| `ACCLIMATE_RUNNER_IMAGE` | No | GHCR | Full runner image reference, also passed to the executor |
+| `ACCLIMATE_SERVICE_IMAGE`, `ACCLIMATE_CONSOLE_IMAGE`, `ACCLIMATE_EXECUTOR_IMAGE`, `ACCLIMATE_RUNNER_IMAGE` | No | GHCR | Full image reference. The runner image is also passed to the executor. |
 | `KEYCLOAK_HOST` | With the overlay | None | Public hostname of Keycloak, different from the other two |
 | `ACCLIMATE_KEYCLOAK_ENV` | With the overlay | None | Private Keycloak runtime file |
 | `ACCLIMATE_KEYCLOAK_POSTGRES_PASSWORD_FILE` | With the overlay | None | Private file with Keycloak's raw database password |
 
 - The password in `ACCLIMATE_POSTGRES_PASSWORD_FILE` must match the URL-encoded password in `DATABASE_URL`.
-- `docker compose` refuses to run without `ACCLIMATE_EXECUTOR_TOKEN_FILE`, even before learning is set up. Compose mounts the file into the executor container and points the executor's own variable at the copy.
+- `docker compose` refuses to run without `ACCLIMATE_EXECUTOR_TOKEN_FILE`, even before learning is set up. Compose mounts the file into the executor and points the executor's own variable at it.
 - Until the first Acclimate release, build from source with `ACCLIMATE_VERSION=local`. Once releases exist, pin it to the exact release without the Git tag's leading `v`, such as `0.1.0`. See [Versioning and compatibility](/docs/reference/versioning).
-- Compose passes `ACCLIMATE_PROVIDER_HTTP_HOSTS`, `ACCLIMATE_EXECUTOR_CONCURRENCY` and `ACCLIMATE_SANDBOX_RUNTIME` from this shell to the executor. Setting them in the service's runtime file does not reach the executor.
+- Compose passes `ACCLIMATE_PROVIDER_HTTP_HOSTS`, `ACCLIMATE_EXECUTOR_CONCURRENCY` and `ACCLIMATE_SANDBOX_RUNTIME` from this shell to the executor, not from the service's runtime file.
 
 ### Keycloak runtime file
 
-The file that `ACCLIMATE_KEYCLOAK_ENV` names holds these variables for the co-hosted Keycloak. [Self-host Acclimate](/docs/operate/self-host) creates it. The first realm import reads the last two.
+The file that `ACCLIMATE_KEYCLOAK_ENV` names holds these for the co-hosted Keycloak. [Self-host Acclimate](/docs/operate/self-host) creates it. The first realm import reads the last two.
 
 | Variable | Value |
 | --- | --- |
@@ -222,7 +216,7 @@ The file that `ACCLIMATE_KEYCLOAK_ENV` names holds these variables for the co-ho
 
 ## Service commands
 
-The service executable also runs one-off operator commands. Every command except `--check-grants` connects to the database, so run it with the service's `DATABASE_URL`. In the bundled deployment, run it through `docker compose exec -T service /usr/local/bin/acclimate-service`. [Enable learning](/docs/operate/enable-learning) gives the order for the executor commands.
+Every command except `--check-grants` connects to the database, so run it with the service's `DATABASE_URL`. In the bundled deployment, run it through `docker compose exec -T service /usr/local/bin/acclimate-service`. [Enable learning](/docs/operate/enable-learning) gives the order for the executor commands.
 
 | Command | What it does |
 | --- | --- |
@@ -233,5 +227,5 @@ The service executable also runs one-off operator commands. Every command except
 | `acclimate-service --check-grants` | Checks an `ACCLIMATE_AUTH` value from standard input, without starting the service |
 
 - `--list-executor-tokens` prints each credential's `id`, `createdAt`, `lastSeenAt`, declared `runtime`, `revoked` and `revokedAt`.
-- `--reset-provider-keys` deletes each provider's URL, allowed models and provider API key. Use it only to start again with a new provider encryption key, after which each workspace administrator enters the model provider again. Without `--confirm`, it explains itself and deletes nothing.
+- `--reset-provider-keys` deletes each provider's URL, allowed models and provider API key. Use it only to start again with a new provider encryption key, after which each workspace administrator enters the model provider again. Without `--confirm`, it deletes nothing.
 - `--check-grants` reads up to 1 MiB of JSON and never echoes it. It prints `{"schemaVersion":1,"valid":true}` and exits 0, or prints `{"schemaVersion":1,"valid":false,"code":"grants.invalid"}` to standard error and exits with a failure status.

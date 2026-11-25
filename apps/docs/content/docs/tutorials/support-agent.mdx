@@ -3,7 +3,7 @@ title: Improve a support agent
 description: Answer support requests with a released bundle, improve the bundle with sample tasks and turn a person's correction into a learning task.
 ---
 
-In this tutorial you run a support agent that answers each request with the version released on a channel, improve its bundle with 60 sample tasks until its replies state the company's facts, and turn a support lead's correction into a learning task. The application is `examples/support-agent/`: `agent.ts` or `agent.py`.
+In this tutorial you run a support agent on the version released on a channel, improve its bundle with 60 sample tasks until its replies state the company's facts, and turn a support lead's correction into a learning task. The application is `examples/support-agent/agent.ts` or `agent.py`.
 
 ## Before you start
 
@@ -19,7 +19,7 @@ npm ci --ignore-scripts
 
 For Python, run `python3.11 -m venv .venv` and `.venv/bin/python -m pip install ./python` instead of `npm ci`.
 
-The application calls an OpenAI-compatible model itself. These values fit the [local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy), which improving the bundle also needs:
+The application calls an OpenAI-compatible model itself. These values fit the [local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy):
 
 ```sh
 export OPENAI_BASE_URL=http://127.0.0.1:8317/v1
@@ -27,7 +27,7 @@ export OPENAI_API_KEY='<proxy-key>'
 export AGENT_MODEL=gpt-6-luna
 ```
 
-The model ID is an example. On Linux, use the address the proxy listens on. With a provider API key instead of the proxy, set `OPENAI_BASE_URL` to the provider's base URL, such as `https://api.openai.com/v1`, and `OPENAI_API_KEY` to the key.
+The model ID is an example. On Linux, use the address the proxy listens on. With a provider API key instead, set `OPENAI_BASE_URL` to the provider's base URL, such as `https://api.openai.com/v1`, and `OPENAI_API_KEY` to the key.
 
 ## Answer a request
 
@@ -102,7 +102,7 @@ print(f"\nAnswered with version {version['version']['id']} ({version['version'][
 </Tab>
 </Tabs>
 
-`job()` finds the bundle by name, resolves the channel, downloads the version unless cached and verifies its digest. `systemPrompt` (`system_prompt` in Python) comes from the SDK. It renders the bundle as exactly the system message a [learning rollout](/docs#how-a-rollout-runs-your-bundle) sends, so the loop scores the prompt your jobs run with.
+`job()` finds the bundle by name, resolves the channel, downloads the version unless cached and verifies its digest. The SDK's `systemPrompt` (`system_prompt` in Python) renders the bundle as the exact system message a [learning rollout](/docs#how-a-rollout-runs-your-bundle) sends, so the loop scores the prompt your jobs run with.
 
 ## Improve the bundle with the sample tasks
 
@@ -139,7 +139,7 @@ A real first round, with `gpt-6-luna` as task model, `gpt-6.2-sol` as judge mode
 | Version before the round | 0.43, 5 of 170 rollouts passing (3%) | 0.41, 3 of 130 rollouts passing (2%) |
 | Adopted version | 0.99, 161 of 170 rollouts passing (95%) | 0.53, 10 of 130 rollouts passing (8%) |
 
-A score gives partial credit for each criterion met, and a rollout passes only when it meets all four ([how answers are scored](/docs#how-answers-are-scored)). The console's chart and **Held-out** column show the score, 53.2% here. The automatic revert compares the pass rate.
+A score gives partial credit for each criterion met, and a rollout passes only when it meets all four ([how answers are scored](/docs#how-answers-are-scored)). The console shows the score, 53.2% held out here, but the automatic revert compares the pass rate.
 
 The five candidates scored between 0.95 and 0.99. The adopted one replaced the two sentences with a product guide of about 5,800 characters that begins:
 
@@ -150,7 +150,7 @@ You provide first-party support for our workspace web app. Unless the customer e
 - Full workspace exports start at Settings → Workspace → Export data. The download link is emailed and is valid for 7 days; after expiry, start a new export to get a fresh link.
 ```
 
-The held-out results moved much less. A pass rate of 95% on evolve tasks and 8% on held-out tasks is what overfitting looks like: the change fits the tasks the optimizer saw. This one round is not evidence that the loop's changes generalize. Here the optimizer sees only evolve tasks, and most requests turn on a company fact of their own, so the guide lacks the facts held-out tasks ask about. To close the gap, add tasks or [corrections](#report-a-correction) that cover them, or write the facts into the bundle.
+The held-out results moved much less. A 95% evolve and 8% held-out pass rate is overfitting: the change fits the tasks the optimizer saw, so this round is no evidence that the loop's changes generalize. Most requests turn on a company fact of their own, and the guide lacks the facts held-out tasks ask about. To close the gap, add tasks or [corrections](#report-a-correction) that cover them, or write the facts into the bundle.
 
 The round ran 1,280 rollouts in about 95 minutes on one Codex sign-in with four rollouts at a time, while another example was also running.
 
@@ -166,9 +166,9 @@ Answered with version 7073d86d-e5f1-4560-8fe6-8ca5a36512fd (sha256:24e2ca1f…).
 
 ## Report a correction
 
-Report a support lead's rewrite of a reply and the request becomes a learning task. Until you save the bundle's learning settings, the example prints `Learning is not set up for this bundle`, because the service answers 404.
+Report a support lead's rewrite of a reply and the request becomes a learning task. Until you save the bundle's learning settings, the service answers 404 and the example prints `Learning is not set up for this bundle`.
 
-Save the rewrite in a file and pass it with `--expected`:
+Pass the rewrite in a file with `--expected`:
 
 ```sh
 cat > corrected.txt <<'EOF'
@@ -202,9 +202,9 @@ Answered with version 7073d86d-e5f1-4560-8fe6-8ca5a36512fd (sha256:24e2ca1f…).
 Recorded the correction as outcome 512d1634-cd27-41a4-bbf2-78733548383e. It becomes an evolve task.
 ```
 
-It reports the correction on the same job with `receipt = await job.expect(expected, { output: reply, grading: 'criteria' })`, or `receipt = job.expect(expected, output=reply, grading="criteria")` in Python.
+It reports on the same job with `receipt = await job.expect(expected, { output: reply, grading: 'criteria' })`, or `receipt = job.expect(expected, output=reply, grading="criteria")` in Python.
 
-The example prints the split from the receipt, and the judge model drafted six criteria from the corrected reply, such as "Confirms that a subscription can be paused for up to three months." The request appears on the **Learning** tab as a card marked **Production outcome**, and a held-out one waits under **Needs confirmation**. One correction does not start a round. See [Report production outcomes](/docs/guides/learning-loop#report-production-outcomes).
+The example prints the split from the receipt. The judge model drafted six criteria from the corrected reply, such as "Confirms that a subscription can be paused for up to three months." The request appears on the **Learning** tab as a card marked **Production outcome**, and a held-out one waits under **Needs confirmation**. One correction does not start a round. See [Report production outcomes](/docs/guides/learning-loop#report-production-outcomes).
 
 ## Use your own bundle
 

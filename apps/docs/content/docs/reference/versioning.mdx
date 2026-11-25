@@ -3,7 +3,7 @@ title: Versioning and compatibility
 description: How Acclimate releases are numbered, which SDK and service versions work together, and how the wire contract and deprecated names change.
 ---
 
-This page says what an Acclimate version number promises, for developers who pin an SDK and operators who plan an upgrade. Here "release" means an Acclimate release, not the release of a bundle version to a channel.
+Here "release" means an Acclimate release, not the release of a bundle version to a channel.
 
 ## One version for every artifact
 
@@ -11,7 +11,7 @@ Each Acclimate release has one `major.minor.patch` version. The service, console
 
 Git tags add a leading `v`, such as `v0.1.0`. Image tags and package versions do not, so the same release is `0.1.0` there. Pushing a tag builds the images for amd64 and arm64 and creates a GitHub Release with the package files.
 
-No Acclimate release has been published yet: the repository has no release tags, and no images or registry packages exist. Until the first release, build from source. See [Install](/docs/get-started/install) and [Self-host Acclimate](/docs/operate/self-host).
+No Acclimate release has been published yet: the repository has no release tags, and no images or registry packages exist. Until then, build from source, as [Install](/docs/get-started/install) and [Self-host Acclimate](/docs/operate/self-host) describe.
 
 ## What a version number promises
 
@@ -26,14 +26,11 @@ From `1.0.0`, Acclimate follows [Semantic Versioning](https://semver.org), and b
 
 ## Match SDK and service versions
 
-Use the SDK release that matches your service's minor version. The service also accepts the previous minor's SDK where the wire contract remains compatible. An SDK newer than the service is not supported, because it can call routes or send fields the older service rejects.
-
-1. Upgrade the service and console first. See [Upgrade](/docs/operate/upgrades-and-recovery#upgrade).
-2. Then upgrade your applications to the matching SDK.
+Use the SDK release that matches your service's minor version. The service also accepts the previous minor's SDK where the wire contract remains compatible. An SDK newer than the service is not supported, because it can call routes or send fields the older service rejects. So [upgrade](/docs/operate/upgrades-and-recovery#upgrade) the service and console first, then your applications' SDK.
 
 ## The wire contract
 
-The versioned API uses the prefix `/v1`. The health endpoints `/health` and `/ready` sit outside it. Within `/v1`, an Acclimate release may add routes, optional request fields, response fields and enumeration values such as a new status or error code, and may relax a limit. Write clients that ignore unknown response fields and treat an unknown enumeration value as unknown instead of failing.
+The versioned API uses the prefix `/v1`, and the health endpoints `/health` and `/ready` sit outside it. Within `/v1`, an Acclimate release may add routes, optional request fields, response fields and enumeration values such as a new status or error code, and may relax a limit. Write clients that ignore unknown response fields and treat an unknown enumeration value as unknown instead of failing.
 
 Removing or renaming a field or route, making an optional field required or tightening a limit is breaking. It follows the rules above and appears in the changelog. Breaking changes to every route would move to `/v2`, and the service would serve both prefixes for at least one minor release.
 

@@ -3,21 +3,21 @@ title: Deliver content to jobs
 description: Prepare a verified version of a bundle for each job and report job starts.
 ---
 
-This guide is for a developer whose application runs an agent. A **job** is one production run of that agent. The guide shows how to prepare the released version of a bundle for each job, record it with the result and clean up. A job keeps the version it prepared even if a release lands while it runs. See [Delivery](/docs#delivery).
+A **job** is one production run of your agent. Prepare the released version of a bundle for each job, record the version with the result and clean up. A job keeps the version it prepared even if a release lands while it runs. See [Delivery](/docs#delivery).
 
-To run Codex, the Claude Agent SDK, Pi or Cursor on the prepared files, see [Use a coding agent](/docs/guides/coding-agents).
+For Codex, the Claude Agent SDK, Pi or Cursor, see [Use a coding agent](/docs/guides/coding-agents).
 
 ## Before you start
 
-- Install the SDK. See [Install the SDKs](/docs/get-started/install).
+- [Install the SDK](/docs/get-started/install).
 - Create a connection for the bundle and channel, and issue its connection credential. See [Connect your application](/docs/get-started/quickstart#connect-your-application) and [Credentials and rights](/docs/reference/credentials).
-- Run the delivery check from the **First delivery** step of the connection's **Setup** tab. For the agent and reporting recipes, choose **Bundle & channel** there, then **Full setup guide**. It opens **App setup** for the bundle's channel, with the API URL and the workspace, bundle and channel.
+- Run the delivery check in the **First delivery** step of the connection's **Setup** tab. Then choose **Bundle & channel** and **Full setup guide** to open **App setup**.
 
-The snippets take the API URL and the workspace, bundle and connection IDs from **App setup**. They read the connection credential from `ACCLIMATE_TOKEN`, so it stays out of your code. The scope is any stable name for your application.
+The snippets take the API URL and the workspace, bundle and connection IDs from **App setup**, and read the connection credential from `ACCLIMATE_TOKEN`. The scope is any stable name for your application.
 
 ## Prepare a job
 
-Call `prepare` once for each new job and give your agent the prepared system prompt and skill files. Save the version ID and digest with the result, so you can tell later which version produced it.
+Call `prepare` once for each job and give your agent the prepared system prompt and skill files. Save the version ID and digest with the result.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
@@ -68,34 +68,32 @@ with client.prepare(WORKSPACE_ID, BUNDLE_ID, channel="stable") as prepared:
 </Tab>
 </Tabs>
 
-The IDs, the job input, the agent call and the result storage are your application's. Send `systemPrompt` (`system_prompt` in Python) as the agent's system message. It renders the instruction, skill and memory files exactly as a [learning rollout](/docs#how-a-rollout-runs-your-bundle) sends them, so production runs the prompt the loop scores. The prepared job has:
+The IDs, job input, agent call and result storage are your application's. Send `systemPrompt` as the system message. It is exactly what a [learning rollout](/docs#how-a-rollout-runs-your-bundle) sends, so production runs the prompt the loop scores. The prepared job has these properties, with snake_case names in Python:
 
 | Property | Contents |
 | --- | --- |
-| `systemPrompt` (`system_prompt` in Python) | The instruction, skill and memory files as one system message, each under a `# <path>` heading |
+| `systemPrompt` | The instruction, skill and memory files as one system message, each under a `# <path>` heading |
 | `instructions` | The instruction files only, joined into one string |
-| `skillFiles` (`skill_files` in Python) | The staged skill files, each with `path`, `kind` and `absolutePath` |
+| `skillFiles` | The staged skill files, each with `path`, `kind` and `absolutePath` |
 | `files` | Every staged file, including memory files |
 | `version` | The verified version, with its ID and digest in `version.version` (`version["version"]` in Python) |
 | `directory` | The private job directory |
 
-Clean up only after the job has stopped and its result is saved. For a job that finishes inside the call, use `try` and `finally` as above, or the Python `with` block. For background work, keep the prepared object and call `cleanup()` when the job stops.
+Clean up only after the job has stopped and its result is saved. For background work, keep the prepared object and call `cleanup()` when the job stops.
 
 To run an exact version instead of the channel's current one, pass `versionId` (`version_id` in Python) in place of `channel`.
 
-`createAcclimate().job()` (`Acclimate.from_env().job()` in Python) finds a bundle by name and reports learning outcomes with `expect()`. It does not work with a connection. Listing the workspace's bundles needs a machine token in `ACCLIMATE_TOKEN` with read, plus write for `expect()`, and the service refuses a connection credential. `job()` also ignores `ACCLIMATE_CONNECTION` and `ACCLIMATE_SCOPE` and sends no start receipts. See Jobs in the [TypeScript SDK](/docs/reference/typescript-sdk#jobs) and [Python SDK](/docs/reference/python-sdk#jobs) references, and [Support agent](/docs/tutorials/support-agent) for an application built on it.
+`createAcclimate().job()` (`Acclimate.from_env().job()` in Python) finds a bundle by name and reports learning outcomes with `expect()`. It does not work with a connection. It needs a machine token with read (and write for `expect()`), and sends no start receipts. See Jobs in the [TypeScript SDK](/docs/reference/typescript-sdk#jobs) and [Python SDK](/docs/reference/python-sdk#jobs) references, and [Support agent](/docs/tutorials/support-agent) for an application built on it.
 
 ## Serve jobs from a long-running service
 
-A web service that prepares a job for each request should expect:
-
 | Concern | What the SDK does |
 | --- | --- |
-| Latency | One request per job to resolve the channel. The version's files come from a verified disk cache, 20 MiB by default, after the first download. Each job also gets a new private directory. |
-| Service down | A channel prepare fails. It is not retried and waits at most the client timeout, 30 seconds by default. Set `timeoutMs` (`timeout` in seconds in Python) to what a request can afford. |
+| Latency | One request per job resolves the channel. After the first download, files come from a verified disk cache, 20 MiB by default. Each job gets a new private directory. |
+| Service down | A channel prepare fails without a retry, after at most the client timeout, 30 seconds by default. Set `timeoutMs` (`timeout` in seconds in Python) to what a request can afford. |
 | Pinning | Only a prepare with an exact version and the [offline option](/docs/reference/typescript-sdk#cache-and-offline-fallback) falls back to the cache, after a transport failure or an HTTP 502, 503 or 504. |
 
-Create one client for the process. Prepare each job from the channel and remember its version. When the service is unreachable, prepare that version from the cache:
+Create one client for the process. Prepare each job from the channel and remember its version, then prepare that version from the cache when the service is unreachable. A process that starts during an outage has no version to fall back to. The Python SDK is synchronous, so an `async def` route runs the whole prepare, run and cleanup in a worker thread, as in this FastAPI sample.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
@@ -127,8 +125,11 @@ async function prepareJob() {
 <Tab value="Python">
 
 ```python
+import asyncio
+from fastapi import FastAPI
 from acclimate import ApiError, TransportError
 
+app = FastAPI()
 last_version_id = None
 
 def prepare_job():
@@ -143,20 +144,6 @@ def prepare_job():
                               offline={"pinned_version_id": last_version_id})
     last_version_id = prepared.version["version"]["id"]
     return prepared
-```
-
-</Tab>
-</Tabs>
-
-A process that starts during an outage has no version to fall back to.
-
-The Python SDK is synchronous. In an `async def` route, run the whole prepare, run and cleanup in a worker thread so it never blocks the event loop. With FastAPI:
-
-```python
-import asyncio
-from fastapi import FastAPI
-
-app = FastAPI()
 
 def handle_job(job_input):
     with prepare_job() as prepared:
@@ -167,16 +154,19 @@ async def create_job(job_input: dict):
     return await asyncio.to_thread(handle_job, job_input)
 ```
 
+</Tab>
+</Tabs>
+
 ## Report job starts
 
-A start receipt records which version a job used, so the workspace can see what each application ran. Reporting is optional, and a failed report never blocks delivery.
+A start receipt records which version a job used. Reporting is optional, and a failed report never blocks delivery.
 
-1. On the connection's **Credentials** tab, choose **Create receipt credential**, and give the secret to the application in `ACCLIMATE_RECEIPT_TOKEN`.
+1. On the connection's **Credentials** tab, choose **Create receipt credential** and give the secret to the application in `ACCLIMATE_RECEIPT_TOKEN`.
 2. Build one reporter for the process, with its own client, and pass it to every `prepare` as `reporter`.
-3. At the job's real start event, call `reportStarted()` and keep the returned receipt with the job ID. It returns `null` (`None` in Python) when reporting is unavailable.
-4. Keep the reporter for the life of the process and close it at shutdown. A closed reporter queues nothing, so every later `reportStarted()` returns `null`.
+3. At the job's real start event, call `reportStarted()` and keep the returned receipt with the job ID. It returns `null` (`None` in Python) when reporting is unavailable, including after the reporter is closed.
+4. Close the reporter at shutdown.
 
-The reporter keeps a failed receipt for up to 24 hours. TypeScript retries it with the next receipt it sends. Python retries it only when you call `reporter.flush()`. Python's `reporter.wait()` blocks, so call it at shutdown, never for each request.
+The reporter keeps a failed receipt for up to 24 hours. TypeScript retries it with the next receipt, Python only when you call `reporter.flush()`. Python's `reporter.wait()` blocks, so call it only at shutdown.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">

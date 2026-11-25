@@ -3,12 +3,10 @@ title: Enable learning
 description: Set the optimizer, register gVisor and run the executor so that workspaces can run learning loops.
 ---
 
-This page is for the operator of a [self-hosted deployment](/docs/operate/self-host). It sets up the optimizer, the provider encryption key and the executor, the container that runs each learning rollout in a sandbox. Run the commands from the checkout with your deployment settings loaded.
-
-Afterwards a workspace administrator saves a model provider and turns on learning, as in [Before you start](/docs/guides/learning-loop#before-you-start).
+Set up the optimizer, the provider encryption key and the executor, the container that runs each learning rollout in a sandbox, on a [self-hosted deployment](/docs/operate/self-host). Run the commands from the checkout with your deployment settings loaded. Afterwards a workspace administrator saves a model provider and turns on learning, as in [Before you start](/docs/guides/learning-loop#before-you-start).
 
 <Callout type="warn" title="The executor has administrator authority on the host">
-The executor mounts the host's Docker socket, which gives it administrator authority on the host. No other container gets that mount. It runs as root with outbound network access, and holds a workspace's model provider API key in memory while it runs that workspace's rollouts. Run it only on a host you trust with every workspace's provider API key.
+The executor alone mounts the host's Docker socket, which gives it administrator authority on the host. It runs as root with outbound network access and holds each workspace's provider API key in memory while it runs that workspace's rollouts. Run it only on a host you trust with every workspace's provider API key.
 </Callout>
 
 ## Register gVisor with Docker
@@ -16,7 +14,7 @@ The executor mounts the host's Docker socket, which gives it administrator autho
 Each rollout runs in a sandbox container under gVisor (`runsc`), the default runtime in `compose.yaml`. Do this first, because it restarts Docker.
 
 1. Install `runsc` on the host. See gVisor's [installation guide](https://gvisor.dev/docs/user_guide/install/).
-2. Register the runtime in `/etc/docker/daemon.json` with `--host-uds=open`, which lets a sandbox reach the gateway, the executor's proxy to the model provider, through a socket.
+2. Register the runtime in `/etc/docker/daemon.json` with `--host-uds=open`, which lets a sandbox reach the gateway (the executor's proxy to the model provider) through a socket.
 
    ```json
    {
@@ -29,14 +27,14 @@ Each rollout runs in a sandbox container under gVisor (`runsc`), the default run
    }
    ```
 
-3. Restart Docker. Every container on the host stops and restarts, so expect a short interruption to the console and API.
+3. Restart Docker. Every container restarts, so the console and API pause briefly.
 4. Check that `docker info --format '{{json .Runtimes}}'` lists `runsc`.
 
 ## Set the optimizer model
 
-The optimizer is the model that proposes bundle changes. It is set once for the whole service.
+The optimizer is the model that proposes bundle changes, set once for the whole service.
 
-1. Add the optimizer settings to `service.env`. `ACCLIMATE_MODEL_ENDPOINT` is the full URL of an OpenAI-compatible Chat Completions endpoint, used as written. `gpt-6.2-astra` is an example model ID.
+1. Add its settings to `service.env`. `ACCLIMATE_MODEL_ENDPOINT` is the full URL of an OpenAI-compatible Chat Completions endpoint, used as written. `gpt-6.2-astra` is an example model ID.
 
    ```text
    ACCLIMATE_MODEL_ENDPOINT=https://provider.example.com/v1/chat/completions
@@ -50,13 +48,11 @@ The optimizer is the model that proposes bundle changes. It is set once for the 
    docker compose up -d --wait service
    ```
 
-Without an optimizer, starting a loop is refused with `optimizer-required`. See [Optimizer](/docs/reference/configuration#optimizer) for the other settings. The reference model setup is described in [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy).
+Without an optimizer, starting a loop is refused with `optimizer-required`. For the other settings, see [Optimizer](/docs/reference/configuration#optimizer). For the reference model setup, see [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy).
 
 ## Check the provider encryption key
 
-`ACCLIMATE_PROVIDER_ENCRYPTION_KEY` encrypts the model provider API keys that workspaces save. The service needs it to save a model provider and to give the executor work.
-
-[Self-host Acclimate](/docs/operate/self-host) writes the key to `service.env`. Only if `service.env` has no line that starts with `ACCLIMATE_PROVIDER_ENCRYPTION_KEY=`, generate a key and recreate the service.
+The service needs `ACCLIMATE_PROVIDER_ENCRYPTION_KEY` to save a model provider and to give the executor work. [Self-host Acclimate](/docs/operate/self-host) writes it to `service.env`. Only if `service.env` has no line that starts with `ACCLIMATE_PROVIDER_ENCRYPTION_KEY=`, generate a key and recreate the service.
 
 ```sh
 umask 077
@@ -65,19 +61,19 @@ docker compose up -d --wait service
 ```
 
 <Callout type="warn" title="Never replace an existing key">
-Once the service has started with a key, it refuses to start with a different one. Store a copy of the key off the server before any workspace saves a model provider. See [Keep the provider encryption key](/docs/operate/backup-and-restore#keep-the-provider-encryption-key).
+Once the service has started with a key, it refuses a different one. Store a copy off the server before any workspace saves a model provider. See [Keep the provider encryption key](/docs/operate/backup-and-restore#keep-the-provider-encryption-key).
 </Callout>
 
 ## Start the executor
 
-1. Create the executor credential inside the service container. The command saves the token in the file that `ACCLIMATE_EXECUTOR_TOKEN_FILE` names and prints the credential's ID. Keep the ID, because revoking the credential takes it.
+1. Create the executor credential. The command saves the token in the file that `ACCLIMATE_EXECUTOR_TOKEN_FILE` names and prints the credential's ID, which you need to revoke it.
 
    ```sh
    docker compose exec -T service /usr/local/bin/acclimate-service --create-executor-token \
      | python3 -c 'import json, sys; c = json.load(sys.stdin); print(c["token"], file=open(sys.argv[1], "w")); print("executor credential id:", c["id"])' "$ACCLIMATE_EXECUTOR_TOKEN_FILE"
    ```
 
-2. Build the executor image and the runner image, which each sandbox runs. If your Acclimate release publishes them, run `docker compose pull acclimate-runner acclimate-executor` instead.
+2. Build the executor image and the runner image that each sandbox runs. If your Acclimate release publishes them, run `docker compose pull acclimate-runner acclimate-executor` instead.
 
    ```sh
    docker compose build acclimate-runner acclimate-executor
@@ -89,13 +85,13 @@ Once the service has started with a key, it refuses to start with a different on
    docker compose up -d acclimate-executor
    ```
 
-The executor runs one rollout at a time by default. To run more, add `export ACCLIMATE_EXECUTOR_CONCURRENCY=<number>` to `compose.env`, load the file and start the executor again. Rounds finish sooner, but the model provider and the host carry more load.
+The executor runs one rollout at a time by default. To run more, add `export ACCLIMATE_EXECUTOR_CONCURRENCY=<number>` to `compose.env`, load the file and start the executor again. Rounds finish sooner, at more load on the model provider and the host.
 
 ### Allow a private model provider address
 
-A model provider over plain HTTP or at a private address needs its host in `ACCLIMATE_PROVIDER_HTTP_HOSTS`. See [Provider addresses](/docs/reference/configuration#provider-addresses). Set the same value in `service.env` for the service and as an `export` line in `compose.env` for the executor. If they differ, the executor can refuse a provider URL that the service accepted.
+A model provider over plain HTTP or at a private address needs its host in [`ACCLIMATE_PROVIDER_HTTP_HOSTS`](/docs/reference/configuration#provider-addresses). Set the same value in `service.env` and as an `export` line in `compose.env`, which reaches the executor. If they differ, the executor can refuse a provider URL that the service accepted.
 
-The executor reaches model providers over the Compose network `executor-egress`. If your model proxy runs in a container that you address by its Compose hostname, attach it to that network.
+The executor reaches model providers over the Compose network `executor-egress`. Attach a model proxy container that you address by its Compose hostname to that network.
 
 ## Check the executor
 
@@ -103,15 +99,13 @@ The executor reaches model providers over the Compose network `executor-egress`.
 docker compose ps acclimate-executor
 ```
 
-Within about two minutes the executor shows as `healthy`. Its health check, `acclimate-executor --health`, passes while the service has answered the executor in the last 120 seconds.
-
-If the container keeps restarting instead, a startup check failed. Restarting does not help until you fix the cause, which the log names.
+Within about two minutes the executor shows as `healthy`. Its health check, `acclimate-executor --health`, passes while the service has answered the executor in the last 120 seconds. If it keeps restarting instead, a startup check failed and the log names the cause.
 
 ```sh
 docker compose logs acclimate-executor
 ```
 
-The executor exits with status 78 when:
+It exits with status 78 when:
 
 - the service refuses its credential with HTTP 401
 - the credential file is missing, unreadable or empty
@@ -119,23 +113,19 @@ The executor exits with status 78 when:
 - the runner image is missing
 - the throwaway sandbox it runs at startup fails, for example because `runsc` is not registered with Docker or is registered without `--host-uds=open`
 
-Verifying a model provider in the console still passes without gVisor, because that check runs outside a sandbox.
-
-To list the executor credentials the service knows, without their tokens, run:
+Verifying a model provider in the console passes even without gVisor, because that check runs outside a sandbox. To list the executor credentials without their tokens, run:
 
 ```sh
 docker compose exec -T service /usr/local/bin/acclimate-service --list-executor-tokens
 ```
 
-For other symptoms, see [Troubleshooting](/docs/operate/troubleshooting).
-
 ## Upgrade the executor
 
-Upgrade the executor after the service, because an older service rejects results from a newer executor. Do it while no round is running. A round pins the executor build and runner image it started with. If no running executor matches them for five minutes, the round fails with `no-matching-executor`. That failure does not count toward the automatic pause after failed rounds, and the next round uses the new executor.
+Upgrade the executor after the service, because an older service rejects results from a newer executor, and while no round runs. A round pins the executor build and runner image it started with. If no running executor matches them for five minutes, the round fails with `no-matching-executor`, which does not count toward the automatic pause after failed rounds. The next round uses the new executor.
 
 1. Upgrade the service. See [Upgrade](/docs/operate/upgrades-and-recovery#upgrade).
 2. In the console, choose **Pause** on each running loop and wait for its active round to finish.
-3. From the new checkout, build the two images and recreate the executor. If your Acclimate release publishes the images, run `docker compose pull acclimate-runner acclimate-executor` instead of the build.
+3. From the new checkout, build the two images, or pull them as in [Start the executor](#start-the-executor), and recreate the executor.
 
    ```sh
    docker compose build acclimate-runner acclimate-executor
@@ -148,8 +138,8 @@ Upgrade the executor after the service, because an older service rejects results
 
 ## Rotate the executor credential
 
-1. Create a new credential with the command in [Start the executor](#start-the-executor). It replaces the token in the credential file and prints the new ID. The running executor reads the file only at startup, so it keeps the old credential.
-2. Recreate the executor so that it reads the new token.
+1. Create a new credential with the command in [Start the executor](#start-the-executor). It replaces the token in the file and prints the new ID.
+2. Recreate the executor, which reads the file only at startup.
 
    ```sh
    docker compose up -d --force-recreate acclimate-executor

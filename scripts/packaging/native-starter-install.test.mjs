@@ -88,8 +88,8 @@ for (const nested of [false, true]) {
       const publicFiles = await readdir(app);
       for (const name of ['worker.mjs', 'test', 'QUALIFICATION.md'])
         assert.ok(!publicFiles.includes(name), `internal test file shipped: ${name}`);
-      // The offline replay harness, its fixture and the smoke check ship with the starter.
-      for (const name of ['fixture', 'native.replay.json', 'smoke.mjs'])
+      // The replay harness's fixture repository and the SDK install check ship with the starter.
+      for (const name of ['fixture', 'smoke.mjs'])
         assert.ok(publicFiles.includes(name), `offline path missing: ${name}`);
       const { stdout: smoke } = await run(process.execPath, [path.join(app, 'smoke.mjs')], { cwd: app });
       assert.equal(JSON.parse(smoke).instructions, 'Keep payment retries request-scoped.');

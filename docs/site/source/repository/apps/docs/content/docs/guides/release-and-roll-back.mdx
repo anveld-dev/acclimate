@@ -3,9 +3,9 @@ title: Release and roll back
 description: Upload a new version of a bundle, point a channel at it and move the channel back to an earlier version.
 ---
 
-This guide is for a developer or workspace administrator who changes what a channel delivers by hand. A release points a channel such as `stable` at an immutable version and records the reason.
+A release points a channel such as `stable` at an immutable version and records the reason. This guide changes a channel by hand.
 
-To undo a version the learning loop adopted, use **Roll back** on its round instead, which also blocks it from adoption. The loop keeps running, so choose **Pause** first if a person should look before the next round. See [Pause, stop and roll back](/docs/guides/learning-loop#pause-stop-and-roll-back).
+To undo a version the learning loop adopted, use **Roll back** on its round instead, which also blocks it from adoption. See [Pause, stop and roll back](/docs/guides/learning-loop#pause-stop-and-roll-back).
 
 ## Release a version
 
@@ -77,7 +77,7 @@ release = client.create_release(
 </Tab>
 </Tabs>
 
-`client` is an `AcclimateClient`, and `payload` has the shape shown in [Publish a bundle from a file](#publish-a-bundle-from-a-file). The last argument of each write is its idempotency key. Reuse a key only to retry the same request. See [Retry a write](/docs/reference/http-api#retry-a-write).
+`client` is an `AcclimateClient`, and `payload` has the shape shown in [Publish a bundle from a file](#publish-a-bundle-from-a-file). The last argument of each write is its idempotency key. Reuse a key only to retry the same request ([Retry a write](/docs/reference/http-api#retry-a-write)).
 
 If the channel moved after you read it, the release is refused with `revision_conflict`. Read the revision again and decide whether to release.
 
@@ -122,7 +122,7 @@ From a source checkout, with `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMA
 ACCLIMATE_SCOPE=examples npm run example:publish -- payload.json "Example agent" "First version"
 ```
 
-The arguments are the payload file, the bundle's name and the reason for its first release. The command creates the bundle, its first version and its first release on `stable`, then prints their IDs. Set `ACCLIMATE_CHANNEL` for another channel. The machine token needs write and promote. See [Rights](/docs/reference/credentials#rights).
+The arguments are the payload file, the bundle's name and the reason for its first release. The command creates the bundle, its first version and its first release on `stable`, then prints their IDs. Set `ACCLIMATE_CHANNEL` for another channel. The machine token needs write and promote ([Rights](/docs/reference/credentials#rights)).
 
 ## Next steps
 

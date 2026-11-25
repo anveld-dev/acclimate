@@ -3,17 +3,15 @@ title: Quickstart
 description: Start the local stack and deliver a verified version of the example bundle to a shell on your laptop.
 ---
 
-This page takes a developer from a source checkout to a running Acclimate stack and one verified delivery.
-
 You need:
 
 - Docker, running. See [Prerequisites](/docs/reference/local-stack#prerequisites) for the versions.
 - Node.js 22.22 or later with npm.
-- Python 3.9 or later for the stack scripts. To run the Python check, Python 3.11 or later.
+- Python 3.9 or later for the stack scripts, or 3.11 or later for the Python check.
 
 ## Start the stack
 
-Clone the repository and start the stack from its root:
+Clone the repository and start the stack:
 
 ```sh
 git clone https://github.com/anveld-dev/acclimate.git
@@ -22,7 +20,7 @@ npm run local:up
 npm run local:trust
 ```
 
-`local:up` starts the service, the console and sign-in. The first start takes a few minutes, or 10 to 20 minutes when it builds from source. It prints the console URL, a login and its initial password. `local:trust` makes your browser trust the stack's HTTPS certificate. It asks you to type `trust` and may ask for your password.
+`local:up` starts the service, the console and sign-in, and prints the console URL, a login and its initial password. The first start takes a few minutes, or 10 to 20 when it builds from source. `local:trust` makes your browser trust the stack's HTTPS certificate. It asks you to type `trust` and may ask for your password.
 
 Open the console URL and sign in. The `local-demo` workspace already holds a [bundle](/docs) named **Example agent**, with one instruction file released on the `stable` channel.
 
@@ -30,7 +28,7 @@ Open the console URL and sign in. The `local-demo` workspace already holds a [bu
 
 A connection links one application to one bundle and channel.
 
-1. In the console, open **Connections** and choose **New connection**. Enter a display name, choose the **Example agent** bundle and the `stable` channel, then choose **Create connection**. The console opens the connection's **Setup** tab, which walks through **Bundle & channel**, **Read credential** and **First delivery**.
+1. In the console, open **Connections** and choose **New connection**. Enter a display name, choose the **Example agent** bundle and the `stable` channel, then choose **Create connection**. The console opens the connection's **Setup** tab.
 
 2. Under **Read credential**, choose **Create read credential**. The secret is shown once, so copy it now.
 
@@ -43,7 +41,7 @@ A connection links one application to one bundle and channel.
    source .local/stack/env.sh
    ```
 
-5. Set the remaining variables. `ACCLIMATE_SCOPE` is a stable name for this application. The SDK keeps verified versions in a cache on disk, and the scope keeps this application's entries apart from other applications' on the same machine.
+5. Set the remaining variables. `ACCLIMATE_SCOPE` is a stable name for this application. It keeps this application's entries in the SDK's disk cache of verified versions apart from other applications'.
 
    ```sh
    export ACCLIMATE_BUNDLE="$BUNDLE_ID"
@@ -64,8 +62,6 @@ npm run example:delivery
 </Tab>
 <Tab value="Python">
 
-The Python check needs the SDK from the checkout in a Python 3.11 environment:
-
 ```sh
 python3.11 -m venv .venv
 .venv/bin/python -m pip install ./python
@@ -76,19 +72,19 @@ npm run example:delivery:python
 </Tab>
 </Tabs>
 
-The check prepares the files for one job, a single run of your agent, as your application would. It resolves `stable` to a version, downloads it, verifies its digest, reads every prepared file and cleans up. It makes no model calls. It prints one line with the same fields in both languages:
+The check prepares the files for one job, a single run of your agent. It resolves `stable` to a version, downloads it, verifies its digest, reads every prepared file and cleans up, with no model calls. Both languages print one line:
 
 ```json
 {"versionId":"<version-id>","digest":"<digest>","files":["instructions.md"],"checkedFiles":1,"reporting":"disabled"}
 ```
 
-`reporting` is `disabled` because the check has no receipt credential. To run the same check from your own application, download it in TypeScript or Python from the **First delivery** step of the connection's **Setup** tab. For the recipes that connect your agent and report job starts, choose **Bundle & channel**, then **Full setup guide**, which opens **App setup** for the bundle's channel.
+`reporting` is `disabled` because the check has no receipt credential. To run it from your own application, download it in TypeScript or Python from the **First delivery** step of the **Setup** tab. For recipes that connect your agent and report job starts, choose **Bundle & channel**, then **Full setup guide**.
 
 ## Publish your own bundle
 
 1. Open **Bundles** and choose **New bundle**.
 2. Choose **Write instructions**, **Import files** or **Import JSON**. In imported files, skills go under `skills/` and memory under `memory/`.
-3. Enter a bundle name. **Publishing settings** holds the initial channel, `stable` by default, and the compatibility target. The target names the agent SDK the bundle is for, so the service checks its files against that SDK's [rules](/docs/guides/coding-agents#rules-for-bundle-files). For your own application, keep **Generic · no native checks**. Choose **codex**, **claude**, **pi** or **cursor** only for a bundle that Codex, the Claude Agent SDK, Pi or Cursor runs. The target is fixed after creation.
+3. Enter a bundle name. **Publishing settings** holds the initial channel, `stable` by default, and the compatibility target, the agent SDK whose [rules](/docs/guides/coding-agents#rules-for-bundle-files) the service checks the files against. Keep **Generic · no native checks** for your own application. Choose **codex**, **claude**, **pi** or **cursor** only for a bundle that agent SDK runs. The target is fixed after creation.
 
 Creating the bundle publishes its first version and releases it on that channel. Create a connection for it as above.
 

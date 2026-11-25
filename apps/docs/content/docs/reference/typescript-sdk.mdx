@@ -3,13 +3,11 @@ title: TypeScript SDK
 description: The public entry points, options, methods and command of @acclimate/sdk.
 ---
 
-This page lists what `@acclimate/sdk` exports and the arguments each part takes, for developers who call Acclimate from Node.js. [Install the SDKs](/docs/get-started/install) covers installation.
-
-The package is ESM only. It sets `"type": "module"` and exports only `import` conditions, so `require('@acclimate/sdk')` fails. From CommonJS, use `await import('@acclimate/sdk')`.
+`@acclimate/sdk` is the Node.js SDK. [Install the SDKs](/docs/get-started/install) covers installation. The package is ESM only: it exports only `import` conditions, so `require('@acclimate/sdk')` fails. From CommonJS, use `await import('@acclimate/sdk')`.
 
 ## Entry points
 
-Import only these entry points. Other paths inside the package are private and can change in any Acclimate release.
+Other paths inside the package are private and can change in any Acclimate release.
 
 | Entry point | Runtime exports |
 | --- | --- |
@@ -22,11 +20,11 @@ Import only these entry points. Other paths inside the package are private and c
 | `@acclimate/sdk/validation` | `validatePayload`, `DeliveryError`, `compatibilityIssues`, `assertCompatible`, for checking a payload without the client |
 | `@acclimate/sdk/native-files` | `prepareNativeFiles`, `nativeSource` and `transcriptTail`, for plugin authors |
 
-The root entry point also exports every wire type, such as `Bundle`, `VersionMetadata`, `Release` and `Page`, and the option types, such as `ClientOptions`, `CachePolicy`, `OfflinePolicy` and `PrepareDeliveryOptions`. The package also installs the `acclimate` executable, described under [acclimate pull](#acclimate-pull).
+The root entry point also exports every wire type, such as `Bundle`, `VersionMetadata`, `Release` and `Page`, and the option types, such as `ClientOptions`, `CachePolicy`, `OfflinePolicy` and `PrepareDeliveryOptions`. The package also installs the [`acclimate` executable](#acclimate-pull).
 
 ## Jobs
 
-`createAcclimate` is the shortest way to run a job on a released version and report its outcome. It finds the bundle by name.
+`createAcclimate` is the shortest way to run a job on a released version, found by bundle name, and report its outcome.
 
 ```ts
 import { createAcclimate, systemPrompt } from '@acclimate/sdk';
@@ -38,11 +36,9 @@ const reply = await runAgent(systemPrompt(job.version.payload), request);
 await job.expect(correctedReply, { output: reply });
 ```
 
-Send `systemPrompt(job.version.payload)` as your system message. It is the message a [learning rollout](/docs#how-a-rollout-runs-your-bundle) sends, so the loop scores the prompt your jobs run with.
+Send `systemPrompt(job.version.payload)` as your system message: it is the message a [learning rollout](/docs#how-a-rollout-runs-your-bundle) sends, so the loop scores the prompt your jobs run with.
 
-`createAcclimate` reads only `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN`. It ignores `ACCLIMATE_SCOPE` and `ACCLIMATE_CONNECTION`, and it sends no delivery receipts. Use a machine token with read, and with write if you call `expect`.
-
-`createAcclimate(options?)` takes these options:
+`createAcclimate` ignores `ACCLIMATE_SCOPE` and `ACCLIMATE_CONNECTION` and sends no delivery receipts. Use a machine token with read, plus write if you call `expect`. `createAcclimate(options?)` takes these options:
 
 | Option | Default | Value |
 | --- | --- | --- |
@@ -54,7 +50,7 @@ Send `systemPrompt(job.version.payload)` as your system message. It is the messa
 
 It also accepts the [client options](#options) `retries`, `timeoutMs`, `maxPayloadBytes`, `maxJsonResponseBytes` and `fetch`.
 
-`acclimate.job(bundleName, options)` finds the bundle by listing every bundle in the workspace, on each call. It then resolves the release, downloads the version if it is not cached and verifies its digest. It throws `AcclimateUsageError` when no bundle or more than one has that name.
+On each call, `acclimate.job(bundleName, options)` lists every bundle in the workspace to find the bundle, then resolves the release, downloads the version if it is not cached and verifies its digest. It throws `AcclimateUsageError` when no bundle or more than one has that name.
 
 | Option | Value |
 | --- | --- |
@@ -70,17 +66,11 @@ It also accepts the [client options](#options) `retries`, `timeoutMs`, `maxPaylo
 | `prepare(nativePrepare)` | Passes the verified version to a plugin's `prepare` and returns its result |
 | `expect(expected, { input?, output?, grading? })` | Reports a production outcome and returns its receipt |
 
-About `expect`:
-
-- It needs a credential with the `write` right.
-- `grading` is `'exact'` or `'criteria'`, and any other value throws `AcclimateUsageError`. Without it, the service chooses as [How a row is graded](/docs/guides/learning-loop#how-a-row-is-graded) describes.
-- The first valid call fixes the input, expected value and output. A repeat call sends the same outcome with the same ID, so it is safe to retry.
-
-[Report production outcomes](/docs/guides/learning-loop#report-production-outcomes) explains what the service does with an outcome.
+`grading` is `'exact'` or `'criteria'`, and any other value throws `AcclimateUsageError`. Without it, the service chooses as [How a row is graded](/docs/guides/learning-loop#how-a-row-is-graded) describes. The first valid `expect` call fixes the input, expected value and output, and a repeat sends the same outcome with the same ID, so it is safe to retry. [Report production outcomes](/docs/guides/learning-loop#report-production-outcomes) explains what the service does with an outcome.
 
 ## Client
 
-`AcclimateClient` calls the workspace API directly. Use it when you already have the bundle ID, read for a connection or manage bundles and releases. [Deliver content to jobs](/docs/guides/deliver-content) shows it preparing a job.
+`AcclimateClient` calls the workspace API directly, when you already have the bundle ID, read for a connection or manage bundles and releases. [Deliver content to jobs](/docs/guides/deliver-content) shows it preparing a job.
 
 ### Options
 
@@ -115,8 +105,8 @@ Leave `sessionToken` unset. It exists for the console's own server. The client r
 | Returned member | What it is |
 | --- | --- |
 | `version` | The verified version, with its metadata at `version.version` |
-| `systemPrompt` | The whole bundle as one system message, as `systemPrompt` renders it. This is what the loop scores. |
-| `instructions` | The instruction files only, joined by a blank line. Skills and memory are left out. |
+| `systemPrompt` | The whole bundle as one system message, as `systemPrompt()` renders it |
+| `instructions` | The instruction files only, joined by a blank line |
 | `skillFiles`, `files` | The written skill files and all written files, each with `path`, `kind` and `absolutePath` |
 | `directory` | The job's private directory |
 | `reportStarted()` | Queues the job's start receipt once, or returns `null` without a reporter |
@@ -124,7 +114,7 @@ Leave `sessionToken` unset. It exists for the console's own server. The client r
 
 ### Cache and offline fallback
 
-A job that names a channel always confirms the release with the service. A job that names an exact version can fall back to the verified cache after a transport failure or an HTTP 502, 503 or 504. A reverse proxy answers 502 or 504 for a stopped service. A denied request, a missing resource or a failed integrity check never falls back.
+A job that names a channel always confirms the release with the service. A job that names an exact version can fall back to the verified cache after a transport failure or an HTTP 502, 503 or 504, which a reverse proxy answers for a stopped service. A denied request, a missing resource or a failed integrity check never falls back.
 
 ```ts
 await client.prepare({ workspaceId, bundleId, versionId: pinned, offline: { pinnedVersionId: pinned } });
@@ -132,7 +122,7 @@ await client.prepare({ workspaceId, bundleId, versionId: pinned, offline: { pinn
 
 ### Methods
 
-Every method takes `workspaceId` first, then `bundleId` where the route has one. List methods take `{ cursor, limit }` and return `{ items, nextCursor }`. Pass `nextCursor` back as `cursor` for the next page.
+Every method takes `workspaceId` first, then `bundleId` where the route has one. List methods take `{ cursor, limit }` and return `{ items, nextCursor }`, whose `nextCursor` you pass back as `cursor`.
 
 | Area | Methods |
 | --- | --- |
@@ -150,7 +140,7 @@ Every method takes `workspaceId` first, then `bundleId` where the route has one.
 
 ## Learning
 
-`AcclimateClient` has one method for each route under [Learning](/docs/reference/http-api#learning), which gives each route's purpose and right.
+`AcclimateClient` has one method for each route under [Learning](/docs/reference/http-api#learning), which gives its purpose and right.
 
 | Area | Methods |
 | --- | --- |
@@ -161,17 +151,16 @@ Every method takes `workspaceId` first, then `bundleId` where the route has one.
 | Model provider | `getModelProvider`, `setModelProvider` |
 | Outcomes | `reportLearningOutcome` |
 
-- `enrollLearningLoop` turns on learning or changes its settings.
-- `enrollLearningLoop`, `pauseLearningLoop`, `resumeLearningLoop` and `stopLearningLoop` take an optional idempotency key. `reportLearningOutcome` uses the outcome ID as its key unless you pass one.
+- `enrollLearningLoop` turns on learning or changes its settings. It, `pauseLearningLoop`, `resumeLearningLoop` and `stopLearningLoop` take an optional idempotency key. `reportLearningOutcome` uses the outcome ID as its key unless you pass one.
 - `listLearningTasks` takes `{ after, limit, split, source, admission, flagged, confirmed }`.
-- `importLearningTasks(workspaceId, bundleId, data, contentType, filename?)` takes the file's bytes as an `ArrayBuffer`. Send `text/plain`, `text/csv`, `application/x-ndjson`, `application/jsonl` or the xlsx type `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`. For any other type the service takes the format from the filename's extension (`csv`, `jsonl`, `xlsx` or `text`), or reads plain text when there is no filename or extension.
+- `importLearningTasks(workspaceId, bundleId, data, contentType, filename?)` takes the file's bytes as an `ArrayBuffer`. Send `text/plain`, `text/csv`, `application/x-ndjson`, `application/jsonl` or the xlsx type `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`. For another type the service uses the filename's extension (`csv`, `jsonl`, `xlsx` or `text`), or reads plain text without one.
 - `confirmLearningTasks`, `exportHeldOutTasks` and `setModelProvider` need a signed-in person, not a machine token.
 
 ## Lower-level helpers
 
 | Function | Use |
 | --- | --- |
-| `systemPrompt(payload)` | Render a payload as the system message a learning rollout sends: instruction, then skill, then memory files, each as `# <path>`, a line break and its text, joined by a blank line |
+| `systemPrompt(payload)` | Render a payload as the system message a learning rollout sends: instruction, then skill, then memory files, each as `# <path>`, a line break and its text, joined by blank lines |
 | `resolveAndCache(client, selection, { cacheDir, offline?, maxCacheBytes?, reporter? })` | Resolve and verify a version without writing files, for a plugin or `prepareFiles` |
 | `prepareFiles(version, destination, options?)` | Write a verified version's files into a private directory |
 | `defaultCacheDir()` | Returns the default cache directory, `~/.cache/acclimate/typescript` |
@@ -184,11 +173,11 @@ Every method takes `workspaceId` first, then `bundleId` where the route has one.
 
 ## Errors
 
-Every error the SDK throws on purpose extends `AcclimateError` and has a typed `code`. [Error codes](/docs/reference/error-codes) lists each class, its fields and each code with its cause.
+Every error the SDK throws on purpose extends `AcclimateError` and has a typed `code`. See [Error codes](/docs/reference/error-codes).
 
 ## acclimate pull
 
-The `acclimate` executable has one command, which saves a channel's released payload to a new JSON file you can edit.
+The `acclimate` executable has one command. It saves a channel's released payload to a new JSON file you can edit.
 
 ```sh
 npx acclimate pull --config /absolute/path/pull.json --bundle <bundle-id> --channel stable --out payload.json
@@ -201,9 +190,7 @@ npx acclimate pull --config /absolute/path/pull.json --bundle <bundle-id> --chan
 | `--channel` | Channel name, `stable` by default |
 | `--out` | A new file. The command never overwrites one. |
 
-The command prints one JSON line with `schemaVersion`, `bundleId`, `channel`, `versionId`, `digest`, `revision`, `files` and `out`. On failure it prints a JSON error and exits with status 1.
-
-The config is a JSON file only its owner can read, in a directory only its owner can access:
+The command prints one JSON line with `schemaVersion`, `bundleId`, `channel`, `versionId`, `digest`, `revision`, `files` and `out`. On failure it prints a JSON error and exits with status 1. The config is a JSON file only its owner can read, in a directory only its owner can access.
 
 ```json title="pull.json"
 {

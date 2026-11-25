@@ -8,8 +8,6 @@ description: What Acclimate is, how each job receives an immutable version of a 
 - **Delivery.** Release a version to a channel such as `stable`, and the SDK writes that version's files for each new job.
 - **Learning.** Each round proposes changes to a bundle, scores them against your tasks and releases the one it selects, with no approval step. Held-out tasks measure every release after it ships.
 
-Your application still runs the agent with its own model credentials.
-
 ## Delivery
 
 A **workspace** owns **bundles**, which hold your agent's instructions, skills and memory files, and **connections**, which tell the SDK which bundle and channel an application uses. Each **version** of a bundle is immutable and carries a digest of its exact bytes. A **release** points a **channel**, such as `stable`, at a version, which becomes the channel's **current version**. To undo a release, roll the channel back to an earlier version.
@@ -18,40 +16,38 @@ A **workspace** owns **bundles**, which hold your agent's instructions, skills a
 
 A **job** is one run of your agent. When it starts, the SDK resolves the channel to a version, downloads it, checks the digest and writes the files to a directory for that job. The job keeps that version even if the channel is released again while it runs. The application can send a receipt, so the workspace sees which version each job used. See [Deliver content to jobs](/docs/guides/deliver-content).
 
-Delivery reaches the jobs your code starts. It does not sync files into a developer's checkout or IDE session. See [Use a coding agent](/docs/guides/coding-agents).
+Delivery reaches only the jobs your code starts, not a developer's checkout or IDE session. See [Use a coding agent](/docs/guides/coding-agents).
 
 ## Learning loop
 
-The learning loop improves a released bundle against tasks. A **task** is an input with an exact expected answer or grading criteria. The service puts each task in one of two splits. The loop learns from the **evolve split**, and the **held-out split** only measures the result.
+The learning loop improves a released bundle. A **task** is an input with an exact expected answer or grading criteria. The loop learns from tasks in the **evolve split**, and tasks in the **held-out split** only measure the result.
 
 | Model | What it does | Who sets it |
 | --- | --- | --- |
-| Optimizer | Proposes, screens and selects changes to the bundle | The operator, who runs the service. See [Optimizer](/docs/reference/configuration#optimizer). |
+| Optimizer | Proposes, screens and selects changes to the bundle | The operator, who runs the service ([Optimizer](/docs/reference/configuration#optimizer)) |
 | Task model | Answers each task | Chosen on the bundle's **Learning** tab, from the models a workspace administrator allowed on the model provider |
 | Judge model | Grades answers against criteria. It must differ from the task model. | Chosen the same way |
 
-The **executor**, a process separate from the service and your application, calls the task model and the judge model. It reaches them through the workspace's **model provider**, an OpenAI-compatible endpoint saved with an API key and a list of allowed models. [Run a learning loop](/docs/guides/learning-loop) has the console steps.
+The **executor**, a process separate from the service and your application, calls the task and judge models through the workspace's **model provider**, an OpenAI-compatible endpoint saved with an API key and a list of allowed models. [Run a learning loop](/docs/guides/learning-loop) has the console steps.
 
 ### What a round does
 
 1. **Score the current version** on the evolve tasks.
 2. **Propose.** The optimizer writes five candidates, each a change to the bundle with a diagnosis of what it fixes.
-3. **Screen.** A scanner checks each candidate for secrets and personal data. Then one optimizer call skips candidates that hard-code particular tasks or address the grader instead of doing the task.
+3. **Screen.** A scanner checks each candidate for secrets and personal data, then one optimizer call skips candidates that hard-code particular tasks or address the grader instead of doing the task.
 4. **Evaluate.** Each remaining candidate is scored on the same evolve tasks.
-5. **Select.** One optimizer call adopts a candidate or keeps the current version. It weighs each candidate's evolve results, the size of its change, whether it would help on unseen tasks and the tasks it regressed. This is the optimizer's judgment, with no score bar, so an adopted candidate need not score above the current version. An adoption is released to the channel at once, with no approval step, and recorded in improvement memory, the optimizer's record of problems and fixes.
-6. **Score the held-out tasks** for the version now on the channel. These scores never decide a release. After an adoption, a clear drop that a second measurement confirms reverts the release automatically. That [automatic revert](/docs/guides/learning-loop#pause-stop-and-roll-back) and a manual rollback are the safety net for a poor selection.
+5. **Select.** One optimizer call adopts a candidate or keeps the current version. It weighs evolve results, the size of each change, whether it would help on unseen tasks and the tasks it regressed, with no score bar, so an adopted candidate need not beat the current version. An adoption is released to the channel at once and recorded in improvement memory, the optimizer's record of problems and fixes.
+6. **Score the held-out tasks** for the version now on the channel. These scores never decide a release. After an adoption, a clear drop that a second measurement confirms [reverts it automatically](/docs/guides/learning-loop#pause-stop-and-roll-back), and you can roll back by hand.
 
 <RoundDiagram />
 
 ### How a rollout runs your bundle
 
-A **rollout** is one run of one task against one version. The executor runs it in a fresh sandbox with no network, and grades it outside the sandbox. The sandbox's only way out is the executor's gateway, a proxy to the model provider.
+A **rollout** is one run of one task against one version. The executor runs it in a fresh sandbox with no network and grades it outside. The sandbox's only way out is the executor's gateway, a proxy to the model provider.
 
-The rollout renders the bundle as one system prompt: instructions, then skills, then memory, each file under a `# path` heading. The task input is the user message, and the reply is graded.
+The rollout renders the bundle as one system prompt: instructions, then skills, then memory, each file under a `# path` heading. The task input is the user message, and the reply is graded. The SDKs render the same system message as `systemPrompt` (`system_prompt` in Python), also carried on a prepared job. Send it as your system message and run the task model, or the loop measures a different agent from the one you run.
 
-The SDKs export `systemPrompt` (`system_prompt` in Python), which renders exactly this system message, and a prepared job carries it as `systemPrompt` (`system_prompt`). Send it as your system message so production runs the prompt the loop scores. If your application builds its prompt differently, or runs a different model from the task model, the loop measures a different agent from the one you run.
-
-A rollout is one chat completion with no tools, so the loop cannot measure tool calls or the steps of an agent SDK. The task model must be served by an OpenAI-compatible Chat Completions endpoint. For a conversation, give the task an `input` object with a `messages` array in Chat Completions form. The rollout sends those messages after the system prompt, in place of one user message:
+A rollout is one Chat Completions call to an OpenAI-compatible endpoint, with no tools, so the loop cannot measure tool calls or the steps of an agent SDK. For a conversation, give the task an `input` object with a Chat Completions `messages` array, which the rollout sends after the system prompt in place of a user message:
 
 ```json
 {"input": {"messages": [{"role": "user", "content": "My invoice is wrong."}, {"role": "assistant", "content": "What looks wrong on it?"}, {"role": "user", "content": "It charges me twice for March."}]}, "expected": "billing"}
@@ -68,14 +64,14 @@ A rollout is one chat completion with no tools, so the loop cannot measure tool 
 
 ### What a round costs
 
-Count a round in rollouts:
+Each task runs five rollouts for each version a round scores:
 
-- **Evolve tasks.** Each task runs five times for the current version, and five times for each candidate that passes screening.
-- **Held-out tasks.** Each task runs five times after the decision. After an adoption it also runs five times for the old version, unless an earlier round already scored it on the same tasks. A suspected clear drop adds a second scoring of both versions.
+- **Evolve tasks.** The current version, unless it already has scores for the same tasks and models, and each candidate that passes screening.
+- **Held-out tasks.** The version on the channel after the decision. After an adoption, also the old version unless an earlier round scored it on the same tasks. A suspected clear drop scores both again.
 
-An exact-match rollout is one task-model call. A judged rollout is one task-model call and three judgments, and a judgment that returns invalid output is asked again, up to three attempts. A round skips step 1 when the current version already has scores for the same tasks and models. The optimizer makes up to seven calls a round, five proposals, one screen and one selection, and asks once more after invalid output.
+An exact-match rollout is one task-model call. A judged rollout adds three judgments, each tried up to three times on invalid output. The optimizer makes up to seven calls a round, five proposals, one screen and one selection, each asked once more after invalid output.
 
-Each rollout stops at 200,000 tokens and each judgment at 64,000. Beyond those caps, the only limit on spending is the daily round limit. `GET /usage` returns rounds, rollouts and optimizer, task-model and judge tokens for each day ([HTTP API](/docs/reference/http-api#usage-outcomes-and-memory)).
+Each rollout stops at 200,000 tokens and each judgment at 64,000. Beyond those caps, only the daily round limit bounds spending. [`GET /usage`](/docs/reference/http-api#usage-outcomes-and-memory) returns each day's rounds, rollouts and optimizer, task-model and judge tokens.
 
 Two measured rounds, each evaluating five candidates and adopting one:
 
@@ -88,9 +84,9 @@ Two measured rounds, each evaluating five candidates and adopting one:
 
 <TrustDiagram />
 
-- **The optimizer** receives the bundle, improvement memory and the evolve tasks with their rollouts, judge reasons and gateway logs, which hold each model request and reply. When an exact-match evolve task fails, it also receives that task's expected answer. Held-out tasks, scores and logs never reach it, except a one-bit signal: a later round's history shows that the automatic revert or a rollback replaced a release, and that a candidate was dropped as a blocked version.
+- **The optimizer** receives the bundle, improvement memory and the evolve tasks with their rollouts, judge reasons, gateway logs of each model request and reply, and, for a failed exact-match task, the expected answer. Held-out tasks, scores and logs never reach it, except one bit: its history shows when a revert or rollback replaced a release and when a candidate was dropped as a blocked version.
 - **The task model and the judge model** read tasks from both splits, because they score them.
-- **The sandbox** receives only the bundle and the task input, never the expected answer or criteria. It reaches the model provider only through the executor's gateway.
+- **The sandbox** receives only the bundle and the task input, never the expected answer or criteria.
 - **The model provider's API key** is stored encrypted by the service. The executor holds it in memory only.
 - **A machine token** receives counts and aggregate scores for held-out tasks, never their text.
 - **Your application** runs its agent with its own model credentials, which never reach Acclimate.
@@ -106,5 +102,4 @@ Two measured rounds, each evaluating five candidates and adopting one:
 | Release or restore a version by hand | [Release and roll back](/docs/guides/release-and-roll-back) |
 | Choose a credential or join a team's workspace | [Credentials and rights](/docs/reference/credentials) |
 | Deploy it for a team | [Self-host Acclimate](/docs/operate/self-host) |
-| Look something up | [TypeScript SDK](/docs/reference/typescript-sdk), [Python SDK](/docs/reference/python-sdk), [HTTP API](/docs/reference/http-api), [Environment variables](/docs/reference/configuration) |
 | Fix a problem | [Troubleshooting](/docs/operate/troubleshooting) |

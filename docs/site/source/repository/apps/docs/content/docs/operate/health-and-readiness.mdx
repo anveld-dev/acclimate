@@ -3,11 +3,11 @@ title: Check health and readiness
 description: Probe the deployed API and console, read container exit codes, then verify machine access and sign-in.
 ---
 
-This page is for the operator of a self-hosted deployment. Use the probes for monitoring and during an incident, and run the two checks at the end after every deployment and upgrade.
+Use the probes for monitoring and during an incident. Run the two checks at the end after every deployment and upgrade.
 
 ## Probe the stack
 
-Run these from the checkout with your deployment settings loaded, or replace the variables with your hostnames.
+Run these from the checkout with your deployment settings loaded, or put in your hostnames.
 
 ```sh
 docker compose ps
@@ -23,37 +23,35 @@ In a healthy deployment, every container is `healthy` and the three requests ret
 | API `GET /health` | The service process is running. |
 | API `GET /ready` | The database answers, this process is the only service using the database, its background worker is running and it is not shutting down. |
 | Console `GET /ready` | The console's configuration is valid and the service is ready. It does not contact Keycloak. |
-| Caddy container health | The proxy process is running with its configuration loaded. Caddy starts only after the service and the console are healthy. |
-| Executor container health | The service has answered the executor in the last 120 seconds. See [Check the executor](/docs/operate/enable-learning#check-the-executor). |
+| Caddy container health | The proxy is running with its configuration loaded. It starts only after the service and the console are healthy. |
+| Executor container health | See [Check the executor](/docs/operate/enable-learning#check-the-executor). |
 
-An API that is not ready returns HTTP 503 with `{"ready":false}`. A ready service does not show that learning rounds are progressing or that a model provider is reachable.
+An API that is not ready returns HTTP 503 with `{"ready":false}`. Ready does not mean that learning rounds progress or that a model provider is reachable.
 
-If `/ready` stays unavailable during normal operation, read the service log. Check that the database is reachable, that its migrations completed and that no second service process uses the same database.
+If `/ready` stays unavailable, check in the service log that the database is reachable, that migrations completed and that no second service process uses the database.
 
 ```sh
 docker compose logs --tail 100 service
 ```
 
-On SIGTERM the service stops reporting ready, then finishes open requests and work and releases the database. Compose gives each container except the executor 90 seconds to stop.
-
-For symptoms with their causes and fixes, see [Troubleshooting](/docs/operate/troubleshooting).
+On SIGTERM the service stops reporting ready, finishes open requests and work and releases the database. Compose gives each container except the executor 90 seconds to stop. For other symptoms, see [Troubleshooting](/docs/operate/troubleshooting).
 
 ## Monitor the deployment
 
-The service exposes no metrics endpoint. Watch these from outside.
+The service exposes no metrics endpoint, so watch these from outside.
 
 | Alert on | How |
 | --- | --- |
 | API liveness and readiness | `GET /health` and `GET /ready` on the API hostname fail or stay at 503 |
 | Console | `GET /ready` on the console hostname does not return 200 |
-| Containers | `docker compose ps` shows a container that is not `healthy`, or one that keeps restarting |
+| Containers | `docker compose ps` shows a container not `healthy` or restarting |
 | Disk | Free space on the Docker data directory and the backup directory |
-| Certificates | The expiry date of each public certificate. Caddy renews its own before they expire. |
+| Certificates | The expiry of each public certificate. Caddy renews its own. |
 | Backups | The age of the newest dump |
 
 ### Logs
 
-Every container logs to standard output. Compose sets no log rotation, so Docker's default `json-file` driver keeps every line. Limit it in `/etc/docker/daemon.json`, then restart Docker and recreate the containers. The limit applies only to containers created afterwards.
+Every container logs to standard output, and Compose sets no rotation, so Docker's default `json-file` driver keeps every line. Limit it in `/etc/docker/daemon.json`, then restart Docker and recreate the containers, because the limit applies only to new containers.
 
 ```json title="/etc/docker/daemon.json"
 {
@@ -64,25 +62,25 @@ Every container logs to standard output. Compose sets no log rotation, so Docker
 
 ### Data growth
 
-The service deletes integration receipts older than 30 days each time a receipt arrives. It keeps everything else: bundle versions and release history, learning rounds with their rollouts, imported tasks, sessions and the audit log. The database grows with use, so watch disk space and keep enough room for a restored copy during a restore.
+The service deletes integration receipts older than 30 days each time a receipt arrives. It keeps everything else: bundle versions and release history, learning rounds with their rollouts, imported tasks, sessions and the audit log. Keep enough disk for the growing database and for a restored copy during a restore.
 
 ## Read exit codes
 
-Compose restarts a container that exits. `docker compose ps` shows the exit code, and the container's log ends with the error.
+Compose restarts a container that exits. `docker compose ps` shows the exit code, and the log ends with the error.
 
 | Container | Exit code | Meaning | What to do |
 | --- | --- | --- | --- |
-| `service` | 75 | The service lost its exclusive hold on the database. | Make sure only one service process runs against the database. |
-| `service` | 1 | Any other error, such as invalid configuration or a failed migration. A failed migration stops the service before it listens. | Read `docker compose logs service`. |
-| `acclimate-executor` | 78 | The executor's credential, runner image or sandbox runtime is wrong. Restarting does not help. | Follow [Check the executor](/docs/operate/enable-learning#check-the-executor). |
+| `service` | 75 | The service lost its exclusive hold on the database. | Run [one service process](/docs/operate/self-host#limits-of-this-deployment) per database. |
+| `service` | 1 | Any other error, such as invalid configuration or a failed migration, which stops the service before it listens | Read `docker compose logs service`. |
+| `acclimate-executor` | 78 | Its credential, runner image or sandbox runtime is wrong, so restarting does not help. | See [Check the executor](/docs/operate/enable-learning#check-the-executor). |
 
 ## Verify API access and sign-in
 
-The repository's own tests use test certificates and a test issuer, so run both checks against your deployment before you send it traffic. Each runs from a checkout with Python 3, prints a JSON result and exits nonzero unless it passed. The optional `--output` flag also writes the result to a new file. Choose a path in a private directory.
+The repository's tests use test certificates and a test issuer, so run both checks against your deployment before it takes traffic. Each runs from a checkout with Python 3, prints a JSON result and exits nonzero unless it passed. The optional `--output` flag also writes the result to a new file, in a private directory.
 
 ### Check API access
 
-You need a [machine token](/docs/reference/credentials#credential-types) with the read right for one workspace. Pass the name of the environment variable that holds it, so the token never appears in the command.
+You need a [machine token](/docs/reference/credentials#credential-types) with the read right for one workspace. Pass the name of the environment variable that holds it, so the token stays out of the command.
 
 ```sh
 python3 scripts/productization/external.py --execute --gate https \
@@ -94,7 +92,7 @@ The check verifies the API's certificate and hostname, requests `/health` and `/
 
 ### Check sign-in
 
-You need Playwright for Python with its Chromium browser, a machine with a display and a test account in your Keycloak realm. Pass the public console URL and the exact issuer, which for the co-hosted Keycloak is `https://<keycloak-host>/realms/acclimate`.
+You need Playwright for Python with Chromium, a display and a test account in your Keycloak realm. Pass the public console URL and the exact issuer, for the co-hosted Keycloak `https://<keycloak-host>/realms/acclimate`.
 
 ```sh
 python3 scripts/productization/external.py --execute --gate oidc --interactive \
@@ -102,6 +100,6 @@ python3 scripts/productization/external.py --execute --gate oidc --interactive \
   --output /absolute/private/oidc-check.json
 ```
 
-When the browser opens, sign in with the test account within three minutes. The check confirms that sign-in goes through your issuer and returns to the console, that the session cookie is secure and that signing out clears it.
+Sign in with the test account within three minutes of the browser opening. The check confirms that sign-in goes through your issuer and returns to the console, that the session cookie is secure and that signing out clears it.
 
-Neither check shows that learning works. The other checks are listed under [What has been tested](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#what-has-been-tested) in the repository.
+Neither check shows that learning works. For the other checks, see [What has been tested](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#what-has-been-tested).

@@ -3,48 +3,44 @@ title: Troubleshooting
 description: Symptoms you may see on the local stack, in a deployment, in a learning loop or on the executor, with the cause and fix for each.
 ---
 
-Find your symptom to see its cause and fix. Text in backticks is the exact code or message you see. For every code, see [Error codes](/docs/reference/error-codes).
+Text in backticks is the exact code or message you see. For every code, see [Error codes](/docs/reference/error-codes).
 
 ## Local stack and SDK
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| An SDK call fails with `transport.unreachable` and `Could not reach the Acclimate service` while the stack is running | The shell has not loaded the stack's client settings, so it does not trust the certificate | Run `source .local/stack/env.sh` in that shell. See [Trust the local certificate](/docs/reference/local-stack#trust-the-local-certificate). |
-| `job.expect()` fails with HTTP 404 and `Learning loop not enrolled`. The support agent example prints `Learning is not set up for this bundle`. | Learning is not turned on for the bundle | Save the learning settings on the bundle's **Learning** tab. See [Run a learning loop](/docs/guides/learning-loop). |
-| On Linux, the containers cannot reach a model proxy that answers on `127.0.0.1` | `host.docker.internal` is the Docker bridge address, not your loopback | Set the proxy's `server.host` to the bridge address. See [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy). |
+| An SDK call fails with `transport.unreachable` and `Could not reach the Acclimate service` while the stack runs | The shell does not trust the local certificate | Run `source .local/stack/env.sh` in that shell. See [Trust the local certificate](/docs/reference/local-stack#trust-the-local-certificate). |
+| `job.expect()` fails with HTTP 404 and `Learning loop not enrolled`, or the support agent example prints `Learning is not set up for this bundle` | Learning is off for the bundle | Save the settings on the bundle's **Learning** tab. See [Run a learning loop](/docs/guides/learning-loop). |
+| On Linux, containers cannot reach a model proxy on `127.0.0.1` | `host.docker.internal` is the Docker bridge address | Set the proxy's `server.host` to the bridge address. See [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy). |
 
 ## Deployment
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| A public hostname gives a TLS error, and `docker compose logs proxy` shows certificate errors | Caddy cannot get a certificate. The name's DNS record does not point at the server, inbound TCP 80 or 443 is closed, or a load balancer does not forward them. | Fix DNS or the firewall. Caddy retries by itself. See [Prepare the server and DNS](/docs/operate/self-host#prepare-the-server-and-dns) and [Run behind a load balancer](/docs/operate/reverse-proxy#run-behind-a-load-balancer). |
-| Keycloak shows `Invalid parameter: redirect_uri` | The client's redirect URI is not exactly `CONSOLE_ORIGIN` plus `/auth/callback`. The realm import sets it only once, so a later change to the console hostname does not reach it. | Correct the redirect URI of the client in Keycloak. |
-| Sign-in ends with `Sign-in could not be completed. Check server configuration or start again.` | The console cannot reach the issuer, the client secret is wrong, or the issuer differs between the console, the service and the provider's discovery document | Compare `CONSOLE_OIDC_ISSUER`, `ACCLIMATE_OIDC_ISSUER` and the provider's issuer character for character. Check the client secret. See [Use another OIDC provider](/docs/operate/self-host#use-another-oidc-provider). |
-| The service stops at startup with `another Acclimate service process owns the invitation queue`, or exits with status 75 | A second service process uses the same database, or a pooler in transaction mode sits between the service and PostgreSQL | Run one service per database. Connect directly or in session mode. See [Limits of this deployment](/docs/operate/self-host#limits-of-this-deployment). |
-| The service exits with status 1 and its log shows `while executing migration` | A migration failed. Each migration runs in a transaction, so the database keeps its previous migration. | Read the database error in the log. If you cannot fix it, [roll back the upgrade](/docs/operate/upgrades-and-recovery#roll-back-an-upgrade). |
-| The log shows `migration <n> was previously applied but is missing in the resolved migrations` | An older build is running against a database that a newer build migrated | Run the newer build, or restore the dump taken before the upgrade |
-| The service or the console stops at startup with `has been removed`, `is obsolete` or `are obsolete` | The runtime file sets a removed variable | Delete it. See [Removed settings](/docs/reference/configuration#removed-settings). |
+| A public hostname gives a TLS error, and `docker compose logs proxy` shows certificate errors | Caddy cannot get a certificate: DNS does not point at the server, or TCP 80 or 443 is not reachable | Fix DNS, the firewall or the [load balancer](/docs/operate/reverse-proxy#run-behind-a-load-balancer). Caddy retries by itself. |
+| Keycloak shows `Invalid parameter: redirect_uri` | The client's redirect URI is not exactly `CONSOLE_ORIGIN` plus `/auth/callback`. The realm import sets it only once, so a later console hostname change does not reach it. | Correct the client's redirect URI in Keycloak. |
+| Sign-in ends with `Sign-in could not be completed. Check server configuration or start again.` | The console cannot reach the issuer, the client secret is wrong, or the issuer differs between the console, the service and discovery | Compare `CONSOLE_OIDC_ISSUER`, `ACCLIMATE_OIDC_ISSUER` and the discovered issuer character for character, and check the secret. See [Use another OIDC provider](/docs/operate/self-host#use-another-oidc-provider). |
+| The service stops at startup with `another Acclimate service process owns the invitation queue`, or exits with status 75 | A second service process uses the database, or a [pooler](/docs/operate/self-host#use-an-external-postgresql) runs in transaction mode | Run one service per database, connected directly or in session mode. |
+| The service exits with status 1 and logs `while executing migration` | A migration failed and was rolled back, so the database keeps its previous migration | Fix the database error in the log, or [roll back the upgrade](/docs/operate/upgrades-and-recovery#roll-back-an-upgrade). |
+| The log shows `migration <n> was previously applied but is missing in the resolved migrations` | An older build runs against a database a newer build migrated | Run the newer build, or restore the dump taken before the upgrade. |
+| The service or the console stops at startup with `has been removed`, `is obsolete` or `are obsolete` | The runtime file sets a [removed variable](/docs/reference/configuration#removed-settings) | Delete it. |
 
 ## Learning
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| **Start** is disabled and says the service has no optimizer model, or the API answers 409 `optimizer-required` | The service has no optimizer | The operator follows [Set the optimizer model](/docs/operate/enable-learning#set-the-optimizer-model). On the local stack, follow [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy). |
-| **Start** is refused with `tasks-required`, or the loop pauses with that reason | A split has fewer than 20 admitted tasks | Add tasks, fix the ones set aside and confirm the held-out tasks. Then choose **Start**. |
-| Held-out tasks stay pending | Held-out tasks that need confirmation wait for a signed-in person. A machine token cannot confirm them. | In the console, check **Needs confirmation** and choose **Confirm all shown**. See [Rights](/docs/reference/credentials#rights). |
-| A round fails with `provider-unavailable` | Every failed rollout of the current version was a model provider outage or rate limit | Wait. The loop tries again by itself. See [When a round fails](/docs/guides/learning-loop#when-a-round-fails). |
-
-If `provider-unavailable` keeps coming back, check the model provider's rate limits. A single Codex sign-in may rate-limit many requests at once, so lower the executor concurrency. It defaults to 1 in a deployment, set as in [Start the executor](/docs/operate/enable-learning#start-the-executor), and to 4 on the [local stack](/docs/reference/local-stack#executor-concurrency).
+| **Start** is disabled and says the service has no optimizer model, or the API answers 409 `optimizer-required` | The service has no optimizer | [Set the optimizer model](/docs/operate/enable-learning#set-the-optimizer-model), or on the local stack [set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy). |
+| **Start** is refused with `tasks-required`, or the loop pauses with that reason | A split has fewer than 20 admitted tasks | Add tasks, fix the ones set aside and confirm the held-out tasks, then choose **Start**. |
+| Held-out tasks stay pending | They wait for a signed-in person to confirm them. A [machine token](/docs/reference/credentials#rights) cannot. | In the console, check **Needs confirmation** and choose **Confirm all shown**. |
+| A round fails with `provider-unavailable` | Every failed rollout of the current version was a model provider outage or rate limit | Wait for the loop to [try again](/docs/guides/learning-loop#when-a-round-fails). If it keeps failing, check the provider's rate limits, which a single Codex sign-in reaches quickly, and lower the executor concurrency ([deployment](/docs/operate/enable-learning#start-the-executor), [local stack](/docs/reference/local-stack#executor-concurrency)). |
 
 ## Executor and model provider
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| Imports and task checks stay queued, or the loop waits with `no-executor` | No executor is connected to the service | The operator follows [Start the executor](/docs/operate/enable-learning#start-the-executor). |
-| The executor container keeps restarting | Its credential, runner image or sandbox runtime is wrong, so it exits with status 78 | Fix the cause that `docker compose logs acclimate-executor` names. See [Check the executor](/docs/operate/enable-learning#check-the-executor). |
-| **Start** is refused with `Verify the workspace model provider before starting` | The executor has not verified every allowed model. A model fails when it does not answer a chat request. | Read each model's result on the **Model provider** page. Fix the base URL, the API key or the model IDs. |
-| A model fails verification with `Upstream response is missing token usage` | The model's reply reports no token usage | Use a model or endpoint whose replies include token usage. |
+| Imports and task checks stay queued, or the loop waits with `no-executor` | No executor is connected | [Start the executor](/docs/operate/enable-learning#start-the-executor). |
+| The executor keeps restarting with status 78. Its log starts with `The service refused the executor credential`, `Cannot read the executor credential file`, `The executor credential is empty`, `Unsupported sandbox runtime`, `Inspecting the runner image` or `Sandbox preflight failed`. | Its credential, runner image or sandbox runtime is wrong | See [Check the executor](/docs/operate/enable-learning#check-the-executor). |
+| **Start** is refused with `Verify the workspace model provider before starting` | The executor has not verified every allowed model with a chat request | Read each model's result on the **Model provider** page and fix the base URL, API key or model IDs. |
+| A model fails verification with `Upstream response is missing token usage` | Its replies report no token usage | Use a model or endpoint that reports it. |
 | Saving a model provider is refused with `Plain HTTP is allowed only for hosts listed in ACCLIMATE_PROVIDER_HTTP_HOSTS` | The host is not listed | The operator lists it. See [Provider addresses](/docs/reference/configuration#provider-addresses). |
-| The service does not start and logs `ACCLIMATE_PROVIDER_ENCRYPTION_KEY does not match` | The key differs from the one the service first started with | Restore the original key. See [Keep the provider encryption key](/docs/operate/backup-and-restore#keep-the-provider-encryption-key). |
-
-The executor's log message for status 78 starts with `The service refused the executor credential`, `Cannot read the executor credential file`, `The executor credential is empty`, `Unsupported sandbox runtime`, `Inspecting the runner image` or `Sandbox preflight failed`.
+| The service does not start and logs `ACCLIMATE_PROVIDER_ENCRYPTION_KEY does not match` | The key differs from the one the service first started with | [Restore the original key](/docs/operate/backup-and-restore#keep-the-provider-encryption-key). |

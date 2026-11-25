@@ -36,9 +36,10 @@ test('release archives contain installed-app source and native harnesses, exclud
     const native = listing;
     assert.ok(!native.includes('/test/'));
     assert.ok(!native.includes('QUALIFICATION.md'));
-    // The offline replay harness and its fixture repository ship for consumers.
-    for (const file of ['smoke.mjs', 'native.replay.json', 'fixture/replay.json', 'fixture/tests/retry.test.mjs'])
+    // The replay harness's fixture repository and the SDK install check ship for consumers.
+    for (const file of ['smoke.mjs', 'fixture/replay.json', 'fixture/tests/retry.test.mjs'])
       assert.ok(native.includes(`native-repository-starter/${file}`), file);
+    assert.ok(!native.includes('native.replay.json'), 'retired replay config shipped');
     assert.equal(listing.includes('node_modules'), false);
     const manifest = JSON.parse(execFileSync('tar', ['-xOzf', archive, 'native-repository-starter/package.json'], { encoding: 'utf8' }));
     assert.equal(manifest.version, '1.2.3');

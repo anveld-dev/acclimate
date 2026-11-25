@@ -3,27 +3,25 @@ title: Upgrade and recover
 description: Upgrade a self-hosted deployment to a new Acclimate release, and roll back if the upgrade fails.
 ---
 
-This page is for the operator of a self-hosted deployment. It upgrades a running deployment to a new Acclimate release, and rolls back when an upgrade fails.
-
 The service applies pending database migrations when it starts, and there is no downgrade. The only way back is the backup you take during the upgrade.
 
-If your database was last run by a build from before learning moved into the service, first read [Upgrade to the learning-loop schema](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#upgrade-to-the-learning-loop-schema) in the repository. Those upgrades drop data and need extra steps.
+If your database was last run by a build from before learning moved into the service, first read [Upgrade to the learning-loop schema](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#upgrade-to-the-learning-loop-schema). Those upgrades drop data and need extra steps.
 
 ## Pin an Acclimate release
 
-No Acclimate release has been published yet. Until the first one, build from source with `ACCLIMATE_VERSION=local`, upgrade by switching the checkout to a newer commit, and record the commit you run.
+No Acclimate release has been published yet. Until the first one, build from source with `ACCLIMATE_VERSION=local`, upgrade by switching the checkout to a newer commit and record the commit you run.
 
-Each release will have a Git tag such as `v0.1.0` and images tagged with the same version without the `v`, such as `0.1.0`, for the service, the console, the executor and the runner. Set `ACCLIMATE_VERSION` to that image tag. The default, `latest`, can change between pulls, so always set the pin. A release publishes no Keycloak image. Compose builds it from `deploy/keycloak/Dockerfile`, which pins the Keycloak version. See [Versioning and compatibility](/docs/reference/versioning).
+Each release will have a Git tag such as `v0.1.0` and images for the service, the console, the executor and the runner tagged without the `v`, such as `0.1.0`. Set `ACCLIMATE_VERSION` to that tag, because the default, `latest`, can change between pulls. A release publishes no Keycloak image. Compose builds it from `deploy/keycloak/Dockerfile`, which pins its version. See [Versioning and compatibility](/docs/reference/versioning).
 
-You can skip releases. The service applies every pending migration in order when it starts. Read the notes of each release you skip, and keep your applications' SDKs within one minor release of the service, as [Match SDK and service versions](/docs/reference/versioning#match-sdk-and-service-versions) explains.
+You can skip releases, because the service applies every pending migration in order. Read the notes of each release you skip, and keep your applications' SDKs [within one minor release](/docs/reference/versioning#match-sdk-and-service-versions) of the service.
 
 ## Upgrade
 
 Before you start:
 
-- Read the release notes of the new Acclimate release.
-- Note the Git tag or commit and `ACCLIMATE_VERSION` you run now. Keep that checkout state and your private runtime files for a rollback.
-- If you run learning, choose **Pause** on each running loop in the console and wait for its active round to finish. See [Upgrade the executor](/docs/operate/enable-learning#upgrade-the-executor).
+- Read the new release's notes.
+- Note the Git tag or commit and `ACCLIMATE_VERSION` you run now, and keep your private runtime files, for a rollback.
+- If you run learning, choose **Pause** on each running loop and wait for its active round to finish.
 - Run every command from the checkout with your deployment settings loaded.
 
 <Steps>
@@ -31,7 +29,7 @@ Before you start:
 
 ### Stop traffic and the applications
 
-Pause external clients. Stop Caddy to close all public routes, then stop both applications. Leave PostgreSQL running for the dump.
+Pause external clients, then stop Caddy and both applications. Leave PostgreSQL running for the dump.
 
 ```sh
 docker compose stop proxy
@@ -43,14 +41,14 @@ docker compose stop console service
 
 ### Back up and rehearse a restore
 
-Dump the application database and the Keycloak database to separate archives, as in [Bundled databases](/docs/operate/backup-and-restore#bundled-databases). Check that the application archive restores: restore it into a separate empty database as in step 2 of [Restore](/docs/operate/backup-and-restore#restore), then remove that database with `dropdb`.
+Dump both databases as in [Bundled databases](/docs/operate/backup-and-restore#bundled-databases). Check that the Acclimate archive restores into a separate empty database, as in step 2 of [Restore](/docs/operate/backup-and-restore#restore), then remove that database with `dropdb`.
 
 </Step>
 <Step>
 
 ### Start the new release
 
-Switch the checkout to the new release's tag, or to the new commit when you build from source. With release images, set `ACCLIMATE_VERSION` in `compose.env` to the new image tag and load the file again. Then start the service and the console while public traffic is still stopped.
+Switch the checkout to the new release's tag, or the new commit when you build from source. With release images, set `ACCLIMATE_VERSION` in `compose.env` to the new image tag and load the file again. Then start the service and the console, with public traffic still stopped.
 
 ```sh
 git fetch --tags
@@ -62,14 +60,14 @@ docker compose up -d --no-build --wait service console
 
 If you build from source, replace the last two commands with `docker compose build service console` and `docker compose up -d --wait service console`.
 
-If you co-host Keycloak, rebuild it from the new checkout. Keycloak updates its own database schema when it starts on a new version.
+If you co-host Keycloak, rebuild it from the new checkout. It updates its own schema when it starts.
 
 ```sh
 docker compose build keycloak
 docker compose up -d --wait keycloak
 ```
 
-Keep the same Compose project name, or the new containers get new, empty volumes. Keep one service process per database.
+Keep the same Compose project name, or the new containers get new, empty volumes.
 
 <Callout type="warn" title="Do not delete the volumes">
 `docker compose down` keeps the volumes. `docker compose down --volumes` deletes them, and with them both databases and Caddy's certificates.
@@ -87,8 +85,8 @@ If you run learning, follow [Upgrade the executor](/docs/operate/enable-learning
 
 ### Verify, then resume traffic
 
-1. Run `docker compose ps` and check that the service and the console are `healthy`.
-2. Start the proxy, which opens ports 80 and 443 again. To verify before your users return, first limit those ports at your firewall to the clients you verify from.
+1. Check that `docker compose ps` shows the service and the console `healthy`.
+2. Start the proxy, which opens ports 80 and 443 again. To verify before your users return, first limit those ports at your firewall to your own clients.
 
    ```sh
    docker compose up -d --no-build --wait proxy
@@ -105,7 +103,7 @@ If verification fails after the new service has started, [roll back the upgrade]
 ## Roll back an upgrade
 
 <Callout type="warn" title="A rollback discards newer data">
-Rolling back means running the previous build against the backup you took before the upgrade. Everything written after that backup is lost.
+A rollback runs the previous build against the backup taken before the upgrade. Everything written after that backup is lost.
 </Callout>
 
 1. Stop the public routes and the applications.
@@ -115,9 +113,9 @@ Rolling back means running the previous build against the backup you took before
    docker compose stop console service
    ```
 
-2. Restore the dump you took before the upgrade into a new, empty database that you create. Follow [Restore](/docs/operate/backup-and-restore#restore). If Keycloak was upgraded, also restore its dump as in [Restore the co-hosted Keycloak database](/docs/operate/backup-and-restore#restore-the-co-hosted-keycloak-database), after step 3.
+2. [Restore](/docs/operate/backup-and-restore#restore) the pre-upgrade dump into a new, empty database. If Keycloak was upgraded, also [restore its dump](/docs/operate/backup-and-restore#restore-the-co-hosted-keycloak-database) after step 3.
 3. Switch the checkout back with `git switch --detach v<previous-version>`, or to the previous commit. Set `ACCLIMATE_VERSION` in `compose.env` back to the previous image tag and load the file again. If you co-host Keycloak, run `docker compose build keycloak`.
-4. In `service.env`, point `DATABASE_URL` at the restored database. Use the private runtime files from before the upgrade, including the same provider encryption key.
+4. Use the private runtime files from before the upgrade, with the same provider encryption key, and point `DATABASE_URL` in `service.env` at the restored database.
 5. Start the previous service and console. If you build from source, replace these commands as in [Start the new release](#start-the-new-release).
 
    ```sh

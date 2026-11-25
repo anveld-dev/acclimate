@@ -10,7 +10,6 @@
     "harness-process.mjs",
     "harnesses.mjs",
     "native.mjs",
-    "native.replay.json",
     "package.json",
     "repository-job.mjs",
     "smoke.mjs",

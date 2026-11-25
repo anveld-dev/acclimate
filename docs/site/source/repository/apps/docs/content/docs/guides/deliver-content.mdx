@@ -13,7 +13,7 @@ To run Codex, the Claude Agent SDK, Pi or Cursor on the prepared files, see [Use
 - Create a connection for the bundle and channel, and issue its connection credential. See [Connect your application](/docs/get-started/quickstart#connect-your-application) and [Credentials and rights](/docs/reference/credentials).
 - In the console, open **App setup** on the bundle's channel. It shows the API URL, the workspace, bundle and channel and a recipe to copy.
 
-The snippets read `ACCLIMATE_URL`, `ACCLIMATE_TOKEN` (the connection credential), `ACCLIMATE_SCOPE` (a stable name for your application) and `ACCLIMATE_CONNECTION` (the connection ID). See [Application](/docs/reference/configuration#application) in the environment variables.
+The snippets take the API URL and the workspace, bundle and connection IDs from **App setup**. They read the connection credential from `ACCLIMATE_TOKEN`, so it stays out of your code. The scope is any stable name for your application.
 
 ## Prepare a job
 
@@ -25,18 +25,14 @@ Call `prepare` once for each new job and give your agent the prepared instructio
 ```ts
 import { AcclimateClient } from '@acclimate/sdk';
 
-const { ACCLIMATE_URL, ACCLIMATE_TOKEN, ACCLIMATE_SCOPE, ACCLIMATE_CONNECTION } = process.env;
-if (!ACCLIMATE_URL || !ACCLIMATE_TOKEN || !ACCLIMATE_SCOPE || !ACCLIMATE_CONNECTION) {
-  throw new Error('Set ACCLIMATE_URL, ACCLIMATE_TOKEN, ACCLIMATE_SCOPE and ACCLIMATE_CONNECTION');
-}
 const client = new AcclimateClient({
-  baseUrl: ACCLIMATE_URL,
-  token: ACCLIMATE_TOKEN,
-  scope: ACCLIMATE_SCOPE,
-  connectionId: ACCLIMATE_CONNECTION,
+  baseUrl: 'https://api.acclimate.example.com',
+  token: process.env.ACCLIMATE_TOKEN!,
+  scope: 'support-app',
+  connectionId: CONNECTION_ID,
 });
 
-const prepared = await client.prepare({ workspaceId, bundleId, channel: 'stable' });
+const prepared = await client.prepare({ workspaceId: WORKSPACE_ID, bundleId: BUNDLE_ID, channel: 'stable' });
 try {
   const result = await runAgent(jobInput, {
     instructions: prepared.instructions,
@@ -57,13 +53,13 @@ import os
 from acclimate import AcclimateClient
 
 client = AcclimateClient(
-    os.environ["ACCLIMATE_URL"],
+    "https://api.acclimate.example.com",
     os.environ["ACCLIMATE_TOKEN"],
-    os.environ["ACCLIMATE_SCOPE"],
-    connection_id=os.environ["ACCLIMATE_CONNECTION"],
+    "support-app",
+    connection_id=CONNECTION_ID,
 )
 
-with client.prepare(workspace_id, bundle_id, channel="stable") as prepared:
+with client.prepare(WORKSPACE_ID, BUNDLE_ID, channel="stable") as prepared:
     result = run_agent(job_input, instructions=prepared.instructions, skill_files=prepared.skill_files)
     version = prepared.version["version"]
     save_job_result(result, version_id=version["id"], digest=version["digest"])
@@ -104,18 +100,18 @@ A start receipt records which version a job used, so the workspace can see what 
 import { AcclimateClient, createReceiptReporter } from '@acclimate/sdk';
 
 const reporter = createReceiptReporter({
-  workspaceId,
-  connectionId: ACCLIMATE_CONNECTION,
+  workspaceId: WORKSPACE_ID,
+  connectionId: CONNECTION_ID,
   client: new AcclimateClient({
-    baseUrl: ACCLIMATE_URL,
-    token: receiptToken, // from ACCLIMATE_RECEIPT_TOKEN
-    scope: ACCLIMATE_SCOPE + ':receipts',
+    baseUrl: 'https://api.acclimate.example.com',
+    token: process.env.ACCLIMATE_RECEIPT_TOKEN!,
+    scope: 'support-app:receipts',
     timeoutMs: 1000, // a short deadline and no retries, so reporting cannot delay the job
     retries: 0,
   }),
 });
 
-const prepared = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
+const prepared = await client.prepare({ workspaceId: WORKSPACE_ID, bundleId: BUNDLE_ID, channel: 'stable', reporter });
 const receipt = prepared.reportStarted(); // at the job's real start event
 
 // Run the job and clean up as in "Prepare a job". When the job ends:
@@ -131,15 +127,15 @@ import os
 from acclimate import AcclimateClient, DeliveryReporter
 
 receipt_client = AcclimateClient(
-    os.environ["ACCLIMATE_URL"],
+    "https://api.acclimate.example.com",
     os.environ["ACCLIMATE_RECEIPT_TOKEN"],
-    os.environ["ACCLIMATE_SCOPE"] + ":receipts",
+    "support-app:receipts",
     timeout=1,  # a short deadline and no retries, so reporting cannot delay the job
     retries=0,
 )
-reporter = DeliveryReporter(receipt_client, workspace_id, os.environ["ACCLIMATE_CONNECTION"])
+reporter = DeliveryReporter(receipt_client, WORKSPACE_ID, CONNECTION_ID)
 
-with client.prepare(workspace_id, bundle_id, channel="stable", reporter=reporter) as prepared:
+with client.prepare(WORKSPACE_ID, BUNDLE_ID, channel="stable", reporter=reporter) as prepared:
     receipt = prepared.report_started()  # at the job's real start event
     ...  # run the job as in "Prepare a job"
 

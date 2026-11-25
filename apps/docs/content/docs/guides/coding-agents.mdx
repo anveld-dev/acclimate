@@ -60,7 +60,7 @@ npm install @acclimate/sdk @acclimate/codex-plugin @openai/codex-sdk@0.169.0
 import { Codex } from '@openai/codex-sdk';
 import { prepare } from '@acclimate/codex-plugin';
 
-const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
+const delivery = await client.prepare({ workspaceId: WORKSPACE_ID, bundleId: BUNDLE_ID, channel: 'stable', reporter });
 const prepared = await prepare(delivery);
 const thread = new Codex({ env }).startThread({
   workingDirectory: prepared.cwd,
@@ -97,7 +97,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { prepare } from '@acclimate/claude-plugin';
 import { claudeSessionOptions } from '@acclimate/claude-plugin/native';
 
-const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
+const delivery = await client.prepare({ workspaceId: WORKSPACE_ID, bundleId: BUNDLE_ID, channel: 'stable', reporter });
 const prepared = await prepare(delivery);
 const abortController = new AbortController();
 for await (const message of query({
@@ -153,7 +153,7 @@ const modelRuntime = await ModelRuntime.create({ allowModelNetwork: false });
 const model = modelRuntime.getModel(provider, modelId);
 if (!model) throw new Error(`Unknown Pi model: ${provider}/${modelId}`);
 
-const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
+const delivery = await client.prepare({ workspaceId: WORKSPACE_ID, bundleId: BUNDLE_ID, channel: 'stable', reporter });
 const prepared = await prepare(delivery);
 const { session } = await createAgentSession({
   cwd: prepared.cwd,
@@ -193,7 +193,7 @@ import { Agent } from '@cursor/sdk';
 import { prepare } from '@acclimate/cursor-plugin';
 import { cursorLocalOptions } from '@acclimate/cursor-plugin/native';
 
-const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
+const delivery = await client.prepare({ workspaceId: WORKSPACE_ID, bundleId: BUNDLE_ID, channel: 'stable', reporter });
 const prepared = await prepare(delivery, { approvedMemoryPaths });
 const agent = await Agent.create({
   apiKey,

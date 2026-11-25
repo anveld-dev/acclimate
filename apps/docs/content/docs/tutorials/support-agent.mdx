@@ -75,10 +75,7 @@ const acclimate = createAcclimate();
 
 // Pin the released version for this job. Every job re-reads the channel, so a release made by
 // the learning loop reaches the next job without a deploy.
-const job = await acclimate.job(process.env.ACCLIMATE_BUNDLE_NAME ?? 'Example agent', {
-  channel: process.env.ACCLIMATE_CHANNEL ?? 'stable',
-  input: request,
-});
+const job = await acclimate.job('Example agent', { channel: 'stable', input: request });
 const reply = await complete(systemPrompt(job.version.payload), request);
 console.log(reply);
 // Keep the version with the result, so you can tell later which instructions produced it.
@@ -94,11 +91,7 @@ acclimate = Acclimate.from_env()
 
 # Pin the released version for this job. Every job re-reads the channel, so a release made by
 # the learning loop reaches the next job without a deploy.
-job = acclimate.job(
-    os.environ.get("ACCLIMATE_BUNDLE_NAME", "Example agent"),
-    channel=os.environ.get("ACCLIMATE_CHANNEL", "stable"),
-    input=args.request,
-)
+job = acclimate.job("Example agent", channel="stable", input=args.request)
 version = job.version
 reply = complete(system_prompt(version["payload"]), args.request)
 print(reply, flush=True)

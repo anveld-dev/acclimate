@@ -1,0 +1,12 @@
+{
+  "title": "Operate",
+  "pages": [
+    "self-host",
+    "enable-learning",
+    "reverse-proxy",
+    "health-and-readiness",
+    "backup-and-restore",
+    "upgrades-and-recovery",
+    "troubleshooting"
+  ]
+}

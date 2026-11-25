@@ -1,0 +1,47 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$CONSOLE_HOST} {
+	reverse_proxy console:3100 {
+		header_up Host {$CONSOLE_HOST}
+		header_up -Forwarded
+		header_up -X-Forwarded-*
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {$CONSOLE_HOST}
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+
+{$API_HOST} {
+	@task_import path /v1/workspaces/*/bundles/*/learning/tasks/import
+	request_body @task_import {
+		max_size 67108864
+	}
+	reverse_proxy service:3000 {
+		header_up Host {$API_HOST}
+		header_up -Forwarded
+		header_up -X-Forwarded-*
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {$API_HOST}
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+
+{$KEYCLOAK_HOST} {
+	# Expose the login/account protocol and assets; keep master/admin/management private.
+	@public path /realms/acclimate /realms/acclimate/* /resources/* /robots.txt
+	handle @public {
+		reverse_proxy keycloak:8080 {
+			header_up Host {$KEYCLOAK_HOST}
+			header_up -Forwarded
+			header_up -X-Forwarded-*
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-Host {$KEYCLOAK_HOST}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle {
+		respond "Not found" 404
+	}
+}

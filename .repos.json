@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "repositories": [
+    {
+      "name": "claude-agent-sdk-python",
+      "source": "https://github.com/anthropics/claude-agent-sdk-python",
+      "ref": "22b8eb9c19adfa78759b79e22bd664a57843bb06",
+      "full_history": false
+    },
+    {
+      "name": "fx",
+      "source": "https://github.com/vercel-labs/fx",
+      "ref": "afecbe3770edad6487d1558106d7c528e01d6d8f",
+      "full_history": false
+    },
+    {
+      "name": "pi-mono",
+      "source": "https://github.com/badlogic/pi-mono",
+      "ref": "b4899f59ef0fba6507c2e619fd804dcde51920ba",
+      "full_history": false
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "caseId": "request-scoped-retry",
+      "when": {
+        "instructionIncludes": "request-scoped"
+      },
+      "files": {
+        "src/retry.js": "export function retryKey(requestId, attempt) {\n  void attempt;\n  return requestId;\n}\n"
+      },
+      "output": "Retries now reuse the request identity."
+    },
+    {
+      "caseId": "request-scoped-retry",
+      "files": {
+        "src/retry.js": "export function retryKey(requestId, attempt) {\n  return `${requestId}:${attempt}`;\n}\n",
+        "docs/retry-notes.md": "The key already includes the request.\n"
+      },
+      "output": "No change needed."
+    }
+  ]
+}

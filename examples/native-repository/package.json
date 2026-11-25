@@ -1,0 +1,16 @@
+{
+  "name": "acclimate-native-repository-starter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.22.0",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "check:install": "node verify-install.mjs",
+    "smoke": "node smoke.mjs",
+    "jobs": "node native.mjs jobs",
+    "check-bundle": "node native.mjs check-bundle"
+  }
+}

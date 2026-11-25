@@ -1,0 +1,89 @@
+---
+title: Release and roll back
+description: Release new files as a version of a bundle and move a channel back to an earlier version.
+---
+
+A release points a channel such as `stable` at an immutable version and records the reason. This guide changes a channel by hand.
+
+To undo a version the learning loop adopted, use **Roll back** on its round instead, which also blocks it from adoption. See [Pause, stop and roll back](/docs/guides/learning-loop#pause-stop-and-roll-back).
+
+## Release a version
+
+Creating a bundle in the console makes its first release. To release new files, use the [`acclimate` command](/docs/reference/typescript-sdk#the-acclimate-command) or `release()` in either SDK. Both need `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and a machine token with read, write and promote in `ACCLIMATE_TOKEN`.
+
+```sh
+npx acclimate publish payload.json --bundle "Example agent" --reason "Ship updated instructions"
+```
+
+The source is a [payload file](#publish-a-bundle-from-a-file) or a folder. In a folder, files under `skills/` are skills, files under `memory/` are memory and every other file is an instruction, as in the console's **Import files**. The command uploads the files as a new version on top of the channel's current one, releases it on `stable` or the `--channel` you pass, and prints one JSON line with `versionId` and `revision`.
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+
+```ts
+import { createAcclimate } from '@acclimate/sdk';
+
+const acclimate = createAcclimate();
+const result = await acclimate.release('Example agent', payload, { reason: 'Ship updated instructions' });
+```
+
+</Tab>
+<Tab value="Python">
+
+```python
+from acclimate import Acclimate
+
+result = Acclimate.from_env().release("Example agent", payload, reason="Ship updated instructions")
+```
+
+</Tab>
+</Tabs>
+
+When the channel already serves the same files, nothing is written and `changed` is false. When the channel moved during the release, it is refused with `revision_conflict`. Check the channel's new version, then run the release again if you still want it.
+
+New jobs resolve to the released version. Prepared jobs keep theirs. To write the version and the release yourself, see [Read and verify a version](/docs/reference/http-api#read-and-verify-a-version), which describes both writes.
+
+## Roll back
+
+Rolling back creates a new release that points the channel at an earlier version. No history is removed.
+
+1. Open the bundle's **Releases** tab.
+2. Select the earlier release and inspect its files.
+3. Choose **Restore**, enter a reason and choose **Restore version**.
+
+`npx acclimate rollback --bundle "Example agent"`, and `rollback()` in the SDKs, release the version the channel served before its latest release. To release any other earlier version, pass its ID: `npx acclimate release <version-id> --bundle "Example agent"`.
+
+If the console shows **Restore needs confirmation**, the restore may still have gone through. Do not submit a new one yet:
+
+1. Choose **Check result**.
+2. If it is still unknown, choose **Retry exact restore** to resend the stored request, or **Close unresolved restore**.
+3. Start a new restore only after the operation is confirmed or closed.
+
+## Publish a bundle from a file
+
+To create a bundle from a script instead of the console's **Bundles** page, add `--create` to `acclimate publish`. A payload file is a JSON object that holds the bundle's files. A file's `kind` is `instruction`, `skill` or `memory`.
+
+```json title="payload.json"
+{
+  "schemaVersion": 1,
+  "files": [
+    {
+      "path": "instructions.md",
+      "kind": "instruction",
+      "text": "You are a support agent for a small software company.\n\nAnswer in two short paragraphs. Ask one clarifying question when the request is ambiguous.\n"
+    }
+  ]
+}
+```
+
+```sh
+npx acclimate publish payload.json --bundle "Support agent" --create --reason "First version"
+```
+
+The command creates the bundle with the `generic` compatibility target, its first version and its first release, then prints their IDs. Without `--create`, a bundle name the workspace does not have is an error, so a typo never creates a bundle.
+
+## Next steps
+
+- Prepare the released version in your application with [Deliver content to jobs](/docs/guides/deliver-content).
+- Let the service propose and release improvements with [Run a learning loop](/docs/guides/learning-loop).
+- Look up release and operation routes in the [HTTP API](/docs/reference/http-api) reference.

@@ -1,0 +1,293 @@
+/* File actions live with the explorer; counts stay out of the working header. */
+.file-navigator.file-navigator-polished {
+  position: relative;
+  min-height: 0;
+}
+.file-navigator-polished .file-navigator-body:not([hidden]) {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.file-navigator-polished .file-navigator-controls {
+  flex: 0 0 auto;
+}
+.file-navigator-polished .file-navigator-heading {
+  min-height: 36px;
+}
+.file-navigator-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+}
+.file-icon-action > svg {
+  width: 16px;
+  height: 16px;
+}
+.file-navigator-polished .file-tree {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+.file-navigator-footer {
+  flex: 0 0 auto;
+  margin-top: auto;
+  padding: 9px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: var(--type-14);
+  line-height: 20px;
+}
+@media (max-width: 899px) {
+  .file-navigator-polished .file-navigator-body:not([hidden]) {
+    position: static;
+    inset: auto;
+  }
+  .file-navigator-polished .file-navigator-heading:not(:has(.file-navigator-actions)) {
+    display: none;
+  }
+  .file-navigator-footer {
+    margin-top: 8px;
+  }
+}
+@media (max-width: 899px) and (max-height: 500px) and (pointer: fine) {
+  .content-workspace .content-entry-heading,
+  .content-workspace:has(> .file-navigator > .file-navigator-body[hidden])
+    > .content-detail
+    > .content-entry-heading {
+    min-height: 36px;
+    padding-block: 2px;
+  }
+  .content-workspace .file-navigator-toggle[data-slot='button'] {
+    top: 2px;
+    min-height: 32px;
+    height: 32px;
+  }
+}
+
+/* One measured state drives the rail, picker and focus visibility at any viewport. */
+.content-workspace:has(> .file-navigator[data-compact]) {
+  position: relative;
+  grid-template-columns: 240px minmax(0, 1fr);
+}
+.file-navigator[data-compact='false'] {
+  border-right: 1px solid var(--border);
+  border-bottom: 0;
+  background: color-mix(in srgb, var(--card) 60%, var(--muted));
+}
+.file-navigator[data-compact='false'] .file-navigator-toggle[data-slot='button'] {
+  display: none;
+}
+.file-navigator[data-compact='false'] .file-navigator-body:not([hidden]) {
+  position: absolute;
+  inset: 0;
+  padding-top: 0;
+}
+.file-navigator[data-compact='false'] .file-navigator-heading:not(:has(.file-navigator-actions)) {
+  display: flex;
+}
+.file-navigator[data-compact='false'] .file-navigator-desktop-label {
+  display: inline;
+}
+.file-navigator[data-compact='false'] .file-tree {
+  max-height: var(--file-tree-max-height, 650px);
+}
+.file-navigator[data-compact='false'] .file-navigator-footer {
+  margin-top: auto;
+}
+.content-workspace:has(> .file-navigator[data-compact='false'])
+  > .content-detail
+  > .content-entry-heading {
+  padding-left: 12px;
+  min-height: 40px;
+}
+.content-workspace:has(> .file-navigator[data-compact='false'])
+  > .content-detail:not(:has(> .content-entry-heading)) {
+  padding-top: 0;
+}
+.content-workspace:has(> .file-navigator[data-compact='false']) .content-entry-heading .file-glyph {
+  display: flex;
+}
+.content-workspace:has(> .file-navigator[data-compact='true']) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.file-navigator[data-compact='true'] {
+  border-right: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+}
+.file-navigator[data-compact='true'] .file-navigator-toggle[data-slot='button'] {
+  position: absolute;
+  display: flex;
+  z-index: 1;
+  top: 4px;
+  left: 4px;
+  width: 92px;
+  min-height: 44px;
+  padding-inline: 8px;
+  border-radius: 4px;
+  gap: 4px;
+}
+.file-navigator[data-compact='true'] .file-navigator-toggle > span {
+  white-space: nowrap;
+}
+.file-navigator[data-compact='true'] .file-navigator-body:not([hidden]) {
+  position: static;
+  inset: auto;
+  padding-top: 48px;
+}
+.file-navigator[data-compact='true'] .file-tree {
+  max-height: min(240px, var(--file-tree-max-height, 240px));
+}
+.file-navigator[data-compact='true'] .file-navigator-heading:not(:has(.file-navigator-actions)) {
+  display: none;
+}
+.file-navigator[data-compact='true'] .file-navigator-desktop-label {
+  display: none;
+}
+.file-navigator[data-compact='true'] .file-navigator-footer {
+  margin-top: 8px;
+}
+.content-workspace:has(> .file-navigator[data-compact='true'] > .file-navigator-body[hidden])
+  > .file-navigator {
+  border-bottom: 0;
+}
+.content-workspace:has(> .file-navigator[data-compact='true'] > .file-navigator-body[hidden])
+  > .content-detail
+  > .content-entry-heading {
+  min-height: 52px;
+  padding-left: 100px;
+}
+.content-workspace:has(> .file-navigator[data-compact='true'] > .file-navigator-body[hidden])
+  > .content-detail:not(:has(> .content-entry-heading)) {
+  padding-top: 52px;
+}
+.content-workspace:has(> .file-navigator[data-compact='true']) .content-entry-heading .file-glyph {
+  display: none;
+}
+
+.file-navigator .file-tree-row.is-selected {
+  box-shadow: inset 3px 0 var(--ring);
+}
+.file-navigator .file-tree-row.is-selected:focus-visible {
+  box-shadow: none;
+}
+
+/* Keep the file picker independent of the desktop rail's reading-width preference. */
+.content-workspace:has(> .file-navigator[data-collapsed='true']) {
+  grid-template-columns: 46px minmax(0, 1fr);
+}
+.file-navigator .desktop-file-rail-toggle[data-slot='button'] {
+  position: absolute;
+  z-index: 1;
+  right: 6px;
+  bottom: 3px;
+  width: 32px;
+  height: 32px;
+  color: var(--muted-foreground);
+}
+.file-navigator .desktop-file-rail-toggle[hidden] {
+  display: none;
+}
+.file-navigator[data-collapsed='true'] .desktop-file-rail-toggle {
+  bottom: auto;
+  top: 8px;
+}
+.file-navigator[data-collapsed='true'] .desktop-file-rail-toggle[data-slot='button'] {
+  flex-direction: column;
+  width: 36px;
+  height: auto;
+  min-height: 96px;
+  gap: 10px;
+  right: 5px;
+  padding-block: 8px;
+}
+.file-rail-caption {
+  writing-mode: vertical-rl;
+  font-size: var(--type-14);
+  line-height: 1;
+}
+.file-folder-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: auto;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.file-folder-selected {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+.file-tree-change {
+  margin-inline-start: auto;
+  font: 600 14px/1 var(--font-mono, monospace);
+  color: var(--primary);
+}
+.file-tree-row.is-selected .file-tree-change {
+  color: inherit;
+}
+.file-navigator[data-collapsible='true'][data-compact='false'] .file-navigator-footer {
+  padding-right: 46px;
+}
+.file-navigator[data-collapsible='true'][data-compact='false'] {
+  background: var(--card);
+  border-color: var(--border);
+}
+.file-navigator[data-collapsible='true'][data-compact='false'] .file-tree-row.is-selected {
+  color: var(--primary-foreground);
+  background: var(--primary);
+  box-shadow: none;
+}
+.file-navigator[data-collapsible='true'][data-compact='false']
+  .file-tree-row.is-selected
+  .file-glyph {
+  color: inherit;
+}
+.file-navigator[data-collapsible='true'][data-compact='false']
+  .file-tree-row.is-selected:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -4px;
+}
+.content-workspace:has(> .file-navigator[data-collapsible='true'][data-compact='false'])
+  .compact-selected-file
+  :is(h2, h3) {
+  font: var(--section-heading);
+  letter-spacing: -0.02em;
+}
+.content-workspace:has(> .file-navigator[data-collapsible='true'][data-compact='false'])
+  .published-revision-link {
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--tone-success-bg);
+  color: var(--tone-success-fg);
+}
+.published-file-actions [data-slot='button'] {
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  gap: 10px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.published-file-actions [data-slot='button']:is(:hover, :focus-visible) {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* Empty detail panels can be shorter than a search form and its recovery actions. */
+.content-workspace:not(:has(> .content-detail > .compact-selected-file))
+  > .file-navigator[data-collapsible='true'][data-compact='false']
+  > .file-navigator-body:not([hidden]) {
+  position: static;
+  min-height: 100%;
+}
+
+.file-rail-tooltip[data-slot='tooltip-content'] {
+  align-items: flex-start;
+  flex-direction: column;
+  overflow-wrap: anywhere;
+}

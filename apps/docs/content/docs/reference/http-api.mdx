@@ -1,0 +1,229 @@
+---
+title: HTTP API and wire contract
+description: Find a route, and read how to authenticate, verify a payload and retry a write without an SDK.
+---
+
+Use this page when you call Acclimate without an SDK. It indexes the routes and covers authentication, payload verification and write retries.
+
+## Contract files
+
+| File | Describes |
+| --- | --- |
+| [`contracts/openapi.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/openapi.json) | Every route, body, status and error code, as OpenAPI 3.1. It is the source of truth. |
+| [`contracts/bundle.schema.json`](https://github.com/anveld-dev/acclimate/blob/main/contracts/bundle.schema.json) | Bundle payloads |
+| [`contracts/learning.md`](https://github.com/anveld-dev/acclimate/blob/main/contracts/learning.md#codes-a-script-reads) | Learning status values a script can branch on |
+
+The SDKs ship the same shapes as types, from `@acclimate/sdk` and `acclimate.types`. JSON fields are camelCase on the wire and in both SDKs' request and response objects, while Python names are [snake_case](/docs/reference/python-sdk#naming). [Versioning and compatibility](/docs/reference/versioning) covers how the contract changes.
+
+## Authentication
+
+Send the credential as a bearer token, over HTTPS for any remote call.
+
+```text
+Authorization: Bearer <token>
+```
+
+- A machine token carries the [rights](/docs/reference/credentials#rights) `read`, `write` or `promote` in a workspace. A person signed in to the console has a role in their place.
+- Routes marked for a signed-in person refuse a machine token with 403 `denied`.
+- A missing, unknown, expired or revoked credential gets 401 `unauthenticated`. A valid credential that asks for something it may not have gets 403 `denied`. [Error codes](/docs/reference/error-codes#service-codes) shows the error body.
+
+[Connection and receipt credentials](/docs/reference/credentials#credential-types) work only on these routes, and get 401 on any other.
+
+| Credential | Accepted on | 403 `denied` when |
+| --- | --- | --- |
+| Connection credential | Resolving a channel, and reading a version's metadata or payload | The workspace, bundle or channel is not its connection's, `X-Acclimate-Connection-Id` names another connection, or the version was never released on its channel. A receipt credential reading content gets 403 too. |
+| Receipt credential | `POST /connections/{connectionId}/receipts` | The path names another workspace or connection, a `connectionId`, `workspaceId` or `bundleId` in the body does not match it, `channel` is another channel, or the version, `revision` and `digest` were never released together on its channel. A connection credential or machine token sending a receipt gets 403 too. |
+
+An SDK client with a connection ID sends it as `X-Acclimate-Connection-Id` on those three reads.
+
+- With a connection credential the header is optional, and must name the credential's own connection.
+- With a machine token or session, which also needs read, it limits the read to that connection. The connection must be active and for the bundle in the path, and the channel and version follow the connection credential's rules.
+
+The [health endpoints](/docs/operate/health-and-readiness) `/health` and `/ready` need no token and sit outside `/v1`.
+
+## Workspace routes
+
+`GET /v1/workspaces` lists the workspaces the caller can access. Every other route in this table starts with `/v1/workspaces/{workspaceId}`.
+
+| Operation | Method and path |
+| --- | --- |
+| List or create bundles | `GET` or `POST /bundles` |
+| Create a bundle, its first version and its first release | `POST /bundle-setups` |
+| Create a version | `POST /bundles/{bundleId}/versions` |
+| Read a version's metadata | `GET /bundles/{bundleId}/versions/{versionId}` |
+| Read a version's exact bytes | `GET /bundles/{bundleId}/versions/{versionId}/payload` |
+| List channels | `GET /bundles/{bundleId}/channels` |
+| Resolve a channel | `GET /bundles/{bundleId}/channels/{channel}` |
+| List or create releases | `GET` or `POST /bundles/{bundleId}/channels/{channel}/releases` |
+| List or create connections | `GET` or `POST /connections` |
+| Revoke a connection | `POST /connections/{connectionId}/revoke` |
+| Issue a connection or receipt credential | `POST /connections/{connectionId}/credentials` |
+| Revoke a connection or receipt credential | `POST /connections/{connectionId}/credentials/{credential}/revoke` |
+| List or submit delivery receipts | `GET` or `POST /connections/{connectionId}/receipts` |
+| List connection observations | `GET /connection-observations` |
+| List or issue machine tokens | `GET` or `POST /machine-tokens` |
+| Rotate a machine token | `POST /machine-tokens/{tokenId}/rotate` |
+| Revoke a machine token | `POST /machine-tokens/{tokenId}/revoke` |
+| List machine token events | `GET /machine-token-events` |
+| Look up a retained write | `GET /operations/{operationId}` |
+| Close a retained write | `POST /operations/{operationId}/close` |
+
+The sign-in, membership and invitation routes serve the console and are listed only in `contracts/openapi.json`.
+
+## Read and verify a version
+
+1. Resolve the channel. The response holds the channel's revision and its version's metadata, which never changes. To ask only for a change, send the last `ETag` in `If-None-Match`. HTTP 304 means the channel still points at the same version.
+2. Fetch the exact stored bytes from the version's `/payload` route.
+3. Check the SHA-256 digest of those bytes against the metadata before you parse them, since parsing and writing JSON again can change the bytes.
+4. Validate the parsed payload against the bundle schema.
+
+```sh
+# ACCLIMATE_URL is the service URL, without /v1.
+BUNDLE_API="$ACCLIMATE_URL/v1/workspaces/$WORKSPACE_ID/bundles/$BUNDLE_ID"
+AUTH="Authorization: Bearer $ACCLIMATE_TOKEN"
+
+curl -fsS -H "$AUTH" "$BUNDLE_API/channels/stable" -o resolution.json
+VERSION_ID=$(jq -r .version.id resolution.json)
+DIGEST=$(jq -r .version.digest resolution.json)
+
+curl -fsS -H "$AUTH" "$BUNDLE_API/versions/$VERSION_ID/payload" -o payload.json
+# Hash the downloaded bytes, never a reformatted copy. On macOS, use shasum -a 256.
+test "sha256:$(sha256sum payload.json | cut -d ' ' -f 1)" = "$DIGEST" || { echo "digest mismatch" >&2; exit 1; }
+```
+
+A payload holds up to 128 UTF-8 text files of at most 256 KiB each and 1 MiB in total. Each has a relative `path` and a `kind` of `instruction`, `skill` or `memory`. [Rules for bundle files](/docs/guides/coding-agents#rules-for-bundle-files) lists the path rules.
+
+```json title="Bundle payload"
+{
+  "schemaVersion": 1,
+  "files": [
+    { "path": "instructions.md", "kind": "instruction", "text": "Answer in two short paragraphs." }
+  ]
+}
+```
+
+`POST /bundles/{bundleId}/versions` takes this object as `payload`, with an optional `parentVersionId`.
+
+A release write takes three fields:
+
+| Field | Value |
+| --- | --- |
+| `versionId` | The version to release |
+| `expectedRevision` | The channel's current revision as a string, or `"0"` for a new channel |
+| `unevaluatedReason` | Non-blank reason recorded with the release |
+
+When the channel has moved, the write gets 409 `revision_conflict`.
+
+## Send a delivery receipt
+
+A receipt records one stage of a delivery, such as the start of a job, for the connection's **Delivery reports**. The SDKs send receipts for you, as [Report job starts](/docs/guides/deliver-content#report-job-starts) shows. Without an SDK, send it with the receipt credential and `Content-Type: application/json`, continuing the example in [Read and verify a version](#read-and-verify-a-version).
+
+```sh
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+jq -n --arg event "$(uuidgen)" --arg now "$NOW" --slurpfile r resolution.json '{
+    eventId: $event, versionId: $r[0].version.id, stage: "started", source: "network",
+    occurredAt: $now, revision: $r[0].revision, resolvedAt: $now, stale: false
+  }' > receipt.json
+
+curl -fsS -X POST "$ACCLIMATE_URL/v1/workspaces/$WORKSPACE_ID/connections/$CONNECTION_ID/receipts" \
+  -H "Authorization: Bearer $ACCLIMATE_RECEIPT_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data-binary @receipt.json
+```
+
+| Field | Rule |
+| --- | --- |
+| `eventId` | Required UUID you choose. The same receipt again returns the stored one, and a different receipt with the same ID gets 409 `idempotency_conflict`. |
+| `versionId` | Required. It must have been released on the connection's channel. |
+| `stage` | Required: `resolved`, `downloaded`, `verified`, `prepared` or `started` |
+| `source` | Required: `network`, `cache` or `offline`. A `downloaded` stage needs `network`. |
+| `occurredAt` | Required RFC 3339 time, no more than 24 hours in the past or 5 minutes in the future |
+| `revision`, `resolvedAt`, `stale` | Send all three or none. A `resolved` stage needs them. `revision` is a string of digits that released the version on the channel, `resolvedAt` no more than 5 minutes after `occurredAt`, and `stale` true when the mapping came from a local cache. |
+| `connectionId`, `workspaceId`, `bundleId`, `channel`, `digest` | Optional. The service fills them from the path, the credential's connection and the version, and stores the complete receipt. A value you send must match, and `channel` only comes with `revision`. |
+
+Unknown fields are rejected, and `null` counts as absent. A broken rule gets 400 `invalid_content`, whose message names it. The response is the receipt with `receivedAt` and `delayed`, true when it arrived more than 5 minutes after `occurredAt`. The service keeps receipts for 30 days, and a token with read can list them with `GET` on the same path.
+
+## Retry a write
+
+### Idempotency keys
+
+These writes require an `Idempotency-Key` header of 1 to 128 printable ASCII characters: creating a bundle, a bundle setup, a version, a release or a connection, issuing a connection or receipt credential, and closing a retained write. To retry, send the same key with the same request bytes. The same key with different bytes gets 409 `idempotency_conflict`. The service keeps a key's result for 24 hours, or longer as a [retained result](#retained-results).
+
+Issuing a credential never returns its secret twice: a reused key gets 409 `credential_already_issued`, so revoke that credential and issue a new one with a new key. Turning on learning, the loop controls and a rollback accept an optional key, which makes a retry return the first result. A receipt uses its `eventId` instead.
+
+### Retained results
+
+Bundle setup, version creation and release writes can keep their result for reading after a lost response.
+
+1. Send the write with a UUID as its `Idempotency-Key` and the header `X-Acclimate-Durable-Operation: true`.
+2. If the response is lost, read the result with `GET /operations/{key}?operationPath={path}`, where `{path}` is the original request's full API path, or by the key alone for a bundle setup.
+3. To stop the key from being used again, send `POST /operations/{key}/close` with the same `Idempotency-Key` and the JSON body `{"operationPath": "{path}"}`. A later write with that key gets 409 `operation_closed`.
+
+## Learning
+
+Every route in this section except the model provider starts with `/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning`. The Right column gives the right a machine token needs, and a signed-in person needs the Administrator role wherever it says promote. [Run a learning loop](/docs/guides/learning-loop) explains each call, and [Learning codes](/docs/reference/error-codes#learning-codes) lists their codes.
+
+### Loop
+
+| Route | Purpose | Right |
+| --- | --- | --- |
+| `PUT` on the prefix | Turn on learning or change the channel, `domain`, `benchmark`, task model, judge model or `maxRoundsPerDay` | promote |
+| `GET` on the prefix | Read the loop's status, waiting or pause reason, task counts per split, active round and any alert | read |
+| `POST /start` | Start the loop, refused with `tasks-required` or `optimizer-required` | promote |
+| `POST /pause` | Pause the loop | promote |
+| `POST /resume` | Resume the loop, refused as `/start` is | promote |
+| `POST /stop` | Stop the loop | promote |
+
+While the loop waits, the `GET` response also holds `waiting`, `nextRoundAt` and `evolveTasksNeeded`. `optimizerConfigured` says whether the service has an optimizer.
+
+### Tasks
+
+| Route | Purpose | Right |
+| --- | --- | --- |
+| `GET /tasks` | List tasks in pages, filtered by `split`, `source`, `admission`, `flagged` or `confirmed` | read |
+| `POST /tasks` | Create one task | write |
+| `PATCH /tasks/{id}` | Edit a task, creating a new revision and rerunning the admission check | write |
+| `DELETE /tasks/{id}` | Retire a task, keeping its rows | write |
+| `POST /tasks/confirm` | Confirm up to 100 held-out tasks at once, with a result for each ID | write, signed-in person only |
+| `POST /tasks/{id}/recheck` | Rerun the admission check on a `check-failed` task without a new revision. Any other state returns 409. | write |
+| `POST /tasks/recheck` | The same for every `check-failed` task, or the body's `taskIds` | write |
+| `GET /held-out-tasks/export` | Download the held-out tasks | Signed-in person only |
+
+### Imports and trials
+
+| Route | Purpose | Right |
+| --- | --- | --- |
+| `POST /tasks/import` | Stream a spreadsheet, CSV, JSONL or text upload. Returns the import with its counts. | write |
+| `GET /tasks/imports` | The 50 newest imports, with counts, `createdAt` and `source` | read |
+| `GET /tasks/imports/{id}` | One import's status and counts of converted, pending and set-aside rows | read |
+| `POST /tasks/{id}/try` | Run one task on the channel's current version. Returns a trial ID. | write |
+| `GET /trials/{id}` | A trial's status, gateway log, output, verdict and any `error.code` | read |
+
+An import sent from a console session also returns the drafted task cards.
+
+### Rounds and rollback
+
+| Route | Purpose | Right |
+| --- | --- | --- |
+| `GET /rounds` | The round timeline | read |
+| `GET /rounds/{id}` | One round's candidates, diffs, diagnoses and evolve split results | read |
+| `POST /rollback` | Move the channel back to the version a named round replaced, blocking the removed version from adoption | promote |
+| `GET /blocked-versions` | Versions blocked after a rollback or an automatic revert | read |
+| `DELETE /blocked-versions/{digest}` | Unblock a version | promote |
+
+### Usage, outcomes and memory
+
+| Route | Purpose | Right |
+| --- | --- | --- |
+| `GET /usage` | Rounds, rollouts and tokens for each day | read |
+| `POST /outcomes` | Report a production outcome with an optional `grading`, as `job.expect()` does | write |
+| `GET /memory` | The improvement memory at a revision | read |
+
+### Model provider
+
+The workspace's model provider is at `/v1/workspaces/{workspaceId}/model-provider`.
+
+| Route | Purpose | Right |
+| --- | --- | --- |
+| `GET` | Read the base URL, allowed models, whether a provider API key is set and the executor's verification result, never the key | read |
+| `PUT` | Save an OpenAI-compatible base URL, provider API key and allowed models | Signed-in administrator only |

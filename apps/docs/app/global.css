@@ -1,0 +1,25 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+html {
+  scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}
+
+/* Console screenshots ship in a light and a dark version. */
+.screenshot-dark {
+  display: none;
+}
+
+.dark .screenshot-light {
+  display: none;
+}
+
+.dark .screenshot-dark {
+  display: block;
+}

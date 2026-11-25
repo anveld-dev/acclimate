@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@acclimate/sdk": ["./packages/sdk/src/index.ts"],
+      "@acclimate/sdk/validation": ["./packages/sdk/src/validation.ts"],
+      "@acclimate/sdk/native-files": ["./packages/sdk/src/native-files.ts"],
+      "@acclimate/claude-plugin": ["./packages/claude-plugin/src/index.ts"],
+      "@acclimate/claude-plugin/native": ["./packages/claude-plugin/src/native.ts"],
+      "@acclimate/codex-plugin": ["./packages/codex-plugin/src/index.ts"],
+      "@acclimate/cursor-plugin": ["./packages/cursor-plugin/src/index.ts"],
+      "@acclimate/cursor-plugin/native": ["./packages/cursor-plugin/src/native.ts"],
+      "@acclimate/pi-plugin": ["./packages/pi-plugin/src/index.ts"],
+      "@acclimate/pi-plugin/native": ["./packages/pi-plugin/src/native.ts"]
+    },
+    "types": ["node"]
+  },
+  "include": ["packages/**/*.ts", "examples/**/*.ts", "scripts/*.ts"],
+  "exclude": ["examples/self-improvement-memory", "node_modules", "**/dist"]
+}

@@ -1,0 +1,12 @@
+{
+  // The docs are a static export (`npm run build:docs` writes `out/`), served as Worker assets.
+  "name": "acclimate-docs",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./out",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "routes": [{ "pattern": "acclimate.anveld.dev", "custom_domain": true }],
+  "workers_dev": false
+}

@@ -1,0 +1,19 @@
+{
+  "native-repository": [
+    ".npmrc",
+    "README.md",
+    "container-grader.mjs",
+    "fixture/package.json",
+    "fixture/replay.json",
+    "fixture/src/retry.js",
+    "fixture/tests/retry.test.mjs",
+    "harness-child.mjs",
+    "harness-process.mjs",
+    "harnesses.mjs",
+    "native.mjs",
+    "package.json",
+    "repository-job.mjs",
+    "smoke.mjs",
+    "verify-install.mjs"
+  ]
+}

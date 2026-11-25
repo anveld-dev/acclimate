@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@acclimate/sdk": ["../../packages/sdk/src/index.ts"],
+      "@acclimate/sdk/learning": ["../../packages/sdk/src/learning/index.ts"]
+    }
+  },
+  "include": ["./**/*.ts"]
+}

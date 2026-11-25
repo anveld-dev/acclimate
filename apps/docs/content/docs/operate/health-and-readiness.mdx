@@ -1,0 +1,78 @@
+---
+title: Check health and readiness
+description: Probe the deployed API and console, read container exit codes, then verify the public routes and sign-in.
+---
+
+Use the probes for monitoring and during an incident. Run the checks at the end after every deployment, upgrade and restore.
+
+## Probe the stack
+
+Run these from the checkout, with your hostnames.
+
+```sh
+docker compose ps
+curl -fsS https://<api-host>/health
+curl -fsS https://<api-host>/ready
+curl -fsS https://<console-host>/ready
+```
+
+In a healthy deployment, every container is `healthy` and the three requests return `ok`, `{"ready":true}` and `{"status":"ready"}`.
+
+| Probe | What it checks |
+| --- | --- |
+| API `GET /health` | The service process is running. |
+| API `GET /ready` | The database answers, this process is the only service using the database, its background worker is running and it is not shutting down. |
+| Console `GET /ready` | The console's configuration is valid and the service is ready. It does not contact Keycloak. |
+| Caddy container health | The proxy is running with its configuration loaded. It starts only after the service and the console are healthy. |
+| Executor container health | See [Check the executor](/docs/operate/enable-learning#check-the-executor). |
+
+An API that is not ready returns HTTP 503 with `{"ready":false}`, and the console returns 503 with `{"status":"not_ready"}`. Ready does not mean that learning rounds progress or that a model provider is reachable.
+
+If `/ready` stays unavailable, check in the service log that the database is reachable, that migrations completed and that no second service process uses the database.
+
+```sh
+docker compose logs --tail 100 service
+```
+
+On SIGTERM the service stops reporting ready, finishes open requests and work and releases the database. Compose gives each container except the executor 90 seconds to stop. For other symptoms, see [Troubleshooting](/docs/operate/troubleshooting).
+
+## Monitor the deployment
+
+The service exposes no metrics endpoint, so watch these from outside.
+
+| Alert on | How |
+| --- | --- |
+| API liveness and readiness | `GET /health` and `GET /ready` on the API hostname fail or stay at 503 |
+| Console | `GET /ready` on the console hostname does not return 200 |
+| Containers | `docker compose ps` shows a container not `healthy` or restarting |
+| Disk | Free space on the Docker data directory and the backup directory |
+| Certificates | The expiry of each public certificate. Caddy renews its own. |
+| Backups | The age of the newest dump |
+
+### Logs
+
+Compose rotates each container's log at 10 MB and keeps five files, so read recent lines with `docker compose logs <service>` and ship them elsewhere to keep more.
+
+### Data growth
+
+The service deletes integration receipts older than 30 days each time a receipt arrives. It keeps everything else: bundle versions and release history, learning rounds with their rollouts, imported tasks, sessions and the audit log. Keep enough disk for the growing database and for the copy that a restore or an upgrade keeps.
+
+## Read exit codes
+
+Compose restarts a container that exits. `docker compose ps` shows the exit code, and the log ends with the error.
+
+| Container | Exit code | Meaning | What to do |
+| --- | --- | --- | --- |
+| `service` | 75 | The service lost its exclusive hold on the database. | Run [one service process](/docs/operate/self-host#limits-of-this-deployment) per database. |
+| `service` | 1 | Any other error, such as invalid configuration or a failed migration, which stops the service before it listens | Read `docker compose logs service`. |
+| `acclimate-executor` | 78 | Its credential, runner image or sandbox runtime is wrong, so restarting does not help. | See [Check the executor](/docs/operate/enable-learning#check-the-executor). |
+
+## Verify API access and sign-in
+
+The repository's tests use test certificates and a test issuer, so check your own deployment before it takes traffic. From a computer outside the server, run the three requests in [Probe the stack](#probe-the-stack), which also check DNS, the certificates and Caddy. Then check that the issuer publishes its configuration.
+
+```sh
+curl -fsS https://<auth-host>/realms/acclimate/.well-known/openid-configuration
+```
+
+Its `issuer` must equal `ACCLIMATE_OIDC_ISSUER` in `service.env`. For an existing Keycloak or another provider, request `<issuer>/.well-known/openid-configuration`. Finally, open the console in a private browser window, sign in and sign out. None of these checks shows that learning works. For that, see [Check the executor](/docs/operate/enable-learning#check-the-executor).

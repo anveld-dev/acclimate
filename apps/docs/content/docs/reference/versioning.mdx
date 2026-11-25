@@ -1,0 +1,54 @@
+---
+title: Versioning and compatibility
+description: How Acclimate releases are numbered, which SDK and service versions work together, and how the wire contract and deprecated names change.
+---
+
+Here "release" means an Acclimate release, not the release of a bundle version to a channel.
+
+## One version for every artifact
+
+Each Acclimate release has one `major.minor.patch` version. The service, console, executor and runner images, `@acclimate/sdk`, the four plugin packages, the `acclimate-sdk` Python package and the starter archives all carry it, and the release check refuses artifacts whose versions differ.
+
+Git tags add a leading `v`, such as `v0.1.0`. Image tags and package versions do not, so the same release is `0.1.0` there. Pushing a tag builds the images for amd64 and arm64 and creates a GitHub Release with the package files.
+
+The first release is `0.1.0`. Its images are on GHCR and its package files are attached to the GitHub Release. The packages are not on npm or PyPI yet.
+
+## What a version number promises
+
+Acclimate is at `0.x`. Until `1.0.0`:
+
+| Release | May contain |
+| --- | --- |
+| Patch, such as `0.1.0` to `0.1.1` | Fixes and additive changes only, never needing a code change |
+| Minor, such as `0.1.x` to `0.2.0` | Breaking changes to SDK APIs, CLI flags or the HTTP contract, each listed under **Breaking** in the [changelog](https://github.com/anveld-dev/acclimate/blob/main/CHANGELOG.md) with its replacement |
+
+From `1.0.0`, Acclimate follows [Semantic Versioning](https://semver.org), and breaking changes wait for a major release.
+
+## Match SDK and service versions
+
+Use the SDK release that matches your service's minor version. The service also accepts the previous minor's SDK where the wire contract remains compatible. An SDK newer than the service is not supported, because it can call routes or send fields the older service rejects. So [upgrade](/docs/operate/upgrades-and-recovery#upgrade) the service and console first, then your applications' SDK.
+
+## The wire contract
+
+The versioned API uses the prefix `/v1`, and the health endpoints `/health` and `/ready` sit outside it. Within `/v1`, an Acclimate release may add routes, optional request fields, response fields and enumeration values such as a new status or error code, and may relax a limit. Write clients that ignore unknown response fields and treat an unknown enumeration value as unknown instead of failing.
+
+Removing or renaming a field or route, making an optional field required or tightening a limit is breaking. It follows the rules above and appears in the changelog. Breaking changes to every route would move to `/v2`, and the service would serve both prefixes for at least one minor release.
+
+## Document schema versions
+
+Bundle payloads, improvement memory and the `acclimate pull` config carry a `schemaVersion` field, which is `1` for all three today.
+
+- `schemaVersion` changes only when the document changes incompatibly. Additive fields keep the number.
+- Readers reject a `schemaVersion` they do not know instead of guessing.
+- Stored bundle versions are immutable and keep their schema version. The service keeps reading every schema version it has stored.
+- After a new schema version arrives, the service accepts the previous one for writes for at least one minor release.
+
+## Deprecation
+
+A deprecated name keeps working until it is removed. The changelog announces each deprecation with its replacement, and removal waits at least one minor release after that. Nothing is deprecated today.
+
+| Where | How a deprecation will appear |
+| --- | --- |
+| TypeScript | A `@deprecated` tag that editors and type checkers show |
+| Python | A `Deprecated.` comment on the alias, and an entry in the [Python SDK](/docs/reference/python-sdk) reference |
+| HTTP | An entry in the [HTTP API and wire contract](/docs/reference/http-api) reference, with the replacement route |

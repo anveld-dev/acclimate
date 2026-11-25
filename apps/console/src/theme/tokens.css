@@ -1,0 +1,135 @@
+:root {
+  color-scheme: light;
+  --tone-success-bg: #e3eee2;
+  --tone-success-fg: #254937;
+  --tone-warning-bg: #f8ebcd;
+  --tone-warning-fg: #704707;
+  --tone-danger-bg: #fae4e1;
+  --tone-danger-fg: #872f2c;
+  --tone-info-bg: #e1edf4;
+  --tone-info-fg: #2a4c63;
+  --background: #f8f7f1;
+  --foreground: #202e26;
+  --card: #fffef9;
+  --card-foreground: #202e26;
+  --popover: #fffef9;
+  --popover-foreground: #202e26;
+  --primary: #254937;
+  --primary-foreground: #fffef9;
+  --secondary: #eeeee5;
+  --secondary-foreground: #394b3d;
+  --muted: #efefe7;
+  --muted-foreground: #576258;
+  --accent: #e3eadd;
+  --accent-foreground: #233e2c;
+  --destructive: #bb3434;
+  --danger-button: #a33232;
+  --danger-button-hover: #862a2a;
+  --danger-button-text: #fff8f5;
+  --border: #d7d9cc;
+  --input: #7c887b;
+  --ring: #4f775b;
+  --chart-1: #535f47;
+  --chart-2: #7b8770;
+  --chart-3: #9da693;
+  --chart-4: #b9c1b1;
+  --chart-5: #d7dccf;
+  --radius: 0.5rem;
+  --sidebar: #f5f5f4;
+  --sidebar-foreground: #42464c;
+  --sidebar-primary: #254937;
+  --sidebar-primary-foreground: #fffef9;
+  --sidebar-accent: #e8e9e6;
+  --sidebar-accent-foreground: #252a23;
+  --sidebar-border: #e2e4e1;
+  --sidebar-ring: #4f775b;
+  --sidebar-width: 196px;
+  --type-12: 0.75rem;
+  --leading-12: 1rem;
+  --type-13: 0.8125rem;
+  --leading-13: 1.125rem;
+  --type-14: 0.875rem;
+  --leading-14: 1.25rem;
+  --type-16: 1rem;
+  --leading-16: 1.5rem;
+  --type-20: 1.25rem;
+  --leading-20: 1.75rem;
+  --type-28: 1.75rem;
+  --leading-28: 2.125rem;
+  --font-mono: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  --view-heading: 650 var(--type-20)/var(--leading-20) var(--font-sans);
+  --section-heading: 650 var(--type-16)/var(--leading-16) var(--font-sans);
+  --font-editorial: 'Iowan Old Style', 'Baskerville', Georgia, serif;
+  --overlay-scrim: rgb(23 39 29 / 38%);
+  --surface-shadow: 0 12px 36px -12px rgb(26 42 30 / 28%), 0 2px 6px rgb(26 42 30 / 8%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --tone-success-bg: #263c2d;
+    --tone-success-fg: #bcdfbb;
+    --tone-warning-bg: #3c3020;
+    --tone-warning-fg: #f1cd89;
+    --tone-danger-bg: #462c2d;
+    --tone-danger-fg: #ffb4ac;
+    --tone-info-bg: #263947;
+    --tone-info-fg: #c0def1;
+    --overlay-scrim: rgb(5 12 7 / 64%);
+    --surface-shadow: 0 16px 44px -12px rgb(0 0 0 / 55%);
+    --background: #19211c;
+    --foreground: #eeeee3;
+    --card: #202a23;
+    --card-foreground: #eeeee3;
+    --popover: #29342a;
+    --popover-foreground: #eeeee3;
+    --primary: #eeeee3;
+    --primary-foreground: #202a23;
+    --secondary: #2b372e;
+    --secondary-foreground: #e1e7d8;
+    --muted: #29332b;
+    --muted-foreground: #adb8aa;
+    --accent: #374a3a;
+    --accent-foreground: #e0e8d9;
+    --destructive: #f08585;
+    --danger-button: #52302f;
+    --danger-button-hover: #663b39;
+    --danger-button-text: #ffbeb6;
+    --border: #414d42;
+    --input: #879587;
+    --ring: #acc69d;
+    --sidebar: #1d1f22;
+    --sidebar-foreground: #c1c6cd;
+    --sidebar-primary: #eeeee3;
+    --sidebar-primary-foreground: #202a23;
+    --sidebar-accent: #30352d;
+    --sidebar-accent-foreground: #e0e8d9;
+    --sidebar-border: #414d42;
+    --sidebar-ring: #acc69d;
+  }
+}
+
+.workspace-desktop-rail {
+  --sidebar: #19392c;
+  --sidebar-foreground: #e2ebdf;
+  --sidebar-accent: #365442;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-primary: #dce8d1;
+  --sidebar-primary-foreground: #19392c;
+  --sidebar-border: #45634f;
+  --sidebar-ring: #d4e2b1;
+}
+
+
+@media (prefers-color-scheme: dark) {
+  .workspace-desktop-rail {
+    --sidebar: #131d17;
+    --sidebar-foreground: #d4dfd2;
+    --sidebar-accent: #26382c;
+    --sidebar-accent-foreground: #eeeee3;
+    --sidebar-primary: #dce8d1;
+    --sidebar-primary-foreground: #131d17;
+    --sidebar-border: #34473a;
+    --sidebar-ring: #acc69d;
+  }
+}

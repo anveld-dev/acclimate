@@ -1,0 +1,554 @@
+/* Setup follows the four steps in document order at every width. */
+.sdk-setup.sdk-setup-workspace {
+  max-width: 1440px;
+  margin-inline: auto;
+  border: 0;
+  background: transparent;
+  container-type: inline-size;
+}
+.sdk-setup-workspace .sdk-setup-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 8px 0 20px;
+}
+.sdk-setup-workspace .sdk-setup-header h2 {
+  font-size: var(--type-20);
+  line-height: 28px;
+  font-weight: 650;
+  letter-spacing: -0.35px;
+}
+.sdk-setup-workspace .sdk-setup-header p {
+  margin-top: 4px;
+  color: var(--muted-foreground);
+  line-height: 21px;
+}
+.sdk-setup-workspace .sdk-setup-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 28px;
+  min-width: 0;
+}
+.sdk-setup-workspace .sdk-step {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+.sdk-setup-workspace .sdk-step h3 {
+  font-size: var(--type-16);
+  line-height: 24px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.sdk-setup-workspace .sdk-step p {
+  line-height: 21px;
+  margin-block: 8px;
+}
+.sdk-setup-workspace .sdk-install-step {
+  padding-bottom: 20px;
+}
+.sdk-setup-workspace .sdk-access-step {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+.sdk-setup-workspace .sdk-install-command,
+.sdk-setup-workspace .sdk-run-command-line {
+  display: flex;
+  align-items: start;
+  min-width: 0;
+  gap: 6px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+}
+.sdk-setup-workspace .sdk-command-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 7px 6px;
+  margin: 0;
+  background: transparent;
+  font-size: var(--type-14);
+  line-height: 21px;
+}
+.sdk-setup-workspace .sdk-install-help {
+  color: var(--muted-foreground);
+}
+.sdk-setup-workspace .sdk-required-environment {
+  display: grid;
+  min-width: 0;
+  gap: 0;
+  margin-block: 12px;
+}
+.sdk-setup-workspace .sdk-required-environment > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  gap: 2px;
+  padding-block: 7px;
+  border-bottom: 1px solid var(--border);
+}
+.sdk-setup-workspace .sdk-required-environment > div:last-child {
+  border-bottom: 0;
+}
+.sdk-setup-workspace .sdk-required-environment dt {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--type-14);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.sdk-setup-workspace .sdk-required-environment dd {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-14);
+  line-height: 20px;
+}
+.sdk-setup-workspace .sdk-disclosure > [data-slot='disclosure-trigger'] {
+  min-height: 36px;
+  font-size: var(--type-14);
+  line-height: 20px;
+  color: var(--muted-foreground);
+}
+.sdk-setup-workspace .sdk-disclosure > [data-slot='disclosure-trigger']:hover {
+  color: var(--foreground);
+}
+.sdk-setup-workspace .sdk-detail-content {
+  gap: 10px;
+  min-width: 0;
+  padding-block: 8px;
+  line-height: 21px;
+}
+.sdk-setup-workspace .sdk-detail-content[data-state='open'] {
+  display: grid;
+}
+.sdk-setup-workspace .sdk-detail-content p {
+  margin: 0;
+}
+.sdk-setup-workspace .sdk-api-url {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.sdk-setup-workspace .sdk-api-url code,
+.sdk-setup-workspace .sdk-selection-details code {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.sdk-setup-workspace .sdk-recipe-heading p {
+  color: var(--muted-foreground);
+}
+.sdk-setup-workspace .sdk-recipe-file {
+  overflow: hidden;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  margin-top: 14px;
+}
+.sdk-setup-workspace .sdk-recipe-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.sdk-setup-workspace .sdk-recipe-toolbar code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--type-14);
+}
+.sdk-setup-workspace .sdk-recipe-code {
+  min-width: 0;
+  max-width: 100%;
+  max-height: 620px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 16px;
+  font-size: var(--type-14);
+  line-height: 21px;
+}
+.sdk-setup-workspace .sdk-run-command {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.sdk-setup-workspace .sdk-run-command > span,
+.sdk-setup-workspace .sdk-expected-output {
+  color: var(--muted-foreground);
+  font-size: var(--type-14);
+  line-height: 21px;
+}
+.sdk-setup-workspace .sdk-expected-output {
+  padding: 10px 0 0;
+}
+.sdk-setup-workspace .sdk-setup-support {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--border);
+  margin-top: 24px;
+  padding-top: 8px;
+}
+.sdk-setup-workspace .sdk-setup-support > .sdk-disclosure {
+  border-bottom: 1px solid var(--border);
+  padding-block: 4px;
+}
+.sdk-setup-workspace .sdk-setup-support > .sdk-disclosure:last-child {
+  border-bottom: 0;
+}
+.sdk-setup-workspace .sdk-selection-details {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.sdk-setup-workspace .sdk-selection-details > div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+}
+.sdk-setup-workspace .sdk-selection-details dt {
+  color: var(--muted-foreground);
+}
+.sdk-setup-workspace .sdk-selection-details dd {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+@container (min-width: 860px) {
+  .sdk-setup-workspace .sdk-recipe-toolbar {
+    background: var(--muted);
+  }
+}
+.sdk-setup-workspace [aria-label='Recipe language'] button {
+  min-height: 32px;
+}
+.sdk-setup-workspace [aria-label='Recipe language'] button[data-state='on'] {
+  font-weight: 700;
+  box-shadow: inset 0 -2px 0 currentColor;
+}
+.sdk-setup-workspace .sdk-step pre.sdk-recipe-code,
+.sdk-setup-workspace .sdk-disclosure pre.sdk-reporting-code {
+  max-width: 100%;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+@media (pointer: coarse) {
+  .sdk-setup-workspace [aria-label='Recipe language'] button {
+    min-height: 44px;
+  }
+  .sdk-setup-workspace .sdk-disclosure > [data-slot='disclosure-trigger'] {
+    min-height: 44px;
+  }
+}
+
+.sdk-setup-workspace .sdk-install-command > span,
+.sdk-setup-workspace .sdk-run-command-line > span {
+  flex: 0 0 auto;
+}
+.sdk-setup-workspace .sdk-reporting-recipe-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sdk-setup-workspace .sdk-reporting-recipe-heading h4 {
+  font-weight: 600;
+  font-size: var(--type-14);
+}
+.sdk-setup-workspace .sdk-reporting-code {
+  padding: 12px;
+  max-height: 480px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+}
+
+.sdk-recipe-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 16px;
+}
+.sdk-recipe-options label {
+  font-size: var(--type-14);
+  color: var(--muted-foreground);
+}
+.sdk-setup-workspace .sdk-agent-step {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+.sdk-agent-step > p {
+  max-width: 80ch;
+}
+@media (pointer: coarse) {
+  .sdk-recipe-options select {
+    min-height: 44px;
+  }
+}
+
+.sdk-recipe-file > .sdk-run-command {
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+@container (min-width: 860px) {
+  .sdk-recipe-file > .sdk-run-command {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+  }
+}
+.sdk-setup-workspace .sdk-recipe-toolbar {
+  flex-wrap: wrap;
+}
+
+.sdk-recipe-lab .sdk-setup-header {
+  align-items: center;
+  padding: 10px 0 12px;
+}
+.sdk-recipe-lab .sdk-setup-header h2 {
+  font: var(--section-heading);
+  letter-spacing: -0.05em;
+}
+.sdk-recipe-lab .sdk-recipe-options {
+  display: flex;
+  align-items: end;
+  gap: 10px clamp(16px, 3vw, 48px);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+}
+.sdk-recipe-lab .sdk-control-group,
+.sdk-recipe-lab .sdk-scope {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.sdk-recipe-lab .sdk-scope strong,
+.sdk-recipe-lab .sdk-control-group > span,
+.sdk-recipe-lab .sdk-scope > span {
+  font-size: var(--type-13);
+}
+.sdk-recipe-lab .sdk-control-group > span,
+.sdk-recipe-lab .sdk-scope > span {
+  color: var(--muted-foreground);
+}
+.sdk-recipe-lab .sdk-scope strong {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  font-family: var(--font-mono, monospace);
+  overflow-wrap: anywhere;
+}
+.sdk-recipe-lab .sdk-scope svg,
+.sdk-recipe-lab .sdk-file-name svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.sdk-source-jump {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sdk-recipe-lab .sdk-setup-layout {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.sdk-receipt-panel {
+  min-width: 0;
+}
+.sdk-recipe-lab .setup-receipt {
+  background: var(--card);
+  overflow-wrap: anywhere;
+}
+.sdk-recipe-lab .sdk-run-step {
+  border-top: 1px solid var(--border);
+}
+.sdk-recipe-lab .sdk-check-step {
+  scroll-margin-top: 8px;
+}
+.sdk-recipe-lab .sdk-check-step .sdk-recipe-file {
+  margin: 0;
+  border-radius: 6px;
+}
+.sdk-recipe-lab .sdk-file-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.sdk-recipe-lab .sdk-file-name h3 {
+  font: 600 14px/1.4 var(--font-mono, monospace);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.sdk-recipe-lab .sdk-check-step .sdk-recipe-code {
+  padding: 12px 8px;
+  max-height: min(58dvh, 590px);
+}
+.sdk-recipe-lab .sdk-check-step .sdk-recipe-code > code {
+  min-width: max-content;
+}
+.sdk-recipe-lab .sdk-agent-step {
+  margin: 0;
+  padding: 12px 0;
+  border: 0;
+}
+.sdk-recipe-lab .sdk-setup-support {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.sdk-recipe-lab .sdk-setup-layout > .sdk-step {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.sdk-recipe-lab .sdk-run-step .sdk-check-step {
+  margin-top: 12px;
+}
+.sdk-recipe-lab .sdk-run-step .sdk-receipt-panel {
+  margin-top: 12px;
+}
+.sdk-recipe-lab .sdk-step [data-slot='disclosure-trigger'],
+.sdk-recipe-lab .sdk-control-group button {
+  min-height: 36px;
+}
+@media (pointer: coarse) {
+  .sdk-recipe-lab .sdk-step [data-slot='disclosure-trigger'],
+  .sdk-recipe-lab .sdk-control-group button {
+    min-height: 44px;
+  }
+}
+
+/* On a connection page the recipe sits inside one step panel: options read as
+   a plain row, and the steps run down a single column as a numbered list. */
+.sdk-recipe-lab.sdk-setup-step .sdk-recipe-options {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.sdk-recipe-lab.sdk-setup-step .sdk-recipe-options label {
+  display: grid;
+  gap: 4px;
+}
+.sdk-recipe-lab.sdk-setup-step .sdk-control-group > span {
+  font-size: var(--type-14);
+}
+.sdk-recipe-lab.sdk-setup-step .sdk-recipe-options label > * {
+  margin: 0;
+}
+.sdk-recipe-lab .sdk-connection-recipe {
+  gap: 0;
+  margin-top: 16px;
+}
+.sdk-recipe-lab .sdk-connection-recipe > .sdk-step {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 16px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+}
+.sdk-recipe-lab .sdk-connection-recipe > .sdk-step:last-child {
+  padding-bottom: 0;
+}
+.sdk-recipe-lab .sdk-connection-recipe > .sdk-step > *,
+.sdk-recipe-lab .sdk-connection-recipe .sdk-recipe-heading p {
+  margin: 0;
+}
+.sdk-connection-recipe .sdk-recipe-heading h3 {
+  margin-bottom: 4px;
+}
+.sdk-recipe-lab .sdk-connection-recipe .sdk-check-step {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+.sdk-recipe-lab .sdk-connection-recipe .sdk-recipe-code {
+  max-height: 16rem;
+}
+.sdk-environment-snippet {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--muted);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--type-14);
+  line-height: 1.6;
+  white-space: pre;
+}
+@container connection-detail (min-width: 640px) {
+  /* Hang the step number in a gutter so each step's content lines up. */
+  .sdk-recipe-lab .sdk-connection-recipe > .sdk-step:has(.sdk-step-number) {
+    padding-left: 36px;
+  }
+  .sdk-connection-recipe > .sdk-step .sdk-step-number {
+    position: absolute;
+    left: 0;
+  }
+}
+
+/* Numbered markers make the four steps scannable down a long page. */
+.sdk-step h3:has(.sdk-step-number) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sdk-step-number {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-size: var(--type-13);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.sdk-agent-instructions {
+  display: grid;
+  gap: 6px;
+}
+.sdk-agent-instructions ol {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-inline-start: 20px;
+  list-style: decimal;
+  line-height: 21px;
+}
+.sdk-agent-instructions li::marker {
+  color: var(--muted-foreground);
+}
+.sdk-setup-workspace .sdk-step .sdk-agent-note {
+  color: var(--muted-foreground);
+  font-size: var(--type-13);
+  line-height: 19px;
+}

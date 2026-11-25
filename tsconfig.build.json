@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "."
+  },
+  "include": ["packages/*/src/**/*.ts", "examples/**/*.ts"],
+  "exclude": ["**/tests/**", "examples/self-improvement-memory"]
+}

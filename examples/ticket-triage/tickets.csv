@@ -1,0 +1,65 @@
+input,expected
+Can you add keyboard shortcuts for moving cards between columns?,feature-request
+"I got an email saying my password was changed, but I didn't change it.",security
+"I bought the annual plan by mistake, I wanted monthly. Can I get the difference back?",refunds
+I can sign in on the web but the mobile app keeps saying my password is wrong.,account-access
+I received an email that looks like it's from you asking me to confirm my password. Is it real?,security
+"Duplicate payment on invoice 4471, both went through. Please send one back.",refunds
+Please let admins require a comment when someone changes a due date.,feature-request
+There's a login from a country none of us have ever been to in our audit log.,security
+The invoice PDF is missing our VAT number. We need it added for our accountant.,billing
+We cancelled on the 2nd but were still billed on the 5th. I'd like that money back.,refunds
+I need to change the card on file before the renewal next week. Where do I do that?,billing
+The password reset email never arrives. I've checked spam.,account-access
+I was charged twice for the same month. Please return the second payment.,refunds
+We're a registered charity. Do you have a discount for non-profits?,sales
+Someone outside our company seems to have a share link to our private workspace.,security
+Why did our price go up this month? Nothing changed on our side.,billing
+We need a signed data processing agreement before our legal team lets us continue.,data-privacy
+We'd like to set different notification rules for each project.,feature-request
+Could you add a dark theme? Several of us work late.,feature-request
+The weekly summary email arrived three times this Monday.,bug
+"Our procurement team needs a quote on your letterhead for the Business plan, 75 seats.",sales
+I closed my account last month and got charged again today. Please reverse the charge.,refunds
+The calendar view shows every event one day early since the clocks changed.,bug
+We need last year's invoices re-issued with our new company address.,billing
+My colleague left the company and was the only admin. How do we get admin access back?,account-access
+My account sent invitations to people I don't know. I didn't send them. Please reset my password too.,security
+An API key of ours was pushed to a public repository by accident. What should we do right now?,security
+Can someone walk our leadership team through the Enterprise plan next week?,sales
+Is there any plan for a Linux desktop app? We'd use it.,feature-request
+Our SSO login loops back to the sign-in page for everyone on the team since this morning.,account-access
+Where is our data stored? Our customers require that it stays in the EU.,data-privacy
+Saving a comment with an emoji gives a blank page and the comment is lost.,bug
+It would be great to schedule a report to be sent every Friday.,feature-request
+Do you have a reseller programme? We'd like to offer your product to our clients.,sales
+How long do you keep deleted files before they are really gone?,data-privacy
+The invite link you sent says it has expired. Can you send a new one?,account-access
+"Search returns nothing for words with accents, like café.",bug
+You charged us for 20 seats after we had already removed 8 people. Please refund the extra.,refunds
+I changed my work email address and now I can't sign in with either one.,account-access
+Drag and drop in the board view puts cards in the wrong column in Firefox.,bug
+"The CSV export stops at 1,000 rows even though we have about 6,000.",bug
+The trial was supposed to be free but my card was charged 49 dollars. I want it reversed.,refunds
+We'd love a way to duplicate a whole project as a template.,feature-request
+Our finance team asks whether you can invoice us by bank transfer instead of card.,billing
+Uploaded PDFs over about 20 MB show as 0 bytes afterwards.,bug
+Does downgrading to the Starter plan take effect now or at the end of the billing period?,billing
+I think I found a way to see another customer's file names by editing the URL.,security
+The mobile app crashes when I open a notification on Android 15.,bug
+We're thinking of moving 300 people over. Do you offer volume pricing?,sales
+A former customer of ours asked to be erased. How do we remove their records from your backups too?,data-privacy
+I lost my phone and can't get past the two-step code screen.,account-access
+Is there a plan for education? We're a university department of about 60 staff.,sales
+Can we switch from monthly to annual billing in the middle of a cycle?,billing
+A former employee still appears as signed in on two devices. We need those sessions ended at once.,security
+It would help a lot if we could export reports to PowerPoint.,feature-request
+I'm locked out after too many attempts. How long until I can try again?,account-access
+I want to object to my data being used for product analytics. How do I opt out?,data-privacy
+"We paid for the add-on and it never activated. Either turn it on or give us our money back, we prefer the money.",refunds
+Our invoice for March lists 14 seats but we only have 11 people on the team. Can you correct it?,billing
+We're comparing you with two other tools. Could we extend our trial by two weeks to finish the evaluation?,sales
+Do you share our usage data with any third parties? We need the list of sub-processors.,data-privacy
+What would it cost to add 40 seats and the audit log add-on? We'd like a quote.,sales
+"Please delete my account and every piece of data linked to it, and confirm in writing.",data-privacy
+Under GDPR I am asking for a copy of all personal data you hold about me.,data-privacy

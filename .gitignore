@@ -1,0 +1,46 @@
+# Local reference repositories
+/.repos/
+/target/
+/node_modules/
+**/node_modules/
+.env
+.env.*
+*.log
+.DS_Store
+/dist/
+/packages/*/dist/
+/python/dist/
+/python/build/
+/python/*.egg-info/
+**/__pycache__/
+**/.pytest_cache/
+/artifacts/
+/improvement-*/
+
+# Web app build/cache outputs
+/apps/*/.output/
+/apps/*/dist/
+/apps/*/dist_keycloak/
+/apps/*/.tanstack/
+!/.env.example
+!/apps/*/.env.example
+
+# Persistent local demo configuration
+/.local/
+
+# Isolated behavior-test dependencies
+/.venv-bdd/
+/.venv/
+
+# Separate private manual Compose workspace
+/.compose-workspace/
+
+# Docs site (Next.js + Fumadocs) build outputs
+/apps/docs/.next/
+/apps/docs/.source/
+/apps/docs/out/
+/apps/docs/next-env.d.ts
+/apps/docs/*.tsbuildinfo
+
+# Local evaluator runs (acclimate-eval compare --local)
+.acclimate/

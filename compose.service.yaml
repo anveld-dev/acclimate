@@ -1,0 +1,3 @@
+# Compatibility file: no overlay is needed. compose.yaml now contains the complete
+# authenticated application. Required production configuration cannot be bypassed.
+services: {}

@@ -1,0 +1,178 @@
+import { ReceiptTime } from './receipt-time';
+import { StatusBadge } from './status-badge';
+import { useState, type ReactNode } from 'react';
+import type { DeliveryReceipt, Page } from '@acclimate/sdk';
+import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { ConsoleLink } from './console-link';
+
+export function ConnectionReports({
+  receipts,
+  channel,
+  currentRevision,
+  currentVersionId,
+  setupHref,
+  busy,
+  onLoadOlder,
+  action,
+}: {
+  receipts: Page<DeliveryReceipt>;
+  channel: string;
+  currentRevision: string;
+  currentVersionId: string;
+  setupHref: string;
+  busy: boolean;
+  onLoadOlder(): void;
+  /** Optional header control placed beside the loaded-report count. */
+  action?: ReactNode;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? receipts.items : receipts.items.slice(0, 3);
+  return (
+    <section
+      id="delivery-reports"
+      className="workspace-panel connection-reports-panel"
+      aria-label="App-reported delivery"
+    >
+      <div className="connection-reports-header">
+        <div className="min-w-0">
+          <h2>App-reported delivery</h2>
+          <p>
+            Each row is an independent observation, ordered by service receipt time. History lasts
+            30 days. It does not establish a completed delivery chain or model consumption.
+          </p>
+        </div>
+        {action}
+      </div>
+      {!receipts.items.length ? (
+        <div className="connection-reports-empty">
+          <p>No delivery report received; status unknown.</p>
+          <p>Reports appear here once your app sends them with a receipt credential.</p>
+          <Button asChild variant="outline">
+            <ConsoleLink href={`${setupHref}#reporting`}>Set up reporting</ConsoleLink>
+          </Button>
+        </div>
+      ) : (
+        <>
+          <p className="connection-reports-meta">
+            {receipts.items.length} reports loaded · current release is revision {currentRevision},
+            version <code title={currentVersionId}>{currentVersionId.slice(0, 8)}</code> on{' '}
+            {channel}
+          </p>
+          <div className="connection-report-list">
+            <div className="connection-report-columns" aria-hidden="true">
+              <span>App report/source</span>
+              <span>Service received</span>
+              <span>Version</span>
+            </div>
+            {visible.map((receipt) => (
+              <ReceiptFact key={receipt.eventId} receipt={receipt} />
+            ))}
+          </div>
+        </>
+      )}
+      {receipts.items.length > 3 && (
+        <Button variant="outline" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
+          {showAll ? 'Show latest 3 reports' : `Show all ${receipts.items.length} loaded reports`}
+        </Button>
+      )}
+      {receipts.nextCursor && (
+        <Button
+          variant="outline"
+          disabled={busy}
+          onClick={() => {
+            setShowAll(true);
+            onLoadOlder();
+          }}
+        >
+          Load older reports
+        </Button>
+      )}
+    </section>
+  );
+}
+
+function ReceiptFact({ receipt: r }: { receipt: DeliveryReceipt }) {
+  const stage =
+    r.stage === 'started' ? 'App reported a session or turn started' : `App reported ${r.stage}`;
+  return (
+    <article className="connection-report-row" data-testid="delivery-report">
+      <Disclosure>
+        <DisclosureTrigger
+          className="connection-report-trigger"
+          aria-label={[
+            stage,
+            `source ${r.source}`,
+            r.stale && 'Stale mapping',
+            r.delayed && 'Delayed report',
+            `version ${r.versionId}`,
+            `received ${r.receivedAt}`,
+            `event ${r.eventId}`,
+          ]
+            .filter(Boolean)
+            .join(', ')}
+        >
+          <span className="connection-report-summary">
+            <span className="connection-report-stage">
+              <span className="font-medium">{stage}</span>
+              <Badge variant="outline">{r.source}</Badge>
+              {r.stale && <StatusBadge tone="warning">Stale mapping</StatusBadge>}
+              {r.delayed && <StatusBadge tone="warning">Delayed report</StatusBadge>}
+            </span>
+            <span className="connection-report-received text-muted-foreground">
+              <ReceiptTime value={r.receivedAt} />
+            </span>
+            <span className="connection-report-version font-mono break-all">
+              Version {r.versionId.slice(0, 8)}
+            </span>
+          </span>
+        </DisclosureTrigger>
+        <DisclosureContent className="connection-report-details">
+          <dl>
+            <div>
+              <dt>Event ID</dt>
+              <dd>{r.eventId}</dd>
+            </div>
+            <div>
+              <dt>Version</dt>
+              <dd>{r.versionId}</dd>
+            </div>
+            <div>
+              <dt>Digest</dt>
+              <dd>{r.digest}</dd>
+            </div>
+            <div>
+              <dt>App-reported occurrence</dt>
+              <dd>
+                <ReceiptTime value={r.occurredAt} />
+              </dd>
+            </div>
+            <div>
+              <dt>Service received</dt>
+              <dd>
+                <ReceiptTime value={r.receivedAt} />
+              </dd>
+            </div>
+            <div>
+              <dt>Mapping</dt>
+              <dd>
+                {r.channel
+                  ? `${r.channel} · revision ${r.revision ?? 'not reported'} · ${r.stale === true ? 'stale' : r.stale === false ? 'fresh' : 'freshness not reported'}`
+                  : 'Explicit pinned version'}
+              </dd>
+            </div>
+            {r.resolvedAt && (
+              <div>
+                <dt>App-reported resolution</dt>
+                <dd>
+                  <ReceiptTime value={r.resolvedAt} />
+                </dd>
+              </div>
+            )}
+          </dl>
+        </DisclosureContent>
+      </Disclosure>
+    </article>
+  );
+}

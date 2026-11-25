@@ -1,0 +1,629 @@
+"""Fast tests for local stack configuration and the Keycloak bootstrap sequence."""
+
+from contextlib import redirect_stdout
+import io
+import json
+from pathlib import Path
+import socket
+import stat
+import tempfile
+import unittest
+from unittest.mock import Mock, patch
+from urllib.parse import parse_qs, urlsplit
+
+from scripts.local import stack
+
+
+SUBJECT = 'cd97b433-08d2-460d-ba9b-0a6d063be018'
+ROOT = stack.ROOT
+PROVIDER = dict(ACCLIMATE_PROVIDER_URL='http://127.0.0.1:8317/v1/', ACCLIMATE_PROVIDER_KEY='provider-key',
+                ACCLIMATE_PROVIDER_MODELS='task-model, judge-model', ACCLIMATE_MODEL='optimizer-model')
+
+
+def FREE(port):
+    return True
+
+
+class Response(io.BytesIO):
+    def __init__(self, value):
+        super().__init__(b'' if value is None else json.dumps(value).encode())
+
+
+def env_file(path):
+    return dict(line.split('=', 1) for line in path.read_text().splitlines())
+
+
+class StackTests(unittest.TestCase):
+    def test_secrets_are_distinct_private_and_reused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary) / 'stack'
+            stack.directory(state, private=True)
+            values = stack.credentials(state)
+            self.assertEqual(len(set(values.values())), len(stack.SECRET_NAMES))
+            self.assertEqual(stat.S_IMODE(state.stat().st_mode), 0o700)
+            path = state / 'credentials.json'
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+            with patch.object(stack.secrets, 'token_hex', side_effect=AssertionError('regenerated')):
+                self.assertEqual(stack.credentials(state), values)
+
+    def test_writes_consistent_production_configuration_and_scoped_grant(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            values = stack.credentials(state)
+            stack.write_infrastructure(state, values)
+            stack.write_application(state, values, SUBJECT)
+            service = env_file(state / 'service.env')
+            console = env_file(state / 'console.env')
+            keycloak = env_file(state / 'keycloak.env')
+            runtime = json.loads((state / 'pull.json').read_bytes())
+            self.assertEqual(service['ACCLIMATE_OIDC_ISSUER'], console['CONSOLE_OIDC_ISSUER'])
+            self.assertEqual(console['CONSOLE_ORIGIN'], keycloak['ACCLIMATE_CONSOLE_ORIGIN'])
+            self.assertEqual(console['CONSOLE_OIDC_CLIENT_SECRET'], keycloak['ACCLIMATE_OIDC_CLIENT_SECRET'])
+            self.assertEqual(console['CONSOLE_LOGIN_TOKEN'], service['ACCLIMATE_LOGIN_TOKEN'])
+            self.assertEqual(console['CONSOLE_SERVICE_TOKEN'], service['ACCLIMATE_CONSOLE_TOKEN'])
+            for env in (service, console):
+                self.assertNotIn('ACCLIMATE_MODE', env)
+                self.assertNotIn('CONSOLE_MODE', env)
+            self.assertEqual(json.loads(service['ACCLIMATE_OPERATORS']),
+                             [{'issuer': stack.ISSUER, 'subject': SUBJECT}])
+            self.assertEqual(json.loads(service['ACCLIMATE_AUTH']), [
+                {'token': runtime['token'], 'principalId': runtime['scope'],
+                 'workspaceId': runtime['workspaceId'], 'rights': ['read', 'write']},
+            ])
+            self.assertEqual(console['CONSOLE_PUBLIC_API_URL'], runtime['serviceUrl'])
+            self.assertEqual(service['ACCLIMATE_PROVIDER_ENCRYPTION_KEY'], values['provider_key'])
+            self.assertFalse(set(stack.LEARNING_SETTINGS) & set(service))
+            self.assertEqual((state / 'postgres-password').read_text().strip(), values['postgres'])
+            self.assertEqual((state / 'keycloak-postgres-password').read_text().strip(),
+                             keycloak['KC_DB_PASSWORD'])
+            self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in state.iterdir()))
+
+    def test_learning_settings_come_from_the_shell_and_survive_a_later_start(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            values = stack.credentials(state)
+            shell = dict(ACCLIMATE_MODEL_ENDPOINT='http://host.docker.internal:8317/v1/chat/completions',
+                         ACCLIMATE_MODEL_TOKEN='proxy-key', ACCLIMATE_MODEL='optimizer',
+                         ACCLIMATE_PROVIDER_HTTP_HOSTS='host.docker.internal', UNRELATED='x')
+            stack.write_application(state, values, SUBJECT, environ=shell)
+            first = env_file(state / 'service.env')
+            self.assertEqual({name: first[name] for name in shell if name != 'UNRELATED'},
+                             {name: value for name, value in shell.items() if name != 'UNRELATED'})
+            self.assertNotIn('UNRELATED', first)
+            # A later start from a shell without the settings keeps them, and a new value wins.
+            stack.write_application(state, values, SUBJECT, environ={})
+            self.assertEqual(env_file(state / 'service.env'), first)
+            stack.write_application(state, values, SUBJECT, environ=dict(ACCLIMATE_MODEL='other'))
+            self.assertEqual(env_file(state / 'service.env'), dict(first, ACCLIMATE_MODEL='other'))
+            with self.assertRaisesRegex(ValueError, 'single line'):
+                stack.write_application(state, values, SUBJECT, environ=dict(ACCLIMATE_MODEL='a\nB=c'))
+            # An exported empty value removes the saved setting; the others stay.
+            stack.write_application(state, values, SUBJECT, environ=dict(ACCLIMATE_PROVIDER_HTTP_HOSTS=''))
+            cleared = env_file(state / 'service.env')
+            self.assertNotIn('ACCLIMATE_PROVIDER_HTTP_HOSTS', cleared)
+            self.assertEqual(cleared['ACCLIMATE_MODEL'], 'other')
+            stack.write_application(state, values, SUBJECT, environ={})
+            self.assertNotIn('ACCLIMATE_PROVIDER_HTTP_HOSTS', env_file(state / 'service.env'))
+
+    def test_provider_sets_the_optimizer_and_reaches_a_loopback_host_from_the_containers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            for url, base, hosts in (
+                    ('http://127.0.0.1:8317/v1/', 'http://host.docker.internal:8317/v1', 'host.docker.internal'),
+                    ('http://localhost:8317/v1', 'http://host.docker.internal:8317/v1', 'host.docker.internal'),
+                    ('http://[::1]:8000/v1', 'http://host.docker.internal:8000/v1', 'host.docker.internal'),
+                    ('http://10.0.0.5/v1', 'http://10.0.0.5/v1', '10.0.0.5'),
+                    ('https://api.openai.com/v1', 'https://api.openai.com/v1', None)):
+                with self.subTest(url=url):
+                    chosen = stack.learning_settings(state, dict(PROVIDER, ACCLIMATE_PROVIDER_URL=url))
+                    self.assertEqual(chosen['ACCLIMATE_MODEL_ENDPOINT'], base + '/chat/completions')
+                    self.assertEqual(chosen['ACCLIMATE_MODEL_TOKEN'], 'provider-key')
+                    self.assertEqual(chosen['ACCLIMATE_MODEL'], 'optimizer-model')
+                    self.assertEqual(chosen.get('ACCLIMATE_PROVIDER_HTTP_HOSTS'), hosts)
+            provider = stack.provider_settings(state, PROVIDER)
+            self.assertEqual(provider.url, 'http://127.0.0.1:8317/v1')
+            self.assertEqual(provider.document(), {'baseUrl': 'http://host.docker.internal:8317/v1',
+                                                   'apiKey': 'provider-key',
+                                                   'allowedModels': ['task-model', 'judge-model']})
+            # Explicit optimizer settings override the provider, and listed hosts are kept.
+            chosen = stack.learning_settings(state, dict(
+                PROVIDER, ACCLIMATE_MODEL_ENDPOINT='https://optimizer.example/v1/chat/completions',
+                ACCLIMATE_MODEL_TOKEN='optimizer-key', ACCLIMATE_PROVIDER_HTTP_HOSTS='models.lan,HOST.docker.internal'))
+            self.assertEqual(chosen['ACCLIMATE_MODEL_ENDPOINT'], 'https://optimizer.example/v1/chat/completions')
+            self.assertEqual(chosen['ACCLIMATE_MODEL_TOKEN'], 'optimizer-key')
+            self.assertEqual(chosen['ACCLIMATE_PROVIDER_HTTP_HOSTS'], 'models.lan,HOST.docker.internal')
+
+    def test_provider_is_kept_for_later_starts_and_replaced_by_a_new_one(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            values = stack.credentials(state)
+            stack.save_provider(state, stack.provider_settings(state, PROVIDER))
+            self.assertEqual(stat.S_IMODE((state / 'provider.json').stat().st_mode), 0o600)
+            stack.write_application(state, values, SUBJECT, environ=PROVIDER)
+            first = env_file(state / 'service.env')
+            # A later start from a shell without the settings keeps everything.
+            stack.write_application(state, values, SUBJECT, environ={})
+            self.assertEqual(env_file(state / 'service.env'), first)
+            self.assertEqual(stack.provider_settings(state, {}), stack.provider_settings(state, PROVIDER))
+            # A new provider replaces the saved endpoint and token, but not the model or the hosts.
+            stack.write_application(state, values, SUBJECT, environ=dict(
+                ACCLIMATE_PROVIDER_URL='https://api.openai.com/v1', ACCLIMATE_PROVIDER_KEY='new-key',
+                ACCLIMATE_PROVIDER_MODELS='a,b'))
+            second = env_file(state / 'service.env')
+            self.assertEqual(second['ACCLIMATE_MODEL_ENDPOINT'], 'https://api.openai.com/v1/chat/completions')
+            self.assertEqual(second['ACCLIMATE_MODEL_TOKEN'], 'new-key')
+            self.assertEqual(second['ACCLIMATE_MODEL'], 'optimizer-model')
+            self.assertEqual(second['ACCLIMATE_PROVIDER_HTTP_HOSTS'], 'host.docker.internal')
+            # Exporting all three empty removes the provider and the optimizer it set.
+            cleared = {name: '' for name in stack.PROVIDER_SETTINGS}
+            self.assertIsNone(stack.provider_settings(state, cleared))
+            stack.save_provider(state, None)
+            self.assertFalse((state / 'provider.json').exists())
+            stack.write_application(state, values, SUBJECT, environ=cleared)
+            self.assertNotIn('ACCLIMATE_MODEL_ENDPOINT', env_file(state / 'service.env'))
+
+    def test_provider_settings_are_checked_before_anything_starts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            for changes, message in (
+                    (dict(ACCLIMATE_PROVIDER_KEY=''), 'Set ACCLIMATE_PROVIDER_KEY as well'),
+                    (dict(ACCLIMATE_PROVIDER_MODELS='only-one'), 'at least two distinct'),
+                    (dict(ACCLIMATE_PROVIDER_MODELS='a,a'), 'at least two distinct'),
+                    (dict(ACCLIMATE_PROVIDER_URL='https://api.openai.com/v1/chat/completions'),
+                     'Remove /chat/completions'),
+                    (dict(ACCLIMATE_PROVIDER_URL='ftp://models.example/v1'), 'http or https base URL'),
+                    (dict(ACCLIMATE_PROVIDER_URL='https://user:pass@models.example/v1'), 'http or https base URL'),
+                    (dict(ACCLIMATE_PROVIDER_URL='http://127.0.0.1:99999/v1'), 'http or https base URL'),
+                    (dict(ACCLIMATE_PROVIDER_KEY='a\nb'), 'single line'),
+                    (dict(ACCLIMATE_MODEL=''), 'Set ACCLIMATE_MODEL')):
+                with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, message):
+                    stack.learning_settings(state, dict(PROVIDER, **changes))
+
+    def test_provider_is_stored_once_through_the_service_and_its_verification_printed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            provider = stack.provider_settings(state, PROVIDER)
+            stack.save_provider(state, provider)
+            calls = []
+
+            def compose(root, *args, **options):
+                calls.append((args, options.get('input')))
+
+            pending = {'baseUrl': 'http://host.docker.internal:8317/v1',
+                       'allowedModels': ['task-model', 'judge-model'], 'hasKey': True,
+                       'verification': {'status': 'pending', 'checkedAt': None, 'models': []}}
+            verified = dict(pending, verification={'status': 'verified', 'models': []})
+            opener = Mock()
+            opener.open.side_effect = [Response(pending), Response(verified), Response(verified)]
+            with patch.object(stack, 'compose', compose), patch.object(stack.time, 'sleep'), \
+                    redirect_stdout(io.StringIO()):
+                first = stack.apply_provider(ROOT, state, stack.DEFAULT, 'build', opener, 'runtime', provider)
+                second = stack.apply_provider(ROOT, state, stack.DEFAULT, 'build', opener, 'runtime', provider)
+            self.assertEqual(calls, [(('exec', '-T', 'service', '/usr/local/bin/acclimate-service',
+                                       '--set-model-provider', 'local-demo'),
+                                      json.dumps(provider.document()).encode())])
+            self.assertEqual(first, 'Verified at http://host.docker.internal:8317/v1 (task-model, judge-model)')
+            self.assertEqual(second, first)
+            request = opener.open.call_args.args[0]
+            self.assertEqual(request.full_url, stack.API + '/v1/workspaces/local-demo/model-provider')
+            self.assertEqual(request.get_header('Authorization'), 'Bearer runtime')
+            self.assertEqual(stack.saved_provider(state)['applied'], provider.digest())
+            # A changed provider is stored again, and a failed check names each model.
+            changed = stack.provider_settings(state, dict(PROVIDER, ACCLIMATE_PROVIDER_MODELS='a,b'))
+            stack.save_provider(state, changed, stack.saved_provider(state)['applied'])
+            failed = dict(pending, verification={'status': 'failed', 'models': [
+                {'model': 'a', 'ok': False, 'usage': False, 'message': 'HTTP 404'},
+                {'model': 'b', 'ok': True, 'usage': True, 'message': None}]})
+            opener.open.side_effect = [Response(failed)]
+            with patch.object(stack, 'compose', compose), redirect_stdout(io.StringIO()):
+                result = stack.apply_provider(ROOT, state, stack.DEFAULT, 'build', opener, 'runtime', changed)
+            self.assertEqual(len(calls), 2)
+            self.assertIn('Verification failed', result)
+            self.assertIn('a: HTTP 404', result)
+            self.assertNotIn('b:', result)
+
+    def test_a_refused_provider_is_reported_and_tried_again_next_start(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            provider = stack.provider_settings(state, PROVIDER)
+            stack.save_provider(state, provider)
+            refused = stack.subprocess.CalledProcessError(1, 'exec')
+            with patch.object(stack, 'compose', side_effect=refused):
+                result = stack.apply_provider(ROOT, state, stack.DEFAULT, 'build', Mock(), 'runtime', provider)
+            self.assertIn('Could not save it for local-demo', result)
+            self.assertNotIn('applied', stack.saved_provider(state))
+
+    def test_older_credentials_gain_a_provider_key_once(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            values = stack.credentials(state)
+            older = {name: value for name, value in values.items() if name != 'provider_key'}
+            stack.write_file(state / 'credentials.json', json.dumps(older).encode())
+            upgraded = stack.credentials(state)
+            self.assertEqual({name: upgraded[name] for name in older}, older)
+            self.assertRegex(upgraded['provider_key'], '^[0-9a-f]{64}$')
+            self.assertEqual(stack.credentials(state), upgraded)
+
+    def test_executor_gets_one_credential_and_the_service_allowlist(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            calls = []
+
+            def compose(root, *args, capture=False, **options):
+                calls.append((args, options.get('environment')))
+                if '--create-executor-token' in args:
+                    return json.dumps(dict(id='e', token='executor-secret')).encode()
+                return b'running healthy\n' if 'ps' in args else None
+
+            shell = dict(ACCLIMATE_PROVIDER_HTTP_HOSTS='host.docker.internal')
+            with patch.object(stack, 'compose', compose):
+                stack.start_executor(ROOT, state, stack.DEFAULT, 'build', environ=shell)
+                stack.start_executor(ROOT, state, stack.DEFAULT, 'build', environ=shell)
+            token = state / 'executor-token'
+            self.assertEqual(token.read_text(), 'executor-secret\n')
+            self.assertEqual(stat.S_IMODE(token.stat().st_mode), 0o600)
+            self.assertEqual(sum('--create-executor-token' in args for args, _ in calls), 1)
+            started = [(args, environment) for args, environment in calls if args[:1] == ('up',)]
+            self.assertEqual(started, [(('up', '--detach', '--build', 'acclimate-executor'), shell)] * 2)
+            with patch.object(stack, 'compose', compose):
+                stack.start_executor(ROOT, state, stack.DEFAULT, 'release', environ=shell)
+            self.assertEqual(calls[-2][0], ('up', '--detach', 'acclimate-executor'))
+
+    def test_executor_that_exits_names_the_exact_logs_command(self):
+        for status, expected, waits in ((b'', 'did not become healthy within 90 seconds', 90),
+                                        (b'running starting\n', 'did not become healthy', 90),
+                                        (b'running unhealthy\n', 'did not become healthy', 90),
+                                        (b'restarting \n', 'The executor stopped', 0),
+                                        (b'exited \n', 'The executor stopped', 0)):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as temporary:
+                state = Path(temporary)
+                stack.write_file(state / 'executor-token', b'executor-secret\n')
+                with patch.object(stack, 'compose', return_value=status), \
+                        patch.object(stack.time, 'sleep') as slept, \
+                        self.assertRaises(ValueError) as raised:
+                    stack.start_executor(ROOT, state, stack.DEFAULT, 'build', environ={})
+                message = str(raised.exception)
+                self.assertIn(expected, message)
+                self.assertIn(f'--project-name acclimate-local-{stack.project_suffix(ROOT)}', message)
+                self.assertIn('-f compose.local.yaml logs acclimate-executor', message)
+                # A container that stopped is reported at once rather than after the timeout.
+                self.assertEqual(slept.call_count, waits)
+
+    def test_executor_start_waits_for_health_not_just_a_running_container(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            stack.write_file(state / 'executor-token', b'executor-secret\n')
+            statuses = iter([b'running starting\n', b'running starting\n', b'running healthy\n'])
+            asked = []
+
+            def compose(root, *args, capture=False, **options):
+                if 'ps' in args:
+                    asked.append(args)
+                    return next(statuses)
+                return None
+
+            with patch.object(stack, 'compose', compose), patch.object(stack.time, 'sleep'):
+                stack.start_executor(ROOT, state, stack.DEFAULT, 'build', environ={})
+            self.assertEqual(len(asked), 3)
+            self.assertEqual(asked[0], ('ps', '--all', '--format', '{{.State}} {{.Health}}',
+                                        'acclimate-executor'))
+
+    def test_docker_not_running_is_reported_before_any_port_hint(self):
+        with patch.object(stack, 'docker_running', return_value=False), \
+                patch.object(stack, 'locked_state') as locked, \
+                self.assertRaises(SystemExit) as raised:
+            stack.main(['up'])
+        self.assertIn('Docker is not running', str(raised.exception))
+        self.assertNotIn('port', str(raised.exception))
+        locked.assert_not_called()
+        with patch.object(stack.subprocess, 'run', side_effect=FileNotFoundError('docker')):
+            self.assertFalse(stack.docker_running())
+
+    def test_refuses_symlink_or_exposed_credentials(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            path = state / 'credentials.json'
+            path.symlink_to(state / 'missing')
+            with self.assertRaises(ValueError):
+                stack.credentials(state)
+            path.unlink()
+            path.touch(mode=0o600)
+            path.chmod(0o644)
+            with self.assertRaises(ValueError):
+                stack.credentials(state)
+
+    def test_stack_commands_serialize_per_checkout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with stack.locked_state(root) as state:
+                self.assertEqual(state, root / '.local' / 'stack')
+                with self.assertRaisesRegex(ValueError, 'Another local stack command'):
+                    with stack.locked_state(root):
+                        self.fail('second lock unexpectedly acquired')
+
+    def test_compose_uses_unique_explicit_project_and_no_repository_dotenv(self):
+        first, second = Path('/work/first'), Path('/work/second')
+        with patch.object(stack.subprocess, 'run') as run:
+            stack.compose(first, 'down', '--volumes')
+            stack.compose(second, 'down')
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertTrue(all(command[:4] == ['docker', 'compose', '--env-file', '/dev/null']
+                            for command in commands))
+        self.assertTrue(all(command[6:8] == ['-f', 'compose.local.yaml'] for command in commands))
+        self.assertNotEqual(commands[0][5], commands[1][5])
+
+    def test_keycloak_creates_operator_and_reads_exact_subject(self):
+        user = {'username': stack.OPERATOR, 'id': SUBJECT}
+        opener = Mock()
+        client = {'id': 'client-uuid', 'clientId': stack.CLIENT,
+                  'redirectUris': ['https://localhost:9999/auth/callback'], 'secret': 'kept'}
+        opener.open.side_effect = [io.BytesIO(json.dumps(value).encode()) for value in
+                                   ({'access_token': 'admin'}, [], None, [user], {}, None, [client], None)]
+        self.assertEqual(stack.keycloak_operator(opener, {
+            'keycloak_admin': 'admin-password', 'operator': 'operator-password',
+        }), SUBJECT)
+        (token, lookup, create, recheck, realm, update,
+         clients, client_update) = [call.args[0] for call in opener.open.call_args_list]
+        self.assertEqual(urlsplit(token.full_url).path, '/realms/master/protocol/openid-connect/token')
+        self.assertEqual(parse_qs(urlsplit(lookup.full_url).query),
+                         {'username': [stack.OPERATOR], 'exact': ['true']})
+        self.assertEqual(lookup.full_url, recheck.full_url)
+        self.assertEqual(create.get_method(), 'POST')
+        created = json.loads(create.data)
+        self.assertEqual(created['email'], stack.OPERATOR)
+        self.assertTrue(created['emailVerified'])
+        self.assertEqual(created['credentials'][0]['value'], 'operator-password')
+        self.assertEqual(realm.full_url, update.full_url)
+        self.assertEqual(update.get_method(), 'PUT')
+        self.assertEqual(json.loads(update.data)['smtpServer']['host'], 'mailpit')
+        # A failed earlier start may have imported another console address.
+        self.assertEqual(parse_qs(urlsplit(clients.full_url).query), {'clientId': [stack.CLIENT]})
+        self.assertEqual(client_update.get_method(), 'PUT')
+        self.assertTrue(client_update.full_url.endswith('/admin/realms/acclimate/clients/client-uuid'))
+        self.assertEqual(json.loads(client_update.data), {
+            **client, 'redirectUris': [stack.CONSOLE + '/auth/callback']})
+
+    def test_existing_operator_password_and_matching_realm_are_left_alone(self):
+        opener = Mock()
+        opener.open.side_effect = [io.BytesIO(json.dumps(value).encode()) for value in
+                                   ({'access_token': 'admin'},
+                                    [{'username': stack.OPERATOR, 'id': SUBJECT}],
+                                    stack.mail_settings('mailpit'),
+                                    [{'id': 'client-uuid', 'clientId': stack.CLIENT,
+                                      'redirectUris': [stack.CONSOLE + '/auth/callback']}])]
+        self.assertEqual(stack.keycloak_operator(opener, {'keycloak_admin': 'admin-password'}, SUBJECT), SUBJECT)
+        self.assertEqual([call.args[0].get_method() for call in opener.open.call_args_list],
+                         ['POST', 'GET', 'GET', 'GET'])
+
+    def test_requested_ports_flow_into_every_file_and_are_saved_only_on_request(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            ports = stack.select_endpoints(ROOT, state, {'ACCLIMATE_LOCAL_PORT': '6443',
+                                                         'ACCLIMATE_LOCAL_MAIL_PORT': '38025'}, FREE)
+            self.assertEqual(ports, stack.Endpoints(6443, 38025))
+            # Selection never fixes ports. A failed first start can choose others.
+            self.assertFalse((state / 'ports.json').exists())
+            self.assertEqual(stack.select_endpoints(ROOT, state, {'ACCLIMATE_LOCAL_PORT': '7443'}, FREE),
+                             stack.Endpoints(7443, 7446))
+            stack.save_endpoints(state, ports)
+            self.assertEqual(stat.S_IMODE((state / 'ports.json').stat().st_mode), 0o600)
+            # Later runs reuse the saved ports without the variables.
+            self.assertEqual(stack.select_endpoints(ROOT, state, {}, FREE), ports)
+            self.assertEqual(ports.environment(), {
+                'ACCLIMATE_LOCAL_CONSOLE_PORT': '6443', 'ACCLIMATE_LOCAL_API_PORT': '6444',
+                'ACCLIMATE_LOCAL_KEYCLOAK_PORT': '6445', 'ACCLIMATE_LOCAL_MAIL_PORT': '38025'})
+            values = stack.credentials(state)
+            stack.write_infrastructure(state, values, ports)
+            stack.write_application(state, values, SUBJECT, ports)
+            service = env_file(state / 'service.env')
+            console = env_file(state / 'console.env')
+            self.assertEqual(env_file(state / 'keycloak.env')['ACCLIMATE_CONSOLE_ORIGIN'],
+                             'https://localhost:6443')
+            self.assertEqual(console['CONSOLE_PUBLIC_API_URL'], 'https://127.0.0.1:6444')
+            self.assertEqual(service['ACCLIMATE_OIDC_ISSUER'], 'https://127.0.0.1:6445/realms/acclimate')
+            self.assertEqual(json.loads((state / 'pull.json').read_bytes())['serviceUrl'],
+                             'https://127.0.0.1:6444')
+
+    def test_saved_ports_cannot_change_without_reset_and_are_validated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            stack.save_endpoints(state, stack.DEFAULT)
+            self.assertEqual(stack.select_endpoints(ROOT, state, {}, FREE), stack.DEFAULT)
+            with self.assertRaisesRegex(ValueError, 'ACCLIMATE_LOCAL_PORT=3443.*local:reset'):
+                stack.select_endpoints(ROOT, state, {'ACCLIMATE_LOCAL_PORT': '4443'}, FREE)
+            self.assertEqual(stack.select_endpoints(ROOT, state, {'ACCLIMATE_LOCAL_PORT': '3443'}, FREE),
+                             stack.DEFAULT)
+        with tempfile.TemporaryDirectory() as temporary:
+            for value in ('80', '65533', 'abc', '4443 '):
+                with self.assertRaisesRegex(ValueError, 'must be a port'):
+                    stack.select_endpoints(ROOT, Path(temporary), {'ACCLIMATE_LOCAL_PORT': value}, FREE)
+            # down and reset never fix ports for a stack that was never started.
+            self.assertEqual(stack.current_endpoints(Path(temporary)), stack.DEFAULT)
+            self.assertFalse((Path(temporary) / 'ports.json').exists())
+
+    def test_default_ports_are_free_and_differ_per_checkout(self):
+        first, second = Path('/work/first'), Path('/work/second')
+        self.assertNotEqual(stack.derived_port(first), stack.derived_port(second))
+        for root in (first, second):
+            port = stack.derived_port(root)
+            self.assertTrue(stack.AUTO_PORTS[0] <= port and port + 3 <= stack.AUTO_PORTS[1])
+            self.assertEqual(port % 10, 0)
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            base = stack.derived_port(first)
+            self.assertEqual(stack.select_endpoints(first, state, {}, FREE), stack.Endpoints(base, base + 3))
+            # A busy port moves the whole block to the next free one.
+            taken = {base + 1}
+            self.assertEqual(stack.select_endpoints(first, state, {}, lambda port: port not in taken),
+                             stack.Endpoints(base + 10, base + 13))
+            self.assertEqual(stack.select_endpoints(first, state, {'ACCLIMATE_LOCAL_MAIL_PORT': '38025'}, FREE),
+                             stack.Endpoints(base, 38025))
+
+    def test_busy_requested_port_fails_before_docker_with_a_free_override(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            base = stack.derived_port(ROOT)
+            taken = {4443}
+            with self.assertRaises(ValueError) as raised:
+                stack.select_endpoints(ROOT, state, {'ACCLIMATE_LOCAL_PORT': '4443'},
+                                       lambda port: port not in taken)
+            message = str(raised.exception)
+            self.assertIn('Another process is using port 4443', message)
+            self.assertIn(f'ACCLIMATE_LOCAL_PORT={base} ACCLIMATE_LOCAL_MAIL_PORT={base + 3} npm run local:up',
+                          message)
+            self.assertFalse((state / 'ports.json').exists())
+            with self.assertRaisesRegex(ValueError, 'using port 38025.*ACCLIMATE_LOCAL_MAIL_PORT='):
+                stack.select_endpoints(ROOT, state, {'ACCLIMATE_LOCAL_MAIL_PORT': '38025'},
+                                       lambda port: port != 38025)
+
+    def test_saved_ports_in_use_by_another_process_explain_the_reset(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            stack.save_endpoints(state, stack.Endpoints(6443, 38025))
+            with self.assertRaisesRegex(ValueError, 'using port 6444.*local:reset'):
+                stack.select_endpoints(ROOT, state, {}, lambda port: port != 6444)
+            # The running stack holds its own ports.
+            self.assertEqual(stack.select_endpoints(ROOT, state, {}, lambda port: False, running=True),
+                             stack.Endpoints(6443, 38025))
+
+    def test_port_probe_detects_a_listener(self):
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            self.assertFalse(stack.port_free(listener.getsockname()[1]))
+
+    def test_images_default_to_the_release_and_fall_back_to_source(self):
+        version = stack.release_version(ROOT)
+        release = stack.image_environment(ROOT, 'release')
+        self.assertEqual(release['ACCLIMATE_LOCAL_SERVICE_IMAGE'],
+                         f'ghcr.io/anveld-dev/acclimate-service:{version}')
+        self.assertEqual(release['ACCLIMATE_LOCAL_PULL_POLICY'], 'missing')
+        build = stack.image_environment(ROOT, 'build')
+        self.assertEqual(build['ACCLIMATE_LOCAL_PULL_POLICY'], 'build')
+        self.assertIn(stack.project_suffix(ROOT), build['ACCLIMATE_LOCAL_CONSOLE_IMAGE'])
+        self.assertEqual(stack.choose_source(None, None), 'release')
+        self.assertEqual(stack.choose_source(None, 'build'), 'build')
+        self.assertEqual(stack.choose_source('release', 'build'), 'release')
+        output = io.StringIO()
+        with patch.object(stack, 'compose', side_effect=stack.subprocess.CalledProcessError(1, 'pull')) as pull, \
+                redirect_stdout(output):
+            self.assertEqual(stack.prepare_images(ROOT, stack.DEFAULT, 'release', None), 'build')
+        self.assertEqual(pull.call_args.args[1:], ('pull', 'service', 'console'))
+        self.assertEqual(pull.call_args.kwargs['source'], 'release')
+        self.assertIn('Building from source instead', output.getvalue())
+        with patch.object(stack, 'compose') as pull, redirect_stdout(io.StringIO()):
+            self.assertEqual(stack.prepare_images(ROOT, stack.DEFAULT, 'release', None), 'release')
+            self.assertEqual(stack.prepare_images(ROOT, stack.DEFAULT, 'build', None), 'build')
+        self.assertEqual(pull.call_count, 1)
+
+    def test_compose_selects_image_source(self):
+        with patch.object(stack.subprocess, 'run') as run:
+            stack.compose(ROOT, 'up', source='release')
+        self.assertEqual(run.call_args.kwargs['env']['ACCLIMATE_LOCAL_PULL_POLICY'], 'missing')
+
+    def test_bootstrap_adopts_local_demo_with_reason_and_publishes_an_example(self):
+        opener = Mock()
+        responses = [
+            {'secret': 'session-secret', 'sessionId': 's', 'userId': 'u'},
+            {'workspaceId': stack.PROJECT, 'alreadyAdopted': False},
+            {'items': []},
+            {'id': 'bundle-1', 'name': stack.EXAMPLE_BUNDLE},
+            {'items': []},
+            {'id': 'version-1'},
+            {'id': 'promotion-1'},
+            None,
+        ]
+        opener.open.side_effect = [Response(value) for value in responses]
+        values = {'login': 'login-token', 'console': 'console-token'}
+        self.assertEqual(stack.bootstrap_workspace(opener, values, SUBJECT, stack.DEFAULT),
+                         {'adopted': True, 'bundle': 'bundle-1'})
+        requests = [call.args[0] for call in opener.open.call_args_list]
+        login, adopt, bundles, create, channels, version, promote, logout = requests
+        self.assertEqual(login.full_url, stack.API + '/v1/auth/sessions')
+        self.assertEqual(login.get_header('Authorization'), 'Bearer login-token')
+        self.assertEqual(json.loads(login.data), {
+            'issuer': stack.ISSUER, 'subject': SUBJECT, 'email': stack.OPERATOR,
+            'emailVerified': True, 'displayName': 'Local Operator'})
+        for request in requests[1:]:
+            self.assertEqual(request.get_header('Authorization'), 'Bearer console-token')
+            self.assertEqual(request.get_header('X-acclimate-session'), 'session-secret')
+        self.assertEqual(adopt.full_url, stack.API + '/v1/auth/workspace-adoptions')
+        self.assertEqual(json.loads(adopt.data), {'workspaceId': 'local-demo', 'reason': 'local stack bootstrap'})
+        self.assertEqual(json.loads(create.data), {'name': stack.EXAMPLE_BUNDLE})
+        self.assertEqual(json.loads(version.data), {'payload': stack.EXAMPLE_PAYLOAD})
+        self.assertTrue(promote.full_url.endswith('/bundles/bundle-1/channels/stable/releases'))
+        self.assertEqual(json.loads(promote.data)['versionId'], 'version-1')
+        self.assertEqual(json.loads(promote.data)['expectedRevision'], '0')
+        for request in (create, version, promote):
+            self.assertTrue(request.get_header('Idempotency-key'))
+        self.assertEqual(logout.get_method(), 'DELETE')
+
+    def test_bootstrap_leaves_a_workspace_adopted_by_someone_else(self):
+        opener = Mock()
+        conflict = stack.HTTPError(stack.API, 409, 'Conflict', {}, io.BytesIO(b'{}'))
+        opener.open.side_effect = [Response({'secret': 'session-secret'}), conflict, Response(None)]
+        self.assertEqual(stack.bootstrap_workspace(opener, {'login': 'l', 'console': 'c'}, SUBJECT, stack.DEFAULT),
+                         {'adopted': False, 'bundle': None})
+        self.assertEqual(opener.open.call_args_list[-1].args[0].get_method(), 'DELETE')
+
+    def test_existing_bundles_are_not_joined_by_an_example(self):
+        calls = []
+
+        def call(method, route, body=None, mutation=False):
+            calls.append((method, route))
+            return {'items': [{'id': 'mine', 'name': 'Support agent'}]}
+
+        self.assertIsNone(stack.seed_example(call))
+        self.assertEqual(calls, [('GET', '/v1/workspaces/local-demo/bundles?limit=100')])
+
+    def test_client_files_merge_the_system_bundle_and_export_settings(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            system = state / 'system.pem'
+            system.write_bytes(b'-----BEGIN CERTIFICATE-----\nsystem\n-----END CERTIFICATE-----\n')
+            local = b'-----BEGIN CERTIFICATE-----\nlocal\n-----END CERTIFICATE-----\n'
+            with patch.object(stack, 'system_ca_bundle', return_value=(system, system.read_bytes())):
+                text, source = stack.write_client_files(state, stack.DEFAULT, local, 'bundle-1')
+            self.assertEqual(source, system)
+            merged = (state / 'ca-bundle.pem').read_bytes()
+            self.assertTrue(merged.startswith(system.read_bytes()) and merged.endswith(local))
+            self.assertEqual(stat.S_IMODE((state / 'env.sh').stat().st_mode), 0o600)
+            self.assertEqual((state / 'env.sh').read_text(), text)
+            self.assertIn(f"export ACCLIMATE_PULL_CONFIG='{state / 'pull.json'}'", text)
+            self.assertIn(f"export NODE_EXTRA_CA_CERTS='{state / 'root.crt'}'", text)
+            self.assertIn(f"export SSL_CERT_FILE='{state / 'ca-bundle.pem'}'", text)
+            self.assertIn("export ACCLIMATE_BUNDLE='bundle-1'", text)
+            self.assertNotIn('BUNDLE_ID', text)
+            self.assertIn(f"export ACCLIMATE_URL='{stack.DEFAULT.api}'", text)
+            self.assertIn("export ACCLIMATE_WORKSPACE='local-demo'", text)
+            self.assertNotIn('OPENAI_', text)
+
+    def test_client_files_export_the_provider_for_the_examples(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            provider = stack.provider_settings(state, dict(PROVIDER, ACCLIMATE_PROVIDER_KEY="it's-secret"))
+            with patch.object(stack, 'system_ca_bundle', return_value=(None, b'')):
+                text, _ = stack.write_client_files(state, stack.DEFAULT, b'local', None, provider)
+            self.assertEqual(stat.S_IMODE((state / 'env.sh').stat().st_mode), 0o600)
+            self.assertNotIn('ACCLIMATE_BUNDLE', text)
+            # The examples run on this machine, so they keep the loopback address.
+            self.assertIn("export OPENAI_BASE_URL='http://127.0.0.1:8317/v1'\n", text)
+            self.assertIn("export TASK_MODEL='task-model'\n", text)
+            self.assertIn("export JUDGE_MODEL='judge-model'\n", text)
+            self.assertIn("export AGENT_MODEL='task-model'\n", text)
+            shell = stack.subprocess.run(['sh', '-c', '. "$1" && printf %s "$OPENAI_API_KEY"', 'sh',
+                                          str(state / 'env.sh')], capture_output=True, text=True, check=True)
+            self.assertEqual(shell.stdout, "it's-secret")
+
+    def test_keycloak_rejects_replacement_operator_with_same_email(self):
+        opener = Mock()
+        opener.open.side_effect = [io.BytesIO(json.dumps(value).encode()) for value in
+                                   ({'access_token': 'admin'},
+                                    [{'username': stack.OPERATOR, 'id': SUBJECT}])]
+        with self.assertRaisesRegex(ValueError, 'operator subject changed'):
+            stack.keycloak_operator(opener, {'keycloak_admin': 'admin-password'},
+                                    '43078181-f680-45bf-900e-2bd49ddb3a95')
+
+
+if __name__ == '__main__':
+    unittest.main()

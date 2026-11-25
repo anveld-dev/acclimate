@@ -1,0 +1,165 @@
+# Canonical single-host deployment. deploy/init.sh writes the private files and the
+# checkout's .env, which Compose reads for the settings and paths below.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+services:
+  postgres:
+    image: postgres:16-alpine
+    logging: *logging
+    environment:
+      POSTGRES_USER: acclimate
+      POSTGRES_DB: acclimate
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    networks: [backend]
+    restart: unless-stopped
+    stop_grace_period: 90s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U acclimate -d acclimate"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  service:
+    image: ${ACCLIMATE_SERVICE_IMAGE:-ghcr.io/anveld-dev/acclimate-service:${ACCLIMATE_VERSION:-local}}
+    logging: *logging
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    env_file:
+      - ${ACCLIMATE_SERVICE_ENV:-${ACCLIMATE_CONFIG_DIR:?Run deploy/init.sh, or set ACCLIMATE_CONFIG_DIR to the private directory}/service.env}
+    environment:
+      ACCLIMATE_INTERNAL_BIND: executor-listener:3001
+      ACCLIMATE_BIND: 0.0.0.0:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      executor:
+        aliases: [executor-listener]
+      backend: {}
+      outbound: {}
+    restart: unless-stopped
+    stop_grace_period: 90s
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "3", "http://127.0.0.1:3000/ready"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 30s
+  # Learning runs only with COMPOSE_PROFILES=learning. See Enable learning in the docs.
+  acclimate-runner:
+    profiles: [learning]
+    image: ${ACCLIMATE_RUNNER_IMAGE:-ghcr.io/anveld-dev/acclimate-runner:${ACCLIMATE_VERSION:-local}}
+    logging: *logging
+    build: executor/runner
+    entrypoint: ["node", "-e", ""]
+    network_mode: none
+  acclimate-executor:
+    profiles: [learning]
+    logging: *logging
+    init: true
+    stop_grace_period: 1h
+    depends_on:
+      acclimate-runner:
+        condition: service_completed_successfully
+    secrets: [executor_token]
+    image: ${ACCLIMATE_EXECUTOR_IMAGE:-ghcr.io/anveld-dev/acclimate-executor:${ACCLIMATE_VERSION:-local}}
+    build:
+      context: .
+      dockerfile: executor/Dockerfile
+    environment:
+      ACCLIMATE_PROVIDER_HTTP_HOSTS: ${ACCLIMATE_PROVIDER_HTTP_HOSTS:-}
+      ACCLIMATE_EXECUTOR_SERVICE: http://service:3001
+      ACCLIMATE_EXECUTOR_TOKEN_FILE: /run/secrets/executor_token
+      ACCLIMATE_EXECUTOR_CONCURRENCY: ${ACCLIMATE_EXECUTOR_CONCURRENCY:-1}
+      ACCLIMATE_SANDBOX_RUNTIME: ${ACCLIMATE_SANDBOX_RUNTIME:-runsc}
+      # The same name as the runner service image, which the executor inspects at startup.
+      ACCLIMATE_RUNNER_IMAGE: ${ACCLIMATE_RUNNER_IMAGE:-ghcr.io/anveld-dev/acclimate-runner:${ACCLIMATE_VERSION:-local}}
+      ACCLIMATE_SANDBOX_VOLUME: ${COMPOSE_PROJECT_NAME}_executor-data
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - executor-data:/var/lib/acclimate-executor
+    networks: [executor, executor-egress]
+    restart: unless-stopped
+    # Healthy while the service has answered a lease request or heartbeat in the last two minutes.
+    healthcheck:
+      test: ["CMD", "acclimate-executor", "--health"]
+      interval: 30s
+      timeout: 5s
+      retries: 2
+      start_period: 2m
+      start_interval: 2s
+  console:
+    image: ${ACCLIMATE_CONSOLE_IMAGE:-ghcr.io/anveld-dev/acclimate-console:${ACCLIMATE_VERSION:-local}}
+    logging: *logging
+    build:
+      context: .
+      dockerfile: deploy/console.Dockerfile
+    env_file:
+      - ${ACCLIMATE_CONSOLE_ENV:-${ACCLIMATE_CONFIG_DIR:?Run deploy/init.sh, or set ACCLIMATE_CONFIG_DIR to the private directory}/console.env}
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3100
+    depends_on:
+      service:
+        condition: service_healthy
+    networks: [backend, outbound]
+    restart: unless-stopped
+    stop_grace_period: 90s
+    healthcheck:
+      test: ["CMD", "node", "/app/deploy/console-probe.mjs"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 30s
+  proxy:
+    image: caddy:2-alpine
+    logging: *logging
+    environment:
+      CONSOLE_HOST: ${CONSOLE_HOST:?Set CONSOLE_HOST to the public console hostname}
+      API_HOST: ${API_HOST:?Set API_HOST to the public API hostname}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL to the certificate contact address}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    networks: [backend, edge]
+    depends_on:
+      console:
+        condition: service_healthy
+      service:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 90s
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+networks:
+  executor-egress: {}
+  executor:
+    internal: true
+  # PostgreSQL has no outbound route. Applications use a separate outbound
+  # bridge for issuer/model HTTPS; no application listener is host-published.
+  backend:
+    internal: true
+  outbound: {}
+  edge: {}
+volumes:
+  executor-data:
+  postgres-data:
+  caddy-data:
+  caddy-config:
+secrets:
+  executor_token:
+    file: ${ACCLIMATE_EXECUTOR_TOKEN_FILE:-${ACCLIMATE_CONFIG_DIR:?Run deploy/init.sh, or set ACCLIMATE_CONFIG_DIR to the private directory}/executor-token}
+  postgres_password:
+    file: ${ACCLIMATE_POSTGRES_PASSWORD_FILE:-${ACCLIMATE_CONFIG_DIR:?Run deploy/init.sh, or set ACCLIMATE_CONFIG_DIR to the private directory}/postgres-password}

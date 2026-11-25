@@ -1,0 +1,5 @@
+<figure class="diagram" aria-labelledby="cache-caption"><figcaption id="cache-caption">Updating the cache doesn't change an active job.</figcaption>
+<div class="dg-input"><b>Resolve the stable channel online</b><span>Unchanged → reuse v7. New mapping → download v8 into a temporary location.</span></div><div class="dg-arrow" aria-hidden="true">↓</div>
+<ol class="dg-flow"><li><b>Keep verified v7</b><span>The last complete payload stays usable.</span></li><li><b>Verify v8 bytes</b><span>Digest, schema, paths, and limits</span></li><li><b>Publish v8 atomically</b><span>Failed refresh never exposes partial files.</span></li></ol>
+<div class="dg-outcomes"><div><b>Active job A: v7</b><span>Its prepared files and session stay pinned.</span></div><div><b>Next job B: v8</b><span>Only if the app resolves/selects that version.</span></div></div>
+<p class="dg-footnote">Offline fallback requires an explicitly pinned cached version. A server cannot recall copies already cached on a disconnected host.</p></figure>

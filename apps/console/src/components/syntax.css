@@ -1,0 +1,56 @@
+.syntax-code {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  overflow: auto;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--type-14);
+  line-height: 1.55;
+  tab-size: 2;
+  white-space: pre;
+  color: var(--foreground);
+}
+.syntax-code[data-wrap] {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.syntax-code > code {
+  font: inherit;
+}
+.syntax-token {
+  color: var(--shiki-light, inherit);
+}
+.syntax-code:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+@media (prefers-color-scheme: dark) {
+  .syntax-token {
+    color: var(--shiki-dark, inherit);
+  }
+}
+
+/* Keep the original text node sequence intact when copying numbered, wrapped source. */
+.syntax-code[data-line-numbers] > code {
+  display: block;
+  position: relative;
+  padding-left: calc(var(--source-gutter) + 1ch);
+  box-sizing: content-box;
+}
+.syntax-code .source-line-marker::before {
+  content: attr(data-line);
+  position: absolute;
+  left: 0;
+  width: var(--source-gutter);
+  text-align: right;
+  color: var(--muted-foreground);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.syntax-code .source-line-marker {
+  display: inline-block;
+  width: 0;
+  height: 1em;
+  vertical-align: text-bottom;
+}

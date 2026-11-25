@@ -1,0 +1,281 @@
+import { ApiError, type AcclimateClient, type LearningRound } from '@acclimate/sdk';
+import { readVersion } from './release-history';
+import { consoleClient } from './console-client';
+import { allPages } from './listing';
+import type { Environment } from './selection';
+import {
+  type ActiveEvaluation,
+  type LearningScope,
+  type LearningReadOptions,
+} from '../lib/learning';
+
+const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+function validateScope({ workspaceId, bundleId }: LearningScope) {
+  if (
+    typeof workspaceId !== 'string' ||
+    !/^[A-Za-z0-9_.-]{1,128}$/.test(workspaceId) ||
+    ['.', '..'].includes(workspaceId) ||
+    typeof bundleId !== 'string' ||
+    !uuid.test(bundleId)
+  )
+    throw new Error('Invalid learning scope');
+}
+
+async function inspect(api: AcclimateClient, { workspaceId, bundleId }: LearningScope) {
+  try {
+    return await api.getLearningLoop(workspaceId, bundleId);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404 && error.code === 'not_found')
+      return null;
+    throw error;
+  }
+}
+
+function failure(error: unknown) {
+  return {
+    ok: false as const,
+    message:
+      error instanceof ApiError && [401, 403].includes(error.status)
+        ? 'Access denied. Check your workspace access.'
+        : error instanceof ApiError && [400, 409].includes(error.status)
+          ? error.message
+          : 'Could not load the learning loop. Refresh to try again.',
+  };
+}
+
+async function readRoundDetail(
+  env: Environment,
+  api: AcclimateClient,
+  { workspaceId, bundleId }: LearningScope,
+  load: () => Promise<LearningRound>,
+  fetcher: typeof fetch,
+) {
+  try {
+    const {
+      id,
+      number,
+      channel,
+      channelRevision,
+      parentVersionId,
+      reverted,
+      confirmedParentScore,
+      confirmedAdoptionScore,
+      incumbentScore,
+      candidates,
+      decision,
+      reason,
+      selection,
+      adoptedSample,
+      adoptedVersionId,
+      state,
+      failureCause,
+      memoryRevision,
+      evaluations,
+      createdAt,
+      endedAt,
+    } = await load();
+    const paths = new Set(
+      candidates.flatMap(({ changes }) => changes?.files.map(({ path }) => path) ?? []),
+    );
+    const parent = paths.size
+      ? await readVersion(
+          { ...env, CONSOLE_WORKSPACE: workspaceId, CONSOLE_BUNDLE: bundleId },
+          { versionId: parentVersionId },
+          fetcher,
+        )
+      : null;
+    // A diagnosis names an existing problem by ID. Its root cause is in the memory the round read.
+    const problems = candidates.some(({ diagnosis }) => diagnosis && 'id' in diagnosis.problem)
+      ? await api
+          .getLearningMemory(workspaceId, bundleId, { revision: memoryRevision })
+          .then(({ improvementMemory }) =>
+            Object.fromEntries(
+              improvementMemory.problems.map(({ id, rootCause }) => [id, rootCause]),
+            ),
+          )
+          .catch(() => null)
+      : null;
+    const parentFiles = parent?.ok
+      ? parent.payload.files
+          .filter(({ path }) => paths.has(path))
+          .map(({ path, text }) => ({ path, text }))
+      : null;
+    return {
+      ok: true as const,
+      round: {
+        id,
+        number,
+        channel,
+        channelRevision,
+        reverted: reverted ?? false,
+        confirmedParentScore: confirmedParentScore ?? null,
+        confirmedAdoptionScore: confirmedAdoptionScore ?? null,
+        incumbentScore,
+        candidates,
+        decision,
+        reason,
+        selection,
+        adoptedSample,
+        adoptedVersionId,
+        state,
+        failureCause: failureCause ?? null,
+        createdAt,
+        endedAt,
+        incumbentEvaluationId:
+          evaluations.find(({ role, split }) => role === 'incumbent' && split === 'evolve')?.id ??
+          null,
+      },
+      parentFiles,
+      problems: problems as Record<string, string> | null,
+    };
+  } catch {
+    return { ok: false as const, message: 'Could not load this learning round.' };
+  }
+}
+
+async function readMemory(
+  api: AcclimateClient,
+  { workspaceId, bundleId }: LearningScope,
+  revision: string,
+) {
+  const number = revision === 'latest' ? undefined : Number(revision);
+  if (number !== undefined && (!/^\d+$/.test(revision) || !Number.isSafeInteger(number)))
+    return { ok: false as const, message: 'Enter a nonnegative memory revision.' };
+  try {
+    return {
+      ok: true as const,
+      memory: await api.getLearningMemory(workspaceId, bundleId, { revision: number }),
+    };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404)
+      return { ok: false as const, message: 'This memory revision is unavailable.' };
+    return { ok: false as const, message: 'Could not load improvement memory.' };
+  }
+}
+
+export async function readLearningBinding(env: Environment, scope: LearningScope, fetcher = fetch) {
+  try {
+    validateScope(scope);
+    const loop = await inspect(consoleClient(env, fetcher), scope);
+    return loop?.channel ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function readLearningState(
+  env: Environment,
+  scope: LearningScope,
+  fetcher = fetch,
+  options: LearningReadOptions = {},
+) {
+  try {
+    validateScope(scope);
+    const api = consoleClient(env, fetcher);
+    const { workspaceId, bundleId } = scope;
+    const [workspaces, bundles] = await Promise.all([
+      allPages((cursor) => api.listWorkspaces({ cursor, limit: 100 })),
+      allPages((cursor) => api.listBundles(workspaceId, { cursor, limit: 100 })),
+    ]);
+    const workspace = workspaces.find(({ id }) => id === workspaceId);
+    const bundle = bundles.find(({ id }) => id === bundleId);
+    if (!workspace || !bundle)
+      return { ok: false as const, message: 'This bundle is unavailable.' };
+    const editsEnabled = env.CONSOLE_ALLOW_EDITS === 'true';
+    const canManage = workspace.role === 'admin' && editsEnabled;
+    const canEditCases = ['admin', 'editor'].includes(workspace.role) && editsEnabled;
+    const [loop, channels] = await Promise.all([
+      inspect(api, scope),
+      allPages((cursor) => api.listChannels(workspaceId, bundleId, { cursor, limit: 100 })),
+    ]);
+    const rounds = loop
+      ? await allPages(async (before) => {
+          const page = await api.listLearningRounds(workspaceId, bundleId, {
+            limit: 100,
+            before: before ? Number(before) : undefined,
+          });
+          return { items: page.items, nextCursor: page.next == null ? null : String(page.next) };
+        })
+      : [];
+    const activeId = loop?.activeRound?.id;
+    const loadRound = (id: string) => api.getLearningRound(workspaceId, bundleId, id);
+    const activeRead = activeId ? loadRound(activeId) : null;
+    const detailId =
+      options.round && /^\d+$/.test(options.round)
+        ? (rounds.find((r) => String(r.number) === options.round)?.id ?? options.round)
+        : options.round;
+    const [active, detail, memory] = await Promise.all([
+      activeRead,
+      loop && detailId
+        ? uuid.test(detailId)
+          ? readRoundDetail(
+              env,
+              api,
+              scope,
+              () => (detailId === activeId && activeRead ? activeRead : loadRound(detailId)),
+              fetcher,
+            )
+          : { ok: false as const, message: 'Invalid learning round ID.' }
+        : null,
+      loop && options.memory ? readMemory(api, scope, options.memory) : null,
+    ]);
+    const history =
+      loop && rounds.length
+        ? await allPages(async (beforeRevision) => {
+            const page = await api.listReleases(workspaceId, bundleId, loop.channel, {
+              beforeRevision,
+              limit: 100,
+            });
+            return { items: page.items, nextCursor: page.nextBeforeRevision };
+          })
+            .then((releases) =>
+              releases.flatMap((release) => {
+                const match = /^Restore parent of learning round ([a-f0-9-]{36})$/.exec(
+                  release.unevaluatedReason ?? '',
+                );
+                return match &&
+                  rounds.some((r) => r.id === match[1] && r.parentVersionId === release.version.id)
+                  ? [{ roundId: match[1], actor: release.reviewer, time: release.createdAt }]
+                  : [];
+              }),
+            )
+            .catch(() => null)
+        : [];
+    const blocked = loop
+      ? await api.listBlockedLearningVersions(workspaceId, bundleId).catch(() => null)
+      : [];
+    const openEvaluation = active?.evaluations.find(
+      ({ status }) => status === 'queued' || status === 'running',
+    );
+    const activeEvaluation: ActiveEvaluation | null = openEvaluation
+      ? {
+          role: openEvaluation.role,
+          sample: openEvaluation.sample,
+          split: openEvaluation.split,
+          status: openEvaluation.status,
+          cases: openEvaluation.cases,
+          reportedCases: openEvaluation.reportedCases,
+        }
+      : null;
+    return {
+      ok: true as const,
+      bundleName: bundle.name,
+      loop,
+      canManage,
+      canEditCases,
+      detail,
+      memory,
+      channels: channels.map(({ name }) => name),
+      rounds,
+      activeEvaluation,
+      history,
+      blocked,
+      progress: active?.progress ?? null,
+      channelHead: channels.find((c) => c.name === loop?.channel)?.versionId ?? null,
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export type LearningState = Awaited<ReturnType<typeof readLearningState>>;

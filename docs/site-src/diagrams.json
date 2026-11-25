@@ -1,0 +1,10 @@
+{
+  "service-delivery": {
+    "source": "docs/design/overview.md",
+    "file": "service-delivery.html"
+  },
+  "cache-update": {
+    "source": "docs/design/bundles-and-cache.md",
+    "file": "cache-update.html"
+  }
+}

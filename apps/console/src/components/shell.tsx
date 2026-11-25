@@ -1,8 +1,21 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { Label } from './ui/label';
 import { useRouter, useRouterState } from '@tanstack/react-router';
-import { BookOpen, Building2, ChevronsUpDown, Files, Users, Plug, Plus, Radio, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  BookOpen,
+  Building2,
+  ChevronsUpDown,
+  Cpu,
+  Files,
+  KeyRound,
+  Users,
+  Plug,
+  Plus,
+  Radio,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from 'lucide-react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import {
@@ -42,14 +55,30 @@ function Navigation({
   expanded?: boolean;
 }) {
   const nav = useNavigation();
+  const settingsHeading = useId();
   if (!nav?.workspaceId) return null;
-  const links = [
-    { view: 'bundles' as const, label: 'Bundles', icon: Files },
-    { view: 'delivery' as const, label: 'Delivery', icon: Radio },
-    ...(nav.role === 'admin'
+  const admin = nav.role === 'admin';
+  const groups = [
+    {
+      key: 'work',
+      heading: undefined,
+      links: [
+        { view: 'bundles' as const, label: 'Bundles', icon: Files },
+        { view: 'delivery' as const, label: 'Delivery', icon: Radio },
+        ...(admin ? [{ view: 'connections' as const, label: 'Connections', icon: Plug }] : []),
+      ],
+    },
+    ...(admin
       ? [
-          { view: 'connections' as const, label: 'Connections', icon: Plug },
-          { view: 'members' as const, label: 'Members', icon: Users },
+          {
+            key: 'settings',
+            heading: 'Settings',
+            links: [
+              { view: 'members' as const, label: 'Members', icon: Users },
+              { view: 'model-provider' as const, label: 'Model provider', icon: Cpu },
+              { view: 'tokens' as const, label: 'Machine tokens', icon: KeyRound },
+            ],
+          },
         ]
       : []),
   ];
@@ -58,38 +87,57 @@ function Navigation({
       aria-label="Main navigation"
       className={layout === 'rail' ? 'workspace-rail-navigation' : 'space-y-1'}
     >
-      {links.map(({ view, label, icon: Icon }) => {
-        const current =
-          nav.location?.view === view || (view === 'bundles' && Boolean(nav.bundleId));
-        const link = (
-          <ConsoleLink
-            href={workspaceHref(nav.workspaceId!, view)}
-            onClick={() => onNavigate?.(workspaceHref(nav.workspaceId!, view))}
-            className={`navigation-link${layout === 'rail' ? ' workspace-rail-control' : ''}${current ? ' is-current' : ''}`}
-            aria-label={label}
-            aria-current={current ? 'page' : undefined}
-          >
-            <Icon className="size-[18px]" aria-hidden="true" />
-            <span className={layout === 'rail' ? 'sr-only workspace-rail-label' : undefined}>{label}</span>
-          </ConsoleLink>
-        );
-        return layout === 'rail' ? (
-          <Tooltip key={view}>
-            <TooltipTrigger asChild data-slot="button">
-              <Button asChild variant="ghost" size="icon">
+      {groups.map((group) => (
+        <div
+          key={group.key}
+          className={layout === 'rail' ? 'workspace-nav-group' : 'workspace-nav-group space-y-1'}
+          role={group.heading ? 'group' : undefined}
+          aria-labelledby={group.heading ? settingsHeading : undefined}
+        >
+          {group.heading && (
+            <>
+              <span className="workspace-nav-divider" aria-hidden="true" />
+              <p id={settingsHeading} className="workspace-nav-heading">
+                {group.heading}
+              </p>
+            </>
+          )}
+          {group.links.map(({ view, label, icon: Icon }) => {
+            const current =
+              nav.location?.view === view || (view === 'bundles' && Boolean(nav.bundleId));
+            const link = (
+              <ConsoleLink
+                href={workspaceHref(nav.workspaceId!, view)}
+                onClick={() => onNavigate?.(workspaceHref(nav.workspaceId!, view))}
+                className={`navigation-link${layout === 'rail' ? ' workspace-rail-control' : ''}${current ? ' is-current' : ''}`}
+                aria-label={label}
+                aria-current={current ? 'page' : undefined}
+              >
+                <Icon className="size-[18px]" aria-hidden="true" />
+                <span className={layout === 'rail' ? 'sr-only workspace-rail-label' : undefined}>
+                  {label}
+                </span>
+              </ConsoleLink>
+            );
+            return layout === 'rail' ? (
+              <Tooltip key={view}>
+                <TooltipTrigger asChild data-slot="button">
+                  <Button asChild variant="ghost" size="icon">
+                    {link}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right" sideOffset={10} hidden={expanded}>
+                  {label}
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <span key={view} className="block">
                 {link}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={10} hidden={expanded}>
-              {label}
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          <span key={view} className="block">
-            {link}
-          </span>
-        );
-      })}
+              </span>
+            );
+          })}
+        </div>
+      ))}
     </nav>
   );
 }
@@ -261,7 +309,11 @@ export function Shell({ children }: { children: ReactNode }) {
         ? 'Connections'
         : view === 'members'
           ? 'Members'
-          : 'Bundles';
+          : view === 'model-provider'
+            ? 'Model provider'
+            : view === 'tokens'
+              ? 'Machine tokens'
+              : 'Bundles';
   useEffect(() => {
     const page = nav?.workspaceId
       ? [detailLabel, viewLabel, nav.bundleName].filter(Boolean).join(' · ')

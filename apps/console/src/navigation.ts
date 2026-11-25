@@ -1,6 +1,18 @@
 import type { BundleScope } from './server/selection';
 
-export type WorkspaceView = 'bundles' | 'connections' | 'delivery' | 'members';
+export type WorkspaceView =
+  | 'bundles'
+  | 'connections'
+  | 'delivery'
+  | 'members'
+  | 'model-provider'
+  | 'tokens';
+/** Workspace settings pages, served under /w/{ws}/settings/{page}. */
+export const settingsViews = ['members', 'model-provider', 'tokens'] as const;
+export type SettingsView = (typeof settingsViews)[number];
+export function isSettingsView(view: string | undefined): view is SettingsView {
+  return settingsViews.includes(view as SettingsView);
+}
 export type BundleView = 'content' | 'releases' | 'learning' | 'connect';
 export type ConsoleLocation = {
   workspaceId: string;
@@ -19,7 +31,7 @@ export function releaseRevision(value: unknown): string | undefined {
 }
 
 export function workspaceHref(workspaceId: string, view: WorkspaceView = 'bundles') {
-  return `/w/${part(workspaceId)}/${view === 'members' ? 'settings/members' : view}`;
+  return `/w/${part(workspaceId)}/${isSettingsView(view) ? `settings/${view}` : view}`;
 }
 export function bundleHref(
   scope: BundleScope,
@@ -42,8 +54,8 @@ export function parseConsoleLocation(path: string): ConsoleLocation | null {
     const workspaceId = parts[1];
     if (parts.length === 3 && ['bundles', 'connections', 'delivery'].includes(parts[2]))
       return { workspaceId, view: parts[2] as WorkspaceView };
-    if (parts.length === 4 && parts[2] === 'settings' && parts[3] === 'members')
-      return { workspaceId, view: 'members' };
+    if (parts.length === 4 && parts[2] === 'settings' && isSettingsView(parts[3]))
+      return { workspaceId, view: parts[3] };
     if (parts[2] !== 'bundles' || !parts[3]) return null;
     const bundleId = parts[3];
     if (parts.length === 5 && parts[4] === 'learning')

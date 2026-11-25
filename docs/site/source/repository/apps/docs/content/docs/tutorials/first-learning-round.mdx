@@ -17,7 +17,7 @@ You need a source checkout and a Codex sign-in. Any Acclimate service works in p
    source .local/stack/env.sh
    ```
 
-3. In the console, open the `local-demo` workspace's **Members** page. Under **Machine tokens**, choose **Issue token** and tick the three [rights](/docs/reference/credentials#rights) the script needs: **Read content**, **Write content** and **Promote releases**. The secret is shown once, so export it now.
+3. In the console, open **Machine tokens** under **Settings** in the sidebar, choose **Issue token** and tick the three [rights](/docs/reference/credentials#rights) the script needs: **Read content**, **Write content** and **Promote releases**. The secret is shown once, so export it now.
 
    ```sh
    export ACCLIMATE_TOKEN='<machine-token>'
@@ -75,7 +75,7 @@ Learning needs two model settings, neither with a default: the **optimizer** on 
 
    The containers reach the proxy over plain HTTP, which the service and the executor refuse unless the host is in `ACCLIMATE_PROVIDER_HTTP_HOSTS`. The stack saves these settings in `.local/stack/service.env` for later starts. Export an empty value to clear one.
 
-5. In the console, open the workspace's **Members** page and, under **Model provider**, enter:
+5. In the console, open **Model provider** under **Settings** in the sidebar and enter:
 
    | Field | Value |
    | --- | --- |

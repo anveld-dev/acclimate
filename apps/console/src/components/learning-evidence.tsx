@@ -5,6 +5,8 @@ import { Button } from './ui/button';
 import { learningRequest } from '../server/central-actions';
 import { TaskLink } from './learning-task-link';
 
+const codeBlock =
+  'rounded-md border bg-muted/40 px-3 py-2 font-mono text-[13px] leading-relaxed whitespace-pre-wrap break-words';
 type Evidence = { caseId: string; rollouts: LearningRollout[] }[];
 export function LearningEvidence({
   scope,
@@ -69,13 +71,17 @@ export function LearningEvidence({
   }
   return (
     <div className="space-y-2">
-      <Button variant="outline" disabled={busy} onClick={() => void load()}>
+      <Button variant="outline" size="sm" disabled={busy} onClick={() => void load()}>
         {busy ? 'Loading evidence…' : taskId ? 'Show last rollout' : label}
       </Button>
-      {message && <p role="status">{message}</p>}
+      {message && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {message}
+        </p>
+      )}
       {result?.map((c) => (
-        <details key={c.caseId}>
-          <summary>
+        <details key={c.caseId} className="space-y-2 text-sm">
+          <summary className="cursor-pointer">
             <TaskLink id={c.caseId} /> · {c.rollouts.filter((r) => r.passed).length} of{' '}
             {c.rollouts.length} passed
           </summary>
@@ -91,17 +97,17 @@ export function LearningEvidence({
 export function RolloutEvidence({ r, i }: { r: LearningRollout; i: number }) {
   const reasoning = r.error ?? r.reasons?.join('\n') ?? r.trace;
   return (
-    <div className="rounded border p-2">
-      <p>
+    <div className="mt-2 space-y-2 rounded-md border bg-muted/20 p-3 text-sm">
+      <p className="font-medium">
         Rollout {i + 1} · {r.error ? 'Error' : r.passed ? 'Passed' : 'Failed'} · score{' '}
         {typeof r.score === 'number' ? Number(r.score.toFixed(3)) : r.score}
       </p>
-      {reasoning && <pre className="whitespace-pre-wrap break-words">{reasoning}</pre>}
+      {reasoning && <pre className={codeBlock}>{reasoning}</pre>}
       <details>
-        <summary>Gateway log</summary>
-        <pre className="whitespace-pre-wrap break-words">
-          {JSON.stringify(r.gatewayLog ?? [], null, 2)}
-        </pre>
+        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+          Gateway log
+        </summary>
+        <pre className={codeBlock + ' mt-1.5'}>{JSON.stringify(r.gatewayLog ?? [], null, 2)}</pre>
       </details>
     </div>
   );

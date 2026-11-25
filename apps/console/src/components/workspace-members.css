@@ -5,12 +5,6 @@
 .workspace-members > section {
   width: 100%;
 }
-.members-section-heading {
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--muted);
-  font-weight: 600;
-}
 .member-id,
 .member-details {
   color: var(--muted-foreground);
@@ -114,54 +108,6 @@
   }
 }
 
-@container members (min-width: 720px) {
-  .members-section-heading {
-
-    font-size: var(--type-20);
-    font-weight: 550;
-    line-height: 1.2;
-    background: var(--card);
-  }
-  .members-invitations:has(> .members-empty) {
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 4px 16px;
-    padding: 11px 16px;
-  }
-  .members-invitations:has(> .members-empty) > :is(h2, p) {
-    background: transparent;
-    border: 0;
-    padding: 0;
-  }
-}
-
-.members-directory-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 8px 12px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-}
-.members-directory-title {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.members-directory-title > svg {
-  width: 17px;
-  height: 17px;
-  color: var(--muted-foreground);
-}
-.members-directory-title .members-section-heading {
-  background: transparent;
-  border: 0;
-  padding: 0;
-  font: 650 16px/1.35 var(--font-sans, system-ui, sans-serif);
-}
 .members-directory-count,
 .member-own-badge {
   border-radius: 4px;
@@ -172,27 +118,9 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
-.members-role-guide {
-  display: contents;
-}
-.members-role-guide > [data-slot='disclosure-trigger'] {
-  min-height: 36px;
-  font-size: var(--type-14);
-}
-@media (pointer: coarse) {
-  .members-role-guide > [data-slot='disclosure-trigger'] { min-height: 44px; }
-}
-.members-role-guide > [data-slot='disclosure-content'] {
-  grid-column: 1/-1;
-}
 .members-role-guide dl {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  background: var(--muted);
-  border-radius: 4px;
+  gap: 10px;
 }
 .members-role-guide :is(dt, dd) {
   margin: 0;
@@ -238,12 +166,6 @@
   font-size: var(--type-14);
   color: var(--muted-foreground);
 }
-.members-invitations-title {
-  padding: 12px 16px;
-}
-.members-invitations:has(> .members-empty) .members-invitations-title {
-  padding: 0;
-}
 .member-role-description {
   display: flex;
   align-items: center;
@@ -257,20 +179,6 @@
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-}
-@container members (max-width:719px) {
-  .members-invitations:has(> .members-empty) .members-invitations-title {
-    padding: 12px 16px 0;
-  }
-}
-@container members (max-width:490px) {
-  .members-directory-head {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 2px;
-  }
-  .members-role-guide > [data-slot='disclosure-trigger'] {
-    justify-self: start;
-  }
 }
 
 .member-invite-action {

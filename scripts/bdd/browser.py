@@ -106,7 +106,8 @@ class BrowserFixture:
 
     def workspace_path(self, view='bundles', workspace_id=None):
         project=quote(workspace_id or self.world.h.project,safe='')
-        return '/w/'+project+('/settings/members' if view=='members' else '/'+view)
+        settings=view in ('members','model-provider','tokens')
+        return '/w/'+project+('/settings/' if settings else '/')+view
 
     def bundle_path(self, view='content', bundle_id=None, channel='stable', **search):
         project=quote(self.world.h.project,safe='')

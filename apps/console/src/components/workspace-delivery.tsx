@@ -85,7 +85,7 @@ export function WorkspaceDelivery({
             canManage
               ? [
                   'Create a connection for the app’s bundle and channel.',
-                  'Give the app its content-read credential.',
+                  'Give the app its connection credential.',
                   'Turn on optional reporting so the app sends a receipt after each fetch.',
                 ]
               : undefined

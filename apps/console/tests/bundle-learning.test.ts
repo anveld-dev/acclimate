@@ -3,6 +3,12 @@ import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterContextProvider,
+} from '@tanstack/react-router';
 import type {
   LearningCandidate,
   LearningLoop,
@@ -11,7 +17,8 @@ import type {
   LearningRound,
   LearningRoundSummary,
 } from '@acclimate/sdk';
-import { BundleLearning } from '../src/components/bundle-learning';
+import { BundleLearning, learningTab, type LearningTab } from '../src/components/bundle-learning';
+import { TooltipProvider } from '../src/components/ui/tooltip';
 import { activeRoundStates } from '../src/lib/learning';
 import { readLearningState, type LearningState } from '../src/server/learning-core';
 import { consoleEnvironment } from './console-fixture';
@@ -88,14 +95,27 @@ const empty: Extract<LearningState, { ok: true }> = {
   detail: null,
   memory: null,
 };
-const markup = (state: LearningState) =>
+const router = createRouter({
+  routeTree: createRootRoute(),
+  history: createMemoryHistory({ initialEntries: ['/'] }),
+});
+const markup = (state: LearningState, tab: LearningTab = 'overview') =>
   renderToStaticMarkup(
-    createElement(BundleLearning, {
-      scope,
-      state,
-      refresh: async () => {},
+    createElement(RouterContextProvider, {
+      router,
+      children: createElement(TooltipProvider, {
+        children: createElement(BundleLearning, {
+          scope,
+          state,
+          tab,
+          refresh: async () => {},
+        }),
+      }),
     }),
   );
+/** Every sub-tab of the Learning page, in order. */
+const allTabs = (state: LearningState) =>
+  (['overview', 'tasks', 'settings', 'memory'] as const).map((tab) => markup(state, tab)).join('');
 const response = (value: unknown, status = 200) => Response.json(value, { status });
 const notFound = () =>
   response({ error: { code: 'not_found', message: 'Learning loop not enrolled' } }, 404);
@@ -107,13 +127,16 @@ function bundleFixture(url: URL, role = 'admin'): Response | undefined {
 }
 
 test('enrollment and recovery render for the appropriate states and roles', () => {
-  assert.match(markup(empty), /Save learning settings/);
-  assert.match(markup({ ...empty, loop }), /Import material/);
+  assert.match(markup(empty, 'settings'), /Save learning settings/);
+  assert.match(markup(empty), /Learning is not set up for this bundle\./);
+  assert.match(markup(empty), /href="[^"]*\/learning\?tab=settings"[^>]*>Set up learning</);
+  assert.match(markup({ ...empty, loop }, 'tasks'), /Import material/);
+  assert.match(markup(empty, 'tasks'), /Save the learning settings before you add tasks/);
   assert.match(
     markup({ ...empty, loop: { ...loop, status: 'paused' } }),
     /Start needs 20 more evolve and 20 more held-out/,
   );
-  assert.doesNotMatch(markup({ ...empty, canManage: false }), /Save learning settings/);
+  assert.doesNotMatch(allTabs({ ...empty, canManage: false }), /Save learning settings/);
   assert.match(markup({ ok: false, message: 'Access denied' }), /role="alert"/);
 });
 
@@ -189,15 +212,15 @@ test('renders round states, evaluation progress and decreasing measured scores',
       round,
     ],
   });
-  assert.match(html, /Round 1 · Evolve score · 0\.9/);
-  assert.match(html, /Round 2 · Evolve score · 0\.6/);
-  assert.match(html, /Round 2 · Held-out score \(monitoring only\) · 0/);
+  assert.match(html, /Round 1 · Evolve score · 90%/);
+  assert.match(html, /Round 2 · Evolve score · 60%/);
+  assert.match(html, /Round 2 · Held-out score \(monitoring only\) · 0%/);
   assert.match(html, /This version was released, but the regression check could not run\./);
   assert.match(html, /The regression check on held-out tasks could not run\./);
   assert.doesNotMatch(html, /held-out-evaluation-failed/);
-  assert.match(html, />Failed<\/td>/);
-  assert.match(html, />Stopped<\/td>/);
-  assert.match(html, /adopted.*kept|kept.*adopted/);
+  assert.match(html, /<td[^>]*><span[^>]*data-tone="danger"[^>]*>Failed<\/span>/);
+  assert.match(html, /<td[^>]*><span[^>]*data-tone="neutral"[^>]*>Stopped<\/span>/);
+  assert.match(html, />Adopted<\/span>.*>Kept<\/span>|>Kept<\/span>.*>Adopted<\/span>/);
   assert.match(html, /Small held-out sets/);
   assert.doesNotMatch(html, />(Approve|Review|Rollout)</);
 });
@@ -413,21 +436,26 @@ test('round detail and historical memory load with the session and render for ed
   assert.equal(state.canManage, false);
   assert.equal(state.canEditCases, true);
   assert.ok(urls.includes(path + '/memory?revision=1'));
-  const html = markup(state);
+  const html = allTabs(state);
   assert.equal([...html.matchAll(/<h4[^>]*>Sample /g)].length, 5);
+  assert.match(
+    html,
+    /Sample 2<span class="sr-only"> · <\/span><span[^>]*data-tone="success"[^>]*>Adopted</,
+  );
   for (const label of [
-    'Sample 2 · Adopted',
     'Adopted sample 2',
     'Fixed the failures',
     'The proposal failed the content scan.',
     'email · rationale',
     'Agent stops early',
     'Targets the diagnosis',
-    'skip · Repeated a direction',
+    'Screened out · Repeated a direction',
+    'Passed screening · Targets the diagnosis',
+    '2 cases',
     'AGENTS.md',
     '- Stop',
     '+ Retry',
-    '1 versus 0.9',
+    '100%, against 90% for the current version',
     'released-version',
     '#revision-8',
     'Round 1 · sample 2 · Accepted',
@@ -441,7 +469,7 @@ test('round detail and historical memory load with the session and render for ed
 });
 
 test('renders keep and empty candidate and memory states', () => {
-  const html = markup({
+  const state: LearningState = {
     ...empty,
     loop,
     detail: {
@@ -465,10 +493,11 @@ test('renders keep and empty candidate and memory states', () => {
       ok: true,
       memory: { ...memory, improvementMemory: { ...memory.improvementMemory, problems: [] } },
     },
-  });
+  };
+  const html = markup(state);
   assert.match(html, /No candidates recorded/);
-  assert.match(html, /Kept incumbent.*No candidate passed screening/);
-  assert.match(html, /No problems recorded/);
+  assert.match(html, /Kept the current version.*No candidate passed screening/);
+  assert.match(markup(state, 'memory'), /No problems recorded/);
 });
 
 test('whole-file changes use verified incumbent content for replacements and deletions', async () => {
@@ -525,7 +554,9 @@ test('rollback is offered only on the live version and monitoring leads after st
     channelHead: round.adoptedVersionId,
   });
   assert.equal((html.match(/>Roll back</g) ?? []).length, 1);
-  assert.ok(html.indexOf('Scores by round') < html.indexOf('Learning setup'));
+  assert.match(html, /Scores by round/);
+  assert.doesNotMatch(html, /Learning setup/);
+  assert.match(markup({ ...empty, loop }, 'settings'), /Learning setup/);
   assert.doesNotMatch(
     markup({ ...empty, loop, rounds: [round], channelHead: 'external' }),
     />Roll back</,
@@ -641,16 +672,32 @@ test('a failed round, a waiting loop and an alert say what happened and what to 
 });
 
 test('setup explains each field and round detail links tasks and the current version', () => {
-  const setup = markup(empty);
+  const setup = markup(empty, 'settings');
   for (const help of [
-    'released to this channel automatically, without approval',
+    'released here automatically, without approval',
     'a model grading its own work is lenient',
     'forms each round’s setting',
     'trusts improvement memory from it most',
     'every evolve task five times for up to six versions',
-    'the Tasks panel appears below this panel',
+    'add or import evolve and held-out tasks on the Tasks',
   ])
     assert.ok(setup.includes(help), help);
+  for (const [label, id] of [
+    ['Learning channel', 'learning-channel'],
+    ['Task model', 'learning-task'],
+    ['Judge model', 'learning-judge'],
+    ['Task domain', 'learning-domain'],
+    ['Benchmark name', 'learning-benchmark'],
+    ['Maximum rounds per day', 'learning-cap'],
+  ]) {
+    assert.ok(
+      setup.includes(`<label for="${id}" class="form-field-label">${label}</label>`),
+      label,
+    );
+    assert.match(setup, new RegExp(`id="${id}"[^>]*aria-describedby="${id}-hint"`), id);
+    assert.ok(setup.includes(`id="${id}-hint"`), id);
+  }
+  assert.match(setup, /<footer class="panel-footer">[\s\S]*Save learning settings/);
   const html = markup({
     ...empty,
     loop,
@@ -683,10 +730,36 @@ test('setup explains each field and round detail links tasks and the current ver
   assert.match(html, /P1 · Agent stops early/);
   assert.match(html, /The model provider was unavailable, rate limited or overloaded/);
   assert.match(html, /Show the current version(&#x27;|')s results/);
-  assert.match(html, /href="#task-case-a"/);
+  assert.match(html, /href="\?tab=tasks#task-case-a"/);
   assert.match(
     html,
-    /href="#task-00000000-0000-4000-8000-00000000000a"[^>]*><code aria-hidden="true">00000000…<\/code><span class="sr-only">00000000-0000-4000-8000-00000000000a/,
+    /href="\?tab=tasks#task-00000000-0000-4000-8000-00000000000a"[^>]*><code aria-hidden="true">00000000…<\/code><span class="sr-only">00000000-0000-4000-8000-00000000000a/,
   );
   assert.match(html, /<time dateTime="2026-11-20T12:00:00Z"/);
+});
+
+test('sub-tabs follow the URL and old round and memory links keep working', () => {
+  assert.equal(learningTab({}), 'overview');
+  assert.equal(learningTab({ tab: 'tasks' }), 'tasks');
+  assert.equal(learningTab({ tab: 'settings' }), 'settings');
+  assert.equal(learningTab({ round: '3' }), 'overview');
+  assert.equal(learningTab({ memory: 'latest' }), 'memory');
+  assert.equal(learningTab({ tab: 'unknown' }), 'overview');
+  const html = markup(
+    { ...empty, loop: { ...loop, admittedEvolve: 21, admittedHeldOut: 20 } },
+    'tasks',
+  );
+  const nav = html.match(/<nav aria-label="Learning sections"[\s\S]*?<\/nav>/)?.[0] ?? '';
+  for (const [tab, label] of [
+    ['', 'Overview'],
+    ['?tab=tasks', 'Tasks'],
+    ['?tab=settings', 'Settings'],
+    ['?tab=memory', 'Memory'],
+  ])
+    assert.match(
+      nav,
+      new RegExp(`href="[^"]*/learning${tab.replace('?', '\\?')}"[^>]*>${label}`),
+      label,
+    );
+  assert.match(nav, /aria-current="page"[^>]*>Tasks<span class="sub-tab-count">41<\/span>/);
 });

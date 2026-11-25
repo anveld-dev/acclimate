@@ -19,7 +19,7 @@ import { BundleLibrary } from '../components/bundle-library';
 import { BundleContent } from '../components/bundle-content';
 import { SdkSetup, UseInAnApp } from '../components/sdk-setup';
 import { ModelProvider } from '../components/model-provider';
-import { BundleLearning } from '../components/bundle-learning';
+import { BundleLearning, learningTab } from '../components/bundle-learning';
 import { readLearningLoop } from '../server/learning-loop';
 import { BundleReleases } from '../components/bundle-releases';
 import { WorkspaceConnections } from '../components/workspace-connections';
@@ -55,13 +55,20 @@ export const Route = createFileRoute('/w/$')({
             'bundleId',
             'round',
             'memory',
+            'tab',
           ].includes(key) &&
           (typeof value === 'string' || typeof value === 'number'),
       ),
     ) as Record<string, string | number>,
-  loaderDeps: ({ search }) => ({
-    search: Object.fromEntries(Object.entries(search).filter(([key]) => key !== 'connectionTab')),
-  }),
+  loaderDeps: ({ search }) => {
+    // Switching Learning sub-tabs needs no new data, except that Memory shows the latest
+    // revision when the URL names none.
+    const deps: Record<string, string | number> = Object.fromEntries(
+      Object.entries(search).filter(([key]) => key !== 'connectionTab' && key !== 'tab'),
+    );
+    if (learningTab(search) === 'memory' && deps.memory === undefined) deps.memory = 'latest';
+    return { search: deps };
+  },
   loader: async ({ params, deps }) => {
     const location = parseConsoleLocation('/w/' + params._splat);
     if (!location) return { kind: 'missing' as const };
@@ -101,6 +108,10 @@ export const Route = createFileRoute('/w/$')({
         location,
         result: await readWorkspaceAccess({ data: { workspaceId: location.workspaceId } }),
       };
+    // These pages load their own data, so a background refresh stays cheap.
+    if (location.view === 'model-provider')
+      return { kind: 'model-provider' as const, location };
+    if (location.view === 'tokens') return { kind: 'tokens' as const, location };
     const scope = {
       workspaceId: location.workspaceId,
       bundleId: location.bundleId!,
@@ -128,6 +139,23 @@ export const Route = createFileRoute('/w/$')({
   },
   component: ScopedPage,
 });
+/** Pages a viewer or editor sees only as a pointer to a workspace administrator. */
+const adminOnlyPages = {
+  members: { title: 'Members', description: 'A workspace administrator manages member access.' },
+  'model-provider': {
+    title: 'Model provider',
+    description: 'A workspace administrator manages the model provider.',
+  },
+  tokens: {
+    title: 'Machine tokens',
+    description: 'A workspace administrator manages machine tokens.',
+  },
+  connections: {
+    title: 'Connections',
+    description:
+      'A workspace administrator manages app connections. You can view app delivery reports.',
+  },
+};
 function ScopedPage() {
   const data = Route.useLoaderData();
   const router = useRouter();
@@ -147,26 +175,20 @@ function ScopedPage() {
       </section>
     );
   if (
-    (data.kind === 'members' || data.kind === 'connections') &&
+    data.kind in adminOnlyPages &&
     navigation?.workspaceId === data.location.workspaceId &&
     (navigation.role === 'viewer' || navigation.role === 'editor')
   ) {
-    const members = data.kind === 'members';
+    const page = adminOnlyPages[data.kind as keyof typeof adminOnlyPages];
+    const connections = data.kind === 'connections';
     return (
       <section className="space-y-4">
-        <PageTitle
-          title={members ? 'Members' : 'Connections'}
-          description={
-            members
-              ? 'A workspace administrator manages member access.'
-              : 'A workspace administrator manages app connections. You can view app delivery reports.'
-          }
-        />
+        <PageTitle title={page.title} description={page.description} />
         <Button asChild variant="outline">
           <ConsoleLink
-            href={workspaceHref(data.location.workspaceId, members ? 'bundles' : 'delivery')}
+            href={workspaceHref(data.location.workspaceId, connections ? 'delivery' : 'bundles')}
           >
-            {members ? 'Browse bundles' : 'View delivery'}
+            {connections ? 'View delivery' : 'Browse bundles'}
           </ConsoleLink>
         </Button>
       </section>
@@ -201,19 +223,16 @@ function ScopedPage() {
     );
   if (data.kind === 'members')
     return (
-      <div className="space-y-6">
-        <WorkspaceMembers
-          key={workspaceKey}
-          workspaceId={data.location.workspaceId}
-          initial={data.result}
-        />
-        <ModelProvider key={workspaceKey + '-provider'} workspaceId={data.location.workspaceId} />
-        <WorkspaceMachineTokens
-          key={`tokens-${workspaceKey}`}
-          workspaceId={data.location.workspaceId}
-        />
-      </div>
+      <WorkspaceMembers
+        key={workspaceKey}
+        workspaceId={data.location.workspaceId}
+        initial={data.result}
+      />
     );
+  if (data.kind === 'model-provider')
+    return <ModelProvider key={workspaceKey} workspaceId={data.location.workspaceId} />;
+  if (data.kind === 'tokens')
+    return <WorkspaceMachineTokens key={workspaceKey} workspaceId={data.location.workspaceId} />;
   if (data.kind === 'learning') {
     const channel = data.result.ok
       ? (data.result.loop?.channel ?? data.result.channels[0])
@@ -231,6 +250,7 @@ function ScopedPage() {
         <BundleLearning
           key={`${workspaceKey}:${scope.bundleId}`}
           scope={data.scope}
+          tab={learningTab(search)}
           state={data.result}
           refresh={() => router.invalidate({ sync: true })}
         />

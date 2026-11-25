@@ -1,5 +1,6 @@
 """Exercise the learning loop against a real service, worker and no-network runners."""
 import json
+import re
 import secrets
 import subprocess
 import sys
@@ -119,6 +120,19 @@ def session(w, method, path, body=None, **kw):
     return w.call(method, path, body, actor="_browser-operator", **kw)
 
 
+def learning_tab(w, name):
+    """Open a sub-tab of the bundle's Learning page through its navigation, and return the page."""
+    browser = w.browser()
+    page = browser.page
+    if "/learning" not in page.url:
+        browser.visit(w.learning_page)
+    # The Tasks tab label carries its task count, so match the start of the name.
+    tab = page.get_by_role("navigation", name="Learning sections").get_by_role("link", name=re.compile("^" + name))
+    tab.click()
+    expect(tab).to_have_attribute("aria-current", "page")
+    return page
+
+
 def import_csv(w, name, content):
     headers = {"Authorization": "Bearer " + w.console_token, "X-Acclimate-Session": w.sessions["_browser-operator"]["secret"],
                "Content-Type": "text/csv"}
@@ -149,17 +163,21 @@ def configure_ui(context):
     w = context.world
     browser = w.browser()
     page = browser.page
-    browser.visit("/access")
+    browser.visit(browser.workspace_path("model-provider"))
     page.get_by_label("OpenAI-compatible base URL").fill(w.provider_url)
     page.get_by_label("API key", exact=False).fill(w.fixture_key)
     page.get_by_label("Allowed models").fill(", ".join(MODELS))
     page.get_by_role("button", name="Save provider").click()
-    expect(page.get_by_text("Provider verification: verified")).to_be_visible(timeout=60000)
+    expect(page.get_by_text("Provider verified", exact=True)).to_be_visible(timeout=60000)
     browser.visit(w.learning_page)
+    learning_tab(w, "Settings")
     page.get_by_label("Task model").select_option("task")
     page.get_by_label("Judge model").select_option("judge")
     page.get_by_label("Maximum rounds per day").fill("2")
     page.get_by_role("button", name="Save learning settings").click()
+    # Once the settings are saved the Tasks tab shows its task count.
+    expect(page.get_by_role("navigation", name="Learning sections").get_by_role("link", name=re.compile(r"^Tasks\s*\d"))).to_be_visible()
+    learning_tab(w, "Tasks")
     for name, content, summary in [("answers.csv", MATERIAL, "43 converted"), ("conversations.csv", CONVERSION, "1 set aside")]:
         page.get_by_label("Spreadsheet, CSV or JSONL").set_input_files(dict(name=name, mimeType="text/csv", buffer=content))
         page.get_by_role("button", name="Import tasks").click()
@@ -199,9 +217,10 @@ def start_api(context):
 def start_ui(context):
     w = context.world
     w.browser().visit(w.learning_page)
-    page = w.browser().page
+    page = learning_tab(w, "Tasks")
     page.get_by_role("button", name="Try task").first.click()
     expect(page.get_by_label("Trial result")).to_contain_text("unchecked", timeout=60000)
+    learning_tab(w, "Overview")
     page.get_by_role("button", name="Start", exact=True).click()
 
 

@@ -59,6 +59,36 @@
   border-top: 1px solid var(--sidebar-border);
   padding-top: 12px;
 }
+/* Settings pages sit in their own group: a divider in the collapsed rail, a label when expanded. */
+.workspace-rail-navigation .workspace-nav-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.workspace-nav-divider {
+  display: block;
+  width: 24px;
+  height: 1px;
+  margin: 6px auto;
+  background: var(--sidebar-border);
+}
+.workspace-nav-heading {
+  display: none;
+  margin: 0;
+}
+[data-slot='sheet-content'] .workspace-nav-divider {
+  display: none;
+}
+[data-slot='sheet-content'] .workspace-nav-heading {
+  display: block;
+  padding: 12px 10px 2px;
+  color: var(--muted-foreground);
+  font-size: var(--type-12);
+  font-weight: 600;
+  line-height: 16px;
+}
 .workspace-desktop-rail .workspace-rail-control[data-slot='button'] {
   display: inline-flex;
   flex: 0 0 44px;
@@ -116,6 +146,20 @@
   }
   .workspace-rail-control.is-current {
     font-weight: 600;
+  }
+  .workspace-rail-navigation .workspace-nav-group {
+    align-items: stretch;
+  }
+  .workspace-desktop-rail .workspace-nav-divider {
+    display: none;
+  }
+  .workspace-desktop-rail .workspace-nav-heading {
+    display: block;
+    padding: 10px 12px 0;
+    color: color-mix(in oklab, var(--sidebar-foreground) 72%, transparent);
+    font-size: var(--type-12);
+    font-weight: 600;
+    line-height: 16px;
   }
   .workspace-desktop-rail .workspace-rail-label {
     position: static;

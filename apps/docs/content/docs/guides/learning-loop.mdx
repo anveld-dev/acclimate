@@ -16,26 +16,26 @@ See [Learning loop](/docs#learning-loop) for the terms and [What a round does](/
 
 ## Connect a model provider
 
-1. Open the workspace's **Members** page.
-2. Under **Model provider**, save its base URL, an API key and the allowed model IDs.
+1. In the sidebar, under **Settings**, open **Model provider**.
+2. Enter the provider's base URL, an API key and the allowed model IDs, then choose **Save provider**.
 3. Wait while the executor verifies each model. A model passes when it answers a chat request and reports token usage.
 
-<Screenshot name="model-provider" alt="The Model provider panel on the Members page, with a base URL, an empty API key field because a key is stored, two allowed models and both verified." />
+<Screenshot name="model-provider" alt="The Model provider page with a base URL, a stored API key with a Replace key button, two allowed models, a Provider verified badge and both models verified." />
 
 The tested setup is CLIProxyAPI with a Codex sign-in. See [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy).
 
 ## Turn on learning
 
-1. Open the bundle's **Learning** tab.
+1. Open the bundle's **Learning** tab, then **Settings**.
 2. Choose the **Learning channel**, a **Task model** and a different **Judge model**. Use your application's model as the task model, so the loop measures the agent you run. See [How a rollout runs your bundle](/docs#how-a-rollout-runs-your-bundle).
 3. Set **Maximum rounds per day**, the daily round limit. It counts rounds over a rolling 24 hours and defaults to 4.
 4. Choose **Save learning settings**.
 
-<Screenshot name="learning-setup" alt="The Learning setup panel with the learning channel, task model, judge model, task domain, benchmark name and maximum rounds per day, above the Save learning settings and Start buttons." />
+<Screenshot name="learning-setup" alt="The Learning setup panel with the learning channel, task model, judge model, task domain, benchmark name and maximum rounds per day, with Save learning settings at the bottom right." />
 
 ## Add tasks
 
-Add tasks on the **Learning** tab in any of three ways:
+Add tasks on the **Learning** tab's **Tasks** page in any of three ways:
 
 - Under **Import material**, choose a spreadsheet, CSV, JSONL or text file, then choose **Import tasks**.
 - Paste text under **Paste conversations**.
@@ -87,7 +87,7 @@ Editing a set-aside card runs its check again. **Run check again** reruns it wit
 
 ## Start the loop
 
-Choose **Start**. It needs a verified model provider, 20 admitted tasks in each split and an optimizer on the service. Without an optimizer, **Start** is disabled and the API answers 409 `optimizer-required`. Ask the operator to [set the optimizer model](/docs/operate/enable-learning#set-the-optimizer-model).
+On the **Overview**, choose **Start**. It needs a verified model provider, 20 admitted tasks in each split and an optimizer on the service. Without an optimizer, **Start** is disabled and the API answers 409 `optimizer-required`. Ask the operator to [set the optimizer model](/docs/operate/enable-learning#set-the-optimizer-model).
 
 From then on, the service releases each adopted version to the channel automatically.
 
@@ -95,7 +95,7 @@ From then on, the service releases each adopted version to the channel automatic
 
 A round either adopts a candidate, one of the five proposed versions, or keeps the current version. A first round often keeps it. After an adoption the loop runs another round. After two rounds in a row that adopt nothing, it waits for new evidence.
 
-On the **Learning** tab:
+On the **Learning** tab's **Overview**:
 
 - The score chart adds a point for each round. Evolve scores explain which candidate was chosen. Held-out scores show regressions.
 - Open a round to see its candidates, the bundle changes each proposed and the evolve rollouts behind its score. It links to the task cards it mentions.
@@ -124,7 +124,7 @@ A failed round shows its cause, the error of the first rollout that failed. Afte
 | Cause | What the loop does | What to do |
 | --- | --- | --- |
 | The model provider was unavailable for every failed rollout of the current version's evaluation | Waits and tries again, without counting the round toward the pause or the daily round limit | Nothing |
-| The model provider refused the request, for example for a revoked API key | Counts the round toward the pause | Check the model provider on the **Members** page |
+| The model provider refused the request, for example for a revoked API key | Counts the round toward the pause | Check the **Model provider** page |
 | A sandbox could not start | Counts the round toward the pause | Ask the operator to check the executor |
 | No executor matches the round's models and runtime | Fails the round without counting it toward the pause | Check the executor connection and model provider settings |
 | The optimizer ran out of context | Pauses | Ask the operator to check the optimizer's context limit |

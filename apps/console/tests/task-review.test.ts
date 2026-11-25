@@ -65,6 +65,11 @@ test('cards carry a linkable id, a copy control and a rerun for failed checks', 
   assert.match(html, /6f1c2a9e/);
   assert.match(html, /aria-label="Copy ID of task 6f1c2a9e"/);
   assert.match(html, /Run check again/);
+  // Try task is the primary action; Delete task waits behind the card's More menu.
+  assert.match(html, /data-variant="default"[^>]*>Try task</);
+  assert.match(html, /aria-label="More actions for task 6f1c2a9e"[^>]*aria-haspopup="menu"/);
+  assert.match(html, /data-tone="danger"[^>]*>Set aside</);
+  assert.match(html, /data-tone="neutral"[^>]*>evolve</);
   for (const other of [card(), { ...failed, admissionReason: 'judge-unstable' }])
     assert.doesNotMatch(
       renderToStaticMarkup(
@@ -74,7 +79,23 @@ test('cards carry a linkable id, a copy control and a rerun for failed checks', 
     );
   assert.doesNotMatch(
     renderToStaticMarkup(createElement(TaskEditor, { card: failed, edit: false, run: () => {} })),
-    /Run check again/,
+    /Run check again|More actions|Try task/,
+  );
+  const reference = renderToStaticMarkup(
+    createElement(TaskEditor, {
+      card: card({
+        sourceFile: 'example-agent-tasks.jsonl',
+        sourceRow: 3,
+        grader: { type: 'criteria', criteria: ['Be specific'], reference: 'Use the form.' },
+      }),
+      edit: false,
+      run: () => {},
+    }),
+  );
+  assert.match(reference, /example-agent-tasks\.jsonl, row 3/);
+  assert.match(
+    reference,
+    /<details[^>]*><summary[^>]*>[\s\S]*Reference answer<\/summary>[\s\S]*Use the form\./,
   );
 });
 
@@ -98,7 +119,10 @@ test('trial results show the score and the cause of a failure', () => {
   assert.match(failed, /Error code: sandbox-start\./);
   assert.match(render({ status: 'failed' }), /The trial did not finish\. Try again\./);
   assert.equal(describeTrialError('new-code'), 'The trial failed (new-code). Try again.');
-  assert.match(describeTrialError('provider-rejected'), /key was revoked.*Check the provider settings\./);
+  assert.match(
+    describeTrialError('provider-rejected'),
+    /key was revoked.*Check the provider settings\./,
+  );
   assert.equal(scoreText(1), 'Score 1.000');
 });
 
@@ -190,7 +214,16 @@ test('past imports are listed from the service with their set-aside rows', async
   assert.deepEqual(listed, imports);
   const html = renderToStaticMarkup(createElement(ImportList, { imports }));
   assert.ok(html.indexOf('answers.csv') < html.indexOf('conversations.txt'));
-  assert.match(html, /Completed · 3 rows · 1 converted · 0 pending · 2 set aside/);
+  // Each import shows its file, its date on one line and its counts as badges.
+  const [newest, older] = html.split('</li></ul></div></details></li>');
+  assert.match(
+    newest,
+    /<time dateTime="2026-11-20T10:00:00Z"[^>]*>Nov 20, 2026, 10:00 UTC<\/time>/,
+  );
+  for (const badge of ['Completed', '3 rows', '1 converted', '0 pending', '2 set aside'])
+    assert.match(newest, new RegExp(`data-slot="badge"[^>]*>${badge}</span>`), badge);
+  for (const badge of ['Failed', '1 row', '0 converted', '1 pending', '0 set aside'])
+    assert.match(older, new RegExp(`data-slot="badge"[^>]*>${badge}</span>`), badge);
   assert.match(html, /aria-label="Rows set aside from answers.csv"/);
   assert.match(html, /Row 2: This row matches a task that already exists\./);
   assert.match(html, /Row 3: The row is over 64 KiB\./);

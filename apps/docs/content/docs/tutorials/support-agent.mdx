@@ -123,10 +123,10 @@ print(f"\nAnswered with version {version['version']['id']} ({version['version'][
 
 The loop has to learn company facts, such as the refund timeframe, from the tasks the agent fails.
 
-1. In the console, open the **Example agent** bundle's **Learning** tab. Set **Task model** to your `AGENT_MODEL`, pick a different **Judge model** and choose **Save learning settings**.
-2. Under **Import material**, choose `example-agent-tasks.jsonl`, then choose **Import tasks**.
+1. In the console, open the **Example agent** bundle's **Learning** tab, then **Settings**. Set **Task model** to your `AGENT_MODEL`, pick a different **Judge model** and choose **Save learning settings**.
+2. On the **Tasks** page, under **Import material**, choose `example-agent-tasks.jsonl`, then choose **Import tasks**.
 3. Wait while the executor checks each task. The file splits into 34 evolve and 26 held-out tasks, and in the run below all 60 were admitted.
-4. Choose **Start**.
+4. On the **Overview**, choose **Start**.
 
 [Run a learning loop](/docs/guides/learning-loop) explains each step.
 

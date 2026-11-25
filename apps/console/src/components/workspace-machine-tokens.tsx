@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { KeyRound, RotateCw, ShieldOff } from 'lucide-react';
+import { KeyRound, MoreHorizontal, RotateCw, ShieldOff } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Label } from './ui/label';
+import { Field } from './ui/field';
 import { NativeSelect } from './ui/native-select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
+import { Panel } from './panel';
+import { PageTitle } from './shared';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import {
   Dialog,
@@ -30,6 +40,22 @@ const RIGHT_LABELS: Record<MachineTokenRight, string> = {
   write: 'Write content',
   promote: 'Promote releases',
 };
+const RIGHT_SHORT_LABELS: Record<MachineTokenRight, string> = {
+  read: 'Read',
+  write: 'Write',
+  promote: 'Promote',
+};
+/** What each right allows, as in the Rights table of the credentials reference. */
+const RIGHT_HINTS: Record<MachineTokenRight, string> = {
+  read: 'Resolve a channel and read the released content.',
+  write: 'Add versions, import or edit tasks and report outcomes.',
+  promote: 'Release versions to channels and change learning settings.',
+};
+const STATUS_LABELS: Record<string, string> = {
+  active: 'Active',
+  revoked: 'Revoked',
+  expired: 'Expired',
+};
 const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 type Issued = { secret: string; token: MachineToken };
 
@@ -48,6 +74,9 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
   const [issued, setIssued] = useState<Issued>();
   const [revoking, setRevoking] = useState<MachineToken>();
   const [revokeReason, setRevokeReason] = useState('');
+  const issueTrigger = useRef<HTMLButtonElement>(null);
+  const revokeTrigger = useRef<HTMLButtonElement | null>(null);
+  const actionTriggers = useRef(new Map<string, HTMLButtonElement>());
   const scope = useRef(workspaceId);
   scope.current = workspaceId;
 
@@ -101,147 +130,187 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
     }
   }
 
-  if (hidden) return null;
+  const title = (
+    <PageTitle
+      title="Machine tokens"
+      description="Credentials for applications and automation that call the API for this workspace."
+    />
+  );
+  if (hidden)
+    return (
+      <div className="space-y-4">
+        {title}
+        <p role="alert" className="rounded-lg border p-4">
+          Machine token management requires a workspace administrator.
+        </p>
+      </div>
+    );
   const validIssue =
     NAME.test(name) && rights.length > 0 && Number(days) >= 1 && Number(days) <= 365;
   return (
-    <section
-      aria-labelledby="machine-tokens-heading"
-      className="workspace-panel machine-tokens space-y-4 p-4"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h2 id="machine-tokens-heading" className="flex items-center gap-2 font-medium">
-            <KeyRound aria-hidden="true" className="size-4" /> Machine tokens
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Credentials for applications and automation. Issue, rotate or revoke them here without
-            restarting the service. Each secret is shown once.
-          </p>
-        </div>
-        <Button
-          disabled={pending}
-          onClick={() => {
-            setName('delivery-client');
-            setRights(['read']);
-            setDays('90');
-            setReason('');
-            setIssuing(true);
-          }}
-        >
-          Issue token
-        </Button>
-      </div>
+    <div className="machine-tokens space-y-4">
+      {title}
       {message && (
         <p role="status" className="text-sm">
           {message}
         </p>
       )}
       {issued && <IssuedSecret issued={issued} onDone={() => setIssued(undefined)} />}
-      {!tokens ? (
-        <p role="status">Loading machine tokens…</p>
-      ) : tokens.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No machine tokens yet.</p>
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Token</TableHead>
-              <TableHead>Rights</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Expires</TableHead>
-              <TableHead>Last used</TableHead>
-              <TableHead className="text-right">
-                <span className="sr-only">Actions</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {tokens.map((token) => (
-              <TableRow key={token.id}>
-                <TableCell>
-                  <div className="font-medium">{token.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    <code>{token.principalId}</code> · <code>{token.secretPrefix}…</code>
-                  </div>
-                </TableCell>
-                <TableCell>{token.rights.join(', ')}</TableCell>
-                <TableCell>
-                  <StatusBadge
-                    tone={
-                      token.status === 'active'
-                        ? 'success'
-                        : token.status === 'revoked'
-                          ? 'danger'
-                          : 'warning'
-                    }
-                  >
-                    {token.status}
-                  </StatusBadge>
-                </TableCell>
-                <TableCell>
-                  <ReceiptTime value={token.expiresAt} />
-                </TableCell>
-                <TableCell>
-                  {token.lastUsedAt ? <ReceiptTime value={token.lastUsedAt} relative /> : 'Never'}
-                </TableCell>
-                <TableCell className="text-right">
-                  {token.status === 'active' && (
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={pending}
-                        aria-label={`Rotate ${token.name}`}
-                        onClick={() =>
-                          void run({
-                            kind: 'rotate',
-                            workspaceId,
-                            id: token.id,
-                            overlapSeconds: 3600,
-                          })
-                        }
-                      >
-                        <RotateCw aria-hidden="true" /> Rotate
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={pending}
-                        aria-label={`Revoke ${token.name}`}
-                        onClick={() => {
-                          setRevokeReason('');
-                          setRevoking(token);
-                        }}
-                      >
-                        <ShieldOff aria-hidden="true" /> Revoke
-                      </Button>
-                    </div>
-                  )}
-                </TableCell>
+      <Panel
+        title="Issued tokens"
+        description="Rotate or revoke a token without restarting the service. Each secret is shown once."
+        actions={
+          <Button
+            ref={issueTrigger}
+            size="sm"
+            disabled={pending}
+            onClick={() => {
+              setName('delivery-client');
+              setRights(['read']);
+              setDays('90');
+              setReason('');
+              setIssuing(true);
+            }}
+          >
+            <KeyRound aria-hidden="true" /> Issue token
+          </Button>
+        }
+        flush
+      >
+        {!tokens ? (
+          <p role="status" className="p-4 text-sm">
+            Loading machine tokens…
+          </p>
+        ) : tokens.length === 0 ? (
+          <p className="p-4 text-sm text-muted-foreground">No machine tokens yet.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Token</TableHead>
+                <TableHead>Rights</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Expires</TableHead>
+                <TableHead>Last used</TableHead>
+                <TableHead className="text-right">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-      {events.length > 0 && (
-        <Disclosure>
-          <DisclosureTrigger>Token audit trail</DisclosureTrigger>
-          <DisclosureContent>
-            <ul className="space-y-1 text-sm">
-              {events.slice(0, 50).map((event, index) => (
-                <li key={`${event.tokenId}-${event.createdAt}-${index}`}>
-                  <ReceiptTime value={event.createdAt} /> · {event.action}{' '}
-                  <strong>{event.tokenName}</strong> by <code>{event.actorPrincipal}</code>
-                  {event.reason ? ` — ${event.reason}` : ''}
-                </li>
+            </TableHeader>
+            <TableBody>
+              {tokens.map((token) => (
+                <TableRow key={token.id}>
+                  <TableCell>
+                    <div className="font-medium">{token.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      <code>{token.principalId}</code> · <code>{token.secretPrefix}…</code>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {token.rights.map((right) => (
+                        <StatusBadge
+                          key={right}
+                          title={RIGHT_LABELS[right as MachineTokenRight] ?? right}
+                        >
+                          {RIGHT_SHORT_LABELS[right as MachineTokenRight] ?? right}
+                        </StatusBadge>
+                      ))}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge
+                      tone={
+                        token.status === 'active'
+                          ? 'success'
+                          : token.status === 'revoked'
+                            ? 'danger'
+                            : 'warning'
+                      }
+                    >
+                      {STATUS_LABELS[token.status] ?? token.status}
+                    </StatusBadge>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <ReceiptTime value={token.expiresAt} relative />
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {token.lastUsedAt ? <ReceiptTime value={token.lastUsedAt} relative /> : 'Never'}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {token.status === 'active' && (
+                      <DropdownMenu modal={false}>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            disabled={pending}
+                            aria-label={`Actions for ${token.name}`}
+                            ref={(node) => {
+                              if (node) actionTriggers.current.set(token.id, node);
+                              else actionTriggers.current.delete(token.id);
+                            }}
+                          >
+                            <MoreHorizontal aria-hidden="true" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel className="break-words">
+                            {token.name}
+                          </DropdownMenuLabel>
+                          <DropdownMenuItem
+                            aria-label={`Rotate ${token.name}`}
+                            onSelect={() =>
+                              void run({
+                                kind: 'rotate',
+                                workspaceId,
+                                id: token.id,
+                                overlapSeconds: 3600,
+                              })
+                            }
+                          >
+                            <RotateCw aria-hidden="true" /> Rotate
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            variant="destructive"
+                            aria-label={`Revoke ${token.name}`}
+                            onSelect={() => {
+                              revokeTrigger.current = actionTriggers.current.get(token.id) ?? null;
+                              setRevokeReason('');
+                              setRevoking(token);
+                            }}
+                          >
+                            <ShieldOff aria-hidden="true" /> Revoke…
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </TableCell>
+                </TableRow>
               ))}
-            </ul>
-          </DisclosureContent>
-        </Disclosure>
-      )}
+            </TableBody>
+          </Table>
+        )}
+        {events.length > 0 && (
+          <Disclosure className="border-t px-4 py-3">
+            <DisclosureTrigger>Token audit trail</DisclosureTrigger>
+            <DisclosureContent>
+              <ul className="space-y-1 pt-2 text-sm">
+                {events.slice(0, 50).map((event, index) => (
+                  <li key={`${event.tokenId}-${event.createdAt}-${index}`}>
+                    <ReceiptTime value={event.createdAt} /> · {event.action}{' '}
+                    <strong>{event.tokenName}</strong> by <code>{event.actorPrincipal}</code>
+                    {event.reason ? ` — ${event.reason}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </DisclosureContent>
+          </Disclosure>
+        )}
+      </Panel>
       <Dialog open={issuing} onOpenChange={(open) => !pending && setIssuing(open)}>
-        <DialogContent>
+        <DialogContent returnFocusRef={issueTrigger}>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -264,25 +333,28 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
                 later keeps that principal.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-2">
-              <Label htmlFor="token-name">Name</Label>
+            <Field
+              label="Name"
+              htmlFor="token-name"
+              hint="Lowercase letters, digits, dot, dash or underscore."
+            >
               <Input
                 id="token-name"
                 value={name}
                 aria-invalid={!NAME.test(name)}
-                aria-describedby="token-name-help"
+                aria-describedby="token-name-hint"
                 onChange={(event) => setName(event.target.value)}
               />
-              <p id="token-name-help" className="text-xs text-muted-foreground">
-                Lowercase letters, digits, dot, dash or underscore.
-              </p>
-            </div>
-            <fieldset className="space-y-1">
-              <legend className="text-sm font-medium">Rights</legend>
+            </Field>
+            <fieldset className="grid gap-2">
+              <legend className="form-field-label mb-1.5">Rights</legend>
               {MACHINE_TOKEN_RIGHTS.map((right) => (
-                <label key={right} className="flex items-center gap-2 text-sm">
+                <div key={right} className="flex items-start gap-2">
                   <input
+                    id={`token-right-${right}`}
                     type="checkbox"
+                    className="mt-0.5"
+                    aria-describedby={`token-right-${right}-hint`}
                     checked={rights.includes(right)}
                     onChange={(event) =>
                       setRights((current) =>
@@ -292,15 +364,18 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
                       )
                     }
                   />
-                  {RIGHT_LABELS[right]}
-                </label>
+                  <div className="grid gap-0.5">
+                    <label htmlFor={`token-right-${right}`} className="text-sm font-medium">
+                      {RIGHT_LABELS[right]}
+                    </label>
+                    <p id={`token-right-${right}-hint`} className="text-xs text-muted-foreground">
+                      {RIGHT_HINTS[right]}
+                    </p>
+                  </div>
+                </div>
               ))}
-              <p className="text-xs text-muted-foreground">
-                Evaluate includes workspace read access.
-              </p>
             </fieldset>
-            <div className="space-y-2">
-              <Label htmlFor="token-expiry">Expires after</Label>
+            <Field label="Expires after" htmlFor="token-expiry">
               <NativeSelect
                 id="token-expiry"
                 value={days}
@@ -312,16 +387,20 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
                   </option>
                 ))}
               </NativeSelect>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="token-reason">Reason (optional, recorded in the audit trail)</Label>
+            </Field>
+            <Field
+              label="Reason (optional)"
+              htmlFor="token-reason"
+              hint="Recorded in the audit trail."
+            >
               <Input
                 id="token-reason"
                 value={reason}
                 maxLength={1024}
+                aria-describedby="token-reason-hint"
                 onChange={(event) => setReason(event.target.value)}
               />
-            </div>
+            </Field>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIssuing(false)}>
                 Cancel
@@ -337,7 +416,7 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
         open={Boolean(revoking)}
         onOpenChange={(open) => !pending && !open && setRevoking(undefined)}
       >
-        <DialogContent>
+        <DialogContent returnFocusRef={revokeTrigger}>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -352,8 +431,7 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
                 This token will no longer authenticate requests.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-2">
-              <Label htmlFor="revoke-reason">Reason</Label>
+            <Field label="Reason" htmlFor="revoke-reason">
               <Input
                 id="revoke-reason"
                 value={revokeReason}
@@ -361,7 +439,7 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
                 required
                 onChange={(event) => setRevokeReason(event.target.value)}
               />
-            </div>
+            </Field>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setRevoking(undefined)}>
                 Cancel
@@ -377,7 +455,7 @@ export function WorkspaceMachineTokens({ workspaceId }: { workspaceId: string })
           </form>
         </DialogContent>
       </Dialog>
-    </section>
+    </div>
   );
 }
 

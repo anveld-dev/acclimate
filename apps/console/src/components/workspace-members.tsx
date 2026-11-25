@@ -3,16 +3,10 @@ import { ListToolbar } from './list-toolbar';
 import { StatusBadge } from './status-badge';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
-import {
-  ChevronDown,
-  MoreHorizontal,
-  UserRoundPlus,
-  UsersRound,
-  Mail,
-  ShieldCheck,
-} from 'lucide-react';
+import { ChevronDown, MoreHorizontal, UserRoundPlus, ShieldCheck } from 'lucide-react';
 import { PageTitle } from './shared';
-import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
+import { Panel } from './panel';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Button } from './ui/button';
 import { DirectorySearch } from './ui/directory-search';
 import { Input } from './ui/input';
@@ -438,20 +432,18 @@ export function WorkspaceMembers({
       ) : !access ? (
         <p role="status">{message || 'Loading members…'}</p>
       ) : (
-        <section
-          aria-labelledby="current-members-heading"
-          className="workspace-members-panel workspace-panel overflow-hidden"
-        >
-          <div className="members-directory-head">
-            <div className="members-directory-title">
-              <UsersRound aria-hidden="true" />
-              <h2 id="current-members-heading" className="members-section-heading">
-                Current members
-              </h2>
-            </div>
-            <Disclosure className="members-role-guide">
-              <DisclosureTrigger>Role permissions</DisclosureTrigger>
-              <DisclosureContent>
+        <Panel
+          className="workspace-members-panel"
+          title="Current members"
+          description="People with access to this workspace and their roles."
+          actions={
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  <ShieldCheck aria-hidden="true" /> Role permissions
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="members-role-guide">
                 <dl>
                   {ROLES.map((option) => (
                     <div key={option.value}>
@@ -460,9 +452,11 @@ export function WorkspaceMembers({
                     </div>
                   ))}
                 </dl>
-              </DisclosureContent>
-            </Disclosure>
-          </div>
+              </PopoverContent>
+            </Popover>
+          }
+          flush
+        >
           <ListToolbar
             count={`${
               search || roleFilter !== 'all'
@@ -681,7 +675,7 @@ export function WorkspaceMembers({
               </Button>
             </div>
           )}
-        </section>
+        </Panel>
       )}
       <Dialog
         open={Boolean(identityMember)}
@@ -722,17 +716,19 @@ export function WorkspaceMembers({
       </Dialog>
       {allowed && invitationError && <p role="alert">{invitationError}</p>}
       {allowed && (
-        <section
-          className="members-invitations workspace-panel overflow-hidden"
-          aria-label="Pending invitations"
+        <Panel
+          className="members-invitations"
+          title={
+            <span className="inline-flex items-center gap-2">
+              Pending invitations
+              {mailAvailable !== undefined && !invitationError && (
+                <span className="members-directory-count">{invitations.length}</span>
+              )}
+            </span>
+          }
+          description="People invited by email who have not joined yet."
+          flush
         >
-          <div className="members-directory-title members-invitations-title">
-            <Mail aria-hidden="true" />
-            <h2 className="members-section-heading">Pending invitations</h2>
-            {mailAvailable !== undefined && !invitationError && (
-              <span className="members-directory-count">{invitations.length}</span>
-            )}
-          </div>
           {mailAvailable !== undefined && !invitationError && invitations.length === 0 && (
             <p className="members-empty">No pending invitations.</p>
           )}
@@ -816,7 +812,7 @@ export function WorkspaceMembers({
               </TableBody>
             </Table>
           )}
-        </section>
+        </Panel>
       )}
       {message && !adding && !removing && (
         <p role="status" className="member-feedback">

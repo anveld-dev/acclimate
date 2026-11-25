@@ -77,12 +77,12 @@ def shoot_box(page: Page, path: Path, top, bottom) -> None:
 
 
 def model_provider(page, base, ids, path):
-    open_page(page, f"{base}/w/{WORKSPACE}/settings/members")
-    panel(page, "Model provider").screenshot(path=str(path))
+    open_page(page, f"{base}/w/{WORKSPACE}/settings/model-provider")
+    panel(page, "Connection").screenshot(path=str(path))
 
 
 def issue_token(page, base, ids, path):
-    open_page(page, f"{base}/w/{WORKSPACE}/settings/members")
+    open_page(page, f"{base}/w/{WORKSPACE}/settings/tokens")
     page.get_by_role("button", name="Issue token").click()
     dialog = page.get_by_role("dialog")
     dialog.wait_for()
@@ -91,17 +91,17 @@ def issue_token(page, base, ids, path):
 
 
 def learning_setup(page, base, ids, path):
-    open_page(page, f"{base}/w/{WORKSPACE}/bundles/{ids['support']}/learning")
+    open_page(page, f"{base}/w/{WORKSPACE}/bundles/{ids['support']}/learning?tab=settings")
     panel(page, "Learning setup").screenshot(path=str(path))
 
 
 def import_material(page, base, ids, path):
-    open_page(page, f"{base}/w/{WORKSPACE}/bundles/{ids['support']}/learning")
+    open_page(page, f"{base}/w/{WORKSPACE}/bundles/{ids['support']}/learning?tab=tasks")
     panel(page, "Import material").screenshot(path=str(path))
 
 
 def task_card(page, base, ids, path):
-    open_page(page, f"{base}/w/{WORKSPACE}/bundles/{ids['support']}/learning")
+    open_page(page, f"{base}/w/{WORKSPACE}/bundles/{ids['support']}/learning?tab=tasks")
     tasks = panel(page, "Tasks")
     card = tasks.get_by_role("button", name="Copy ID").first.locator(
         "xpath=ancestor::*[.//button[normalize-space(.)='Try task']][1]"

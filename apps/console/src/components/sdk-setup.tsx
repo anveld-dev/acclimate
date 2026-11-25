@@ -98,7 +98,7 @@ function InstallSnippet({ command }: { command: string }) {
 function EnvironmentSnippet({ apiUrl }: { apiUrl: string }) {
   return (
     <pre className="sdk-environment-snippet">
-      {`ACCLIMATE_URL=${apiUrl}\nACCLIMATE_TOKEN=<content-read credential>\nACCLIMATE_SCOPE=<stable app identity>\nACCLIMATE_CONNECTION=<connection ID>`}
+      {`ACCLIMATE_URL=${apiUrl}\nACCLIMATE_TOKEN=<connection credential>\nACCLIMATE_SCOPE=<stable app identity>\nACCLIMATE_CONNECTION=<connection ID>`}
     </pre>
   );
 }
@@ -379,11 +379,11 @@ export function SdkSetup({
                     <ConsoleLink href={credentialsHref} className="underline underline-offset-4">
                       Manage app credentials
                     </ConsoleLink>{' '}
-                    in Connections: create a content-read credential for this bundle and channel.
+                    in Connections: create a connection credential for this bundle and channel.
                   </p>
                 ) : (
                   <p>
-                    Ask a workspace admin for a content-read credential for this bundle and channel.
+                    Ask a workspace admin for a connection credential for this bundle and channel.
                   </p>
                 ))}
               {step ? (
@@ -415,7 +415,7 @@ export function SdkSetup({
                     </div>
                     <div>
                       <dt>ACCLIMATE_TOKEN</dt>
-                      <dd>Private content-read credential.</dd>
+                      <dd>The connection credential. Keep it private.</dd>
                     </div>
                     <div>
                       <dt>ACCLIMATE_CONNECTION</dt>
@@ -453,7 +453,7 @@ export function SdkSetup({
                   </p>
 
                   <p>
-                    <strong>Delivery:</strong> a workspace admin issues content-read access in
+                    <strong>Delivery:</strong> a workspace admin issues a connection credential in
                     Connections; optional observations use a separate reporting credential.
                   </p>
                   <ConsoleLink

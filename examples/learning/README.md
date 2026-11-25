@@ -15,8 +15,8 @@ The requests cover billing, sign-in, bugs, exports, permissions, integrations an
 ## Import it
 
 1. Start the local stack with `npm run local:up` and sign in to the console.
-2. Open the **Example agent** bundle and go to the **Learning** tab. Set the task and judge models first if the loop is not configured yet.
-3. Under **Import material**, choose `example-agent-tasks.jsonl` and select **Import tasks**.
+2. Open the **Example agent** bundle and go to the **Learning** tab. Set the task and judge models on its **Settings** page first if the loop is not configured yet.
+3. On the **Tasks** page, under **Import material**, choose `example-agent-tasks.jsonl` and select **Import tasks**.
 
 The judge model converts the rows into task cards and the service splits them into evolve and held-out tasks. Each task then passes the admission check before it counts. Review the cards before you start a round. Importing the same file again returns the earlier import, and an edited copy sets aside the rows whose request is already a task with the reason `duplicate`.
 

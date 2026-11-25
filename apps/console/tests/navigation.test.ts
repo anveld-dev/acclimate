@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { bundleEnvironment, scopedEnvironment } from '../src/server/selection';
-import { bundleHref, parseConsoleLocation } from '../src/navigation';
+import { bundleHref, parseConsoleLocation, workspaceHref } from '../src/navigation';
 
 test('a rendered form keeps its own target even after another tab changes remembered selection', () => {
   const remembered = {
@@ -58,4 +58,23 @@ test('learning is bundle scoped and round-trips without the selected channel', (
     bundleId: 'b',
     view: 'learning',
   });
+});
+
+test('workspace settings pages live under settings and round-trip', () => {
+  for (const [view, path] of [
+    ['members', '/w/acme/settings/members'],
+    ['model-provider', '/w/acme/settings/model-provider'],
+    ['tokens', '/w/acme/settings/tokens'],
+  ] as const) {
+    assert.equal(workspaceHref('acme', view), path);
+    assert.deepEqual(parseConsoleLocation(path), { workspaceId: 'acme', view });
+  }
+  for (const path of [
+    '/w/acme/members',
+    '/w/acme/model-provider',
+    '/w/acme/tokens',
+    '/w/acme/settings/bundles',
+    '/w/acme/settings',
+  ])
+    assert.equal(parseConsoleLocation(path), null);
 });

@@ -24,9 +24,11 @@ def scoped(context):
 @then('the workspace navigation contains Bundles, Delivery and Connections')
 def workspace_links(context):
     nav=browser(context).page.get_by_role('navigation',name='Main navigation',exact=True).filter(visible=True)
-    assert nav.get_by_role('link').count()==4
-    for name in ('Bundles','Delivery','Connections','Members'):
+    assert nav.get_by_role('link').count()==6
+    for name in ('Bundles','Delivery','Connections','Members','Model provider','Machine tokens'):
         expect(nav.get_by_role('link',name=name,exact=True)).to_have_count(1)
+    settings=nav.get_by_role('group',name='Settings',exact=True)
+    assert settings.get_by_role('link').all_text_contents()==['Members','Model provider','Machine tokens']
 
 
 @then('the bundle tabs contain Content, Releases and Learning')
@@ -76,7 +78,7 @@ def desktop_icon_navigation(context):
     bounds=rail.bounding_box()
     assert abs(bounds['x'])<=1 and abs(bounds['width']-64)<=1,bounds
     navigation=rail.get_by_role('navigation',name='Main navigation',exact=True)
-    for name in ('Bundles','Delivery','Connections','Members'):
+    for name in ('Bundles','Delivery','Connections','Members','Model provider','Machine tokens'):
         control=navigation.get_by_role('link',name=name,exact=True)
         label=control.locator('span.sr-only')
         expect(label).to_have_text(name)
@@ -450,7 +452,9 @@ def old_controls_gone(context):
     expect(p.get_by_role('button',name='Remove access',exact=True)).to_have_count(0)
     expect(p.get_by_role('dialog').get_by_text('operator',exact=True)).to_have_count(0)
     expect(p.get_by_label('Email',exact=True)).to_have_count(0)
-    expect(p.get_by_role('navigation',name='Main navigation',exact=True).filter(visible=True).get_by_role('link',name='Members',exact=True)).to_have_count(0)
+    nav=p.get_by_role('navigation',name='Main navigation',exact=True).filter(visible=True)
+    for name in ('Members','Model provider','Machine tokens'):
+        expect(nav.get_by_role('link',name=name,exact=True)).to_have_count(0)
 
 
 @when('I type initial instructions and try to open Connections')

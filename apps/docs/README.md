@@ -9,4 +9,12 @@ npm run build:docs    # static site in apps/docs/out/
 npm run typecheck:docs
 ```
 
-Pages live in `content/docs/` as MDX with `title` and `description` frontmatter. Each folder's `meta.json` sets the sidebar order. Besides the Fumadocs defaults (`Callout`, `Cards`, `Card`), pages can use `Tabs`/`Tab` and `Steps`/`Step` without imports. Link between pages with absolute `/docs/...` paths, and keep commands, flags and settings consistent with the repository sources they describe.
+Pages live in `content/docs/` as MDX with `title` and `description` frontmatter. Each folder's `meta.json` sets the sidebar order. Besides the Fumadocs defaults (`Callout`, `Cards`, `Card`), pages can use `Tabs`/`Tab`, `Steps`/`Step`, the diagrams in `components/diagrams.tsx` and `Screenshot` without imports. Link between pages with absolute `/docs/...` paths, and keep commands, flags and settings consistent with the repository sources they describe.
+
+`Screenshot` shows a console screenshot from `public/screenshots/`, in a light and a dark version. To regenerate them after a console change, start the local stack, run the [support agent tutorial](content/docs/tutorials/support-agent.mdx) once so the pages have tasks and rounds, and run:
+
+```sh
+.venv-bdd/bin/python scripts/docs/screenshots.py   # or name the screenshots to retake
+```
+
+The script signs in as the stack's operator and never submits a form. Check each image for secrets before you commit it.

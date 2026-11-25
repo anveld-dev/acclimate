@@ -3,12 +3,14 @@ import { Step, Steps } from 'fumadocs-ui/components/steps';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import type { MDXComponents } from 'mdx/types';
 import { DeliveryDiagram, RoundDiagram, TopologyDiagram, TrustDiagram } from './diagrams';
+import { Screenshot } from './screenshot';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
     ...defaultMdxComponents,
     DeliveryDiagram,
     RoundDiagram,
+    Screenshot,
     TopologyDiagram,
     TrustDiagram,
     Step,

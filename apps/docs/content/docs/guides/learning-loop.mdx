@@ -20,6 +20,8 @@ See [Learning loop](/docs#learning-loop) for the terms and [What a round does](/
 2. Under **Model provider**, save its base URL, an API key and the allowed model IDs.
 3. Wait while the executor verifies each model. A model passes when it answers a chat request and reports token usage.
 
+<Screenshot name="model-provider" alt="The Model provider panel on the Members page, with a base URL, an empty API key field because a key is stored, two allowed models and both verified." />
+
 The tested setup is CLIProxyAPI with a Codex sign-in. See [Set up a local model proxy](/docs/tutorials/first-learning-round#set-up-a-local-model-proxy).
 
 ## Turn on learning
@@ -29,6 +31,8 @@ The tested setup is CLIProxyAPI with a Codex sign-in. See [Set up a local model 
 3. Set **Maximum rounds per day**, the daily round limit. It counts rounds over a rolling 24 hours and defaults to 4.
 4. Choose **Save learning settings**.
 
+<Screenshot name="learning-setup" alt="The Learning setup panel with the learning channel, task model, judge model, task domain, benchmark name and maximum rounds per day, above the Save learning settings and Start buttons." />
+
 ## Add tasks
 
 Add tasks on the **Learning** tab in any of three ways:
@@ -36,6 +40,8 @@ Add tasks on the **Learning** tab in any of three ways:
 - Under **Import material**, choose a spreadsheet, CSV, JSONL or text file, then choose **Import tasks**.
 - Paste text under **Paste conversations**.
 - Choose **Write a task**. Give an exact answer for a value that must match. For free text, write one criterion per line and optionally a reference answer.
+
+<Screenshot name="import-material" alt="The Import material panel with a file chooser, a box for pasted conversations and the Import tasks button." />
 
 Import about 50 rows for a first round. Start needs 20 admitted tasks in each split, and some rows are usually set aside. [Improve the bundle with the sample tasks](/docs/tutorials/support-agent#improve-the-bundle-with-the-sample-tasks) has a ready file of 60 rows.
 
@@ -58,6 +64,8 @@ A held-out task with drafted criteria waits for a person to confirm it.
 
 Each task appears as a card with its source row and a short task ID you can copy. The executor checks every task before it counts. The check admits a task when its reference answer passes, an empty answer fails and the judge model grades it consistently.
 
+<Screenshot name="task-card" alt="The Tasks panel with the split, Needs confirmation, Flagged only, admission and source filters, above an admitted held-out task card showing its source row, input, four criteria, reference answer and the Try task button." />
+
 1. Read the cards and their source rows. Edit any card that is wrong.
 2. Check **Needs confirmation** to list the held-out tasks that wait for you, and read their criteria. Choose **Confirm all shown** to confirm every unconfirmed held-out card in the list.
 3. Choose **Try task** on a card to run the current version on that task. The card shows the output, the verdict, the reasoning and the gateway log of requests sent to the model provider. A failed trial says why. Trials do not count toward round scores.
@@ -79,7 +87,7 @@ Editing a set-aside card runs its check again. **Run check again** reruns it wit
 
 ## Start the loop
 
-Choose **Start**. It needs a verified model provider, 20 admitted tasks in each split and an optimizer on the service. Without an optimizer, Start is refused with `optimizer-required`. Ask the operator to [set the optimizer model](/docs/operate/enable-learning#set-the-optimizer-model).
+Choose **Start**. It needs a verified model provider, 20 admitted tasks in each split and an optimizer on the service. Without an optimizer, **Start** is disabled and the API answers 409 `optimizer-required`. Ask the operator to [set the optimizer model](/docs/operate/enable-learning#set-the-optimizer-model).
 
 From then on, the service releases each adopted version to the channel automatically.
 
@@ -92,6 +100,10 @@ On the **Learning** tab:
 - The score chart adds a point for each round. Evolve scores explain which candidate was chosen. Held-out scores show regressions.
 - Open a round to see its candidates, the bundle changes each proposed and the evolve rollouts behind its score. It links to the task cards it mentions.
 - Check **Flagged only** to list tasks with repeated failures, executor errors or inconsistent verdicts. Edit a card and try it again.
+
+<Screenshot name="rounds" alt="The Scores by round chart with an evolve score near 1 and a held-out score near 0.5 for round 1, above the Rounds table. Round 1 adopted sample 3 and shows a Roll back button. Round 2 was stopped." caption="The support agent tutorial after its first round. Choose a round number to open it." />
+
+<Screenshot name="round-candidate" alt="The adopted candidate in a round: its diagnosis, the tasks it predicts it will fix, its rationale, the scanner and screening results, its evolve score against the current version and its file changes." caption="An adopted candidate from the support agent tutorial. Each candidate in a round shows the same fields." />
 
 ### When the loop waits
 

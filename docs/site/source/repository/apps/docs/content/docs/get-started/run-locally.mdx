@@ -57,6 +57,8 @@ export ACCLIMATE_PULL_CONFIG='/path/to/acclimate/.local/stack/pull.json'
 export NODE_EXTRA_CA_CERTS='/path/to/acclimate/.local/stack/root.crt'
 export SSL_CERT_FILE='/path/to/acclimate/.local/stack/ca-bundle.pem'
 export ACCLIMATE_API='https://127.0.0.1:24831'
+export ACCLIMATE_URL='https://127.0.0.1:24831'
+export ACCLIMATE_WORKSPACE='local-demo'
 export BUNDLE_ID='0b6e…41f2'
 ```
 
@@ -72,7 +74,7 @@ Caddy serves HTTPS with its own local certificate authority (CA), stored at `.lo
 source /path/to/acclimate/.local/stack/env.sh
 ```
 
-`NODE_EXTRA_CA_CERTS` adds the local CA for Node.js. `SSL_CERT_FILE` points Python at `ca-bundle.pem`, which holds the local CA and any system CA bundle the script found. If no system bundle was found, use a merged bundle before connecting to an external model provider from Python. For curl, use `curl --cacert .local/stack/root.crt "$ACCLIMATE_API/ready"`.
+`NODE_EXTRA_CA_CERTS` adds the local CA for Node.js. `SSL_CERT_FILE` points Python at `ca-bundle.pem`, which holds the local CA and any system CA bundle the script found. If no system bundle was found, use a merged bundle before connecting to an external model provider from Python. For curl, use `curl --cacert .local/stack/root.crt "$ACCLIMATE_API/ready"`. `ACCLIMATE_URL` and `ACCLIMATE_WORKSPACE` are the service address and workspace the SDKs and the [examples](/docs/examples) read.
 
 **For your browser**, run:
 

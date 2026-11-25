@@ -67,3 +67,5 @@ A failed round shows its cause: the error of the first rollout that failed, such
 ## Report a production outcome
 
 An application with workspace write access can call `job.expect(expected, { input, output, grading })` after a production job (`job.expect(expected, input, output=..., grading=...)` in Python). The SDK sends the pinned version and digest. The service assigns the task’s split and runs admission. `grading` follows the same rule as an import row. An outcome graded by criteria becomes a task once the judge model has drafted its criteria. If drafting fails, the outcome becomes an exact-match task, set aside, so you can edit it to add criteria.
+
+The [support agent example](/docs/examples/support-agent#report-a-correction) reports a correction this way. To set up and follow a loop from a script without the console, see the [ticket triage example](/docs/examples/ticket-triage).

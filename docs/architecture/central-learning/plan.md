@@ -50,6 +50,21 @@ A third run used the new scoring, on a fresh bundle with the same 56 tasks:
 
 The starting bundle's judged replies met one or two of their four criteria, which the old scoring showed as 0. The five candidates scored 1.000, 0.997, 0.982, 0.990 and 0.979, and the selector adopted the first, citing the ticket number the others dropped in at least one reply. Under the old scoring the first round fixed only the extraction tasks. The round ran 1,180 rollouts. None failed, and five were retried after the provider reported itself overloaded.
 
+On 24 November 2026 the two [examples](../../../examples/README.md) ran on a fresh stack with the same models, driven by their own scripts and a machine token.
+
+| Example | Result |
+| --- | --- |
+| Ticket triage, 64 exact-match tasks | All 64 were admitted, 32 in each split. In round 1 the starting bundle passed none of 160 evolve rollouts, all five candidates passed every one, and the adopted version passed all 160 held-out rollouts, against none for its parent. Round 2 kept that version. Round 3 adopted a shorter wording that scored the same. The three rounds ran 3,040 rollouts. None failed and none was retried. |
+| Support agent, 60 judged sample tasks | All 60 were admitted, 34 evolve and 26 held-out. The starting bundle scored 0.429 on evolve, with 5 of 170 rollouts passing. The five candidates scored 0.953, 0.961, 0.987, 0.975 and 0.966, and the selector adopted the third. Held-out rose from 0.412 to 0.532, from 3 to 10 of 130 rollouts passing. No alert was raised. The round ran 1,280 rollouts with no failure or retry. |
+| Corrections | Two `job.expect()` corrections with a prose answer each became an admitted evolve task with six drafted criteria. |
+
+What these runs changed:
+
+- **Hard-coding and knowledge.** A first support-agent round adopted nothing. Each candidate added the company policies that the failed tasks required, and the screen skipped all five as hard-coded answers. The proposer was also forbidden to copy expected answers, so the first triage run described its queue names indirectly, as titles to lowercase and hyphenate. The [rule](loop.md#optimizer) now separates an answer to a particular case from knowledge stated generally. The results in the table are from the build with the new rule, and its triage round wrote the queue names out.
+- **A sleeping host.** During the first triage run the laptop slept for seven and a half minutes. The executor then looked absent for more than five minutes, and the round failed with `no-matching-executor`, as designed. The loop started the next round by itself, and that round adopted. The failed round still counted toward the daily cap.
+
+The support-agent round shows what the held-out split is for. Most sample tasks turn on a company fact of their own, so the facts the optimizer learned from 34 evolve tasks answered few of the 26 held-out ones. The evolve score alone would have overstated the gain.
+
 What it left open:
 
 - **Held-out regression.** No adoption regressed, so the revert was not exercised with real models. The behavior scenarios cover it with a scripted provider, including the alert email through Mailpit.

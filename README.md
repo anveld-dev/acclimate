@@ -36,6 +36,10 @@ An application with workspace write access can call `job.expect(expected, { inpu
 
 The SDK fetches and verifies the released version when your application starts a job, and prepares files for agents such as Codex or the Claude Agent SDK. In the console, **App setup** shows the client configuration for a bundle and channel. [Native integration](examples/native-repository/README.md)
 
+## Examples
+
+[`examples/`](examples/README.md) holds programs you can run against the local stack. The [support agent](examples/support-agent/README.md) answers with the released bundle and reports a person's correction as a learning task. [Ticket triage](examples/ticket-triage/README.md) publishes a bundle, imports 64 labelled tickets and runs the learning loop from one script. Both come in TypeScript and Python, with [walkthroughs](apps/docs/content/docs/examples/index.mdx) in the documentation.
+
 ## Operate or develop Acclimate
 
 The Rust API stores bundles, versions and releases in PostgreSQL. The web console uses Keycloak sign-in. Each release publishes service and console images to GHCR, and attaches the SDK tarballs and Python wheel to its GitHub Release. You can also build them from a checkout.

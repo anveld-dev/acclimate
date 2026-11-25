@@ -5,13 +5,9 @@ description: Upgrade a self-hosted deployment to a new Acclimate release, and ro
 
 The service applies pending database migrations when it starts, and there is no downgrade. The way back is the copy of each database that you keep during the upgrade.
 
-If your database was last run by a build from before learning moved into the service, first read [Upgrade to the learning-loop schema](https://github.com/anveld-dev/acclimate/blob/main/deploy/README.md#upgrade-to-the-learning-loop-schema). Those upgrades drop data and need extra steps.
-
 ## Pin an Acclimate release
 
-No Acclimate release has been published yet. Until the first one, build from source with `ACCLIMATE_VERSION=local`, the default, upgrade by switching the checkout to a newer commit and record the commit you run.
-
-Each release will have a Git tag such as `v0.1.0` and images for the service, the console, the executor and the runner tagged without the `v`, such as `0.1.0`. `ACCLIMATE_VERSION` in `.env` selects the image tag. A release publishes no Keycloak image. Compose builds it from `deploy/keycloak/Dockerfile`, which pins its version, every time it starts the stack. See [Versioning and compatibility](/docs/reference/versioning).
+Each release has a Git tag such as `v0.1.0` and images for the service, the console, the executor and the runner tagged without the `v`, such as `0.1.0`. `ACCLIMATE_VERSION` in `.env` selects the image tag. The default, `local`, builds the images from the checkout; record the commit you run. A release publishes no Keycloak image. Compose builds it from `deploy/keycloak/Dockerfile`, which pins its version, every time it starts the stack. See [Versioning and compatibility](/docs/reference/versioning).
 
 You can skip releases, because the service applies every pending migration in order. Read the notes of each release you skip, and keep your applications' SDKs [within one minor release](/docs/reference/versioning#match-sdk-and-service-versions) of the service.
 

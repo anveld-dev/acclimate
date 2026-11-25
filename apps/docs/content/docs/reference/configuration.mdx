@@ -199,7 +199,7 @@ Compose reads these from `.env` in the checkout, for `compose.yaml` and the Keyc
 | `ACCLIMATE_SERVICE_IMAGE`, `ACCLIMATE_CONSOLE_IMAGE`, `ACCLIMATE_EXECUTOR_IMAGE`, `ACCLIMATE_RUNNER_IMAGE` | No | GHCR at `ACCLIMATE_VERSION` | Full image reference. The runner image is also passed to the executor. |
 
 - The password in `postgres-password` must match the URL-encoded password in `DATABASE_URL`. `init.sh` writes hex passwords, which need no encoding.
-- Until the first Acclimate release, keep `ACCLIMATE_VERSION=local`. Once releases exist, set the exact release without the Git tag's leading `v`, such as `0.1.0`. See [Versioning and compatibility](/docs/reference/versioning).
+- Set `ACCLIMATE_VERSION` to an exact release without the Git tag's leading `v`, such as `0.1.0`, or keep `local` to build from the checkout. See [Versioning and compatibility](/docs/reference/versioning).
 - Compose passes `ACCLIMATE_PROVIDER_HTTP_HOSTS`, `ACCLIMATE_EXECUTOR_CONCURRENCY` and `ACCLIMATE_SANDBOX_RUNTIME` from `.env` to the executor, not from the service's runtime file.
 - Every container keeps at most five 10 MB log files, so Docker needs no log rotation setting.
 

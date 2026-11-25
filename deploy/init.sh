@@ -36,7 +36,9 @@ while [ "$#" -gt 0 ]; do
 		exit 0
 		;;
 	--domain | --email | --console-host | --api-host | --auth-host | --version | --config-dir)
-		[ "$#" -ge 2 ] && [ -n "$2" ] || fail "$1 needs a value"
+		if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+			fail "$1 needs a value"
+		fi
 		case "$1" in
 		--domain) domain=$2 ;;
 		--email) email=$2 ;;
@@ -68,8 +70,9 @@ for host in "$console_host" "$api_host" "$auth_host"; do
 	*[!A-Za-z0-9.-]* | .* | *. | '') fail "$host is not a hostname" ;;
 	esac
 done
-[ "$console_host" != "$api_host" ] && [ "$console_host" != "$auth_host" ] && [ "$api_host" != "$auth_host" ] ||
+if [ "$console_host" = "$api_host" ] || [ "$console_host" = "$auth_host" ] || [ "$api_host" = "$auth_host" ]; then
 	fail 'the console, API and Keycloak hostnames must differ'
+fi
 case "$email" in
 *[!A-Za-z0-9.@_+-]* | *@*@* | @* | *@) fail "$email is not an email address" ;;
 *@*.*) ;;

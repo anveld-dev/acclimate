@@ -10,9 +10,8 @@ on:
         default: true
       publish-registries:
         description: >-
-          Publish the verified npm packages and Python wheel to npm and PyPI instead of
-          building images and a GitHub Release. Requires the release tag, dry-run cleared,
-          and approval in the npm and pypi environments.
+          Run only the npm and PyPI jobs, for an existing tag or a registry retry.
+          Select the release tag and clear dry-run.
         type: boolean
         default: false
 
@@ -76,7 +75,7 @@ jobs:
                   raise SystemExit(f"Tag {tag} does not match package versions (expected v{version})")
           elif publish:
               raise SystemExit("Publishing requires selecting the matching vMAJOR.MINOR.PATCH tag")
-          # Registry publication is never automatic: a maintainer opts in on a manual run.
+          # Registry-only runs skip the image builds and GitHub Release.
           registries = os.environ["REGISTRIES"] == "true"
           if registries and not publish:
               raise SystemExit("Publishing to npm and PyPI requires clearing dry-run")
@@ -269,11 +268,14 @@ jobs:
           gh release create "$GITHUB_REF_NAME" ./* --repo "$GITHUB_REPOSITORY" \
             --verify-tag --title "$GITHUB_REF_NAME" "${release_args[@]}"
 
-  # The registry jobs publish the same verified artifacts as the GitHub Release. Each
-  # runs in a protected environment, so a maintainer approves the deployment.
+  # Tag releases publish to the registries after the GitHub Release is ready.
+  # A registry-only dispatch can retry publishing without rebuilding images.
   npm:
-    needs: package
-    if: needs.package.outputs.registries == 'true'
+    needs: [package, release]
+    if: >-
+      ${{ !cancelled() && needs.package.outputs.publish == 'true' &&
+          (needs.release.result == 'success' ||
+           (needs.package.outputs.registries == 'true' && needs.release.result == 'skipped')) }}
     runs-on: ubuntu-24.04
     environment:
       name: npm
@@ -286,34 +288,51 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      # Trusted publishing needs npm 11.5.1 or later.
-      - run: npm install --global npm@11.6.2
+      - run: npm install --global npm@11.21.3 --ignore-scripts
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: acclimate-release-${{ needs.package.outputs.version }}
           path: release-assets
       - name: Verify and publish npm packages
         working-directory: release-assets
+        shell: bash
         env:
           VERSION: ${{ needs.package.outputs.version }}
-          # Only needed for a package's first publication. Afterwards, configure npm
-          # trusted publishing for this workflow and environment and remove the secret.
+          # Bootstrap only. Remove this environment secret once all packages trust
+          # release.yaml and the npm environment for OIDC publishing.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           sha256sum --check --strict SHA256SUMS
-          # Publish the SDK before the plugins that depend on it. Skip versions that
-          # already exist so a rerun finishes the remaining packages.
+          provenance=()
+          if [[ -n "$NODE_AUTH_TOKEN" ]]; then
+            provenance=(--provenance)
+          fi
+          # Publish the SDK before the plugins that depend on it.
           for package in sdk codex-plugin claude-plugin pi-plugin cursor-plugin; do
-            if npm view "@acclimate/$package@$VERSION" version >/dev/null 2>&1; then
-              echo "@acclimate/$package@$VERSION is already published"
+            spec="@acclimate/$package@$VERSION"
+            tarball="./acclimate-$package-$VERSION.tgz"
+            if published=$(npm view "$spec" dist.integrity --json --prefer-online 2>/dev/null); then
+              expected="sha512-$(openssl dgst -sha512 -binary "$tarball" | openssl base64 -A)"
+              if ! jq -e --arg expected "$expected" '. == $expected or . == [$expected]' <<< "$published" >/dev/null; then
+                echo "$spec is already published with different integrity" >&2
+                exit 1
+              fi
+              echo "$spec is already published with matching integrity"
               continue
             fi
-            npm publish --provenance --access public "./acclimate-$package-$VERSION.tgz"
+            if ! jq -e '.error.code == "E404"' <<< "$published" >/dev/null; then
+              echo "Could not check the published version of $spec: ${published:-no registry response}" >&2
+              exit 1
+            fi
+            npm publish --access public "${provenance[@]}" "$tarball"
           done
 
   pypi:
-    needs: package
-    if: needs.package.outputs.registries == 'true'
+    needs: [package, release]
+    if: >-
+      ${{ !cancelled() && needs.package.outputs.publish == 'true' &&
+          (needs.release.result == 'success' ||
+           (needs.package.outputs.registries == 'true' && needs.release.result == 'skipped')) }}
     runs-on: ubuntu-24.04
     environment:
       name: pypi

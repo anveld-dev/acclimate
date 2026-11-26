@@ -8,21 +8,21 @@ Service-specific vocabulary is defined in [Internal terms](../CONTEXT.md#interna
 
 | To do this | Read |
 | --- | --- |
-| Bring up a deployment, with the co-hosted Keycloak or an existing one | [Self-host Acclimate](../apps/docs/content/docs/operate/self-host.mdx) |
-| Set the optimizer, register gVisor, start, check, upgrade and rotate the executor | [Enable learning](../apps/docs/content/docs/operate/enable-learning.mdx) |
-| Replace the bundled Caddy | [Use your own reverse proxy](../apps/docs/content/docs/operate/reverse-proxy.mdx) |
-| Probe the stack, read exit codes and check the public routes and sign-in | [Check health and readiness](../apps/docs/content/docs/operate/health-and-readiness.mdx) |
-| Back up, restore and keep the provider encryption key | [Back up and restore](../apps/docs/content/docs/operate/backup-and-restore.mdx) |
-| Upgrade to a new Acclimate release or roll back | [Upgrade and recover](../apps/docs/content/docs/operate/upgrades-and-recovery.mdx) |
-| Find the cause of a symptom | [Troubleshooting](../apps/docs/content/docs/operate/troubleshooting.mdx) |
-| Look up an environment variable, the provider address rules or a service command | [Environment variables](../apps/docs/content/docs/reference/configuration.mdx) |
+| Bring up a deployment, with the co-hosted Keycloak or an existing one | [Self-host Acclimate](https://acclimate.anveld.dev/docs/operate/self-host) |
+| Set the optimizer, register gVisor, start, check, upgrade and rotate the executor | [Enable learning](https://acclimate.anveld.dev/docs/operate/enable-learning) |
+| Replace the bundled Caddy | [Use your own reverse proxy](https://acclimate.anveld.dev/docs/operate/reverse-proxy) |
+| Probe the stack, read exit codes and check the public routes and sign-in | [Check health and readiness](https://acclimate.anveld.dev/docs/operate/health-and-readiness) |
+| Back up, restore and keep the provider encryption key | [Back up and restore](https://acclimate.anveld.dev/docs/operate/backup-and-restore) |
+| Upgrade to a new Acclimate release or roll back | [Upgrade and recover](https://acclimate.anveld.dev/docs/operate/upgrades-and-recovery) |
+| Find the cause of a symptom | [Troubleshooting](https://acclimate.anveld.dev/docs/operate/troubleshooting) |
+| Look up an environment variable, the provider address rules or a service command | [Environment variables](https://acclimate.anveld.dev/docs/reference/configuration) |
 | Change the Keycloak realm, theme or email | [Keycloak setup](keycloak/README.md) |
 
 ## Files in this directory
 
 | File | Purpose |
 | --- | --- |
-| `init.sh` | Writes the private directory with every secret and the checkout's `.env`. See [Self-host Acclimate](../apps/docs/content/docs/operate/self-host.mdx). |
+| `init.sh` | Writes the private directory with every secret and the checkout's `.env`. See [Self-host Acclimate](https://acclimate.anveld.dev/docs/operate/self-host). |
 | `Dockerfile`, `console.Dockerfile` | Build the service image and the console image. |
 | `Caddyfile` | Caddy configuration for the console and API hostnames. |
 | `console-probe.mjs` | The console container's health check. It requests `/ready` with the public `Host`. |
@@ -76,15 +76,15 @@ For native execution, build with `cargo build --locked --release` and `npm ci --
 
 | `--gate` | What it checks | Needs |
 | --- | --- | --- |
-| `container` | Builds the deployment images and checks them in a disposable Compose project with a private volume, a test issuer and test certificates. It also runs the shell blocks of [Back up and restore](../apps/docs/content/docs/operate/backup-and-restore.mdx) and [Upgrade and recover](../apps/docs/content/docs/operate/upgrades-and-recovery.mdx) verbatim and checks which data each keeps. | Docker and Playwright for Python with Chromium |
+| `container` | Builds the deployment images and checks them in a disposable Compose project with a private volume, a test issuer and test certificates. It also runs the shell blocks of [Back up and restore](https://acclimate.anveld.dev/docs/operate/backup-and-restore) and [Upgrade and recover](https://acclimate.anveld.dev/docs/operate/upgrades-and-recovery) verbatim and checks which data each keeps. | Docker and Playwright for Python with Chromium |
 | `remote-model` | One bounded `gpt-6-luna` completion against your configured endpoint | `--live`. Can incur model charges. |
 | `native-*` | Prepared files and version pinning with an installed agent SDK | `--live`. Can incur model charges. |
 
-The `container` check runs every documented block except the `git` commands. Its Keycloak is a stand-in container, so the Keycloak database commands run against the real `keycloak-db` service but no Keycloak upgrade is tested. `test_deployment.py` fails when a page's block no longer matches the one the check runs. To check your own deployment's public routes and sign-in, follow [Verify API access and sign-in](../apps/docs/content/docs/operate/health-and-readiness.mdx#verify-api-access-and-sign-in).
+The `container` check runs every documented block except the `git` commands. Its Keycloak is a stand-in container, so the Keycloak database commands run against the real `keycloak-db` service but no Keycloak upgrade is tested. `test_deployment.py` fails when a page's block no longer matches the one the check runs. To check your own deployment's public routes and sign-in, follow [Verify API access and sign-in](https://acclimate.anveld.dev/docs/operate/health-and-readiness#verify-api-access-and-sign-in).
 
 ## Executor internals
 
-[Enable learning](../apps/docs/content/docs/operate/enable-learning.mdx) has the operator procedure, including gVisor registration, the executor's privileges and its credential. The provider address rules are in [Environment variables](../apps/docs/content/docs/reference/configuration.mdx#provider-addresses).
+[Enable learning](https://acclimate.anveld.dev/docs/operate/enable-learning) has the operator procedure, including gVisor registration, the executor's privileges and its credential. The provider address rules are in [Environment variables](https://acclimate.anveld.dev/docs/reference/configuration#provider-addresses).
 
 - **Sandboxes.** The executor runs each rollout in a sandbox container started from the chat runner image. It resolves the runner's immutable image ID at startup. It mounts a volume subpath into each sandbox, so it needs Docker Engine 26 or later. Each runner receives its own read-only lease directory from that volume.
 - **Preflight.** Before it requests work, the executor runs one throwaway sandbox with the rollout's flags. It checks that the sandbox can read its lease directory and reach the gateway socket. If that fails, the executor exits with status 78 and a message that says what to check.

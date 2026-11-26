@@ -45,35 +45,35 @@
 <tbody>
 <tr>
 <td>Bring up a deployment, with the co-hosted Keycloak or an existing one</td>
-<td><a href="../source/repository/apps/docs/content/docs/operate/self-host.mdx">Self-host Acclimate</a></td>
+<td><a href="https://acclimate.anveld.dev/docs/operate/self-host">Self-host Acclimate</a></td>
 </tr>
 <tr>
 <td>Set the optimizer, register gVisor, start, check, upgrade and rotate the executor</td>
-<td><a href="../source/repository/apps/docs/content/docs/operate/enable-learning.mdx">Enable learning</a></td>
+<td><a href="https://acclimate.anveld.dev/docs/operate/enable-learning">Enable learning</a></td>
 </tr>
 <tr>
 <td>Replace the bundled Caddy</td>
-<td><a href="../source/repository/apps/docs/content/docs/operate/reverse-proxy.mdx">Use your own reverse proxy</a></td>
+<td><a href="https://acclimate.anveld.dev/docs/operate/reverse-proxy">Use your own reverse proxy</a></td>
 </tr>
 <tr>
 <td>Probe the stack, read exit codes and check the public routes and sign-in</td>
-<td><a href="../source/repository/apps/docs/content/docs/operate/health-and-readiness.mdx">Check health and readiness</a></td>
+<td><a href="https://acclimate.anveld.dev/docs/operate/health-and-readiness">Check health and readiness</a></td>
 </tr>
 <tr>
 <td>Back up, restore and keep the provider encryption key</td>
-<td><a href="../source/repository/apps/docs/content/docs/operate/backup-and-restore.mdx">Back up and restore</a></td>
+<td><a href="https://acclimate.anveld.dev/docs/operate/backup-and-restore">Back up and restore</a></td>
 </tr>
 <tr>
 <td>Upgrade to a new Acclimate release or roll back</td>
-<td><a href="../source/repository/apps/docs/content/docs/operate/upgrades-and-recovery.mdx">Upgrade and recover</a></td>
+<td><a href="https://acclimate.anveld.dev/docs/operate/upgrades-and-recovery">Upgrade and recover</a></td>
 </tr>
 <tr>
 <td>Find the cause of a symptom</td>
-<td><a href="../source/repository/apps/docs/content/docs/operate/troubleshooting.mdx">Troubleshooting</a></td>
+<td><a href="https://acclimate.anveld.dev/docs/operate/troubleshooting">Troubleshooting</a></td>
 </tr>
 <tr>
 <td>Look up an environment variable, the provider address rules or a service command</td>
-<td><a href="../source/repository/apps/docs/content/docs/reference/configuration.mdx">Environment variables</a></td>
+<td><a href="https://acclimate.anveld.dev/docs/reference/configuration">Environment variables</a></td>
 </tr>
 <tr>
 <td>Change the Keycloak realm, theme or email</td>
@@ -92,7 +92,7 @@
 <tbody>
 <tr>
 <td><code>init.sh</code></td>
-<td>Writes the private directory with every secret and the checkout's <code>.env</code>. See <a href="../source/repository/apps/docs/content/docs/operate/self-host.mdx">Self-host Acclimate</a>.</td>
+<td>Writes the private directory with every secret and the checkout's <code>.env</code>. See <a href="https://acclimate.anveld.dev/docs/operate/self-host">Self-host Acclimate</a>.</td>
 </tr>
 <tr>
 <td><code>Dockerfile</code>, <code>console.Dockerfile</code></td>
@@ -192,7 +192,7 @@
 <tbody>
 <tr>
 <td><code>container</code></td>
-<td>Builds the deployment images and checks them in a disposable Compose project with a private volume, a test issuer and test certificates. It also runs the shell blocks of <a href="../source/repository/apps/docs/content/docs/operate/backup-and-restore.mdx">Back up and restore</a> and <a href="../source/repository/apps/docs/content/docs/operate/upgrades-and-recovery.mdx">Upgrade and recover</a> verbatim and checks which data each keeps.</td>
+<td>Builds the deployment images and checks them in a disposable Compose project with a private volume, a test issuer and test certificates. It also runs the shell blocks of <a href="https://acclimate.anveld.dev/docs/operate/backup-and-restore">Back up and restore</a> and <a href="https://acclimate.anveld.dev/docs/operate/upgrades-and-recovery">Upgrade and recover</a> verbatim and checks which data each keeps.</td>
 <td>Docker and Playwright for Python with Chromium</td>
 </tr>
 <tr>
@@ -207,9 +207,9 @@
 </tr>
 </tbody>
 </table></div>
-<p>The <code>container</code> check runs every documented block except the <code>git</code> commands. Its Keycloak is a stand-in container, so the Keycloak database commands run against the real <code>keycloak-db</code> service but no Keycloak upgrade is tested. <code>test_deployment.py</code> fails when a page's block no longer matches the one the check runs. To check your own deployment's public routes and sign-in, follow <a href="../source/repository/apps/docs/content/docs/operate/health-and-readiness.mdx#verify-api-access-and-sign-in">Verify API access and sign-in</a>.</p>
+<p>The <code>container</code> check runs every documented block except the <code>git</code> commands. Its Keycloak is a stand-in container, so the Keycloak database commands run against the real <code>keycloak-db</code> service but no Keycloak upgrade is tested. <code>test_deployment.py</code> fails when a page's block no longer matches the one the check runs. To check your own deployment's public routes and sign-in, follow <a href="https://acclimate.anveld.dev/docs/operate/health-and-readiness#verify-api-access-and-sign-in">Verify API access and sign-in</a>.</p>
 <h2 id="executor-internals">Executor internals</h2>
-<p><a href="../source/repository/apps/docs/content/docs/operate/enable-learning.mdx">Enable learning</a> has the operator procedure, including gVisor registration, the executor's privileges and its credential. The provider address rules are in <a href="../source/repository/apps/docs/content/docs/reference/configuration.mdx#provider-addresses">Environment variables</a>.</p>
+<p><a href="https://acclimate.anveld.dev/docs/operate/enable-learning">Enable learning</a> has the operator procedure, including gVisor registration, the executor's privileges and its credential. The provider address rules are in <a href="https://acclimate.anveld.dev/docs/reference/configuration#provider-addresses">Environment variables</a>.</p>
 <ul>
 <li><strong>Sandboxes.</strong> The executor runs each rollout in a sandbox container started from the chat runner image. It resolves the runner's immutable image ID at startup. It mounts a volume subpath into each sandbox, so it needs Docker Engine 26 or later. Each runner receives its own read-only lease directory from that volume.</li>
 <li><strong>Preflight.</strong> Before it requests work, the executor runs one throwaway sandbox with the rollout's flags. It checks that the sandbox can read its lease directory and reach the gateway socket. If that fails, the executor exits with status 78 and a message that says what to check.</li>

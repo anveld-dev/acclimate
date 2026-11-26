@@ -4,4 +4,4 @@
 
 The workspace contract includes bundles and versions, channel resolution and releases, access and machine credentials, and application connections and delivery receipts. Bundle setup and channel release support retained operation results. Use the same key and exact request bytes when retrying.
 
-A release sends `versionId`, `expectedRevision` and `unevaluatedReason`. The expected revision prevents concurrent writers from silently overwriting a channel selection. See the [HTTP reference](../../apps/docs/content/docs/reference/http-api.mdx) for route examples and the [learning contract](../../contracts/learning.md) for enrollment, evaluation and round history.
+A release sends `versionId`, `expectedRevision` and `unevaluatedReason`. The expected revision prevents concurrent writers from silently overwriting a channel selection. See the [HTTP reference](https://acclimate.anveld.dev/docs/reference/http-api) for route examples and the [learning contract](../../contracts/learning.md) for enrollment, evaluation and round history.

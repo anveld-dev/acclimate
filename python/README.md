@@ -42,7 +42,7 @@ Use `job.expect(expected, input=task, output=response)` with a write credential.
 - Use the same idempotency key and request when retrying a mutation that accepts an explicit key. Learning outcomes use their outcome UUID for durable replay.
 - `ApiError` has `status`, `code`, `request_id` and `details`. Transport failures raise `TransportError`.
 - The client rejects redirects, so the token never leaves the configured origin, and bounds every response.
-- See the [Python SDK reference](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/reference/python-sdk.mdx).
+- See the [Python SDK reference](https://acclimate.anveld.dev/docs/reference/python-sdk).
 
 The client and delivery helpers are synchronous.
 

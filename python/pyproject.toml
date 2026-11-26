@@ -26,8 +26,8 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/anveld-dev/acclimate"
-Documentation = "https://github.com/anveld-dev/acclimate/tree/main/apps/docs/content/docs/reference/python-sdk.mdx"
+Homepage = "https://acclimate.anveld.dev"
+Documentation = "https://acclimate.anveld.dev/docs/reference/python-sdk"
 Source = "https://github.com/anveld-dev/acclimate/tree/main/python"
 Changelog = "https://github.com/anveld-dev/acclimate/blob/main/CHANGELOG.md"
 Issues = "https://github.com/anveld-dev/acclimate/issues"

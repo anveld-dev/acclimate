@@ -3,7 +3,8 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { IBM_Plex_Mono, Instrument_Serif } from 'next/font/google';
 import { gitConfig } from '@/lib/shared';
-import { baseline, instructions, run, stages } from './climb';
+import { run, stages } from './climb';
+import { Climb } from './climb-chart';
 import './landing.css';
 
 export const metadata: Metadata = {
@@ -82,73 +83,6 @@ function Code({ name, code }: { name: string; code: string }) {
 
 const percent = (value: number) => `${Math.round(value * 100)}%`;
 
-/** The instruction file before and after the run: the hero's proof. */
-function Learned() {
-  return (
-    <figure className="lp-code lp-learned">
-      <figcaption className="lp-code-bar">
-        <span>instructions.md</span>
-        <span className="lp-code-note">after {run.rounds} rounds, excerpt</span>
-      </figcaption>
-      <div className="lp-learned-body">
-        {instructions.map((line) => (
-          <p key={line.text} className={line.added ? 'lp-learned-new' : 'lp-learned-old'}>
-            {line.text}
-          </p>
-        ))}
-      </div>
-    </figure>
-  );
-}
-
-// Pass rate on the fixed test set after each batch. Lines are drawn in a stretched SVG with
-// non-scaling strokes; points and labels are HTML so they stay legible at every width.
-function Climb() {
-  const floor = 0.3;
-  const last = stages.length - 1;
-  const x = (i: number) => (i / last) * 100;
-  const y = (value: number) => ((1 - value) / (1 - floor)) * 100;
-  const line = stages.map((s, i) => `${i === 0 ? 'M' : 'L'}${x(i)} ${y(s.passRate)}`).join(' ');
-  return (
-    <figure className="lp-chart" aria-labelledby="climb-caption">
-      <div className="lp-chart-plot">
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          <line x1="0" x2="100" y1={y(1)} y2={y(1)} className="lp-chart-grid" />
-          <line x1="0" x2="100" y1={y(baseline.passRate)} y2={y(baseline.passRate)} className="lp-chart-baseline" />
-          <path d={line} className="lp-chart-line" />
-        </svg>
-        <span className="lp-chart-tag" style={{ top: `${y(1)}%` }} aria-hidden="true">
-          100%
-        </span>
-        <span className="lp-chart-tag" style={{ top: `${y(baseline.passRate)}%` }} aria-hidden="true">
-          {baseline.label}
-        </span>
-        {stages.map((s, i) => (
-          <span
-            key={s.label}
-            className="lp-chart-point"
-            style={{ left: `${x(i)}%`, top: `${y(s.passRate)}%` }}
-            aria-hidden="true"
-          >
-            <b>{percent(s.passRate)}</b>
-          </span>
-        ))}
-      </div>
-      <div className="lp-chart-rounds" aria-hidden="true">
-        {stages.map((s, i) => (
-          <span key={s.label} style={{ left: `${x(i)}%` }}>
-            {s.label}
-            <small>{s.note}</small>
-          </span>
-        ))}
-      </div>
-      <figcaption id="climb-caption" className="sr-only">
-        Pass rate on {run.testTasks} unseen test tasks: {stages.map((s) => `${s.label} ${percent(s.passRate)}`).join(', ')}.
-      </figcaption>
-    </figure>
-  );
-}
-
 export default function HomePage() {
   const first = stages[0];
   const final = stages[stages.length - 1];
@@ -156,38 +90,41 @@ export default function HomePage() {
     <div className={`lp ${display.variable} ${mono.variable}`}>
       <section className="lp-hero">
         <div className="lp-contours" aria-hidden="true" />
-        <div className="lp-wrap lp-hero-grid">
-          <div className="lp-hero-copy">
-            <h1 className="lp-title lp-rise">
-              Agent instructions that <em>improve themselves.</em>
-            </h1>
+        <div className="lp-wrap">
+          <h1 className="lp-title lp-rise">
+            Agent instructions that <em>improve themselves.</em>
+          </h1>
+          <div className="lp-hero-row">
             <p className="lp-lede lp-rise" style={{ animationDelay: '80ms' }}>
               Acclimate versions your agent’s instructions, skills and memory and delivers each release to the next
               job. A learning loop rewrites them against your labelled tasks.
             </p>
-            <div className="lp-actions lp-rise" style={{ animationDelay: '160ms' }}>
-              <Link href="/docs/get-started/quickstart" className="lp-button lp-button-primary">
-                Quickstart <span aria-hidden="true">→</span>
-              </Link>
-              <a href={github} className="lp-button">
-                GitHub
-              </a>
+            <div className="lp-hero-actions lp-rise" style={{ animationDelay: '160ms' }}>
+              <div className="lp-actions">
+                <Link href="/docs/get-started/quickstart" className="lp-button lp-button-primary">
+                  Quickstart <span aria-hidden="true">→</span>
+                </Link>
+                <a href={github} className="lp-button">
+                  GitHub
+                </a>
+              </div>
+              <p className="lp-meta">
+                Open source · Self-hosted · <a href={`${github}/releases/tag/v0.1.0`}>v0.1.0</a>
+              </p>
             </div>
-            <p className="lp-meta lp-rise" style={{ animationDelay: '220ms' }}>
-              Open source · Self-hosted · <a href={`${github}/releases/tag/v0.1.0`}>v0.1.0</a>
-            </p>
-          </div>
-          <div className="lp-rise lp-hero-side" style={{ animationDelay: '280ms' }}>
-            <Learned />
           </div>
         </div>
       </section>
 
-      <section className="lp-wrap lp-section" aria-labelledby="proof-heading">
-        <h2 id="proof-heading" className="lp-h2">
-          {percent(first.passRate)} to {percent(final.passRate)} on tasks it never saw.
-        </h2>
-        <p className="lp-body">{run.story}</p>
+      <section className="lp-wrap lp-proof" aria-labelledby="proof-heading">
+        <div className="lp-proof-head lp-rise" style={{ animationDelay: '240ms' }}>
+          <h2 id="proof-heading" className="lp-h2">
+            {percent(first.passRate)} to {percent(final.passRate)} on tasks it never saw.
+          </h2>
+          <p className="lp-body">
+            {run.story} Pick a batch to read what was released.
+          </p>
+        </div>
         <Climb />
         <p className="lp-fineprint">
           {run.details} <a href={example}>Reproduce it</a>

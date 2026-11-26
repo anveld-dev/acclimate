@@ -144,14 +144,17 @@ class DeploymentTests(unittest.TestCase):
 
     def test_release_publishes_every_compose_application_image(self):
         workflow = (ROOT/'.github/workflows/release.yaml').read_text()
+        image_workflow = (ROOT/'.github/workflows/release-images.yaml').read_text()
+        self.assertEqual(workflow.count('uses: ./.github/workflows/release-images.yaml'), 2)
         # Each image has a build entry naming its Dockerfile.
         for name, dockerfile in (('acclimate-service', 'deploy/Dockerfile'),
                                  ('acclimate-console', 'deploy/console.Dockerfile'),
                                  ('acclimate-executor', 'executor/Dockerfile'),
                                  ('acclimate-runner', 'executor/runner/Dockerfile')):
-            self.assertRegex(workflow, rf'- image: {name}\n +context: \S+\n +dockerfile: {dockerfile}\n')
-        self.assertEqual(workflow.count(
-            'image: [acclimate-service, acclimate-console, acclimate-executor, acclimate-runner]'), 2)
+            self.assertRegex(image_workflow, rf'- image: {name}\n +context: \S+\n +dockerfile: {dockerfile}\n')
+        image_matrix = 'image: [acclimate-service, acclimate-console, acclimate-executor, acclimate-runner]'
+        self.assertEqual(image_workflow.count(image_matrix), 1)
+        self.assertEqual(workflow.count(image_matrix), 1)
 
     def test_qualification_uses_project_local_builds_and_private_ports(self):
         with tempfile.TemporaryDirectory() as temporary:

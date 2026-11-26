@@ -1,0 +1,49 @@
+input,expected
+I rented a 70 m dynamic rope from your shop 14 days ago for a weekend trip. I am not a member.,DENY
+I bought a softshell pants 95 days ago. I want to return it because I changed my mind. I am a Summit Club member. I have the receipt.,REFUND
+12 days ago I picked up a pair of hiking boots in store. I only tried them on indoors. I want to return it because my trip was cancelled. I am a Summit Club member. I have the receipt.,REFUND
+45 days ago I picked up a via ferrata lanyard in store. I used it on two climbs. I want to return it because it is heavier than I expected. No membership. I have the receipt.,DENY
+Purchased an avalanche transceiver from you 49 days ago. The box is still sealed. I want to return it because I found one I like better. No membership. I have the receipt.,REFUND
+Purchased a merino base layer from you about 3 months ago (86 days). I want to return it because it is not the right fit. I am not a member. I have the receipt.,STORE_CREDIT
+Purchased a pair of hiking boots from you about 16 months ago (468 days). I only tried them on indoors. I want to return it because it is not the right fit. I am a Summit Club member. I have the receipt.,DENY
+The softshell pants I hired from you 5 days ago is still with me. I am not a member.,DENY
+Purchased a trekking poles from you about 6 months ago (188 days). I want to return it because I found one I like better. No membership. I have the receipt.,DENY
+I rented a fleece pullover from your shop 42 days ago for a weekend trip. No membership.,DENY
+I bought a 2-person tent about 13 months ago (391 days). I want to return it because the colour looks different in person. No membership. I have the receipt.,DENY
+"Purchased a climbing helmet from you 44 days ago. It is unused, still with the tags on. I want to return it because it is heavier than I expected. No membership. I have the receipt.",REFUND
+"I bought a climbing helmet 12 days ago. It is unused, still with the tags on. I want to return it because the colour looks different in person. I am not a member. I have the receipt.",REFUND
+Purchased a rain shell from you 49 days ago. I want to return it because I changed my mind. No membership. I have the receipt.,REFUND
+I rented a pair of approach shoes from your shop 34 days ago for a weekend trip. I am a Summit Club member.,DENY
+I rented a via ferrata lanyard from your shop 9 days ago for a weekend trip. I am not a member.,DENY
+176 days ago I picked up a rechargeable headlamp in store. The box is still sealed. I want to return it because my trip was cancelled. No membership. I have the receipt.,DENY
+I rented a merino base layer from your shop 47 days ago for a weekend trip. I am not a member.,DENY
+I bought a stove kit about 6 months ago (190 days). I want to return it because I changed my mind. I am not a member. I have the receipt.,DENY
+47 days ago I picked up a fleece pullover in store. I want to return it because I found one I like better. I am not a member. I have the receipt.,REFUND
+Purchased a stove kit from you about 6 months ago (177 days). I want to return it because I found one I like better. I am not a member. I have the receipt.,DENY
+Purchased a 2-person tent from you 82 days ago. I want to return it because I found one I like better. I am not a member. I have the receipt.,STORE_CREDIT
+About 6 months ago (191 days) I picked up a rain shell in store. I want to return it because I changed my mind. I am not a member. I have the receipt.,DENY
+I bought a via ferrata lanyard 32 days ago. I used it on two climbs. I want to return it because the colour looks different in person. I am a Summit Club member. I have the receipt.,DENY
+The rain shell I hired from you 36 days ago is still with me. I am a Summit Club member.,DENY
+I bought a 70 m dynamic rope 9 days ago. I used it on two climbs. I want to return it because I changed my mind. I am a Summit Club member. I have the receipt.,DENY
+I bought a via ferrata lanyard 6 days ago. I used it on two climbs. I want to return it because the colour looks different in person. I am not a member. I have the receipt.,DENY
+55 days ago I picked up a pair of trail runners in store. I only tried them on indoors. I want to return it because my trip was cancelled. I am a Summit Club member. I have the receipt.,REFUND
+27 days ago I picked up a via ferrata lanyard in store. I used it on two climbs. I want to return it because it is not the right fit. I am not a member. I have the receipt.,DENY
+Purchased a 70 m dynamic rope from you 15 days ago. I used it on two climbs. I want to return it because my trip was cancelled. I am not a member. I have the receipt.,DENY
+Purchased a pair of ski boots from you 15 days ago. I only tried them on indoors. I want to return it because my trip was cancelled. I am not a member. I have the receipt.,REFUND
+I bought a set of locking carabiners 39 days ago. I used it on two climbs. I want to return it because my trip was cancelled. No membership. I have the receipt.,DENY
+The merino base layer I hired from you 12 days ago is still with me. No membership.,DENY
+I rented a pair of mountaineering boots from your shop 3 days ago for a weekend trip. I am a Summit Club member.,DENY
+34 days ago I picked up a 2-person tent in store. I want to return it because the colour looks different in person. I am a Summit Club member. I have the receipt.,REFUND
+Purchased a merino base layer from you about 16 months ago (488 days). I want to return it because it is heavier than I expected. I am a Summit Club member. I have the receipt.,DENY
+494 days ago I picked up a down jacket in store. I want to return it because my trip was cancelled. No membership. I have the receipt.,DENY
+Purchased a via ferrata lanyard from you 26 days ago. I used it on two climbs. I want to return it because it is not the right fit. I am a Summit Club member. I have the receipt.,DENY
+16 days ago I picked up a pair of ski boots in store. I only tried them on indoors. I want to return it because my trip was cancelled. I am not a member. I have the receipt.,REFUND
+I bought a set of locking carabiners 26 days ago. I used it on two climbs. I want to return it because my trip was cancelled. I am a Summit Club member. I have the receipt.,DENY
+The via ferrata lanyard I hired from you 31 days ago is still with me. No membership.,DENY
+I rented a down jacket from your shop 6 days ago for a weekend trip. I am not a member.,DENY
+16 days ago I picked up a set of locking carabiners in store. I used it on two climbs. I want to return it because I found one I like better. I am not a member. I have the receipt.,DENY
+Purchased a GPS watch from you 185 days ago. The box is still sealed. I want to return it because it is not the right fit. I am not a member. I have the receipt.,DENY
+Purchased a set of locking carabiners from you 48 days ago. I used it on two climbs. I want to return it because my trip was cancelled. I am not a member. I have the receipt.,DENY
+I bought a 70 m dynamic rope 4 days ago. I used it on two climbs. I want to return it because my trip was cancelled. No membership. I have the receipt.,DENY
+"Purchased a via ferrata lanyard from you about 3 months ago (88 days). It is unused, still with the tags on. I want to return it because I found one I like better. I am a Summit Club member. I have the receipt.",REFUND
+I rented a pair of hiking boots from your shop 31 days ago for a weekend trip. I am a Summit Club member.,DENY

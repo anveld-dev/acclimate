@@ -1,0 +1,19 @@
+input,expected
+Purchased a handheld GPS from you 49 days ago. I opened the box and set it up. I want to return it because it is not the right fit. I am not a member. I have the receipt.,STORE_CREDIT
+40 days ago I picked up a satellite messenger in store. I opened the box and set it up. I want to return it because my trip was cancelled. I am not a member. I have the receipt.,STORE_CREDIT
+Purchased a pair of hiking boots from you 32 days ago. I took them out on one muddy hike. I want to return it because it is heavier than I expected. No membership. I have the receipt.,EXCHANGE
+I bought a satellite messenger 39 days ago. I opened the box and set it up. I want to return it because the colour looks different in person. No membership. I have the receipt.,STORE_CREDIT
+I bought a rechargeable headlamp 18 days ago. I opened the box and set it up. I want to return it because I changed my mind. I am not a member. I have the receipt.,STORE_CREDIT
+Purchased a pair of ski boots from you 23 days ago. I took them out on one muddy hike. I want to return it because I changed my mind. I am not a member. I have the receipt.,EXCHANGE
+I bought a rechargeable headlamp 32 days ago. I opened the box and set it up. I want to return it because I found one I like better. I am not a member. I have the receipt.,STORE_CREDIT
+43 days ago I picked up a pair of trail runners in store. I took them out on one muddy hike. I want to return it because my trip was cancelled. I am a Summit Club member. I have the receipt.,EXCHANGE
+I bought a GPS watch 26 days ago. I opened the box and set it up. I want to return it because it is heavier than I expected. I am a Summit Club member. I have the receipt.,STORE_CREDIT
+I bought an avalanche transceiver about 11 months ago (330 days). I opened the box and set it up. I want to return it because my trip was cancelled. I am a Summit Club member. I have the receipt.,STORE_CREDIT
+Purchased a pair of trail runners from you about 4 months ago (112 days). I took them out on one muddy hike. I want to return it because the colour looks different in person. I am a Summit Club member. I have the receipt.,EXCHANGE
+26 days ago I picked up a GPS watch in store. I opened the box and set it up. I want to return it because it is heavier than I expected. I am a Summit Club member. I have the receipt.,STORE_CREDIT
+34 days ago I picked up a pair of approach shoes in store. I took them out on one muddy hike. I want to return it because my trip was cancelled. I am not a member. I have the receipt.,EXCHANGE
+I bought a pair of approach shoes 28 days ago. I took them out on one muddy hike. I want to return it because I found one I like better. I am not a member. I have the receipt.,EXCHANGE
+Purchased a pair of ski boots from you about 5 months ago (157 days). I took them out on one muddy hike. I want to return it because it is not the right fit. I am a Summit Club member. I have the receipt.,EXCHANGE
+Purchased a pair of trail runners from you 22 days ago. I took them out on one muddy hike. I want to return it because it is not the right fit. I am a Summit Club member. I have the receipt.,EXCHANGE
+17 days ago I picked up a pair of hiking boots in store. I wore them on a couple of trail days. I want to return it because it is not the right fit. I am not a member. I have the receipt.,EXCHANGE
+Purchased a GPS watch from you 39 days ago. I opened the box and set it up. I want to return it because it is heavier than I expected. I am a Summit Club member. I have the receipt.,STORE_CREDIT

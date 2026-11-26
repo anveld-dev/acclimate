@@ -38,7 +38,7 @@ Keycloak expands those placeholders on first import. Startup skips a realm that 
 
 ## Private configuration
 
-`deploy/init.sh` writes `keycloak.env`, `keycloak-postgres-password` and `KEYCLOAK_HOST` with the rest of the deployment, as in [Self-host Acclimate](../../apps/docs/content/docs/operate/self-host.mdx). `keycloak.env.example` lists its variables. `ACCLIMATE_OIDC_CLIENT_SECRET` must equal `CONSOLE_OIDC_CLIENT_SECRET` in the console file, and `KC_DB_PASSWORD` the database password file. There is no `KC_BOOTSTRAP_ADMIN_*`, so Keycloak creates no master-realm administrator.
+`deploy/init.sh` writes `keycloak.env`, `keycloak-postgres-password` and `KEYCLOAK_HOST` with the rest of the deployment, as in [Self-host Acclimate](https://acclimate.anveld.dev/docs/operate/self-host). `keycloak.env.example` lists its variables. `ACCLIMATE_OIDC_CLIENT_SECRET` must equal `CONSOLE_OIDC_CLIENT_SECRET` in the console file, and `KC_DB_PASSWORD` the database password file. There is no `KC_BOOTSTRAP_ADMIN_*`, so Keycloak creates no master-realm administrator.
 
 Set both application issuer fields to the exact realm issuer above. There is no trailing slash in this template. Client ID is `acclimate-console`. The three public hostnames must be distinct. Do not use a container's HTTP address as the issuer.
 
@@ -46,7 +46,7 @@ Management port 9000 and both PostgreSQL listeners have no host ports. Caddy pub
 
 ## The first person
 
-The first browser sign-in asks for a new password and the name that Keycloak's user profile requires. The person then manages people at `http://127.0.0.1:8180/admin/acclimate/console/` through an SSH tunnel, as in [Manage people](../../apps/docs/content/docs/operate/self-host.mdx#manage-people). Break-glass recovery uses Keycloak's own `bootstrap-admin` command for a temporary master-realm administrator and `kcadm.sh set-password` inside the container, because that administrator cannot use the admin console.
+The first browser sign-in asks for a new password and the name that Keycloak's user profile requires. The person then manages people at `http://127.0.0.1:8180/admin/acclimate/console/` through an SSH tunnel, as in [Manage people](https://acclimate.anveld.dev/docs/operate/self-host#manage-people). Break-glass recovery uses Keycloak's own `bootstrap-admin` command for a temporary master-realm administrator and `kcadm.sh set-password` inside the container, because that administrator cannot use the admin console.
 
 Initial accounts are admin-provisioned. Email verification and forgotten-password flows are off until real SMTP is configured; enable them deliberately in Keycloak before offering those flows. Passkey/MFA policies can be configured there without moving workspace roles out of Rust.
 

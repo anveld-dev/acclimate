@@ -9,7 +9,7 @@
     "llm",
     "release-management"
   ],
-  "homepage": "https://github.com/anveld-dev/acclimate/tree/main/packages/sdk#readme",
+  "homepage": "https://acclimate.anveld.dev/docs/reference/typescript-sdk",
   "bugs": "https://github.com/anveld-dev/acclimate/issues",
   "repository": {
     "type": "git",

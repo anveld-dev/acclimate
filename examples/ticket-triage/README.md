@@ -1,6 +1,6 @@
 # Ticket triage
 
-One script that runs a learning loop end to end over the API. It publishes a bundle whose instructions only say "reply with the queue", imports 64 labelled tickets as exact-match tasks, starts learning and reports each round. The [walkthrough](../../apps/docs/content/docs/tutorials/first-learning-round.mdx) explains each step and shows a real run.
+One script that runs a learning loop end to end over the API. It publishes a bundle whose instructions only say "reply with the queue", imports 64 labelled tickets as exact-match tasks, starts learning and reports each round. The [walkthrough](https://acclimate.anveld.dev/docs/tutorials/first-learning-round) explains each step and shows a real run.
 
 | File | Contents |
 | --- | --- |
@@ -10,7 +10,7 @@ One script that runs a learning loop end to end over the API. It publishes a bun
 
 ## Run it
 
-The script needs a service with an optimizer model, an executor, and a verified model provider on the workspace. The [local stack](../../apps/docs/content/docs/reference/local-stack.mdx) started with a [model provider](../../apps/docs/content/docs/tutorials/first-learning-round.mdx#connect-a-model-provider) has all three.
+The script needs a service with an optimizer model, an executor, and a verified model provider on the workspace. The [local stack](https://acclimate.anveld.dev/docs/reference/local-stack) started with a [model provider](https://acclimate.anveld.dev/docs/tutorials/first-learning-round#connect-a-model-provider) has all three.
 
 | Variable | Value |
 | --- | --- |

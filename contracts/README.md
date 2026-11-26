@@ -9,4 +9,4 @@ These files describe what Acclimate sends and accepts on the wire. Use them when
 | [`learning.md`](learning.md) | The learning loop’s routes, task splits and rollout scoring. |
 | [`fixtures/`](fixtures) | Exact payload bytes, digests, channel resolutions, version metadata, native compatibility examples and evaluator CLI errors. |
 
-Both SDKs follow this contract. TypeScript consumers can read the same types from the installed package's `.d.ts` files, and Python consumers from `acclimate.types`. The [versioning and compatibility reference](../apps/docs/content/docs/reference/versioning.mdx) explains how the contract changes between releases.
+Both SDKs follow this contract. TypeScript consumers can read the same types from the installed package's `.d.ts` files, and Python consumers from `acclimate.types`. The [versioning and compatibility reference](https://acclimate.anveld.dev/docs/reference/versioning) explains how the contract changes between releases.

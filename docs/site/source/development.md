@@ -8,7 +8,7 @@ The Rust service uses PostgreSQL. The TypeScript and Python SDKs deliver version
 
 There is one production identity path, including during development. PostgreSQL 16 stores all service data. The console uses Keycloak through OIDC and HTTPS; browser users need verified sessions and workspace membership. Machine SDK credentials stay separate.
 
-For laptop development, run `npm run local:up` from the checkout. The [local stack guide](../apps/docs/content/docs/reference/local-stack.mdx) covers prerequisites, Caddy's local CA and the bootstrap login.
+For laptop development, run `npm run local:up` from the checkout. The [local stack guide](https://acclimate.anveld.dev/docs/reference/local-stack) covers prerequisites, Caddy's local CA and the bootstrap login.
 
 Use the [deployment guide](../deploy/README.md) for production hosting and required private configuration. The [console guide](../apps/console/README.md) lists identity settings. Builds need no runtime credentials:
 
@@ -52,7 +52,7 @@ The measured runs in the docs used [CLIProxyAPI](https://help.router-for.me/) wi
 
 The exact operator identities configured for the pinned issuer may create workspaces. To recover an existing machine-created workspace with no human memberships, an operator reviews its exact ID, their verified identity and a reason, then explicitly adopts it. The immutable audit never silently restores access on retry. Other access changes use current workspace admins and verified user IDs.
 
-For a fresh install, point the service at an empty database. Startup applies pending migrations. Before upgrading an existing database, back it up as in [Upgrade and recover](../apps/docs/content/docs/operate/upgrades-and-recovery.mdx).
+For a fresh install, point the service at an empty database. Startup applies pending migrations. Before upgrading an existing database, back it up as in [Upgrade and recover](https://acclimate.anveld.dev/docs/operate/upgrades-and-recovery).
 
 Run one Rust process per database and one console process. `/health` is liveness. `/ready` requires database access, ownership, initialization and a live learning worker. Readiness is not a promise of provider availability or queue progress. SIGTERM withdraws readiness, stops new claims and drains within 35 seconds before releasing ownership. A lost ownership connection exits with code 75. Your deployment supervisor restarts it with the same explicit configuration; there is no local launcher recovery mode.
 

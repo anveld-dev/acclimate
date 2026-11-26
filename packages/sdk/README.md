@@ -46,7 +46,7 @@ The `acclimate` command saves, publishes and releases bundles: `acclimate pull`,
 
 ## Documentation
 
-- [TypeScript SDK reference](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/reference/typescript-sdk.mdx)
-- [Versioning and compatibility](https://github.com/anveld-dev/acclimate/blob/main/apps/docs/content/docs/reference/versioning.mdx)
+- [TypeScript SDK reference](https://acclimate.anveld.dev/docs/reference/typescript-sdk)
+- [Versioning and compatibility](https://acclimate.anveld.dev/docs/reference/versioning)
 
 Licensed under Apache-2.0.

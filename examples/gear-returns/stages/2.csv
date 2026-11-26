@@ -1,0 +1,19 @@
+input,expected
+"I bought a via ferrata lanyard 7 days ago. It was a final-sale item. It is unused, still with the tags on. I want to return it because I found one I like better. No membership. I have the receipt.",STORE_CREDIT
+"50 days ago I picked up an avalanche transceiver in store. It was on the clearance rack, marked final sale. The box is still sealed. I want to return it because my trip was cancelled. I am not a member. I have the receipt.",STORE_CREDIT
+Someone gave me a softshell pants as a present. They bought it 45 days ago. I want to return it because I found one I like better. I am not a member. There is no receipt.,STORE_CREDIT
+I received a 2-person tent as a gift; it was bought 35 days ago. I want to return it because I changed my mind. I am a Summit Club member. There is no receipt.,STORE_CREDIT
+I received a fleece pullover as a gift; it was bought 19 days ago. I want to return it because it is heavier than I expected. No membership. There is no receipt.,STORE_CREDIT
+"I bought a sleeping pad 5 days ago. It was on the clearance rack, marked final sale. I want to return it because I found one I like better. I am a Summit Club member. I have the receipt.",STORE_CREDIT
+"I bought a pair of approach shoes 43 days ago. It was on the clearance rack, marked final sale. I only tried them on indoors. I want to return it because my trip was cancelled. No membership. I have the receipt.",STORE_CREDIT
+I received a rain shell as a gift; it was bought 49 days ago. I want to return it because my trip was cancelled. No membership. There is no receipt.,STORE_CREDIT
+Someone gave me a pair of trail runners as a present. They bought it 7 days ago. I only tried them on indoors. I want to return it because it is not the right fit. I am a Summit Club member. There is no receipt.,STORE_CREDIT
+I bought a sleeping bag 8 days ago. It was a final-sale item. I want to return it because I found one I like better. No membership. I have the receipt.,STORE_CREDIT
+Someone gave me a down jacket as a present. They bought it 17 days ago. I want to return it because I found one I like better. No membership. There is no receipt.,STORE_CREDIT
+I bought a satellite messenger 36 days ago. It was a final-sale item. I opened the box and set it up. I want to return it because it is not the right fit. No membership. I have the receipt.,STORE_CREDIT
+I received a rain shell as a gift; it was bought 42 days ago. I want to return it because it is heavier than I expected. I am a Summit Club member. There is no receipt.,STORE_CREDIT
+"5 days ago I picked up a stove kit in store. It was on the clearance rack, marked final sale. I want to return it because it is not the right fit. I am a Summit Club member. I have the receipt.",STORE_CREDIT
+I received a rechargeable headlamp as a gift; it was bought 45 days ago. I opened the box and set it up. I want to return it because I found one I like better. I am not a member. There is no receipt.,STORE_CREDIT
+"I bought a stove kit 40 days ago. It was on the clearance rack, marked final sale. I want to return it because it is heavier than I expected. No membership. I have the receipt.",STORE_CREDIT
+I bought a pair of mountaineering boots 39 days ago. It was a final-sale item. I only tried them on indoors. I want to return it because it is not the right fit. I am a Summit Club member. I have the receipt.,STORE_CREDIT
+Someone gave me a merino base layer as a present. They bought it 37 days ago. I want to return it because I changed my mind. I am a Summit Club member. There is no receipt.,STORE_CREDIT

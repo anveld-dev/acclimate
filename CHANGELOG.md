@@ -4,6 +4,17 @@ All notable changes to Acclimate will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- `examples/gear-returns/` teaches a returns agent a shop's nine-rule policy as tasks arrive in four batches, and scores each release on 60 test tasks the loop never sees. Its recorded run, 48% to 97%, is the chart on the docs home page. Run it with `npm run example:gear-returns`.
+
+### Changed
+
+- The Acclimate mark is now a surveyor's bench mark, an upward arrow under a level line, in the console's favicon and the docs.
+- The docs site is set in Recursive, with its monospace for code. The home page charts the gear-returns run as one bar per release; selecting a bar shows that release's `instructions.md` diffed against the one before.
+
 ## [0.1.0] - 2026-11-25
 
 The first release, open source under Apache-2.0, with documentation at [acclimate.anveld.dev](https://acclimate.anveld.dev). The service, console, executor and runner images, `@acclimate/sdk`, the four plugin packages, the `acclimate-sdk` Python package and the starter archives are all versioned `0.1.0`; the plugins peer-depend on `@acclimate/sdk` `^0.1.0`.

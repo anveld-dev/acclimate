@@ -2,8 +2,22 @@
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
 
+@theme inline {
+  --font-sans: var(--font-recursive), ui-sans-serif, sans-serif;
+  --font-mono: var(--font-recursive), ui-monospace, monospace;
+}
+
 html {
   scrollbar-gutter: stable;
+}
+
+/* Recursive's MONO axis is its monospace. */
+code,
+kbd,
+pre,
+samp,
+.font-mono {
+  font-variation-settings: 'MONO' 1;
 }
 
 html > body[data-scroll-locked] {
@@ -26,15 +40,15 @@ html > body[data-scroll-locked] {
 
 /* Brand the docs with the console's forest and lichen colours. */
 :root {
-  --color-fd-background: #f7f5ef;
+  --color-fd-background: #fbfbf8;
   --color-fd-primary: #253f33;
   --color-fd-primary-foreground: #f6f3ea;
   --color-fd-ring: #6d8a68;
 }
 
 .dark {
-  --color-fd-background: #0d1511;
-  --color-fd-card: #121c17;
+  --color-fd-background: #0c110e;
+  --color-fd-card: #131a16;
   --color-fd-primary: #e5eea8;
   --color-fd-primary-foreground: #17241d;
   --color-fd-ring: #a7c093;

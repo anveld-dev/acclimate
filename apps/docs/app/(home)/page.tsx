@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import { IBM_Plex_Mono, Instrument_Serif } from 'next/font/google';
 import { gitConfig } from '@/lib/shared';
 import { run, stages } from './climb';
 import { Climb } from './climb-chart';
@@ -10,14 +9,6 @@ import './landing.css';
 export const metadata: Metadata = {
   title: { absolute: 'Acclimate: agent instructions that improve themselves' },
 };
-
-const display = Instrument_Serif({
-  subsets: ['latin'],
-  weight: '400',
-  style: ['normal', 'italic'],
-  variable: '--lp-display',
-});
-const mono = IBM_Plex_Mono({ subsets: ['latin'], weight: '400', variable: '--lp-mono' });
 
 const github = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
 const example = `${github}/tree/main/examples/gear-returns`;
@@ -48,10 +39,10 @@ const reasons = [
   ['One honest limit', 'Learning scores one model call with no tools. It tunes the prompt, not tool use.'],
 ];
 
-// Minimal highlighting for the snippets: comments, strings and a few keywords.
+// Minimal highlighting for the snippets: comments, strings, keywords, flags and commands.
 function highlight(code: string): ReactNode[] {
   const pattern =
-    /(\/\/[^\n]*)|('[^'\n]*')|\b(import|from|const|await)\b|(--[a-z-]+)|^(git|cd|deploy\/init\.sh|docker)\b/gm;
+    /(\/\/[^\n]*)|('[^'\n]*')|\b(import|from|const|await)\b|(--?[a-z-]+)|^(git|cd|deploy\/init\.sh|docker)\b/gm;
   const out: ReactNode[] = [];
   let last = 0;
   for (const match of code.matchAll(pattern)) {
@@ -72,7 +63,7 @@ function highlight(code: string): ReactNode[] {
 function Code({ name, code }: { name: string; code: string }) {
   return (
     <figure className="lp-code">
-      <figcaption className="lp-code-bar">{name}</figcaption>
+      <figcaption>{name}</figcaption>
       {/* Focusable so keyboard users can scroll a long line. */}
       <pre tabIndex={0} aria-label={name}>
         <code>{highlight(code)}</code>
@@ -87,80 +78,78 @@ export default function HomePage() {
   const first = stages[0];
   const final = stages[stages.length - 1];
   return (
-    <div className={`lp ${display.variable} ${mono.variable}`}>
-      <section className="lp-hero">
-        <div className="lp-contours" aria-hidden="true" />
-        <div className="lp-wrap">
-          <h1 className="lp-title lp-rise">
-            Agent instructions that <em>improve themselves.</em>
-          </h1>
-          <div className="lp-hero-row">
-            <p className="lp-lede lp-rise" style={{ animationDelay: '80ms' }}>
-              Acclimate versions your agent’s instructions, skills and memory and delivers each release to the next
-              job. A learning loop rewrites them against your labelled tasks.
-            </p>
-            <div className="lp-hero-actions lp-rise" style={{ animationDelay: '160ms' }}>
-              <div className="lp-actions">
-                <Link href="/docs/get-started/quickstart" className="lp-button lp-button-primary">
-                  Quickstart <span aria-hidden="true">→</span>
-                </Link>
-                <a href={github} className="lp-button">
-                  GitHub
-                </a>
-              </div>
-              <p className="lp-meta">
-                Open source · Self-hosted · <a href={`${github}/releases/tag/v0.1.0`}>v0.1.0</a>
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="lp-wrap lp-proof" aria-labelledby="proof-heading">
-        <div className="lp-proof-head lp-rise" style={{ animationDelay: '240ms' }}>
-          <h2 id="proof-heading" className="lp-h2">
-            {percent(first.passRate)} to {percent(final.passRate)} on tasks it never saw.
-          </h2>
-          <p className="lp-body">
-            {run.story} Pick a batch to read what was released.
+    <div className="lp">
+      <section className="lp-hero lp-wrap">
+        <h1 className="lp-title">Agent instructions that improve themselves.</h1>
+        <p className="lp-lede">
+          Acclimate versions your agent’s instructions, skills and memory and delivers each release to the next job. A
+          learning loop rewrites them against your labelled tasks.
+        </p>
+        <div className="lp-actions">
+          <Link href="/docs/get-started/quickstart" className="lp-button lp-button-primary">
+            Quickstart <span aria-hidden="true">→</span>
+          </Link>
+          <a href={github} className="lp-button">
+            GitHub
+          </a>
+          <p className="lp-meta">
+            Open source · Self-hosted · <a href={`${github}/releases/tag/v0.1.0`}>v0.1.0</a>
           </p>
         </div>
-        <Climb />
-        <p className="lp-fineprint">
-          {run.details} <a href={example}>Reproduce it</a>
-        </p>
       </section>
 
-      <section className="lp-wrap lp-section lp-split" aria-labelledby="git-heading">
-        <div>
-          <h2 id="git-heading" className="lp-h2">
-            Why not keep prompts in git?
-          </h2>
-          <p className="lp-body">Keep them there and publish from CI. Acclimate adds:</p>
-          <dl className="lp-reasons">
-            {reasons.map(([term, detail]) => (
-              <div key={term}>
-                <dt>{term}</dt>
-                <dd>{detail}</dd>
-              </div>
-            ))}
-          </dl>
+      <section className="lp-section" aria-labelledby="proof-heading">
+        <div className="lp-wrap">
+          <Climb
+            head={
+              <>
+                <h2 id="proof-heading" className="lp-h2">
+                  {percent(first.passRate)} to {percent(final.passRate)} on tasks it never saw.
+                </h2>
+                <p className="lp-body">{run.story} Pick a batch to read what it released.</p>
+              </>
+            }
+            foot={
+              <p className="lp-fineprint">
+                {run.coverage} {run.missed} {run.details} <a href={example}>Reproduce it</a>
+              </p>
+            }
+          />
         </div>
-        <Code name="agent.ts" code={snippet} />
       </section>
 
-      <section className="lp-summit" aria-labelledby="summit-heading">
-        <div className="lp-contours" aria-hidden="true" />
-        <div className="lp-wrap lp-summit-grid">
-          <div className="lp-summit-copy">
-            <h2 id="summit-heading" className="lp-summit-title">
+      <section className="lp-section" aria-labelledby="git-heading">
+        <div className="lp-wrap lp-split">
+          <div>
+            <h2 id="git-heading" className="lp-h2">
+              Why not keep prompts in git?
+            </h2>
+            <p className="lp-body">Keep them there and publish from CI. Acclimate adds:</p>
+            <dl className="lp-reasons">
+              {reasons.map(([term, detail], index) => (
+                <div key={term}>
+                  <span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+                  <dt>{term}</dt>
+                  <dd>{detail}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+          <Code name="agent.ts" code={snippet} />
+        </div>
+      </section>
+
+      <section className="lp-section lp-close" aria-labelledby="close-heading">
+        <div className="lp-wrap lp-split">
+          <div>
+            <h2 id="close-heading" className="lp-h2">
               Run it on your own server.
             </h2>
             <div className="lp-actions">
-              <Link href="/docs/get-started/quickstart" className="lp-button lp-button-lichen">
+              <Link href="/docs/get-started/quickstart" className="lp-button lp-button-primary">
                 Try it on your laptop <span aria-hidden="true">→</span>
               </Link>
-              <Link href="/docs/operate/self-host" className="lp-summit-link">
+              <Link href="/docs/operate/self-host" className="lp-link">
                 Self-host guide
               </Link>
             </div>

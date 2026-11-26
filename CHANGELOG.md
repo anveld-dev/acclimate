@@ -13,6 +13,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - The Acclimate mark is now a surveyor's bench mark, an upward arrow under a level line, in the console's favicon and the docs.
+- The docs site is set in Recursive, with its monospace for code. The home page charts the gear-returns run as one bar per release; selecting a bar shows that release's `instructions.md` diffed against the one before.
 
 ## [0.1.0] - 2026-11-25
 

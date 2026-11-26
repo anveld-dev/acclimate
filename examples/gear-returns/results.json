@@ -1,0 +1,210 @@
+{
+  "taskModel": "gpt-6-luna",
+  "samples": 3,
+  "results": [
+    {
+      "stage": 0,
+      "rounds": [],
+      "versionId": "60515ba4-5428-45d4-90b3-5c76ab86bf4b",
+      "passRate": 0.4777777777777778
+    },
+    {
+      "stage": 1,
+      "rounds": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "roundDetails": [
+        {
+          "number": 1,
+          "decision": "failed",
+          "reason": "selector-unavailable",
+          "incumbentScore": 0.8521739130434783,
+          "evolveScore": 0.8521739130434783,
+          "heldOutScore": null
+        },
+        {
+          "number": 2,
+          "decision": "adopted",
+          "reason": null,
+          "incumbentScore": 0.8521739130434783,
+          "evolveScore": 1,
+          "heldOutScore": 0.96
+        },
+        {
+          "number": 3,
+          "decision": "adopted",
+          "reason": null,
+          "incumbentScore": 1,
+          "evolveScore": 1,
+          "heldOutScore": 0.96
+        },
+        {
+          "number": 4,
+          "decision": "kept",
+          "reason": "selector-kept",
+          "incumbentScore": 1,
+          "evolveScore": 1,
+          "heldOutScore": 0.96
+        },
+        {
+          "number": 5,
+          "decision": "kept",
+          "reason": "selector-kept",
+          "incumbentScore": 1,
+          "evolveScore": 1,
+          "heldOutScore": 0.96
+        }
+      ],
+      "versionId": "c327b024-ca89-4b4a-89cd-b2950b6b182e",
+      "passRate": 0.5777777777777777
+    },
+    {
+      "stage": 2,
+      "rounds": [
+        6,
+        7,
+        8
+      ],
+      "roundDetails": [
+        {
+          "number": 6,
+          "decision": "adopted",
+          "reason": null,
+          "incumbentScore": 0.6388888888888888,
+          "evolveScore": 1,
+          "heldOutScore": 0.9666666666666667
+        },
+        {
+          "number": 7,
+          "decision": "kept",
+          "reason": "selector-kept",
+          "incumbentScore": 1,
+          "evolveScore": 1,
+          "heldOutScore": 0.9666666666666667
+        },
+        {
+          "number": 8,
+          "decision": "kept",
+          "reason": "selector-kept",
+          "incumbentScore": 1,
+          "evolveScore": 1,
+          "heldOutScore": 0.9666666666666667
+        }
+      ],
+      "versionId": "703aae5e-122d-46e4-b971-4386a195763d",
+      "passRate": 0.7722222222222223
+    },
+    {
+      "stage": 3,
+      "rounds": [
+        9,
+        10,
+        11,
+        12,
+        13
+      ],
+      "roundDetails": [
+        {
+          "number": 9,
+          "decision": "adopted",
+          "reason": null,
+          "incumbentScore": 0.74,
+          "evolveScore": 1,
+          "heldOutScore": 0.9705882352941176
+        },
+        {
+          "number": 10,
+          "decision": "kept",
+          "reason": "selector-kept",
+          "incumbentScore": 1,
+          "evolveScore": 1,
+          "heldOutScore": 0.9705882352941176
+        },
+        {
+          "number": 11,
+          "decision": "adopted",
+          "reason": null,
+          "incumbentScore": 1,
+          "evolveScore": 1,
+          "heldOutScore": 0.9705882352941176
+        },
+        {
+          "number": 12,
+          "decision": "kept",
+          "reason": "selector-kept",
+          "incumbentScore": 1,
+          "evolveScore": 1,
+          "heldOutScore": 0.9705882352941176
+        },
+        {
+          "number": 13,
+          "decision": "kept",
+          "reason": "selector-kept",
+          "incumbentScore": 1,
+          "evolveScore": 1,
+          "heldOutScore": 0.9705882352941176
+        }
+      ],
+      "versionId": "038bafc9-b372-4edf-ab14-6a562991783e",
+      "passRate": 0.9666666666666667
+    },
+    {
+      "stage": 4,
+      "rounds": [
+        14,
+        15,
+        16,
+        17,
+        18
+      ],
+      "roundDetails": [
+        {
+          "number": 14,
+          "decision": "adopted",
+          "reason": null,
+          "incumbentScore": 0.9833333333333333,
+          "evolveScore": 1,
+          "heldOutScore": 1
+        },
+        {
+          "number": 15,
+          "decision": "adopted",
+          "reason": null,
+          "incumbentScore": 1,
+          "evolveScore": 1,
+          "heldOutScore": 1
+        },
+        {
+          "number": 16,
+          "decision": "adopted",
+          "reason": null,
+          "incumbentScore": 1,
+          "evolveScore": 1,
+          "heldOutScore": 1
+        },
+        {
+          "number": 17,
+          "decision": "kept",
+          "reason": "selector-kept",
+          "incumbentScore": 1,
+          "evolveScore": 1,
+          "heldOutScore": 1
+        },
+        {
+          "number": 18,
+          "decision": "kept",
+          "reason": "selector-kept",
+          "incumbentScore": 1,
+          "evolveScore": 1,
+          "heldOutScore": 1
+        }
+      ],
+      "versionId": "082fbed3-64ca-4f59-a372-ed9d5be93846",
+      "passRate": 0.9666666666666667
+    }
+  ]
+}

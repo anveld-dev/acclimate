@@ -1,0 +1,19 @@
+input,expected
+Purchased a handheld GPS from you about 21 months ago (636 days). Problem: the buckle snapped on the second use. I am not a member. I have the receipt.,REPAIR
+I bought a 2-person tent 23 days ago. Problem: the buckle snapped on the second use. I am not a member. I have the receipt.,REPAIR
+Purchased a stove kit from you 5 days ago. I used it on one trip. I want to return it because I found one I like better. I am a Summit Club member. I have the receipt.,REFUND
+I bought a 45 L backpack 27 days ago. I took it on a weekend in the hills. I want to return it because I found one I like better. No membership. I have the receipt.,REFUND
+Purchased a stove kit from you about 5 months ago (144 days). I used it on one trip. I want to return it because I changed my mind. I am a Summit Club member. I have the receipt.,REFUND
+I bought an avalanche transceiver 13 days ago. Problem: the zipper pulled off the slider. I am a Summit Club member. I have the receipt.,REPAIR
+"About 6 months ago (181 days) I picked up a trekking poles in store. It was on the clearance rack, marked final sale. Problem: a pole section will not lock. No membership. I have the receipt.",REPAIR
+I bought a rain shell 43 days ago. It has been used a few times. I want to return it because I changed my mind. I am not a member. I have the receipt.,REFUND
+Purchased a sleeping bag from you 24 days ago. I used it on one trip. I want to return it because I found one I like better. I am a Summit Club member. I have the receipt.,REFUND
+I bought a water filter about 8 months ago (244 days). Problem: a pole section will not lock. I am not a member. I have the receipt.,REPAIR
+I bought a rain shell 74 days ago. Problem: the buckle snapped on the second use. I am not a member. I have the receipt.,REPAIR
+I bought a down jacket 203 days ago. Problem: a pole section will not lock. I am a Summit Club member. I have the receipt.,REPAIR
+I bought a sleeping pad 38 days ago. Problem: a pole section will not lock. I am a Summit Club member. I have the receipt.,REPAIR
+I bought a 2-person tent 28 days ago. It has been used a few times. I want to return it because my trip was cancelled. I am not a member. I have the receipt.,REFUND
+45 days ago I picked up a pair of ski boots in store. It was a final-sale item. Problem: the zipper pulled off the slider. I am not a member. I have the receipt.,REPAIR
+Purchased a trekking poles from you 27 days ago. I took it on a weekend in the hills. I want to return it because I changed my mind. I am a Summit Club member. I have the receipt.,REFUND
+I bought a 45 L backpack 17 days ago. I took it on a weekend in the hills. I want to return it because I changed my mind. I am not a member. I have the receipt.,REFUND
+Purchased a stove kit from you 30 days ago. It has been used a few times. I want to return it because I changed my mind. I am not a member. I have the receipt.,REFUND

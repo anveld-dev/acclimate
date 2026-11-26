@@ -7,7 +7,7 @@ export function baseOptions(): BaseLayoutProps {
     nav: {
       title: (
         <span className="inline-flex items-center gap-2 font-semibold tracking-tight">
-          <AcclimateMark className="size-6" />
+          <AcclimateMark className="size-5" />
           {appName}
         </span>
       ),

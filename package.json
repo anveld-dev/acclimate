@@ -43,6 +43,7 @@
     "test:bdd": "python3 scripts/bdd/run.py",
     "qualify:local-recovery": "python3 scripts/productization/local_recovery.py",
     "example:delivery": "tsx examples/delivery-check.ts",
+    "example:gear-returns": "tsx examples/gear-returns/run.ts",
     "example:delivery:python": "python3 python/examples/delivery_check.py",
     "start": "tsx scripts/start-production.ts service",
     "check:console-config": "tsx scripts/start-production.ts check",

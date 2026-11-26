@@ -39,3 +39,24 @@ html > body[data-scroll-locked] {
   --color-fd-primary-foreground: #17241d;
   --color-fd-ring: #a7c093;
 }
+
+.acclimate-mark {
+  color: #253f33;
+}
+
+.acclimate-mark-level {
+  stroke: #6d8a68;
+}
+
+.dark .acclimate-mark {
+  color: #e9eedb;
+}
+
+.dark .acclimate-mark-level {
+  stroke: #e5eea8;
+}
+
+/* Keep focused elements clear of the sticky header. */
+html {
+  scroll-padding-top: 4.5rem;
+}

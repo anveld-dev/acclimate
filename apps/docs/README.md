@@ -13,6 +13,8 @@ npm run typecheck:docs
 
 Pages live in `content/docs/` as MDX with `title` and `description` frontmatter. Each folder's `meta.json` sets the sidebar order. Besides the Fumadocs defaults (`Callout`, `Cards`, `Card`), pages can use `Tabs`/`Tab`, `Steps`/`Step`, the diagrams in `components/diagrams.tsx` and `Screenshot` without imports. Link between pages with absolute `/docs/...` paths, and keep commands, flags and settings consistent with the repository sources they describe.
 
+Link previews come from each page's `title` and `description`. `lib/metadata.ts` writes the Open Graph and X tags, and `lib/og.tsx` draws the 1200×630 card for every page at build time: the home card at `/og/image.png` and one per docs page under `/og/docs/`. The cards use static Recursive TrueType files in `assets/fonts/` because the image renderer cannot read woff2. Check a card after a long title change by opening it in `out/og/`.
+
 `Screenshot` shows a console screenshot from `public/screenshots/`, in a light and a dark version. To regenerate them after a console change, start the local stack, run the [support agent tutorial](content/docs/tutorials/support-agent.mdx) once so the pages have tasks and rounds, and run:
 
 ```sh

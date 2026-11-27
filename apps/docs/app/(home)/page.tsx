@@ -2,12 +2,18 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { gitConfig } from '@/lib/shared';
+import { previewMetadata } from '@/lib/metadata';
 import { run, stages } from './climb';
+import { homeDescription, homeTitle, percent } from './copy';
 import { Climb } from './climb-chart';
 import './landing.css';
 
+const pageTitle = 'Acclimate: agent instructions that improve themselves';
+
 export const metadata: Metadata = {
-  title: { absolute: 'Acclimate: agent instructions that improve themselves' },
+  title: { absolute: pageTitle },
+  description: homeDescription,
+  ...previewMetadata({ title: pageTitle, description: homeDescription, path: '/' }),
 };
 
 const github = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
@@ -72,19 +78,14 @@ function Code({ name, code }: { name: string; code: string }) {
   );
 }
 
-const percent = (value: number) => `${Math.round(value * 100)}%`;
-
 export default function HomePage() {
   const first = stages[0];
   const final = stages[stages.length - 1];
   return (
     <div className="lp">
       <section className="lp-hero lp-wrap">
-        <h1 className="lp-title">Agent instructions that improve themselves.</h1>
-        <p className="lp-lede">
-          Acclimate versions your agent’s instructions, skills and memory and delivers each release to the next job. A
-          learning loop rewrites them against your labelled tasks.
-        </p>
+        <h1 className="lp-title">{homeTitle}</h1>
+        <p className="lp-lede">{homeDescription}</p>
         <div className="lp-actions">
           <Link href="/docs/get-started/quickstart" className="lp-button lp-button-primary">
             Quickstart <span aria-hidden="true">→</span>

@@ -1,19 +1,27 @@
 import { source } from '@/lib/source';
 import { notFound } from 'next/navigation';
-import { generateOGImage } from 'fumadocs-ui/og';
-import { appName, getPageImageUrl } from '@/lib/shared';
+import { findParent } from 'fumadocs-core/page-tree';
+import { renderOgImage } from '@/lib/og';
+import { getPageImageUrl } from '@/lib/shared';
 
 export const revalidate = false;
+
+// The sidebar folder a page sits in, such as "Get started", for the card's label.
+function sectionOf(url: string): string | undefined {
+  const parent = findParent(source.getPageTree(), url);
+  return parent?.type === 'folder' && typeof parent.name === 'string' ? parent.name : undefined;
+}
 
 export async function GET(_req: Request, { params }: RouteContext<'/og/docs/[...slug]'>) {
   const { slug } = await params;
   const page = source.getPage(slug.slice(0, -1));
   if (!page) notFound();
 
-  return generateOGImage({
+  const section = sectionOf(page.url);
+  return renderOgImage({
+    eyebrow: section ? `Docs / ${section}` : 'Docs',
     title: page.data.title,
     description: page.data.description,
-    site: appName,
   });
 }
 

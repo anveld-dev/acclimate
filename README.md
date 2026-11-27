@@ -14,9 +14,9 @@ Acclimate versions your AI agent's instructions, skills and memory, delivers eac
 [Documentation](https://acclimate.anveld.dev/docs) · [Quickstart](https://acclimate.anveld.dev/docs/get-started/quickstart) · [Self-host](https://acclimate.anveld.dev/docs/operate/self-host) · [Examples](examples/README.md) · [Changelog](CHANGELOG.md)
 
 [![CI](https://github.com/anveld-dev/acclimate/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/anveld-dev/acclimate/actions/workflows/ci.yaml)
-[![Release](https://img.shields.io/github/v/release/anveld-dev/acclimate?color=1f4a35)](https://github.com/anveld-dev/acclimate/releases/latest)
-[![License](https://img.shields.io/badge/license-Apache--2.0-1f4a35)](LICENSE)
-[![Docs](https://img.shields.io/badge/docs-acclimate.anveld.dev-1f4a35)](https://acclimate.anveld.dev)
+[![Release](https://img.shields.io/github/v/release/anveld-dev/acclimate?color=0a0a0a)](https://github.com/anveld-dev/acclimate/releases/latest)
+[![License](https://img.shields.io/badge/license-Apache--2.0-0a0a0a)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-acclimate.anveld.dev-0a0a0a)](https://acclimate.anveld.dev)
 
 </div>
 
@@ -25,7 +25,7 @@ Acclimate versions your AI agent's instructions, skills and memory, delivers eac
 <a href="examples/gear-returns/README.md">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/climb-dark.png">
-    <img src=".github/assets/climb-light.png" alt="Bar chart of pass rate on 60 unseen test tasks: 48% at the start, then 58%, 77%, 97% and 97% after four batches of tasks, against a 35% baseline for always answering STORE_CREDIT. Beside it, the released instructions.md with the line the loop added in the last batch highlighted.">
+    <img src=".github/assets/climb-light.png" alt="Acclimate hero showing a measured Gear returns run climbing from 48% to 97% pass rate across four batches on 60 unseen tasks, beside the diffed instructions.md lines added by the learning loop.">
   </picture>
 </a>
 

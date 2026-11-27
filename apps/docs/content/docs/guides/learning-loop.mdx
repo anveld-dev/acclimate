@@ -36,14 +36,13 @@ Any OpenAI-compatible endpoint works, such as `https://api.openai.com/v1` with a
 On the **Learning** tab's **Tasks** page:
 
 - Under **Import material**, choose a spreadsheet, CSV, JSONL or text file, then choose **Import tasks**.
-- Paste text under **Paste conversations**.
 - Choose **Write a task**. Give an exact answer for a value that must match. For free text, write one criterion per line and optionally a reference answer.
 
-<Screenshot name="import-material" alt="The Import material panel with a file chooser, a box for pasted conversations and the Import tasks button." />
+<Screenshot name="import-material" alt="The Import material panel with a file chooser, the Write a task button and the Import tasks button." />
 
 Import about 50 rows for a first round, because **Start** needs 20 admitted tasks in each split and some rows are usually set aside. [Improve the bundle with the sample tasks](/docs/tutorials/support-agent#improve-the-bundle-with-the-sample-tasks) has a ready file of 60 rows.
 
-The service assigns each source group to the evolve or held-out split by its hash, so about half the rows land in each. A source group is the tasks from one source row, such as one conversation, plus any tasks with the same input, even across imports. Pasted text and `.txt` files are split into rows on lines that hold only three or more dashes (`---`).
+The service assigns each source group to the evolve or held-out split by its hash, so about half the rows land in each. A source group is the tasks from one source row, such as one conversation, plus any tasks with the same input, even across imports. `.txt` files are split into rows on lines that hold only three or more dashes (`---`).
 
 The **Imports** section lists past imports, newest first, with their counts and set-aside rows.
 

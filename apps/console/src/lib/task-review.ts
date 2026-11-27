@@ -118,6 +118,3 @@ export function describeImportReason(reason: string) {
 export function describeAdmissionReason(reason: string) {
   return describeLearning(reason);
 }
-
-export const pasteLabel = 'Paste conversations';
-export const pasteHelp = 'Put a line with only --- between conversations. Each one becomes a task.';

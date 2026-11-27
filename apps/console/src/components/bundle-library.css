@@ -13,8 +13,9 @@
 .bundle-directory-heading,
 .bundle-library-row {
   display: grid;
+  /* A fixed actions track keeps the header columns aligned with the rows below them. */
   grid-template-columns:
-    minmax(0, 1.55fr) minmax(0, 1.17fr) minmax(7rem, 0.5fr) auto;
+    minmax(0, 1.55fr) minmax(0, 1.17fr) minmax(7rem, 0.5fr) 2.75rem;
   gap: 8px 16px;
   align-items: center;
 }
@@ -30,13 +31,13 @@
   min-height: 54px;
   min-width: 0;
   padding: 7px 16px;
-  border-inline-start: 3px solid transparent;
+  border-inline-start: 2px solid transparent;
 }
 .bundle-directory-heading {
-  border-inline-start: 3px solid transparent;
+  border-inline-start: 2px solid transparent;
 }
 .bundle-library-row[data-state='open'] {
-  border-inline-start-color: var(--primary);
+  border-inline-start-color: var(--signal);
 }
 .bundle-library-row[data-state='open'] .bundle-directory-name {
   color: var(--foreground);

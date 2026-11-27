@@ -81,7 +81,9 @@ export function ImportList({ imports }: { imports: ImportSummary[] }) {
                   aria-hidden="true"
                   className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open/import:rotate-90"
                 />
-                <span className="min-w-0 truncate font-medium">{job.source || 'Import'}</span>
+                <span className="min-w-0 flex-[1_1_12rem] font-medium [overflow-wrap:anywhere]">
+                  {job.source || 'Import'}
+                </span>
                 <span className="text-muted-foreground">
                   <ReceiptTime value={job.createdAt} />
                 </span>

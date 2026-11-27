@@ -112,22 +112,22 @@ export function FailureCause({
 /** A label and its value. Pairs stack on small screens and sit side by side from small widths. */
 function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid gap-1 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0">{children}</dd>
+    <div className="learning-detail-row">
+      <dt>{label}</dt>
+      <dd>{children}</dd>
     </div>
   );
 }
 
 function Details({ children }: { children: ReactNode }) {
-  return <dl className="grid gap-3">{children}</dl>;
+  return <dl className="learning-detail-list">{children}</dl>;
 }
 
 function Diff({ before, after }: { before?: string; after?: string }) {
   return (
-    <pre className="mt-2 max-h-64 overflow-auto rounded-md border p-2 text-xs">
+    <pre className="learning-diff">
       {before !== undefined && (
-        <code className="block bg-destructive/10">
+        <code data-change="removed">
           {before
             .split('\n')
             .map((line) => '- ' + line)
@@ -135,7 +135,7 @@ function Diff({ before, after }: { before?: string; after?: string }) {
         </code>
       )}
       {after !== undefined && (
-        <code className="block bg-primary/10">
+        <code data-change="added">
           {after
             .split('\n')
             .map((line) => '+ ' + line)
@@ -237,6 +237,7 @@ export function LearningRoundDetail({
   return (
     <Panel
       id="round-detail"
+      className="learning-detail"
       title={`Round ${round.number}`}
       description="What the optimizer proposed, how each candidate scored, and what the selector chose."
       actions={
@@ -247,7 +248,7 @@ export function LearningRoundDetail({
         </Button>
       }
     >
-      <div className="space-y-6 break-words text-sm">
+      <div className="learning-detail-body">
         <Details>
           <Detail label="Outcome">
             <span className="inline-flex flex-wrap items-center gap-2">
@@ -312,8 +313,8 @@ export function LearningRoundDetail({
             </div>
           </Detail>
         </Details>
-        <section className="space-y-3">
-          <h3 className="font-semibold">Candidates</h3>
+        <section className="learning-candidates">
+          <h3>Candidates</h3>
           {!round.candidates.length && <p>No candidates recorded for this round.</p>}
           {round.candidates.map((candidate) => {
             const {
@@ -331,14 +332,11 @@ export function LearningRoundDetail({
             return (
               <article
                 key={sample}
-                className={
-                  adopted
-                    ? 'space-y-4 rounded-lg border border-primary p-4 ring-1 ring-primary/30'
-                    : 'space-y-4 rounded-lg border p-4'
-                }
+                className="learning-candidate"
+                data-adopted={adopted || undefined}
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="flex items-center gap-2 font-medium">
+                <div className="learning-candidate-head">
+                  <h4>
                     Sample {sample}
                     {adopted && (
                       <>
@@ -348,7 +346,7 @@ export function LearningRoundDetail({
                     )}
                   </h4>
                   {adopted && round.adoptedVersionId && (
-                    <p className="flex items-center gap-1.5 text-muted-foreground">
+                    <p className="learning-candidate-release">
                       Released version <VersionId id={round.adoptedVersionId} href={releaseHref} />
                     </p>
                   )}

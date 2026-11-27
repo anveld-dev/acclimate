@@ -23,6 +23,7 @@
   border-right: 1px solid var(--sidebar-border);
   color: var(--sidebar-foreground);
   background: var(--sidebar);
+  transition: width 160ms ease, flex-basis 160ms ease;
 }
 .workspace-shell-rail > .workspace-column {
   flex: 1;
@@ -37,9 +38,18 @@
   min-height: 40px;
   margin: 0;
   padding: 0;
+  color: var(--sidebar-foreground);
+  background: transparent;
+}
+/* The bench mark sits in an ink square (paper in dark mode) with a vermilion level line. */
+.workspace-desktop-rail .workspace-rail-brand .acclimate-mark {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 7px;
+  border-radius: 7px;
   color: var(--sidebar-primary-foreground);
   background: var(--sidebar-primary);
-  border-radius: 12px;
 }
 .workspace-rail-navigation,
 .workspace-rail-bottom {
@@ -101,10 +111,13 @@
   min-height: 44px;
   margin: 0;
   padding: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   color: var(--sidebar-foreground);
   background: transparent;
   box-shadow: none;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
 }
 .workspace-desktop-rail .workspace-rail-control[data-slot='button']:hover,
 .workspace-desktop-rail .workspace-rail-control[data-state='open'] {
@@ -112,9 +125,20 @@
   background: var(--sidebar-accent);
 }
 .workspace-desktop-rail .workspace-rail-control.is-current[data-slot='button'] {
+  position: relative;
   color: var(--sidebar-accent-foreground);
   background: var(--sidebar-accent);
-  box-shadow: inset 3px 0 var(--sidebar-primary);
+  box-shadow: none;
+}
+/* The current page is marked by a vermilion bar on the rail's outer edge. */
+.workspace-desktop-rail .workspace-rail-control.is-current[data-slot='button']::before {
+  content: '';
+  position: absolute;
+  inset-block: 10px;
+  left: -8px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: var(--signal);
 }
 .workspace-desktop-rail .workspace-rail-control:focus-visible {
   outline: 2px solid var(--sidebar-ring);
@@ -138,11 +162,18 @@
     padding-inline: 12px;
   }
   .workspace-desktop-rail .workspace-rail-brand {
-    color: var(--sidebar-foreground);
-    background: transparent;
+    min-height: 44px;
+    padding-inline: 5px;
+    color: var(--sidebar-accent-foreground);
     font-size: var(--type-16);
     font-weight: 650;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.025em;
+  }
+  .workspace-desktop-rail .workspace-rail-brand .acclimate-mark {
+    width: 30px;
+    height: 30px;
+    padding: 6px;
+    border-radius: 6px;
   }
   .workspace-rail-control.is-current {
     font-weight: 600;

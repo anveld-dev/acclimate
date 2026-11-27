@@ -754,7 +754,7 @@ export function WorkspaceMembers({
               </TableHeader>
               <TableBody>
                 {invitations.map((invitation) => (
-                  <TableRow key={invitation.id}>
+                  <TableRow key={invitation.id} className="workspace-invitation-row">
                     <TableCell className="break-all">
                       <span className="members-cell-label">Email</span>
                       {invitation.email}
@@ -765,7 +765,7 @@ export function WorkspaceMembers({
                     </TableCell>
                     <TableCell>
                       <span className="members-cell-label">Delivery</span>
-                      <div className="grid justify-items-start gap-1">
+                      <div className="grid min-w-max justify-items-start gap-1">
                         {Date.parse(invitation.expiresAt) <= Date.now() ? (
                           <StatusBadge tone="warning">Expired</StatusBadge>
                         ) : (

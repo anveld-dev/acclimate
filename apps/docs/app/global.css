@@ -2,27 +2,107 @@
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
 
+/* Geist for titles and reading, JetBrains Mono for code and data. The next/font variables are
+   set on <html> in app/layout.tsx. */
 @theme inline {
-  --font-sans: var(--font-recursive), ui-sans-serif, sans-serif;
-  --font-mono: var(--font-recursive), ui-monospace, monospace;
+  --font-sans: var(--font-geist), 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+
+/* White paper, ink and one signal colour, a Braun vermilion. Greys are cool neutrals. --soft is
+   the quiet second phrase of a title; it is the lightest grey that keeps 3:1 on paper. */
+:root {
+  --paper: #ffffff;
+  --wash: #fafafa;
+  --inset: #f5f5f5;
+  --ink: #0a0a0a;
+  --ink-2: #525252;
+  --ink-3: #737373;
+  --ink-4: #a3a3a3;
+  --soft: #959595;
+  --rule: #e5e5e5;
+  --rule-2: #efefef;
+  --signal: #e5401c;
+  --signal-wash: rgb(229 64 28 / 0.12);
+  --button: #0a0a0a;
+  --button-hover: #262626;
+  --on-button: #ffffff;
+  --terminal: #0a0a0a;
+  --terminal-rule: #0a0a0a;
+  --terminal-ink: #e8e8e8;
+  --terminal-mute: #7a7a7a;
+
+  --color-fd-background: var(--paper);
+  --color-fd-foreground: var(--ink);
+  --color-fd-muted: var(--wash);
+  --color-fd-muted-foreground: var(--ink-3);
+  --color-fd-card: var(--wash);
+  --color-fd-card-foreground: var(--ink);
+  --color-fd-popover: var(--paper);
+  --color-fd-popover-foreground: var(--ink);
+  --color-fd-secondary: var(--inset);
+  --color-fd-secondary-foreground: var(--ink);
+  --color-fd-border: var(--rule);
+  --color-fd-primary: var(--ink);
+  --color-fd-primary-foreground: var(--paper);
+  --color-fd-accent: var(--inset);
+  --color-fd-accent-foreground: var(--ink);
+  --color-fd-ring: var(--signal);
+}
+
+.dark {
+  --paper: #0a0a0a;
+  --wash: #121212;
+  --inset: #1a1a1a;
+  --ink: #f5f5f5;
+  --ink-2: #a3a3a3;
+  --ink-3: #8f8f8f;
+  --ink-4: #5c5c5c;
+  --soft: #737373;
+  --rule: #222222;
+  --rule-2: #1a1a1a;
+  --signal: #f25733;
+  --signal-wash: rgb(242 87 51 / 0.16);
+  --button: #f5f5f5;
+  --button-hover: #ffffff;
+  --on-button: #0a0a0a;
+  --terminal: #121212;
+  --terminal-rule: #222222;
+  --terminal-ink: #e8e8e8;
+  --terminal-mute: #6e6e6e;
+}
+
+/* neutral.css tints the dark sidebar; keep it on the same neutrals. */
+.dark #nd-sidebar {
+  --color-fd-muted: var(--wash);
+  --color-fd-secondary: var(--inset);
+  --color-fd-muted-foreground: var(--ink-2);
 }
 
 html {
   scrollbar-gutter: stable;
-}
-
-/* Recursive's MONO axis is its monospace. */
-code,
-kbd,
-pre,
-samp,
-.font-mono {
-  font-variation-settings: 'MONO' 1;
+  /* Keep focused elements clear of the sticky header. */
+  scroll-padding-top: 4.5rem;
+  -webkit-font-smoothing: antialiased;
 }
 
 html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;
+}
+
+.prose {
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.prose :where(h2, h3):not(:where(.not-prose *)) {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.prose :where(h2):not(:where(.not-prose *)) {
+  font-size: 1.375rem;
 }
 
 /* Console screenshots ship in a light and a dark version. */
@@ -38,39 +118,10 @@ html > body[data-scroll-locked] {
   display: block;
 }
 
-/* Brand the docs with the console's forest and lichen colours. */
-:root {
-  --color-fd-background: #fbfbf8;
-  --color-fd-primary: #253f33;
-  --color-fd-primary-foreground: #f6f3ea;
-  --color-fd-ring: #6d8a68;
-}
-
-.dark {
-  --color-fd-background: #0c110e;
-  --color-fd-card: #131a16;
-  --color-fd-primary: #e5eea8;
-  --color-fd-primary-foreground: #17241d;
-  --color-fd-ring: #a7c093;
-}
-
 .acclimate-mark {
-  color: #253f33;
+  color: var(--ink);
 }
 
 .acclimate-mark-level {
-  stroke: #6d8a68;
-}
-
-.dark .acclimate-mark {
-  color: #e9eedb;
-}
-
-.dark .acclimate-mark-level {
-  stroke: #e5eea8;
-}
-
-/* Keep focused elements clear of the sticky header. */
-html {
-  scroll-padding-top: 4.5rem;
+  stroke: var(--signal);
 }

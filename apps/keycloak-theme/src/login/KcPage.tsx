@@ -1,5 +1,4 @@
 import { lazy, Suspense } from 'react';
-import { BookOpen } from 'lucide-react';
 import { useI18n, type I18n } from './i18n';
 import type { KcContext } from 'keycloakify/login/KcContext';
 import DefaultPage from 'keycloakify/login/DefaultPage';
@@ -20,10 +19,33 @@ const classes = {
   kcFormSocialAccountListButtonClass: 'auth-provider', kcSignUpClass: 'auth-info',
 } satisfies Partial<Record<ClassKey, string>>;
 
+// The Acclimate bench mark: an upward arrow under the vermilion level line.
+function AcclimateMark() {
+  return (
+    <svg viewBox="0 0 40 40" aria-hidden="true">
+      <path
+        d="M7.5 7.5H32.5"
+        className="auth-mark-level"
+        stroke="currentColor"
+        strokeWidth="5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M7.5 32.5L20 15L32.5 32.5M20 15V32.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function Template(props: TemplateProps<KcContext, I18n>) {
   return (
     <main className="auth-page" data-acclimate-theme="keycloakify">
-      <div className="auth-brand"><BookOpen aria-hidden="true" /><span>Acclimate</span></div>
+      <div className="auth-brand"><AcclimateMark /><span>Acclimate</span></div>
       <DefaultTemplate {...props} doUseDefaultCss={false} classes={classes} />
     </main>
   );

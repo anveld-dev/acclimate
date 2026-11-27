@@ -44,8 +44,9 @@
 .bundle-header-layout .bundle-scope-identity h1 {
   overflow-wrap: anywhere;
 }
+/* The context actions keep their width; a long bundle name wraps instead of pushing them out. */
 .bundle-header-layout .bundle-context {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   margin-left: auto;
   min-width: 0;
 }
@@ -75,7 +76,7 @@
   gap: 6px;
   padding: 5px 8px 5px 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: transparent;
   box-shadow: none;
   color: var(--muted-foreground);

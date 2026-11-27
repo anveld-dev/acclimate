@@ -2,7 +2,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { Label } from './ui/label';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import {
-  BookOpen,
   Building2,
   ChevronsUpDown,
   Cpu,
@@ -15,6 +14,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react';
+import { AcclimateMark } from './acclimate-mark';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -429,7 +429,7 @@ export function Shell({ children }: { children: ReactNode }) {
             aria-label="Application"
           >
             <div className="workspace-brand workspace-rail-brand" role="img" aria-label="Acclimate">
-              <BookOpen className="size-5" aria-hidden="true" />
+              <AcclimateMark className="size-5 shrink-0" />
               <span className="sr-only workspace-rail-label">Acclimate</span>
             </div>
             {(projects.length > 0 || canCreate) && (
@@ -627,7 +627,7 @@ export function Shell({ children }: { children: ReactNode }) {
           }}
         >
           <SheetTitle className="mb-4 flex items-center gap-2 text-lg">
-            <BookOpen className="size-5" aria-hidden="true" /> Acclimate
+            <AcclimateMark className="size-5 shrink-0" /> Acclimate
           </SheetTitle>
           <SheetDescription className="sr-only">Workspace navigation</SheetDescription>
           {switcher('mobile-workspace-switcher')}

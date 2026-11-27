@@ -6,14 +6,14 @@ import { siteUrl } from './shared';
 // Social preview cards: 1200×630, the size Open Graph and X's large card both crop well.
 export const ogSize = { width: 1200, height: 630 };
 
-// The dark landing palette, so a card reads as Acclimate in a light or a dark feed.
+// The dark Swiss landing palette, so a card reads as Acclimate in a light or a dark feed.
 const color = {
-  background: '#0c110e',
-  rule: '#2e3a33',
-  ink: '#e7ece4',
-  muted: '#9ea89f',
-  lichen: '#cde072',
-  mark: '#e5eea8',
+  background: '#0a0a0a',
+  rule: '#222222',
+  ink: '#f5f5f5',
+  muted: '#a3a3a3',
+  signal: '#f25733',
+  mark: '#f5f5f5',
 };
 
 // Satori cannot read woff2, so the cards use static TrueType instances of Recursive (OFL, see
@@ -58,7 +58,7 @@ export async function renderOgImage({ eyebrow, title, description, highlight }: 
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
         <svg width="52" height="52" viewBox="0 0 40 40">
-          <path d="M7.5 7.5H32.5" stroke={color.lichen} strokeWidth="5" strokeLinecap="round" />
+          <path d="M7.5 7.5H32.5" stroke={color.signal} strokeWidth="5" strokeLinecap="round" />
           <path
             d="M7.5 32.5L20 15L32.5 32.5M20 15V32.5"
             fill="none"
@@ -100,7 +100,7 @@ export async function renderOgImage({ eyebrow, title, description, highlight }: 
           </div>
         ) : null}
         {highlight ? (
-          <div style={{ marginTop: 36, fontFamily: 'Recursive Mono', fontSize: 36, color: color.lichen }}>
+          <div style={{ marginTop: 36, fontFamily: 'Recursive Mono', fontSize: 36, color: color.signal }}>
             {highlight}
           </div>
         ) : null}

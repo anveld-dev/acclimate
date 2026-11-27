@@ -1,6 +1,6 @@
 # Installed Python type contract
 
-The installed fixtures exercise delivery, production outcome and release request types. Negative fixtures require a release reason and the complete connection identity. They also check that offline delivery uses the `offline` option. Run the negative fixtures through the type checker.
+The installed fixtures exercise delivery, job and release request types. Negative fixtures require a release reason and the complete connection identity. They also check that offline delivery uses the `offline` option. Run the negative fixtures through the type checker.
 
 Install a freshly built wheel in an external Python 3.11+ consumer venv with
 `--no-index --no-deps`. Install `mypy==1.18.2` in a separate developer-tool venv, then

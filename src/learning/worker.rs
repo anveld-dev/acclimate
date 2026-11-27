@@ -324,7 +324,7 @@ async fn start_round(
 /// same original measurement because the digest, task revision and runtime must match.
 async fn reuse_score(tx: &mut Tx<'_>, evaluation: Uuid) -> Result<bool, sqlx::Error> {
     let result=sqlx::query("WITH measurement AS (
-        SELECT e.report,e.score FROM learning_evaluations dest
+        SELECT e.report,e.score,e.mean_task_tokens FROM learning_evaluations dest
         JOIN learning_rounds current ON current.id=dest.round_id
         JOIN learning_rounds previous ON (previous.project_id,previous.bundle_id)=(current.project_id,current.bundle_id)
             AND previous.number<current.number AND previous.task_revision=current.task_revision
@@ -333,7 +333,7 @@ async fn reuse_score(tx: &mut Tx<'_>, evaluation: Uuid) -> Result<bool, sqlx::Er
         WHERE dest.id=$1 AND e.status='scored' AND e.measurement='initial'
           AND EXISTS(SELECT FROM learning_rollouts l WHERE l.evaluation_id=e.id AND l.status='scored')
         ORDER BY previous.number DESC,e.created_at DESC,e.id LIMIT 1
-    ) UPDATE learning_evaluations dest SET status='scored',report=m.report,score=m.score,started_at=now()
+    ) UPDATE learning_evaluations dest SET status='scored',report=m.report,score=m.score,mean_task_tokens=m.mean_task_tokens,started_at=now()
       FROM measurement m WHERE dest.id=$1")
         .bind(evaluation).execute(&mut **tx).await?;
     Ok(result.rows_affected() == 1)

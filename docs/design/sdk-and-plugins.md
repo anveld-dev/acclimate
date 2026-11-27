@@ -14,7 +14,3 @@ The TypeScript plugins map verified bundle content to job-local files and option
 | Codex SDK | Prepare repository instructions and skills in the job's working directory. |
 
 See the [SDK architecture](../architecture/sdk.md) for the delivery and preparation boundary.
-
-## Production outcomes
-
-An application with workspace write access can call `job.expect(expected, { input, output })` after a production job. The SDK sends the pinned version and digest. The service assigns the task’s split and runs admission.

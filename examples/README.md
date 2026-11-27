@@ -4,7 +4,7 @@ Each example runs against an Acclimate service. The quickest service is the [loc
 
 | Example | Shows | Needs |
 | --- | --- | --- |
-| [`support-agent/`](support-agent/README.md) | An application that answers with the released bundle and reports a person's correction as a learning task, in TypeScript and Python. | A machine token with read and write, and an OpenAI-compatible model. |
+| [`support-agent/`](support-agent/README.md) | An application that answers with the released bundle and picks up improved releases without a deploy, in TypeScript and Python. | A machine token with read access and an OpenAI-compatible model. |
 | [`ticket-triage/`](ticket-triage/README.md) | A script that publishes a bundle, imports 64 labelled tickets, starts the learning loop and reports each round, in TypeScript and Python. | A machine token with read, write and promote, a verified model provider and an optimizer model. |
 | [`gear-returns/`](gear-returns/README.md) | A returns desk that learns a shop's hidden policy as new tasks arrive in batches, measured after each batch on a test set the loop never sees. Its run is the chart on the docs home page. | A machine token with read, write and promote, a verified model provider and an optimizer model. |
 | [`learning/`](learning/README.md) | 60 support tasks with their own grading criteria, ready to import in the console. | The local stack's **Example agent** bundle. |

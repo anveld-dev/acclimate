@@ -115,12 +115,8 @@ export function describeImportReason(reason: string) {
     : describeLearning(reason);
 }
 
-// A task card's admission reason. An outcome whose criteria could not be drafted is kept as an
-// exact-match task, set aside with `not-converted`, so the import text does not fit it.
 export function describeAdmissionReason(reason: string) {
-  return reason === 'not-converted'
-    ? 'Grading criteria could not be drafted from this outcome, so it was kept as an exact-match task and set aside. Edit it to add grading criteria.'
-    : describeLearning(reason);
+  return describeLearning(reason);
 }
 
 export const pasteLabel = 'Paste conversations';

@@ -83,8 +83,6 @@ function taskSource(card: TaskCard) {
     : card.sourceRow
       ? 'Row ' + card.sourceRow
       : '';
-  if (card.source === 'outcome')
-    return place ? 'Production outcome · ' + place : 'Production outcome';
   if (card.source === 'import') return place || 'Imported';
   return place ? 'Console · ' + place : 'Written in the console';
 }
@@ -1014,7 +1012,6 @@ export function LearningTasks({
             >
               <option value="">All sources</option>
               <option value="import">Imported</option>
-              <option value="outcome">Production</option>
               <option value="console">Console</option>
             </NativeSelect>
           </div>

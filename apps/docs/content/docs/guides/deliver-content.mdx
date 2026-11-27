@@ -81,7 +81,7 @@ Clean up only after the job has stopped and its result is saved. For background 
 
 To run an exact version instead of the channel's current one, pass `versionId` (`version_id` in Python) in place of `channel`.
 
-`createAcclimate().job()` (`Acclimate.from_env().job()` in Python) finds a bundle by name and reports learning outcomes with `expect()`. It does not work with a connection. It needs a machine token with read (and write for `expect()`), and sends no start receipts. See Jobs in the [TypeScript SDK](/docs/reference/typescript-sdk#jobs) and [Python SDK](/docs/reference/python-sdk#jobs) references, and [Support agent](/docs/tutorials/support-agent) for an application built on it.
+`createAcclimate().job()` (`Acclimate.from_env().job()` in Python) finds a bundle by name and pins its released version. It does not work with a connection. It needs a machine token with read, and sends no start receipts. See Jobs in the [TypeScript SDK](/docs/reference/typescript-sdk#jobs) and [Python SDK](/docs/reference/python-sdk#jobs) references, and [Support agent](/docs/tutorials/support-agent) for an application built on it.
 
 ## Serve jobs from a long-running service
 

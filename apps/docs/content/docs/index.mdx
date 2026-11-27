@@ -36,7 +36,7 @@ The **executor**, a process separate from the service and your application, call
 2. **Propose.** The optimizer writes five candidates, each a change to the bundle with a diagnosis of what it fixes.
 3. **Screen.** A scanner checks each candidate for secrets and personal data, then one optimizer call skips candidates that hard-code particular tasks or address the grader instead of doing the task.
 4. **Evaluate.** Each remaining candidate is scored on the same evolve tasks.
-5. **Select.** One optimizer call adopts a candidate or keeps the current version. It weighs evolve results, the size of each change, whether it would help on unseen tasks and the tasks it regressed, with no score bar, so an adopted candidate need not beat the current version. An adoption is released to the channel at once and recorded in improvement memory, the optimizer's record of problems and fixes.
+5. **Select.** Before selection, the service checks each evaluated candidate against an empirical noise-adjusted score floor (computed from repeat-rollout variance) and a relative task-token cost budget. If no candidate is admissible, the round keeps the current version with `no-admissible-candidates`. Otherwise one optimizer call adopts an admissible candidate or keeps the current version, weighing evolve results, token cost, complexity, domain generality and regression risk. An adoption is released to the channel at once and recorded in improvement memory, the optimizer's record of problems and fixes.
 6. **Score the held-out tasks** for the version now on the channel. These scores never decide a release. After an adoption, a clear drop that a second measurement confirms [reverts it automatically](/docs/guides/learning-loop#pause-stop-and-roll-back), and you can roll back by hand.
 
 <RoundDiagram />
@@ -71,7 +71,7 @@ Each task runs five rollouts for each version a round scores:
 
 An exact-match rollout is one task-model call. A judged rollout adds three judgments, each tried up to three times on invalid output. The optimizer makes up to seven calls a round, five proposals, one screen and one selection, each asked once more after invalid output.
 
-Each rollout stops at 200,000 tokens and each judgment at 64,000. Beyond those caps, only the daily round limit bounds spending. [`GET /usage`](/docs/reference/http-api#usage-outcomes-and-memory) returns each day's rounds, rollouts and optimizer, task-model and judge tokens.
+Each rollout stops at 200,000 tokens and each judgment at 64,000. Beyond those caps, only the daily round limit bounds spending. [`GET /usage`](/docs/reference/http-api#usage-and-memory) returns each day's rounds, rollouts and optimizer, task-model and judge tokens.
 
 Two measured rounds, each evaluating five candidates and adopting one:
 

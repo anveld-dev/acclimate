@@ -15,7 +15,6 @@ Acclimate combines versioned delivery with a self-improvement loop for enrolled 
 | Candidate | One of the five proposed changes in a round, with its diagnosis and predicted fixes. |
 | Evolve split | The tasks the loop learns from. Their scores, traces and errors reach the optimizer. |
 | Held-out split | Tasks held in a separate service table. Their scores are shown for monitoring and never reach the optimizer. |
-| Outcome | A job's pinned version, input and known expected answer, reported with `job.expect()`. It becomes a task on the split the service assigns, evolve or held-out. |
 | Improvement memory | The optimizer-only record of problems and adopted attempts, including predicted fixes and measured results. Workspace readers can inspect it. It stays outside delivered bundles. |
 
 ## Internal terms

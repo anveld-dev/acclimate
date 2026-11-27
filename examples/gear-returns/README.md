@@ -1,6 +1,6 @@
 # Gear returns
 
-A returns desk for an outdoor gear shop learns the shop's policy as labelled tasks arrive in batches, the way corrections arrive from a live agent. After each batch, a fixed test set the loop never sees measures the released version. This run is the chart on the docs home page.
+A returns desk for an outdoor gear shop learns the shop's policy as evaluation tasks are imported in batches. After each batch, a fixed test set the loop never sees measures the released version. This run is the chart on the docs home page.
 
 The starting instructions name the five outcomes, `REFUND`, `EXCHANGE`, `STORE_CREDIT`, `REPAIR` and `DENY`, and none of the policy. The policy has nine rules, such as a 60-day window with store credit until day 90, a 365-day window for members, repair for faults within two years, and exchange only for footwear worn outdoors. `generate.py` holds the policy and writes every task.
 

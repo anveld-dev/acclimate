@@ -43,9 +43,6 @@ pub(super) struct Task {
     pub author: Option<String>,
     pub source_file: Option<String>,
     pub source_row: Option<i64>,
-    pub outcome_id: Option<Uuid>,
-    pub version_id: Option<Uuid>,
-    pub output: Option<Value>,
     pub confirmed_by: Option<String>,
     pub admission: String,
     pub admission_reason: Option<String>,
@@ -69,9 +66,6 @@ impl Task {
             author: Some(author.into()),
             source_file: None,
             source_row: None,
-            outcome_id: None,
-            version_id: None,
-            output: None,
             confirmed_by: None,
             admission: "pending".into(),
             admission_reason: None,
@@ -104,8 +98,8 @@ pub(super) async fn insert(
 ) -> ApiResult<()> {
     validate(t)?;
     let q = format!(
-        r#"INSERT INTO {}(project_id,bundle_id,task_id,"group",input,grader,source,author,source_file,source_row,outcome_id,version_id,output,confirmed_by,added_revision)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)"#,
+        r#"INSERT INTO {}(project_id,bundle_id,task_id,"group",input,grader,source,author,source_file,source_row,confirmed_by,added_revision)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)"#,
         split.table()
     );
     sqlx::query(&q)
@@ -119,9 +113,6 @@ pub(super) async fn insert(
         .bind(&t.author)
         .bind(&t.source_file)
         .bind(t.source_row)
-        .bind(t.outcome_id)
-        .bind(t.version_id)
-        .bind(&t.output)
         .bind(&t.confirmed_by)
         .bind(rev)
         .execute(&mut **tx)
@@ -216,7 +207,7 @@ async fn read(s: AppState, p: String, b: Uuid, h: HeaderMap, f: Filter, export: 
             .is_some_and(|v| !["evolve", "held-out"].contains(&v))
         || f.source
             .as_deref()
-            .is_some_and(|v| !["console", "outcome", "import"].contains(&v))
+            .is_some_and(|v| !["console", "import"].contains(&v))
         || f.admission
             .as_deref()
             .is_some_and(|v| !["pending", "admitted", "set-aside"].contains(&v))

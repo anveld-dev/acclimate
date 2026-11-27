@@ -96,6 +96,7 @@ const descriptions: Record<string, string> = {
   'no-candidates': 'The optimizer produced no candidates.',
   'no-survivors': 'No candidate passed screening.',
   'no-evaluated-candidates': 'No candidate finished evaluation.',
+  'no-admissible-candidates': 'No evaluated candidate cleared the score floor and token budget.',
   'channel-moved': 'The channel changed while this round was running.',
   'incumbent-evaluation-failed': 'Evaluation of the current version failed.',
   'candidate-evaluation-failed': 'Evaluation of a candidate version failed.',

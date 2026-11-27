@@ -33,13 +33,9 @@ const sdk: Snippet[] = [
 const acclimate = createAcclimate();
 const job = await acclimate.job('Gear returns', {
   channel: 'stable',
-  input: request,
 });
 const prompt = systemPrompt(job.version.payload);
-const reply = await runAgent(prompt, request);
-
-// A correction becomes a new learning task.
-await job.expect(correctedReply, { output: reply });`,
+const reply = await runAgent(prompt, request);`,
   },
   {
     id: 'py',
@@ -49,14 +45,9 @@ await job.expect(correctedReply, { output: reply });`,
     code: `from acclimate import Acclimate, system_prompt
 
 acclimate = Acclimate.from_env()
-job = acclimate.job(
-    'Gear returns', channel='stable', input=request
-)
+job = acclimate.job('Gear returns', channel='stable')
 prompt = system_prompt(job.version['payload'])
-reply = run_agent(prompt, request)
-
-# A correction becomes a new learning task.
-job.expect(corrected_reply, output=reply)`,
+reply = run_agent(prompt, request)`,
   },
 ];
 
@@ -113,10 +104,10 @@ export default function HomePage() {
         <div className="lp-wrap lp-beat-grid">
           <div className="lp-index">
             <span className="lp-eyebrow">How it works</span>
-            <span className="lp-eyebrow">01 Release · 02 Correct · 03 Learn</span>
+            <span className="lp-eyebrow">01 Release · 02 Evaluate · 03 Learn</span>
           </div>
           <h2 id="how-heading" className="lp-beat-title">
-            Release it like code. <span className="lp-soft">Teach it with corrections.</span>
+            Release it like code. <span className="lp-soft">Improve it from evals.</span>
           </h2>
           <div className="lp-beat-text">
             <p className="lp-body">
@@ -125,10 +116,10 @@ export default function HomePage() {
               deploy and rolling back is one call.
             </p>
             <p className="lp-body">
-              When someone fixes a reply, <code>job.expect()</code> turns it into a task. The loop,
-              after <a href={paper}>Self-Improvement Memory</a>, proposes candidate rewrites and
-              releases the one it picks. Held-out tasks score every release, and a confirmed drop
-              rolls it back automatically.
+              Import labelled evaluation tasks or author them in the console. The loop, after{' '}
+              <a href={paper}>Self-Improvement Memory</a>, proposes candidate rewrites, filters them
+              against noise and token budgets, and releases the winner. Held-out tasks score every
+              release, and a confirmed drop rolls it back automatically.
             </p>
             <p className="lp-aside">
               Learning scores a single model call without tools, so it tunes the prompt, not

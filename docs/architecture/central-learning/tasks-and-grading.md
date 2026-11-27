@@ -29,12 +29,12 @@ A task is one thing the agent is asked to do, plus how to judge the result. Task
 | Field | Rule |
 | --- | --- |
 | `taskId` | Today's `case_id` format and values carry over, so memory attempts that name a case stay valid. |
-| `input` | JSON, at most 64 KiB, the limit `job.expect()` and evolve cases use today. The `chat` harness accepts a string or a `{messages}` list ending with a user turn. Any other JSON is sent as one user message holding the JSON text. |
+| `input` | JSON, at most 64 KiB. The `chat` harness accepts a string or a `{messages}` list ending with a user turn. Any other JSON is sent as one user message holding the JSON text. |
 | `grader.type` | `exact` or `criteria`. A `check` script comes with the `codex` harness. |
 | `grader.expected` | The expected JSON answer for `exact`. |
 | `grader.reference` | Optional reference answer for `criteria`. |
 | `grader.criteria` | One to ten plain-language statements, one behavior each. Required for `criteria`. |
-| `source` | `import`, `console` or `outcome`. Set by the service, never by the caller's payload. The source file, row, author or reporting principal is stored beside it. |
+| `source` | `import` or `console`. Set by the service, never by the caller's payload. The source file, row or author is stored beside it. |
 | `group` | Set by the service. Tasks that share a source share a group. |
 | `split` | `evolve` or `held-out`. Set by the service from the group at creation and never changed. |
 | `admission` | `pending`, `admitted` or `set-aside` (with a reason). Only admitted tasks run in rounds. |
@@ -102,10 +102,10 @@ The check catches broken graders. It does not catch a task that is answerable bu
 
 The service assigns the split. The developer never chooses it and can't move a task across it.
 
-- **By group.** Tasks cut from the same conversation, the same imported row group or the same production job share a `group`, and the whole group lands on one side. Near-duplicate inputs found at import are merged into one group.
+- **By group.** Tasks cut from the same conversation or the same imported row group share a `group`, and the whole group lands on one side. Near-duplicate inputs found at import are merged into one group.
 - **By hash.** The service uses a stable hash of the group to assign its split.
 - **Permanent.** The group is derived from the source, not from a name the user can edit. Editing a task does not move it.
-- **Evidence rule.** A held-out task needs a reference that came from a person: an expected answer present in the source material or outcome, or criteria a person wrote or confirmed in review. Import confirms a held-out task on its own only when its expected answer or reference answer is found in the source row and conversion did not draft its criteria. Any other imported held-out task stays `pending` until a person confirms it. That includes a row that has its own criteria and no reference. It does not move to evolve.
+- **Evidence rule.** A held-out task needs a reference that came from a person: an expected answer present in the source material, or criteria a person wrote or confirmed in review. Import confirms a held-out task on its own only when its expected answer or reference answer is found in the source row and conversion did not draft its criteria. Any other imported held-out task stays `pending` until a person confirms it. That includes a row that has its own criteria and no reference. It does not move to evolve.
 
 ## Held-out custody
 
@@ -123,18 +123,6 @@ Held-out content is not encrypted. The paper requires that the optimizer never s
 ## The Start floor
 
 Start and resume are refused until the loop has 20 admitted evolve tasks and 20 admitted held-out tasks. With a handful of held-out tasks, one flip swamps any real drop. While an edit to a previously admitted task is pending, the service waits for its admission result if that edit could restore the floor. Active rounds finish on their pinned revisions. If admitted tasks otherwise fall below the floor, the loop pauses with the reason `tasks-required`.
-
-## Production outcomes
-
-`job.expect()` stays. The application reports the correct answer for a real job, and the service turns it into a task.
-
-- **Wire change.** `job.expect(expected, { input, output, grading })` gains an optional `output`, the answer the agent gave, and an optional `grading` with the import rule. An outcome graded by criteria goes through a one-row conversion first and becomes a task when it finishes. If the conversion fails for good or sets the row aside, the outcome is never lost: it becomes an `exact` task from its own values, set aside with the reason `not-converted`, for a person to edit.
-- **No self-written references.** When `output` is supplied and equals `expected`, the outcome is rejected. The delivered agent never authors tasks, criteria or references.
-- **Provenance.** The source is `outcome`, stored with the delivered version and the reporting principal.
-- **Admission.** The outcome passes the same admission check as any other task.
-- **Split.** The group is the job id, and the group hash decides the split. Outcomes therefore reach held-out as well as evolve. Every outcome carries a reference, so the evidence rule is met.
-- **Right.** Submitting an outcome requires workspace write access.
-
 
 ## Editing and retiring
 

@@ -230,8 +230,6 @@ test('past imports are listed from the service with their set-aside rows', async
   assert.match(html, /Conversion failed Fix the material and import it again\./);
   assert.doesNotMatch(html, /Set-aside rows/);
   assert.equal(describeImportReason('no-reference').startsWith('No usable reference'), true);
-  // An outcome kept after its conversion failed is a task to edit, not a row to import again.
-  assert.match(describeAdmissionReason('not-converted'), /Edit it to add grading criteria/);
   assert.equal(describeAdmissionReason('check-failed'), describeLearning('check-failed'));
   assert.match(renderToStaticMarkup(createElement(ImportList, { imports: [] })), /No imports yet/);
 });

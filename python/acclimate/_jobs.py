@@ -1,20 +1,16 @@
-"""Resolve channel versions and bind production outcomes to them."""
+"""Resolve and stage channel versions by bundle name."""
 
 from copy import deepcopy
 import hashlib
 import json
 import os
 from pathlib import Path
-from enum import Enum
 from uuid import uuid4
 
 from .client import AcclimateClient
 from .delivery import PreparedDelivery, _stage_delivery, resolve_and_cache, validate_payload
 from .errors import UsageError
-from .types import (
-    BundlePayload, LearningGrading, LearningJson, LearningOutcomeRequest, LearningOutcomeReceipt,
-    ReleaseResult, VerifiedVersion,
-)
+from .types import BundlePayload, ReleaseResult, VerifiedVersion
 
 
 def payload_digest(payload: BundlePayload) -> str:
@@ -116,62 +112,23 @@ class Acclimate:
         return {"bundleId": bundle_id, "channel": channel, "revision": release["revision"],
                 "version": release["version"], "changed": True}
 
-    def job(self, bundle: str, *, channel: str = "stable", input: LearningJson) -> "Job":
+    def job(self, bundle: str, *, channel: str = "stable") -> "Job":
         """Pin a verified channel version for one production job."""
         bundle_id = self._bundle_id(bundle)
         version = resolve_and_cache(
             self.client, self.workspace, bundle_id, channel=channel, cache_dir=str(self.cache_dir)
         )
-        return Job(self.client, self.workspace, version, input)
-
-
-class _Missing(Enum):
-    VALUE = 0
+        return Job(version)
 
 
 class Job:
-    def __init__(
-        self, client: AcclimateClient, workspace: str, version: VerifiedVersion, input: LearningJson
-    ):
-        self._client = client
-        self._workspace = workspace
+    def __init__(self, version: VerifiedVersion):
         self._version = deepcopy(version)
-        self._input = deepcopy(input)
-        self._outcome_id = str(uuid4())
 
     @property
     def version(self) -> VerifiedVersion:
         return deepcopy(self._version)
 
-    @property
-    def outcome_id(self) -> str:
-        return self._outcome_id
-
     def prepare(self, destination: str | Path | None = None) -> PreparedDelivery:
         """Stage the pinned payload using the SDK's delivery context manager."""
         return _stage_delivery(self.version, destination)
-
-    def expect(self, expected: LearningJson, input: LearningJson = None, *,
-               output: LearningJson | _Missing = _Missing.VALUE,
-               grading: LearningGrading | None = None) -> LearningOutcomeReceipt:
-        """Record one correction. Repeat the same call to retry its durable outcome.
-
-        ``grading`` chooses how the expected answer is graded. By default a short single-line
-        string or any non-string JSON value is compared exactly, and a longer answer is judged
-        against criteria drafted from it.
-        """
-        if grading not in (None, "exact", "criteria"):
-            raise UsageError('grading must be "exact" or "criteria"', "grading")
-        version = self._version["version"]
-        body: LearningOutcomeRequest = {
-            "outcomeId": self.outcome_id,
-            "versionId": version["id"],
-            "digest": version["digest"],
-            "input": self._input if input is None else input,
-            "expected": expected,
-        }
-        if not isinstance(output, _Missing):
-            body["output"] = output
-        if grading is not None:
-            body["grading"] = grading
-        return self._client.report_learning_outcome(self._workspace, version["bundleId"], body)

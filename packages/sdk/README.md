@@ -16,10 +16,6 @@ npm install --offline --ignore-scripts /path/to/anveld-acclimate-sdk-0.3.0.tgz
 
 Verify release artifacts against `SHA256SUMS`. From a checkout, run `npm ci --ignore-scripts` and `npm run build:packages`, then run `npm pack --workspace @anveld/acclimate-sdk` to create the tarball.
 
-## Production outcomes
-
-An application with workspace write access can call `job.expect(expected, { input, output })` after a production job. The SDK sends the pinned version and digest. The service assigns the task’s split and runs admission.
-
 ## Start a job with its connection’s release
 
 ```ts

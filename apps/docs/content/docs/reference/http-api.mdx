@@ -211,12 +211,11 @@ An import sent from a console session also returns the drafted task cards.
 | `GET /blocked-versions` | Versions blocked after a rollback or an automatic revert | read |
 | `DELETE /blocked-versions/{digest}` | Unblock a version | promote |
 
-### Usage, outcomes and memory
+### Usage and memory
 
 | Route | Purpose | Right |
 | --- | --- | --- |
 | `GET /usage` | Rounds, rollouts and tokens for each day | read |
-| `POST /outcomes` | Report a production outcome with an optional `grading`, as `job.expect()` does | write |
 | `GET /memory` | The improvement memory at a revision | read |
 
 ### Model provider

@@ -119,6 +119,16 @@ fn screen(data: &Value, skip: bool) -> Value {
 }
 
 pub(super) async fn evaluate(f: &Fixture, item: &Value, cases: &[Value]) {
+    evaluate_with_tokens(f, item, cases, 1, 2).await;
+}
+
+async fn evaluate_with_tokens(
+    f: &Fixture,
+    item: &Value,
+    cases: &[Value],
+    input_tokens: i64,
+    output_tokens: i64,
+) {
     let app = f.internal();
     let id = item["evaluationId"]
         .as_str()
@@ -149,7 +159,8 @@ pub(super) async fn evaluate(f: &Fixture, item: &Value, cases: &[Value]) {
         )
         .await;
         assert_eq!(status, 200, "{grader}");
-        let counts = json!({"input":1,"output":2});
+        let task_counts = json!({"input":input_tokens,"output":output_tokens});
+        let judge_counts = json!({"input":1,"output":2});
         let mut verdict = json!({"score":i32::from(passed),"passed":passed,"reasons":[]});
         if task.starts_with("held-out") {
             verdict["reasons"] = json!(["private-judge-reason"]);
@@ -165,7 +176,7 @@ pub(super) async fn evaluate(f: &Fixture, item: &Value, cases: &[Value]) {
                 &app,
                 &lease,
                 "result",
-                json!({"verdict":verdict,"judgeLog":[],"tokens":{"task":counts,"judge":counts}})
+                json!({"verdict":verdict,"judgeLog":[],"tokens":{"task":task_counts,"judge":judge_counts}})
             )
             .await
             .0,
@@ -1390,4 +1401,215 @@ async fn incomplete_regression_checks_end_and_alert() {
     monitor_scenario("initial-failed").await;
     monitor_scenario("persistent-failure").await;
     monitor_scenario("executor-lost").await;
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn candidates_below_noise_floor_are_kept_without_calling_selector() {
+    let mut f = Fixture::new().await;
+    let server = model(&mut f, |n, data| {
+        if n < 5 {
+            assert!(data["regularization"]["noiseBand"].is_number());
+            assert!(data["feedback"]["passingCaseIds"].is_array());
+            (
+                StatusCode::OK,
+                proposal("Regressing candidate.", "Structure issue"),
+            )
+        } else {
+            (
+                StatusCode::OK,
+                json!({"samples":data["candidates"].as_array().unwrap().iter().map(|c| json!({
+                    "sample":c["sample"],"reason":"Screen decision.","verdict": if c["sample"] == 1 {"evaluate"} else {"skip"}
+                })).collect::<Vec<_>>()}),
+            )
+        }
+    })
+    .await;
+    prepare(&mut f).await;
+    let inc = f.item("evolve", 1).await;
+    // Incumbent passes task a (score 1/20 = 0.05) deterministically (noiseBand = 0).
+    evaluate(&f, &inc, &[result("a", 1.0), result("b", 0.0)]).await;
+    let cand = f.item("evolve", 1).await;
+    assert_eq!(cand["sample"], 1);
+    // Candidate regresses task a (score 0.0 < S* - 0.0) -> inadmissible.
+    evaluate(&f, &cand, &[result("a", 0.0), result("b", 0.0)]).await;
+    f.ok("POST", "/pause", "admin", None, Value::Null).await;
+    let round = retained(&f, 1).await;
+    assert_eq!(round["decision"], "kept");
+    assert_eq!(round["reason"], "no-admissible-candidates");
+    // 5 proposals + 1 screen, zero selector calls.
+    assert_eq!(server.requests.lock().unwrap().len(), 6);
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn token_cost_inadmissible_candidate_is_separated_and_selector_retry_adopts_admissible() {
+    let mut f = Fixture::new().await;
+    let server = model(&mut f, |n, data| {
+        if n < 5 {
+            let text = if n == 0 {
+                "Verbose candidate one.\n"
+            } else {
+                "Concise candidate two.\n"
+            };
+            (StatusCode::OK, proposal(text, "Token budget test"))
+        } else if n == 5 {
+            (
+                StatusCode::OK,
+                json!({"samples":data["candidates"].as_array().unwrap().iter().map(|c| json!({
+                    "sample":c["sample"],"reason":"Screen decision.","verdict": if c["sample"] == 1 || c["sample"] == 2 {"evaluate"} else {"skip"}
+                })).collect::<Vec<_>>()}),
+            )
+        } else if n == 6 {
+            // First Select call must see only sample 2 in `candidates` and sample 1 in `inadmissibleCandidates`.
+            let admissible = data["candidates"].as_array().unwrap();
+            assert_eq!(admissible.len(), 1);
+            assert_eq!(admissible[0]["sample"], 2);
+            let inadmissible = data["inadmissibleCandidates"].as_array().unwrap();
+            assert_eq!(inadmissible.len(), 1);
+            assert_eq!(inadmissible[0]["sample"], 1);
+            assert_eq!(
+                inadmissible[0]["evolve"]["guardrailReason"],
+                "token-cost-exceeded"
+            );
+            // Deliberately name the inadmissible sample 1 to exercise the retry error message.
+            (
+                StatusCode::OK,
+                json!({"decision":"adopt","sample":1,"reason":"Picked bloated candidate."}),
+            )
+        } else {
+            let err = data["parserError"].as_str().unwrap_or("");
+            assert!(err.contains("admissible sample"), "{err}");
+            assert!(err.contains('2'), "{err}");
+            (
+                StatusCode::OK,
+                json!({"decision":"adopt","sample":2,"reason":"Adopted concise admissible candidate."}),
+            )
+        }
+    })
+    .await;
+    prepare(&mut f).await;
+    let inc = f.item("evolve", 1).await;
+    evaluate_with_tokens(&f, &inc, &[result("a", 1.0), result("b", 0.0)], 2500, 500).await;
+    let cand1 = f.item("evolve", 1).await;
+    assert_eq!(cand1["sample"], 1);
+    // Same score (0.05), +1000 tokens (+33% > +20% and > 500 floor) -> token-cost-exceeded.
+    evaluate_with_tokens(&f, &cand1, &[result("a", 1.0), result("b", 0.0)], 3500, 500).await;
+    let cand2 = f.item("evolve", 1).await;
+    assert_eq!(cand2["sample"], 2);
+    // Higher score (0.10), +200 tokens -> admissible.
+    evaluate_with_tokens(&f, &cand2, &[result("a", 1.0), result("b", 1.0)], 2700, 500).await;
+    f.ok("POST", "/pause", "admin", None, Value::Null).await;
+    let round = retained(&f, 1).await;
+    assert_eq!(round["decision"], "adopted");
+    assert_eq!(round["adoptedSample"], 2);
+    // 5 proposals + 1 screen + 2 select attempts (first rejected, second succeeded).
+    assert_eq!(server.requests.lock().unwrap().len(), 8);
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn reverted_adoption_does_not_trap_best_score_floor() {
+    let mut f = Fixture::new().await;
+    let server = model(&mut f, |n, data| {
+        let round = n / 7;
+        let turn = n % 7;
+        if turn < 5 {
+            if round == 1 {
+                // Round 2 must NOT inherit the reverted Round 1's 0.15 score as bestScore.
+                assert_eq!(data["feedback"]["bestScore"], 0.05);
+                assert_eq!(data["regularization"]["bestScore"], 0.05);
+            }
+            let text = if round == 0 {
+                "Overfit candidate.\n"
+            } else {
+                "Improved after revert.\n"
+            };
+            (StatusCode::OK, proposal(text, "Post-revert fix"))
+        } else if turn == 5 {
+            (
+                StatusCode::OK,
+                json!({"samples":data["candidates"].as_array().unwrap().iter().map(|c| json!({
+                    "sample":c["sample"],"reason":"Screen decision.","verdict": if c["sample"] == 1 {"evaluate"} else {"skip"}
+                })).collect::<Vec<_>>()}),
+            )
+        } else {
+            assert_eq!(data["candidates"].as_array().unwrap().len(), 1);
+            (
+                StatusCode::OK,
+                json!({"decision":"adopt","sample":1,"reason":"Genuine gain above incumbent."}),
+            )
+        }
+    })
+    .await;
+    prepare(&mut f).await;
+    // Round 1: incumbent scores 0.05 (1/20), adopted candidate scores 0.15 (3/20).
+    let inc1 = f.item("evolve", 1).await;
+    evaluate_with_tokens(&f, &inc1, &[result("a", 1.0), result("b", 0.0)], 400, 100).await;
+    let cand1 = f.item("evolve", 1).await;
+    assert_eq!(cand1["sample"], 1);
+    evaluate_with_tokens(
+        &f,
+        &cand1,
+        &[result("a", 1.0), result("b", 1.0), result("extra-3", 1.0)],
+        420,
+        100,
+    )
+    .await;
+    // Trigger a confirmed held-out regression so Round 1 auto-reverts back to f.version.
+    let r1_id = Uuid::parse_str(inc1["roundId"].as_str().unwrap()).unwrap();
+    let r1_done = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            sqlx::query(
+                "UPDATE learning_rollouts l
+                 SET status='scored', passed=(e.version_id=$2), score=(e.version_id=$2)::int
+                 FROM learning_evaluations e
+                 WHERE e.round_id=$1 AND l.evaluation_id=e.id AND e.split='held_out' AND l.status='queued'",
+            )
+            .bind(r1_id)
+            .bind(f.version)
+            .execute(&f.state.db)
+            .await
+            .unwrap();
+            let r = f
+                .ok("GET", &round_route(&inc1), "reader", None, Value::Null)
+                .await;
+            if r["state"] == "completed" {
+                break r;
+            }
+            tokio::time::sleep(Duration::from_millis(40)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(r1_done["decision"], "adopted");
+    assert_eq!(r1_done["reverted"], true);
+
+    // Round 2 reuses f.version's 0.05 incumbent score; candidate improves to 0.10 (below the
+    // reverted 0.15, but above restored 0.05) and must be admissible and adopted.
+    let cand2 = f.item("evolve", 2).await;
+    assert_eq!(cand2["role"], "candidate");
+    assert_eq!(cand2["sample"], 1);
+    evaluate_with_tokens(&f, &cand2, &[result("a", 1.0), result("b", 1.0)], 450, 100).await;
+    f.ok("POST", "/pause", "admin", None, Value::Null).await;
+    // Score Round 2's held-out check as passing (1.0) so it does not trip confirmation/revert.
+    let held2 = f.item("heldOut", 2).await;
+    let held2_id = Uuid::parse_str(held2["evaluationId"].as_str().unwrap()).unwrap();
+    sqlx::query(
+        "UPDATE learning_rollouts SET status='scored',score=1,passed=true WHERE evaluation_id=$1",
+    )
+    .bind(held2_id)
+    .execute(&f.state.db)
+    .await
+    .unwrap();
+    let round2 = f
+        .wait_for(&round_route(&held2), "reader", |r| {
+            r["state"] == "completed"
+        })
+        .await;
+    assert_eq!(round2["decision"], "adopted");
+    assert_eq!(round2["reverted"], false);
+    assert_eq!(round2["adoptedSample"], 1);
+    assert_eq!(round2["incumbentReused"], true);
+    assert_eq!(server.requests.lock().unwrap().len(), 14);
 }

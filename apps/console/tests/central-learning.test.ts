@@ -56,7 +56,8 @@ test('cards expose provenance, admission and held-out criteria confirmation to e
     addedRevision: 2,
     input: 'Question',
     grader: { type: 'criteria' as const, criteria: ['Be specific'] },
-    source: 'outcome',
+    source: 'import',
+    sourceFile: 'tickets.csv',
     split: 'held-out',
     admission: 'set-aside',
     admissionReason: 'judge-unstable',
@@ -79,7 +80,7 @@ test('cards expose provenance, admission and held-out criteria confirmation to e
   assert.match(tried, /<article[\s\S]*trial output[\s\S]*<\/article>/);
   assert.doesNotMatch(html, /Trial result/);
   for (const label of [
-    'Production outcome',
+    'tickets.csv',
     'Be specific',
     'The judge gave inconsistent results on the reference answer.',
     'Confirm criteria',
@@ -248,6 +249,7 @@ test('failure causes, new codes and short task IDs read plainly', () => {
     assert.ok(describeFailureCause(code).toLowerCase().includes(advice.toLowerCase()), code);
   assert.match(describeFailureCause('new-code'), /new-code/);
   assert.equal(describeLearning('duplicate'), 'This row matches a task that already exists.');
+  assert.match(describeLearning('no-admissible-candidates'), /score floor and token budget/);
   assert.match(describeLearning('provider-unavailable'), /ten minutes/);
   assert.equal(shortTaskId('case-a'), 'case-a');
   assert.equal(shortTaskId('00000000-0000-4000-8000-000000000001'), '00000000…');

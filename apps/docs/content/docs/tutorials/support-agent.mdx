@@ -1,13 +1,13 @@
 ---
 title: Improve a support agent
-description: Answer support requests with a released bundle, improve the bundle with sample tasks and turn a person's correction into a learning task.
+description: Answer support requests with a released bundle and improve the bundle with imported evaluation tasks.
 ---
 
-In this tutorial you run a support agent on the version released on a channel, improve its bundle with 60 sample tasks until its replies state the company's facts, and turn a support lead's correction into a learning task. The application is `examples/support-agent/agent.ts` or `agent.py`.
+In this tutorial you run a support agent on the version released on a channel and improve its bundle with 60 imported evaluation tasks. The application is `examples/support-agent/agent.ts` or `agent.py`.
 
 ## Before you start
 
-Follow [Connect a model provider](/docs/tutorials/first-learning-round#connect-a-model-provider) in the first tutorial, but give the machine token only **Read content** and **Write content**. From the root of the checkout:
+Follow [Connect a model provider](/docs/tutorials/first-learning-round#connect-a-model-provider) in the first tutorial, giving the machine token **Read content**. From the root of the checkout:
 
 ```sh
 export ACCLIMATE_PROVIDER_URL='<provider-base-url>'
@@ -71,7 +71,7 @@ const acclimate = createAcclimate();
 
 // Pin the released version for this job. Every job re-reads the channel, so a release made by
 // the learning loop reaches the next job without a deploy.
-const job = await acclimate.job('Example agent', { channel: 'stable', input: request });
+const job = await acclimate.job('Example agent', { channel: 'stable' });
 const reply = await complete(systemPrompt(job.version.payload), request);
 console.log(reply);
 // Keep the version with the result, so you can tell later which instructions produced it.
@@ -87,7 +87,7 @@ acclimate = Acclimate.from_env()
 
 # Pin the released version for this job. Every job re-reads the channel, so a release made by
 # the learning loop reaches the next job without a deploy.
-job = acclimate.job("Example agent", channel="stable", input=args.request)
+job = acclimate.job("Example agent", channel="stable")
 version = job.version
 reply = complete(system_prompt(version["payload"]), args.request)
 print(reply, flush=True)
@@ -146,7 +146,7 @@ You provide first-party support for our workspace web app. Unless the customer e
 - Full workspace exports start at Settings → Workspace → Export data. The download link is emailed and is valid for 7 days; after expiry, start a new export to get a fresh link.
 ```
 
-The held-out results moved much less. A 95% evolve and 8% held-out pass rate is overfitting: the change fits the tasks the optimizer saw, so this round is no evidence that the loop's changes generalize. Most requests turn on a company fact of their own, and the guide lacks the facts held-out tasks ask about. To close the gap, add tasks or [corrections](#report-a-correction) that cover them, or write the facts into the bundle.
+The held-out results moved much less. A 95% evolve and 8% held-out pass rate is overfitting: the change fits the tasks the optimizer saw, so this round is no evidence that the loop's changes generalize. Most requests turn on a company fact of their own, and the guide lacks the facts held-out tasks ask about. To close the gap, import additional evaluation tasks that cover them, or write the domain facts directly into the bundle.
 
 The round ran 1,280 rollouts in about 95 minutes with four rollouts at a time, while another example was also running.
 
@@ -159,48 +159,6 @@ Duplicate subscription charges are refunded within five business days. Check Set
 
 Answered with version 7073d86d-e5f1-4560-8fe6-8ca5a36512fd (sha256:24e2ca1f…).
 ```
-
-## Report a correction
-
-Report a support lead's rewrite of a reply and the request becomes a learning task. Until you save the bundle's learning settings, the service answers 404 and the example prints `Learning is not set up for this bundle`.
-
-Pass the rewrite in a file with `--expected`:
-
-```sh
-cat > corrected.txt <<'EOF'
-Yes, you can pause a subscription for up to three months. Your data stays in place and you are not billed while it is paused.
-
-An account owner can pause it under Settings, then Billing, then Pause subscription. It resumes by itself on the date you choose.
-EOF
-```
-
-<Tabs items={['TypeScript', 'Python']}>
-<Tab value="TypeScript">
-
-```sh
-npx tsx examples/support-agent/agent.ts "Can I pause my subscription for a while?" --expected corrected.txt
-```
-
-</Tab>
-<Tab value="Python">
-
-```sh
-.venv/bin/python examples/support-agent/agent.py "Can I pause my subscription for a while?" --expected corrected.txt
-```
-
-</Tab>
-</Tabs>
-
-```text
-There isn’t a subscription-pause option documented. To stop renewal, go to **Settings → Billing**, select **Cancel subscription**, and confirm; your paid access continues through the end of the paid period. You can subscribe again later if you want to resume.
-
-Answered with version 7073d86d-e5f1-4560-8fe6-8ca5a36512fd (sha256:24e2ca1f…).
-Recorded the correction as outcome 512d1634-cd27-41a4-bbf2-78733548383e. It becomes an evolve task.
-```
-
-It reports on the same job with `receipt = await job.expect(expected, { output: reply, grading: 'criteria' })`, or `receipt = job.expect(expected, output=reply, grading="criteria")` in Python.
-
-The example prints the split from the receipt. The judge model drafted six criteria from the corrected reply, such as "Confirms that a subscription can be paused for up to three months." The request appears on the **Learning** tab as a card marked **Production outcome**, and a held-out one waits under **Needs confirmation**. One correction does not start a round. See [Report production outcomes](/docs/guides/learning-loop#report-production-outcomes).
 
 ## Use your own bundle
 

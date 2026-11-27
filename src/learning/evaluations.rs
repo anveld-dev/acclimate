@@ -29,6 +29,7 @@ struct Evaluation {
     evolve_revision: Option<i64>,
     status: String,
     score: Option<f64>,
+    mean_task_tokens: Option<f64>,
     report: DbJson<Report>,
     held_out_reported_cases: Option<i32>,
     #[sqlx(default)]
@@ -44,7 +45,7 @@ impl Evaluation {
         let mut doc = json!({
             "id":self.id, "roundId":self.round_id, "role":self.role, "sample":self.sample,
             "split":wire_split(&self.split), "versionId":self.version_id, "digest":self.digest,
-            "evolveRevision":self.evolve_revision, "status":self.status, "score":self.score, "cases":self.case_count,
+            "evolveRevision":self.evolve_revision, "status":self.status, "score":self.score, "meanTaskTokens":self.mean_task_tokens, "cases":self.case_count,
             "reportedCases":self.held_out_reported_cases.map_or_else(|| self.report.cases.len(), |count| count as usize), "createdAt":self.created_at, "startedAt":self.started_at,
             "error":self.error
         });
@@ -101,7 +102,7 @@ pub(super) async fn round_documents(
 ) -> ApiResult<Vec<Value>> {
     let rows: Vec<Evaluation> = sqlx::query_as(&format!(
         "SELECT e.id,e.round_id,e.role,e.sample,e.split,e.version_id,e.digest,e.evolve_revision,
-                e.status,e.score,e.created_at,e.started_at,e.error,
+                e.status,e.score,e.mean_task_tokens,e.created_at,e.started_at,e.error,
                 greatest(jsonb_array_length(e.report->'cases'),(SELECT count(DISTINCT task_id) FROM learning_rollouts WHERE evaluation_id=e.id)) AS case_count,
                 CASE WHEN e.split='held_out' THEN (SELECT count(*) FROM jsonb_array_elements(e.report->'cases') c WHERE
                 (SELECT count(*) FROM jsonb_array_elements(c->'rollouts') v WHERE v->>'passed'='true')>={PASS_COUNT}) END AS held_out_passed_cases,

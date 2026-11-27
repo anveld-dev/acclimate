@@ -625,6 +625,7 @@ async fn only_canonical_route_spellings_exist_and_other_operation_paths_are_reje
         ("POST", format!("{learning}/rechecks")),
         ("POST", format!("{learning}/outcomes")),
         ("GET", format!("{learning}/outcomes/{id}")),
+        ("POST", format!("{b}/learning/outcomes")),
         ("POST", format!("{learning}/incident-replays")),
         ("GET", format!("{learning}/work")),
         ("POST", format!("{learning}/field-requalifications")),

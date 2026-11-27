@@ -43,7 +43,7 @@ On the **Learning** tab's **Tasks** page:
 
 Import about 50 rows for a first round, because **Start** needs 20 admitted tasks in each split and some rows are usually set aside. [Improve the bundle with the sample tasks](/docs/tutorials/support-agent#improve-the-bundle-with-the-sample-tasks) has a ready file of 60 rows.
 
-The service assigns each source group to the evolve or held-out split by its hash, so about half the rows land in each. A source group is the tasks from one source row, such as one conversation, plus any tasks with the same input, even across imports. A production outcome is its own group. Pasted text and `.txt` files are split into rows on lines that hold only three or more dashes (`---`).
+The service assigns each source group to the evolve or held-out split by its hash, so about half the rows land in each. A source group is the tasks from one source row, such as one conversation, plus any tasks with the same input, even across imports. Pasted text and `.txt` files are split into rows on lines that hold only three or more dashes (`---`).
 
 The **Imports** section lists past imports, newest first, with their counts and set-aside rows.
 
@@ -139,19 +139,6 @@ A failed round shows the error of the first rollout that failed. After three fai
 A rollback does not pause the loop, so the next round can start at once from the restored version. If a person should look first, choose **Pause**, then roll back. The block matches the removed version's exact bytes, so a candidate that differs by one character can be adopted. The optimizer's history does not mark the rollback, and improvement memory keeps the attempt.
 
 **Restore** on the **Releases** tab also moves a channel back, but does not block the version it replaces. See [Roll back](/docs/guides/release-and-roll-back#roll-back).
-
-## Report production outcomes
-
-When a person corrects an answer in production, report it with `job.expect()` and the request becomes a task. The application needs a machine token with write.
-
-1. The SDK sends the input, the expected answer, the version and digest the job ran with and, if you pass it, the agent's output.
-2. The service assigns the outcome to a split and checks it like an imported row, with `grading` as in [How a row is graded](#how-a-row-is-graded).
-3. An outcome graded by criteria becomes a task once the judge model drafts them. A held-out one then waits for you to confirm it.
-4. If drafting fails, the outcome becomes a set-aside exact-match task that you can edit to add criteria.
-
-One outcome does not wake a waiting loop. See [When the loop waits](#when-the-loop-waits).
-
-See [Report a correction](/docs/tutorials/support-agent#report-a-correction) for a worked example, and Jobs in the [TypeScript SDK](/docs/reference/typescript-sdk#jobs) and [Python SDK](/docs/reference/python-sdk#jobs) references for the signatures.
 
 ## Next steps
 

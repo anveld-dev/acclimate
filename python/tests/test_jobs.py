@@ -8,11 +8,11 @@ import threading
 import unittest
 from unittest.mock import patch
 from urllib.parse import urlsplit
-from uuid import UUID, uuid4
+from uuid import uuid4
 from acclimate import Acclimate
 
 
-class LearningService:
+class DeliveryService:
     def __init__(self):
         self.bundle = str(uuid4())
         self.payload = (
@@ -25,7 +25,6 @@ class LearningService:
             "digest": "sha256:" + hashlib.sha256(self.payload).hexdigest(),
             "createdAt": "2026-11-20T00:00:00Z",
         }
-        self.outcomes = []
 
     def respond(self, path, method, body, key, authorization):
         if path.endswith("/bundles"):
@@ -39,19 +38,12 @@ class LearningService:
             return self.payload
         if path.endswith(self.version["id"]):
             return self.version
-        if path.endswith("/outcomes"):
-            self.outcomes.append((key, body))
-            return {
-                "outcomeId": body["outcomeId"],
-                "taskId": "outcome:" + body["outcomeId"],
-                "taskRevision": 2,
-            }
         return {"error": {"code": "not_found"}}, 404
 
 
-class ProtocolTest(unittest.TestCase):
+class JobDeliveryTest(unittest.TestCase):
     def setUp(self):
-        self.service = service = LearningService()
+        self.service = service = DeliveryService()
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self, *args):
@@ -86,7 +78,7 @@ class ProtocolTest(unittest.TestCase):
         self.url = f"http://127.0.0.1:{server.server_port}"
         self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
 
-    def test_job_pins_version_and_replays_the_same_outcome(self):
+    def test_job_pins_version_and_stages_isolated_copy(self):
         self.enterContext(
             patch.dict(
                 os.environ,
@@ -97,52 +89,14 @@ class ProtocolTest(unittest.TestCase):
                 },
             )
         )
-        input = {"text": "original"}
         job = Acclimate.from_env(cache_dir=self.tmp / "delivery").job(
-            "support", channel="stable", input=input
+            "support", channel="stable"
         )
         original_version = self.service.version["id"]
         self.service.version["id"] = str(uuid4())
-        input["text"] = "modified"
         with job.prepare() as prepared:
             self.assertEqual(prepared.version["version"]["id"], original_version)
-        self.assertEqual(job.expect(1, output=None), job.expect(1, output=None))
-        self.assertEqual(
-            self.service.outcomes,
-            [
-                (
-                    job.outcome_id,
-                    {
-                        "outcomeId": job.outcome_id,
-                        "versionId": original_version,
-                        "digest": job.version["version"]["digest"],
-                        "input": {"text": "original"},
-                        "output": None,
-                        "expected": 1,
-                    },
-                )
-            ]
-            * 2,
-        )
-        UUID(job.outcome_id)
-
-    def test_expect_sends_an_explicit_grading_choice(self):
-        self.enterContext(
-            patch.dict(
-                os.environ,
-                {
-                    "ACCLIMATE_URL": self.url,
-                    "ACCLIMATE_WORKSPACE": "w",
-                    "ACCLIMATE_TOKEN": "token",
-                },
+            self.assertEqual(
+                prepared.version["version"]["digest"],
+                job.version["version"]["digest"],
             )
-        )
-        client = Acclimate.from_env(cache_dir=self.tmp / "delivery")
-        job = client.job("support", channel="stable", input="question")
-        with self.assertRaisesRegex(ValueError, 'grading must be "exact" or "criteria"'):
-            job.expect("answer", grading="fuzzy")  # type: ignore[arg-type]
-        self.assertEqual(self.service.outcomes, [])
-        job.expect("A reply in two short paragraphs.", grading="criteria")
-        client.job("support", channel="stable", input="question").expect("answer")
-        self.assertEqual(self.service.outcomes[0][1]["grading"], "criteria")
-        self.assertNotIn("grading", self.service.outcomes[1][1])

@@ -38,14 +38,10 @@ with client.prepare(workspace_id, bundle_id, channel="stable") as prepared:
 
 Set the connection UUID in `ACCLIMATE_CONNECTION`. Each new job checks its connection online. Verified file contents can then be reused from disk. A job already running keeps its prepared files until cleanup.
 
-## Report a production outcome
-
-Use `job.expect(expected, input=task, output=response)` with a write credential. The service admits and splits the task.
-
 ## Client conventions
 
 - Method names, keyword arguments and attributes are snake_case. HTTP dictionaries keep the service's camelCase keys, described by the TypedDicts in `acclimate.types`.
-- Use the same idempotency key and request when retrying a mutation that accepts an explicit key. Learning outcomes use their outcome UUID for durable replay.
+- Use the same idempotency key and request when retrying a mutation that accepts an explicit key.
 - `ApiError` has `status`, `code`, `request_id` and `details`. Transport failures raise `TransportError`.
 - The client rejects redirects, so the token never leaves the configured origin, and bounds every response.
 - See the [Python SDK reference](https://acclimate.anveld.dev/docs/reference/python-sdk).

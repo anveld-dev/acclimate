@@ -33,7 +33,7 @@ export const stages: Stage[] = [
       'Nonmember: REFUND through day 60; STORE_CREDIT to day 90.',
       'Use the stated day count rather than rounded months.',
     ],
-    taught: 'From corrections on rentals, climbing gear and return windows.',
+    taught: 'From eval tasks on rentals, climbing gear and return windows.',
   },
   {
     label: 'Batch 2',
@@ -44,7 +44,7 @@ export const stages: Stage[] = [
       'Neither circumstance alone is grounds for denial.',
       'Neither permits a refund, even in the refund window.',
     ],
-    taught: 'From corrections on final-sale items and gifts without a receipt.',
+    taught: 'From eval tasks on final-sale items and gifts without a receipt.',
   },
   {
     label: 'Batch 3',
@@ -55,7 +55,7 @@ export const stages: Stage[] = [
       'Footwear worn outdoors qualifies for EXCHANGE only.',
       'Opened electronics qualify for STORE_CREDIT only.',
     ],
-    taught: 'From corrections on worn footwear and opened electronics.',
+    taught: 'From eval tasks on worn footwear and opened electronics.',
   },
   {
     label: 'Batch 4',
@@ -66,7 +66,7 @@ export const stages: Stage[] = [
       'Normal use does not shorten either tier’s refund window.',
       'Summit Club: REFUND during the first 180 days.',
     ],
-    taught: 'From corrections on normal wear and receipted faults.',
+    taught: 'From eval tasks on normal wear and receipted faults.',
   },
 ];
 

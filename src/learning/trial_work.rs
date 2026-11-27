@@ -68,13 +68,13 @@ pub(crate) async fn dispatch(tx: &mut Tx<'_>, executor: &Value) -> ApiResult<()>
             sqlx::query(&format!("UPDATE {table} SET admission_trial=$5 WHERE (project_id,bundle_id,task_id,added_revision)=($1,$2,$3,$4)")).bind(project).bind(bundle).bind(id).bind(revision).bind(trial).execute(&mut **tx).await.map_err(db)?;
         }
     }
-    let failed: Vec<Uuid> = sqlx::query_scalar("UPDATE learning_task_imports i SET failure='Conversion failed' WHERE failure IS NULL AND EXISTS(SELECT FROM learning_rollouts r WHERE r.trial_id=i.conversion_trial AND r.status IN ('failed','cancelled')) RETURNING id").fetch_all(&mut **tx).await.map_err(db)?;
-    for id in failed {
-        imports::keep_outcome(tx, id).await?;
-    }
+    sqlx::query("UPDATE learning_task_imports i SET failure='Conversion failed' WHERE failure IS NULL AND EXISTS(SELECT FROM learning_rollouts r WHERE r.trial_id=i.conversion_trial AND r.status IN ('failed','cancelled'))")
+        .execute(&mut **tx)
+        .await
+        .map_err(db)?;
     let q = format!(
         "SELECT s.id,s.project_id,s.bundle_id,c.version_id,{RUNTIME} FROM learning_task_imports s {TARGET}
-         WHERE {READY} AND s.converted_rows+s.set_aside_rows<s.row_count
+         WHERE {READY} AND s.outcome IS NULL AND s.converted_rows+s.set_aside_rows<s.row_count
            AND s.conversion_trial IS NULL AND s.failure IS NULL
          LIMIT 1 FOR UPDATE OF s SKIP LOCKED"
     );

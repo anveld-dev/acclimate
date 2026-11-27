@@ -1,7 +1,7 @@
 import { isCurrentDelivery } from '../lib/delivery-release';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Check, GitBranch, Radio } from 'lucide-react';
-import type { ConnectionObservation } from '@acclimate/sdk';
+import type { ConnectionObservation } from '@anveld/sdk';
 import type { DeliveryDetail, Report } from '../server/delivery-detail-core';
 import { readDeliveryDetail } from '../server/delivery-observations-actions';
 import { Button } from './ui/button';

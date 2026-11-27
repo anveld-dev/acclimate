@@ -1,6 +1,6 @@
 /** Check the files delivered by the configured service. */
 import { readFile } from 'node:fs/promises';
-import { AcclimateClient } from '@acclimate/sdk';
+import { AcclimateClient } from '@anveld/sdk';
 import { optionalReceipts, settleOptional } from './optional-receipts.js';
 
 for (const key of [

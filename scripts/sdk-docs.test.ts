@@ -19,7 +19,7 @@ test('the SDK references document every public entry point, runtime export and c
   const documented = new Set([...reference.matchAll(/`([^`]+)`/g)].map((match) => match[1]));
   const missing: string[] = [];
   for (const [subpath, target] of Object.entries(manifest.exports)) {
-    const entry = '@acclimate/sdk' + subpath.slice(1);
+    const entry = '@anveld/sdk' + subpath.slice(1);
     if (!documented.has(entry)) missing.push(entry);
     const source = new URL(target.import.replace('./dist/', 'src/').replace(/\.js$/, '.ts'), sdk);
     for (const name of Object.keys(await import(source.href)))

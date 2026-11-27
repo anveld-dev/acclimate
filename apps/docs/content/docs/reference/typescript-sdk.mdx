@@ -1,9 +1,9 @@
 ---
 title: TypeScript SDK
-description: The public entry points, options, methods and command of @acclimate/sdk.
+description: The public entry points, options, methods and command of @anveld/sdk.
 ---
 
-`@acclimate/sdk` is the Node.js SDK. [Install the SDKs](/docs/get-started/install) covers installation. The package is ESM only: it exports only `import` conditions, so `require('@acclimate/sdk')` fails. From CommonJS, use `await import('@acclimate/sdk')`.
+`@anveld/sdk` is the Node.js SDK. [Install the SDKs](/docs/get-started/install) covers installation. The package is ESM only: it exports only `import` conditions, so `require('@anveld/sdk')` fails. From CommonJS, use `await import('@anveld/sdk')`.
 
 ## Entry points
 
@@ -11,14 +11,14 @@ Other paths inside the package are private and can change in any Acclimate relea
 
 | Entry point | Runtime exports |
 | --- | --- |
-| `@acclimate/sdk` | Jobs and releases: `createAcclimate` |
+| `@anveld/sdk` | Jobs and releases: `createAcclimate` |
 | | Client: `AcclimateClient` |
 | | Delivery: `systemPrompt`, `resolveAndCache`, `prepareFiles`, `defaultCacheDir`, `verifyPayloadBytes`, `validatePayload`, `fileKindForPath`, `payloadDigest` |
 | | Receipts: `createReceiptReporter` |
 | | Compatibility: `compatibilityIssues`, `assertCompatible` |
 | | Errors: `AcclimateError`, `AcclimateUsageError`, `TransportError`, `ApiError`, `DeliveryError`, `TaskExecutionError`, `InfrastructureError` |
-| `@acclimate/sdk/validation` | `validatePayload`, `fileKindForPath`, `DeliveryError`, `compatibilityIssues`, `assertCompatible`, for checking a payload without the client |
-| `@acclimate/sdk/native-files` | `prepareNativeFiles`, `nativeSource` and `transcriptTail`, for plugin authors |
+| `@anveld/sdk/validation` | `validatePayload`, `fileKindForPath`, `DeliveryError`, `compatibilityIssues`, `assertCompatible`, for checking a payload without the client |
+| `@anveld/sdk/native-files` | `prepareNativeFiles`, `nativeSource` and `transcriptTail`, for plugin authors |
 
 The root entry point also exports every wire type, such as `Bundle`, `VersionMetadata`, `Release` and `Page`, and the option types, such as `ClientOptions`, `CachePolicy`, `OfflinePolicy` and `PrepareDeliveryOptions`. The package also installs the [`acclimate` command](#the-acclimate-command).
 
@@ -27,7 +27,7 @@ The root entry point also exports every wire type, such as `Bundle`, `VersionMet
 `createAcclimate` is the shortest way to run a job on a released version, found by bundle name, and report its outcome.
 
 ```ts
-import { createAcclimate, systemPrompt } from '@acclimate/sdk';
+import { createAcclimate, systemPrompt } from '@anveld/sdk';
 
 // Reads ACCLIMATE_URL, ACCLIMATE_WORKSPACE and ACCLIMATE_TOKEN.
 const acclimate = createAcclimate();
@@ -190,7 +190,7 @@ The package installs `acclimate`, which saves, publishes and releases bundles. E
 
 Each command prints one JSON line on stdout, with `bundleId`, `channel`, `versionId`, `digest` and `revision`, and a sentence on stderr. On failure, the line is `{"error":{"code":...,"message":...}}` and the exit status is 1, or 2 for a usage error.
 
-The token needs read for `pull`, and read, write and promote for the others. In GitHub Actions, in a repository that depends on `@acclimate/sdk`:
+The token needs read for `pull`, and read, write and promote for the others. In GitHub Actions, in a repository that depends on `@anveld/sdk`:
 
 ```yaml
 - run: npm ci

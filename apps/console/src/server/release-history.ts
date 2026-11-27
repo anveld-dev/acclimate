@@ -1,8 +1,8 @@
 import { releaseRevision } from '../navigation';
 import { consoleClient } from './console-client';
 import { requireSession } from './selection';
-import { DeliveryError, verifyPayloadBytes } from '@acclimate/sdk';
-import type { BundlePayload, ReleasePage, VersionMetadata } from '@acclimate/sdk';
+import { DeliveryError, verifyPayloadBytes } from '@anveld/sdk';
+import type { BundlePayload, ReleasePage, VersionMetadata } from '@anveld/sdk';
 
 type Env = Record<string, string | undefined>;
 type Failure = { ok: false; message: string };

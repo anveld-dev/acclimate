@@ -59,8 +59,8 @@
           {
             "patterns": [
               {
-                "regex": "^(?:(?:\\.\\.?/)+packages/[^/]+/src(?:/|$)|@acclimate/[^/]+/src(?:/|$))",
-                "message": "Import from a published @acclimate package entry point."
+                "regex": "^(?:(?:\\.\\.?/)+packages/[^/]+/src(?:/|$)|@anveld/[^/]+/src(?:/|$))",
+                "message": "Import from a published @anveld package entry point."
               }
             ]
           }

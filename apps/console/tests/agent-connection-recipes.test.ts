@@ -32,7 +32,7 @@ async function runFixture(
     let filename: string;
     const recipe = recipes[language];
     if (language === 'typescript') {
-      const sdk = join(root, 'node_modules', '@acclimate', 'sdk');
+      const sdk = join(root, 'node_modules', '@anveld', 'sdk');
       await mkdir(sdk, { recursive: true });
       await writeFile(
         join(sdk, 'package.json'),
@@ -170,5 +170,5 @@ test('native delivery recipe keeps receipts through the plugin and makes the cac
   assert.match(recipe, /await prepare\(delivery\)/);
   assert.match(recipe, /~\/\.cache\/acclimate\/typescript/);
   assert.doesNotMatch(recipe, /'ACCLIMATE_CACHE'\]/);
-  assert.match(recipe, /from '@acclimate\/claude-plugin'/);
+  assert.match(recipe, /from '@anveld\/claude-plugin'/);
 });

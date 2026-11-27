@@ -69,7 +69,7 @@ function SdkLanguage({
 
 function sdkArtifact(language: Language) {
   return releaseMetadata.artifacts.find(
-    (item) => item.package === (language === 'typescript' ? '@acclimate/sdk' : 'acclimate-sdk'),
+    (item) => item.package === (language === 'typescript' ? '@anveld/sdk' : 'acclimate-sdk'),
   )!;
 }
 
@@ -199,7 +199,7 @@ export function SdkSetup({
   const plugin =
     runtime === 'custom'
       ? undefined
-      : releaseMetadata.artifacts.find((item) => item.package === `@acclimate/${runtime}-plugin`);
+      : releaseMetadata.artifacts.find((item) => item.package === `@anveld/${runtime}-plugin`);
   const nativePeer = {
     codex: '@openai/codex-sdk',
     claude: '@anthropic-ai/claude-agent-sdk',
@@ -208,7 +208,7 @@ export function SdkSetup({
   } as const;
   const installCommand = sdkInstallCommand(language, plugin?.file);
   const buildCommands = isTypeScript
-    ? `npm run build:packages\nnpm pack --workspace @acclimate/sdk${plugin ? ' --workspace ' + plugin.package : ''}`
+    ? `npm run build:packages\nnpm pack --workspace @anveld/sdk${plugin ? ' --workspace ' + plugin.package : ''}`
     : 'python3 -m pip wheel --no-deps --wheel-dir artifacts ./python';
   const canManage = role === 'admin';
   const credentialsHref = connectionHref(state.workspaceId, {
@@ -318,7 +318,7 @@ export function SdkSetup({
                 <p>
                   {isTypeScript ? (
                     <>
-                      Node.js 22.22+ on POSIX and an <code>@acclimate/sdk</code> tarball.
+                      Node.js 22.22+ on POSIX and an <code>@anveld/sdk</code> tarball.
                     </>
                   ) : (
                     <>
@@ -606,7 +606,7 @@ export function SdkSetup({
             ) : (
               <>
                 <p>
-                  Install the matching <code>@acclimate/{runtime}-plugin</code> package shown in
+                  Install the matching <code>@anveld/{runtime}-plugin</code> package shown in
                   step 1 and the tested peer{' '}
                   <code>
                     {nativePeer[runtime]}@{releaseMetadata.nativePeers[nativePeer[runtime]]}

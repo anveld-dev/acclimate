@@ -98,17 +98,17 @@ try {
   if (process.argv.includes('--console-runtime')) await verifyConsoleRuntime();
   if (!process.argv.includes('--skip-build')) run('npm', ['run', 'build:packages']);
   await verifyPackageBuildReceipt(root);
-  const names = ['sdk', 'codex-plugin', 'claude-plugin', 'pi-plugin', 'cursor-plugin'];
-  for (const name of names)
+  const npmArtifacts = publicMetadata.artifacts.filter((artifact) => artifact.kind === 'npm');
+  for (const artifact of npmArtifacts)
     run('npm', [
       'pack',
       '--offline',
       '--pack-destination',
       temp,
       '--workspace',
-      `@acclimate/${name}`,
+      artifact.package,
     ]);
-  const tarballs = names.map((name) => join(temp, `acclimate-${name}-${version}.tgz`));
+  const tarballs = npmArtifacts.map((artifact) => join(temp, artifact.file));
   await writeFile(join(temp, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   run(
     'npm',
@@ -120,21 +120,21 @@ try {
     `
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { AcclimateClient, ApiError, resolveAndCache, prepareFiles, createAcclimate } from '@acclimate/sdk';
-import { validatePayload, compatibilityIssues } from '@acclimate/sdk/validation';
-import { prepare as prepareCodex } from '@acclimate/codex-plugin';
-import { prepare as prepareClaude } from '@acclimate/claude-plugin';
-import { prepare as pi } from '@acclimate/pi-plugin';
-import { prepare as cursor } from '@acclimate/cursor-plugin';
+import { AcclimateClient, ApiError, resolveAndCache, prepareFiles, createAcclimate } from '@anveld/sdk';
+import { validatePayload, compatibilityIssues } from '@anveld/sdk/validation';
+import { prepare as prepareCodex } from '@anveld/codex-plugin';
+import { prepare as prepareClaude } from '@anveld/claude-plugin';
+import { prepare as pi } from '@anveld/pi-plugin';
+import { prepare as cursor } from '@anveld/cursor-plugin';
 for (const value of [AcclimateClient, ApiError, resolveAndCache, prepareFiles, prepareCodex, prepareClaude, pi, cursor, createAcclimate]) assert.equal(typeof value, 'function');
-assert.equal(Object.hasOwn(await import('@acclimate/codex-plugin'), 'codex'), false);
-assert.equal(Object.hasOwn(await import('@acclimate/claude-plugin'), 'claude'), false);
-assert.equal(Object.hasOwn(await import('@acclimate/claude-plugin/native'), 'claude'), false);
-await assert.rejects(import('@acclimate/codex-plugin/native'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
-const rootExports = await import('@acclimate/sdk');
+assert.equal(Object.hasOwn(await import('@anveld/codex-plugin'), 'codex'), false);
+assert.equal(Object.hasOwn(await import('@anveld/claude-plugin'), 'claude'), false);
+assert.equal(Object.hasOwn(await import('@anveld/claude-plugin/native'), 'claude'), false);
+await assert.rejects(import('@anveld/codex-plugin/native'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
+const rootExports = await import('@anveld/sdk');
 for (const name of ['compare', 'submitComparison']) assert.equal(Object.hasOwn(rootExports, name), false);
 for (const subpath of ['learning', 'evaluation', 'evaluation/cli', 'evaluation/manifest', 'evaluation/app-cli', 'evaluation/policy', 'evaluation/artifacts', 'evaluation/analysis', 'evaluation/progress', 'learning/loop'])
-  await assert.rejects(import('@acclimate/sdk/' + subpath), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
+  await assert.rejects(import('@anveld/sdk/' + subpath), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
 const bundle = {version:{id:'v1',bundleId:'b',parentVersionId:null,digest:'sha256:test',createdAt:'now'},payload:{schemaVersion:1,files:[{path:'instructions.md',kind:'instruction',text:'Hello'}]},resolvedAt:0,stale:false};
 validatePayload(bundle.payload);
 assert.deepEqual(compatibilityIssues(bundle.payload, 'codex'), []);
@@ -144,12 +144,12 @@ for (const prepare of [prepareCodex, prepareClaude, pi, cursor]) { const staged 
   await writeFile(
     join(temp, 'consumer.ts'),
     `
-import { AcclimateClient, createAcclimate, type AcclimateJob, type VerifiedVersion } from '@acclimate/sdk';
-import { validatePayload, compatibilityIssues } from '@acclimate/sdk/validation';
-import { prepare as prepareCodex } from '@acclimate/codex-plugin';
-import { prepare as prepareClaude } from '@acclimate/claude-plugin';
-import { prepare as pi } from '@acclimate/pi-plugin';
-import { prepare as cursor } from '@acclimate/cursor-plugin';
+import { AcclimateClient, createAcclimate, type AcclimateJob, type VerifiedVersion } from '@anveld/sdk';
+import { validatePayload, compatibilityIssues } from '@anveld/sdk/validation';
+import { prepare as prepareCodex } from '@anveld/codex-plugin';
+import { prepare as prepareClaude } from '@anveld/claude-plugin';
+import { prepare as pi } from '@anveld/pi-plugin';
+import { prepare as cursor } from '@anveld/cursor-plugin';
 declare const bundle: VerifiedVersion;
 validatePayload(bundle.payload);
 void compatibilityIssues(bundle.payload, 'codex');
@@ -189,18 +189,18 @@ void [createAcclimate, job.prepare(prepareCodex), job.expect];
     force: false,
     mode: constants.COPYFILE_FICLONE,
     filter: (source) =>
-      !source.startsWith(join(root, 'node_modules/@acclimate')) && !source.includes('/.bin'),
+      !source.startsWith(join(root, 'node_modules/@anveld')) && !source.includes('/.bin'),
   });
   await writeFile(
     join(temp, 'native.mjs'),
     `
 import assert from 'node:assert/strict';
-import { prepare as claude } from '@acclimate/claude-plugin';
-import { claudeSessionOptions } from '@acclimate/claude-plugin/native';
-import { prepare as pi } from '@acclimate/pi-plugin';
-import { createPiResourceLoader } from '@acclimate/pi-plugin/native';
-import { prepare as cursor } from '@acclimate/cursor-plugin';
-import { cursorLocalOptions } from '@acclimate/cursor-plugin/native';
+import { prepare as claude } from '@anveld/claude-plugin';
+import { claudeSessionOptions } from '@anveld/claude-plugin/native';
+import { prepare as pi } from '@anveld/pi-plugin';
+import { createPiResourceLoader } from '@anveld/pi-plugin/native';
+import { prepare as cursor } from '@anveld/cursor-plugin';
+import { cursorLocalOptions } from '@anveld/cursor-plugin/native';
 const bundle = {version:{id:'v1',bundleId:'b',parentVersionId:null,digest:'sha256:test',createdAt:'now'},payload:{schemaVersion:1,files:[{path:'instructions.md',kind:'instruction',text:'Hello'}]},resolvedAt:0,stale:false};
 const c = await claude(bundle); assert.equal(claudeSessionOptions(c).cwd, c.cwd); await c.cleanup();
 const p = await pi(bundle); const loader = await createPiResourceLoader(p); assert.ok(loader); await p.cleanup();
@@ -211,13 +211,13 @@ const cu = await cursor(bundle); assert.equal(cursorLocalOptions(cu).local.cwd, 
   await writeFile(
     join(temp, 'native.ts'),
     `
-import { prepare as claude } from '@acclimate/claude-plugin';
-import { claudeSessionOptions } from '@acclimate/claude-plugin/native';
-import { prepare as pi } from '@acclimate/pi-plugin';
-import { createPiResourceLoader } from '@acclimate/pi-plugin/native';
-import { prepare as cursor } from '@acclimate/cursor-plugin';
-import { cursorLocalOptions } from '@acclimate/cursor-plugin/native';
-import type { VerifiedVersion } from '@acclimate/sdk';
+import { prepare as claude } from '@anveld/claude-plugin';
+import { claudeSessionOptions } from '@anveld/claude-plugin/native';
+import { prepare as pi } from '@anveld/pi-plugin';
+import { createPiResourceLoader } from '@anveld/pi-plugin/native';
+import { prepare as cursor } from '@anveld/cursor-plugin';
+import { cursorLocalOptions } from '@anveld/cursor-plugin/native';
+import type { VerifiedVersion } from '@anveld/sdk';
 declare const bundle: VerifiedVersion;
 void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiResourceLoader(p)), cursor(bundle).then(cursorLocalOptions)];
 `,
@@ -240,7 +240,7 @@ void [claude(bundle).then(claudeSessionOptions), pi(bundle).then(p => createPiRe
     temp,
   );
   const installed = JSON.parse(
-    await readFile(join(temp, 'node_modules/@acclimate/sdk/package.json'), 'utf8'),
+    await readFile(join(temp, 'node_modules/@anveld/sdk/package.json'), 'utf8'),
   );
   if (installed.version !== version) throw new Error('Unexpected installed SDK version');
   const stage = await mkdtemp(join(resolve(output, '..'), '.release-'));

@@ -12,8 +12,8 @@ import {
   type LearningDiagnosis,
   type LearningRound,
   type LearningSetting,
-} from '@acclimate/sdk';
-import { serveLearningLoop } from '@acclimate/sdk/learning';
+} from '@anveld/sdk';
+import { serveLearningLoop } from '@anveld/sdk/learning';
 import { optimizerAdapter, requestGuard } from './adapter.js';
 import {
   conditions,

@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import type { BundlePayload } from '@acclimate/sdk';
+import type { BundlePayload } from '@anveld/sdk';
 import { runCondition, type RunOptions, type RunSummary } from './block.js';
 import { ordered, sourceModel, IntegrityError, proxyKey } from './conditions.js';
 import { evaluator } from './evaluator.js';

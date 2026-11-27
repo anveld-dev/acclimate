@@ -1,4 +1,4 @@
-import { ApiError, type AcclimateClient, type LearningRound } from '@acclimate/sdk';
+import { ApiError, type AcclimateClient, type LearningRound } from '@anveld/sdk';
 import { readVersion } from './release-history';
 import { consoleClient } from './console-client';
 import { allPages } from './listing';

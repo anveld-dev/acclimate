@@ -218,7 +218,7 @@ async function sourceFiles(directory: string): Promise<string[]> {
   return files;
 }
 
-test('examples import only published @acclimate package entry points', async () => {
+test('examples import only published @anveld package entry points', async () => {
   const root = new URL('..', import.meta.url).pathname;
   const exportsByPackage = new Map<string, Set<string>>();
   for (const name of await readdir(join(root, 'packages'))) {
@@ -238,7 +238,7 @@ test('examples import only published @acclimate package entry points', async () 
         violations.push(`${relative}: ${specifier} reaches into a package's source`);
         continue;
       }
-      const scoped = /^(@acclimate\/[^/]+)(\/.*)?$/.exec(specifier);
+      const scoped = /^(@anveld\/[^/]+)(\/.*)?$/.exec(specifier);
       if (!scoped) continue;
       const exported = exportsByPackage.get(scoped[1]);
       if (exported && !exported.has('.' + (scoped[2] ?? '')))

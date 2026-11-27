@@ -1,6 +1,6 @@
 {
-  "name": "@acclimate/codex-plugin",
-  "version": "0.1.0",
+  "name": "@anveld/codex-plugin",
+  "version": "0.2.0",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -27,6 +27,6 @@
     "node": ">=22"
   },
   "peerDependencies": {
-    "@acclimate/sdk": "^0.1.0"
+    "@anveld/sdk": "^0.2.0"
   }
 }

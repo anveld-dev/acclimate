@@ -50,7 +50,7 @@ const modules = {
       getSessionStats: () => ({ tokens: { input: 7, output: 3 }, cost: 0.02 }), getLastAssistantText: () => 'pi done',
     } };
   }`,
-  '@acclimate/pi-plugin/native': `export async function createPiResourceLoader(context, memory) { return { loader: true, memory }; }`,
+  '@anveld/pi-plugin/native': `export async function createPiResourceLoader(context, memory) { return { loader: true, memory }; }`,
 };
 
 globalThis.calls = { claude: [], cursor: [], cursorDisposed: 0, pi: [], piRuntime: [], piDisposed: 0 };

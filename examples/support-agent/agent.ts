@@ -5,7 +5,7 @@
  *   npx tsx examples/support-agent/agent.ts "I was charged twice this month." --expected corrected.txt
  */
 import { readFile } from 'node:fs/promises';
-import { ApiError, createAcclimate, systemPrompt } from '@acclimate/sdk';
+import { ApiError, createAcclimate, systemPrompt } from '@anveld/sdk';
 
 function setting(name: string): string {
   const value = process.env[name];

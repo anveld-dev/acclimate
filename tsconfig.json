@@ -8,16 +8,16 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "paths": {
-      "@acclimate/sdk": ["./packages/sdk/src/index.ts"],
-      "@acclimate/sdk/validation": ["./packages/sdk/src/validation.ts"],
-      "@acclimate/sdk/native-files": ["./packages/sdk/src/native-files.ts"],
-      "@acclimate/claude-plugin": ["./packages/claude-plugin/src/index.ts"],
-      "@acclimate/claude-plugin/native": ["./packages/claude-plugin/src/native.ts"],
-      "@acclimate/codex-plugin": ["./packages/codex-plugin/src/index.ts"],
-      "@acclimate/cursor-plugin": ["./packages/cursor-plugin/src/index.ts"],
-      "@acclimate/cursor-plugin/native": ["./packages/cursor-plugin/src/native.ts"],
-      "@acclimate/pi-plugin": ["./packages/pi-plugin/src/index.ts"],
-      "@acclimate/pi-plugin/native": ["./packages/pi-plugin/src/native.ts"]
+      "@anveld/sdk": ["./packages/sdk/src/index.ts"],
+      "@anveld/sdk/validation": ["./packages/sdk/src/validation.ts"],
+      "@anveld/sdk/native-files": ["./packages/sdk/src/native-files.ts"],
+      "@anveld/claude-plugin": ["./packages/claude-plugin/src/index.ts"],
+      "@anveld/claude-plugin/native": ["./packages/claude-plugin/src/native.ts"],
+      "@anveld/codex-plugin": ["./packages/codex-plugin/src/index.ts"],
+      "@anveld/cursor-plugin": ["./packages/cursor-plugin/src/index.ts"],
+      "@anveld/cursor-plugin/native": ["./packages/cursor-plugin/src/native.ts"],
+      "@anveld/pi-plugin": ["./packages/pi-plugin/src/index.ts"],
+      "@anveld/pi-plugin/native": ["./packages/pi-plugin/src/native.ts"]
     },
     "types": ["node"]
   },

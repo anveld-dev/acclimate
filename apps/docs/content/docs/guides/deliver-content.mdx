@@ -23,7 +23,7 @@ Call `prepare` once for each job and give your agent the prepared system prompt 
 <Tab value="TypeScript">
 
 ```ts
-import { AcclimateClient } from '@acclimate/sdk';
+import { AcclimateClient } from '@anveld/sdk';
 
 const client = new AcclimateClient({
   baseUrl: 'https://api.acclimate.example.com',
@@ -97,7 +97,7 @@ Create one client for the process. Prepare each job from the channel and remembe
 <Tab value="TypeScript">
 
 ```ts
-import { ApiError, TransportError } from '@acclimate/sdk';
+import { ApiError, TransportError } from '@anveld/sdk';
 
 let lastVersionId: string | undefined;
 
@@ -170,7 +170,7 @@ The reporter keeps a failed receipt for up to 24 hours. TypeScript retries it wi
 <Tab value="TypeScript">
 
 ```ts
-import { AcclimateClient, createReceiptReporter } from '@acclimate/sdk';
+import { AcclimateClient, createReceiptReporter } from '@anveld/sdk';
 
 // Once for the process
 const reporter = createReceiptReporter({

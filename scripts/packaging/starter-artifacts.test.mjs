@@ -17,7 +17,7 @@ async function fixture() {
       await writeFile(path, file === 'package.json' ? '{}' : file === '.npmrc' ? npmrc : 'Public fixture\n');
     }
   }
-  await writeFile(join(root, 'examples/native-repository/package.json'), JSON.stringify({ private: true, version: '0.0.0', dependencies: { '@acclimate/sdk': '0.0.0' } }));
+  await writeFile(join(root, 'examples/native-repository/package.json'), JSON.stringify({ private: true, version: '0.0.0', dependencies: { '@anveld/sdk': '0.0.0' } }));
   const metadata = { version: '1.2.3', starters: ['native-repository'].map(name => ({ name, file: `acclimate-${name}-starter-1.2.3.tgz` })) };
   return { root, metadata, output: join(root, 'release') };
 }
@@ -48,7 +48,7 @@ test('release archives contain installed-app source and native harnesses, exclud
     assert.equal(listing.includes('node_modules'), false);
     const manifest = JSON.parse(execFileSync('tar', ['-xOzf', archive, 'native-repository-starter/package.json'], { encoding: 'utf8' }));
     assert.equal(manifest.version, '1.2.3');
-    assert.equal(manifest.dependencies['@acclimate/sdk'], '1.2.3');
+    assert.equal(manifest.dependencies['@anveld/sdk'], '1.2.3');
     assert.equal(JSON.parse(await readFile(join(root, 'examples/native-repository/package.json'), 'utf8')).version, '0.0.0');
   } finally { await rm(root, { recursive: true, force: true }); }
 });

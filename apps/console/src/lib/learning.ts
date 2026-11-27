@@ -1,4 +1,4 @@
-import type { LearningEvaluation } from '@acclimate/sdk';
+import type { LearningEvaluation } from '@anveld/sdk';
 
 export type LearningScope = { workspaceId: string; bundleId: string };
 export type LearningReadOptions = { round?: string; memory?: string };

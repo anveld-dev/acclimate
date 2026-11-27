@@ -2,13 +2,13 @@ import { consoleClient } from './console-client';
 import { actorScope, creationRecoveryServiceIdentity, requireSession } from './selection';
 import { allPages } from './listing';
 import { createHash } from 'node:crypto';
-import { ApiError, DeliveryError, verifyPayloadBytes } from '@acclimate/sdk';
+import { ApiError, DeliveryError, verifyPayloadBytes } from '@anveld/sdk';
 import type {
   BundlePayload,
   ChannelResolution,
   ReleasePage,
   CompatibilityTarget,
-} from '@acclimate/sdk';
+} from '@anveld/sdk';
 
 export type ConsoleState =
   | { status: 'setup'; missing: string[] }

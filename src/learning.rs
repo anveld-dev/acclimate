@@ -20,7 +20,7 @@ mod history;
 pub(crate) mod imports;
 mod memory;
 pub(super) mod optimizer;
-mod outcomes;
+mod regularization;
 pub(crate) mod tasks;
 pub(crate) mod trial_work;
 pub(crate) mod worker;
@@ -92,10 +92,6 @@ pub(crate) fn routes() -> Router<AppState> {
         .route(&format!("{PREFIX}/stop"), post(stop))
         .route(&format!("{PREFIX}/rounds"), get(list_rounds))
         .route(&format!("{PREFIX}/rounds/{{round}}"), get(get_round))
-        .route(
-            &format!("{PREFIX}/outcomes"),
-            post(outcomes::submit_outcome),
-        )
         .route(&format!("{PREFIX}/memory"), get(memory::get))
 }
 

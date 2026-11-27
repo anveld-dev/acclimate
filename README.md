@@ -42,11 +42,8 @@ Your application runs its agent with its own model credentials. Learning runs in
 import { createAcclimate, systemPrompt } from '@anveld/acclimate-sdk';
 
 const acclimate = createAcclimate();
-const job = await acclimate.job('Gear returns', { channel: 'stable', input: request });
+const job = await acclimate.job('Gear returns', { channel: 'stable' });
 const reply = await runAgent(systemPrompt(job.version.payload), request);
-
-// A correction becomes a new learning task.
-await job.expect(correctedReply, { output: reply });
 ```
 
 ## Quickstart
@@ -75,7 +72,7 @@ Configure a model provider for the workspace and import about 50 tasks, so that 
 | Where | Start with |
 | --- | --- |
 | The local stack | [Run your first learning round](https://acclimate.anveld.dev/docs/tutorials/first-learning-round) sets up a model proxy and runs a round from one script. [`examples/learning`](examples/learning/README.md) gives the **Example agent** bundle 60 ready tasks. |
-| The console | [Run a learning loop](https://acclimate.anveld.dev/docs/guides/learning-loop), which also covers reporting a production outcome from your application with `job.expect()`. |
+| The console | [Run a learning loop](https://acclimate.anveld.dev/docs/guides/learning-loop), covering model provider setup, task import, review, and round monitoring. |
 | Your own server | An operator sets the optimizer and starts the executor first. See [Enable learning](https://acclimate.anveld.dev/docs/operate/enable-learning). |
 
 ## Deliver content to jobs
@@ -97,7 +94,7 @@ Programs you can run against the local stack. The [examples index](examples/READ
 | Example | What it shows |
 | --- | --- |
 | [Gear returns](examples/gear-returns/README.md) | A returns agent learns a shop's policy as tasks arrive in four batches, scored after each on 60 test tasks the loop never sees. This is the run in the chart above. |
-| [Support agent](examples/support-agent/README.md) | Answers with the released bundle and reports a person's correction as a learning task. TypeScript and Python. |
+| [Support agent](examples/support-agent/README.md) | Answers with the released bundle and picks up improved releases without a deploy. TypeScript and Python. |
 | [Ticket triage](examples/ticket-triage/README.md) | Publishes a bundle, imports 64 labelled tickets and runs the learning loop from one script. TypeScript and Python. |
 
 ## Self-host

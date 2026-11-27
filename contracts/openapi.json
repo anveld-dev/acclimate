@@ -3930,7 +3930,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "enum": ["console", "outcome", "import"]
+              "enum": ["console", "import"]
             }
           },
           {
@@ -4563,7 +4563,7 @@
     "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/tasks/imports": {
       "get": {
         "operationId": "listLearningImports",
-        "description": "Read access. The 50 most recent imports, newest first. Imports made for production outcomes are not listed.",
+        "description": "Read access. The 50 most recent imports, newest first.",
         "parameters": [
           {
             "name": "workspaceId",
@@ -5407,122 +5407,6 @@
               "schema": {
                 "type": "string",
                 "format": "binary"
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/outcomes": {
-      "post": {
-        "operationId": "reportLearningOutcome",
-        "parameters": [
-          {
-            "name": "workspaceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "bundleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LearningOutcomeRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LearningOutcomeReceipt"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid learning request.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required or expired.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller lacks authority for this operation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The requested learning resource was not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Learning state or idempotency conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "The request exceeds 2 MiB.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
               }
             }
           }
@@ -7329,6 +7213,7 @@
               "no-candidates",
               "no-survivors",
               "no-evaluated-candidates",
+              "no-admissible-candidates",
               "channel-moved",
               "incumbent-evaluation-failed",
               "candidate-evaluation-failed",
@@ -7766,6 +7651,7 @@
               "no-candidates",
               "no-survivors",
               "no-evaluated-candidates",
+              "no-admissible-candidates",
               "channel-moved",
               "incumbent-evaluation-failed",
               "candidate-evaluation-failed",
@@ -8658,6 +8544,17 @@
               }
             ]
           },
+          "meanTaskTokens": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "cases": {
             "type": "integer",
             "minimum": 0
@@ -8872,7 +8769,7 @@
           },
           "source": {
             "type": "string",
-            "enum": ["console", "outcome", "import"]
+            "enum": ["console", "import"]
           },
           "admission": {
             "type": "string",
@@ -8892,18 +8789,11 @@
           },
           "admissionReason": {
             "type": ["string", "null"],
-            "description": "Why the task was set aside: reference-failed, empty-passed, judge-unstable, check-failed, or not-converted for an outcome whose conversion failed or set it aside."
-          },
-          "outcomeId": {
-            "type": ["string", "null"]
-          },
-          "versionId": {
-            "type": ["string", "null"]
+            "description": "Why the task was set aside: reference-failed, empty-passed, judge-unstable, or check-failed."
           },
           "sourceRow": {
             "type": ["integer", "null"]
-          },
-          "output": {}
+          }
         },
         "required": [
           "taskId",
@@ -8915,59 +8805,6 @@
           "admission",
           "addedRevision"
         ]
-      },
-      "LearningOutcomeRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["outcomeId", "versionId", "digest", "input", "expected"],
-        "properties": {
-          "outcomeId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "versionId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "digest": {
-            "type": "string",
-            "pattern": "^sha256:[0-9a-f]{64}$"
-          },
-          "input": {
-            "description": "Any JSON value encoded in at most 64 KiB."
-          },
-          "output": {},
-          "expected": {
-            "description": "Any JSON value encoded in at most 64 KiB."
-          },
-          "grading": {
-            "type": "string",
-            "enum": ["exact", "criteria"],
-            "description": "How the expected answer is graded. Without it, a non-string answer or a string of at most 80 characters with no line break is graded exact, and a longer answer is graded by criteria the judge model drafts from it. A criteria outcome becomes a task only when that conversion finishes, and input and expected together must then fit in 64 KiB. If the conversion fails for good or sets the row aside, the outcome becomes an exact task set aside with admissionReason not-converted."
-          }
-        }
-      },
-      "LearningOutcomeReceipt": {
-        "type": "object",
-        "required": ["outcomeId", "taskRevision"],
-        "properties": {
-          "outcomeId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "heldOutCount": {
-            "type": "integer"
-          },
-          "taskId": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
-          },
-          "taskRevision": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "The revision that added the task. For an outcome graded by criteria, the current revision when the outcome was accepted: its task is added later, once conversion drafts the criteria."
-          }
-        }
       }
     }
   }

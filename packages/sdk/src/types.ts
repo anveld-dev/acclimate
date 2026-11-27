@@ -231,7 +231,7 @@ export interface LearningRoundSummary {
     | 'scoring_held_out' | 'completed' | 'failed' | 'stopped';
   decision: 'adopted' | 'kept' | null;
   reason: 'selector-kept' | 'no-candidates' | 'no-survivors' | 'no-evaluated-candidates'
-    | 'no-matching-executor' | 'channel-moved' | 'incumbent-evaluation-failed' | 'optimizer-unavailable'
+    | 'no-admissible-candidates' | 'no-matching-executor' | 'channel-moved' | 'incumbent-evaluation-failed' | 'optimizer-unavailable'
     | 'optimizer-context-too-large' | 'selector-unavailable' | 'provider-unavailable' | 'stopped' | null;
   /** The first failed rollout of the evaluation that ended the round. A held-out failure has no message. */
   failureCause?: LearningFailureCause | null;
@@ -309,6 +309,7 @@ export interface LearningEvaluation {
   id: string;
   status: LearningEvaluationStatus;
   score: number | null;
+  meanTaskTokens?: number | null;
   cases: number;
   reportedCases: number;
   createdAt: string;
@@ -329,24 +330,6 @@ export interface LearningRollout extends LearningHeldOutRollout {
 }
 export interface LearningEvaluationReport {
   cases: { caseId: string; rollouts: LearningRollout[] }[];
-}
-export type LearningGrading = 'exact' | 'criteria';
-export interface LearningOutcomeRequest {
-  input: Json;
-  expected: Json;
-  output?: Json;
-  /** How the expected answer is graded. By default a short single-line string or any non-string
-   * JSON value is compared exactly, and a longer answer is judged against drafted criteria. */
-  grading?: LearningGrading;
-  outcomeId: string;
-  versionId: string;
-  digest: string;
-}
-export interface LearningOutcomeReceipt {
-  outcomeId: string;
-  taskId?: string;
-  heldOutCount?: number;
-  taskRevision: number;
 }
 export interface LearningMemory {
   currentRevision: number;

@@ -24,16 +24,15 @@ Import everything from the root package.
 
 ## Jobs
 
-`Acclimate` is the shortest way to run a job on a released version and report its outcome. It finds the bundle by name.
+`Acclimate` is the shortest way to run a job on a released version. It finds the bundle by name.
 
 ```python
 from acclimate import Acclimate, system_prompt
 
 # Reads ACCLIMATE_URL, ACCLIMATE_WORKSPACE and ACCLIMATE_TOKEN.
 acclimate = Acclimate.from_env()
-job = acclimate.job("Support agent", channel="stable", input=request)
+job = acclimate.job("Support agent", channel="stable")
 reply = run_agent(system_prompt(job.version["payload"]), request)
-job.expect(corrected_reply, output=reply)
 ```
 
 Send `system_prompt(job.version["payload"])` as your system message, as [Jobs](/docs/reference/typescript-sdk#jobs) explains. `Acclimate` reads the same three variables and needs the same token rights as `createAcclimate`, but takes its cache scope from a hash of the token.
@@ -42,7 +41,7 @@ Send `system_prompt(job.version["payload"])` as your system message, as [Jobs](/
 | --- | --- |
 | `Acclimate.from_env(*, cache_dir=None)` | Reads the three environment variables |
 | `Acclimate(url=None, workspace=None, token=None, *, cache_dir=None)` | Takes the values as arguments, each falling back to its variable when `None` |
-| `acclimate.job(bundle, *, channel="stable", input)` | Finds the bundle, resolves the release, downloads and verifies the version and returns a `Job` |
+| `acclimate.job(bundle, *, channel="stable")` | Finds the bundle, resolves the release, downloads and verifies the version and returns a `Job` |
 | `acclimate.release(bundle, payload, *, channel="stable", reason)` | Uploads and releases the payload, as [`release`](/docs/reference/typescript-sdk#jobs) does in TypeScript |
 | `acclimate.rollback(bundle, *, channel="stable", reason)` | Releases the version the channel served before its latest release |
 
@@ -51,11 +50,7 @@ On each call, `job()`, `release()` and `rollback()` list the workspace's bundles
 | Job member | What it is |
 | --- | --- |
 | `version` | The verified version, with metadata at `version["version"]` and files at `version["payload"]["files"]` |
-| `outcome_id` | The outcome's UUID |
 | `prepare(destination=None)` | Writes the version's files into a private directory and returns what `client.prepare` returns |
-| `expect(expected, input=None, *, output=..., grading=None)` | Reports a production outcome and returns its receipt |
-
-`expect` works as in TypeScript: `input` defaults to the job's input, and a `grading` other than `"exact"` or `"criteria"` raises `UsageError`. Every call sends the job's outcome ID, so repeating the same call is a safe retry.
 
 ## Client
 
@@ -109,7 +104,7 @@ Each method is the snake_case form of a [TypeScript method](/docs/reference/type
 - `get_operation` and `close_operation` take `operation_path=` as a keyword.
 - `timeout` is in seconds, where TypeScript's `timeoutMs` is in milliseconds.
 - The TypeScript `fetch` option has no Python equivalent.
-- `Acclimate.job` has no `version_id` or `outcome_id` argument.
+- `Acclimate.job` has no `version_id` argument.
 
 ## Learning
 

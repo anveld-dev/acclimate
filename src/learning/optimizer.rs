@@ -1,7 +1,7 @@
 use super::{
     Tx,
     evaluations::{CaseReport, Report, case_passes, mean_score, passed_rollouts},
-    history, memory,
+    history, memory, regularization,
 };
 use crate::{
     AppState, BundlePayload,
@@ -81,6 +81,7 @@ pub(super) struct Pins {
     pub evolve_revision: i64,
     pub memory_revision: i64,
     pub setting: Value,
+    pub runtime: Option<Value>,
     pub optimizer_model: Option<String>,
     pub optimizer_reasoning_effort: Option<String>,
     history_digest: Option<String>,
@@ -91,7 +92,7 @@ impl Pins {
     pub(super) async fn load(tx: &mut Tx<'_>, id: Uuid) -> Result<Self, sqlx::Error> {
         sqlx::query_as(
             "SELECT id,project_id,bundle_id,number,parent_version_id,channel,channel_revision,
-            task_revision AS evolve_revision,memory_revision,setting,optimizer_model,optimizer_reasoning_effort,history_digest,memory_digest
+            task_revision AS evolve_revision,memory_revision,setting,runtime,optimizer_model,optimizer_reasoning_effort,history_digest,memory_digest
             FROM learning_rounds WHERE id=$1",
         )
         .bind(id)
@@ -162,6 +163,7 @@ pub(super) struct EvolveEvaluation {
     pub rollouts_per_task: i32,
     pub status: String,
     pub score: Option<f64>,
+    pub mean_task_tokens: Option<f64>,
     pub version_id: Uuid,
     pub evolve_revision: i64,
     pub report: sqlx::types::Json<Report>,
@@ -173,7 +175,7 @@ pub(super) async fn evolve_evaluation(
     role: &str,
     id: Option<Uuid>,
 ) -> Result<Option<EvolveEvaluation>, sqlx::Error> {
-    sqlx::query_as("SELECT status,score,version_id,evolve_revision,report,learning_rollouts_per_task() AS rollouts_per_task
+    sqlx::query_as("SELECT status,score,mean_task_tokens,version_id,evolve_revision,report,learning_rollouts_per_task() AS rollouts_per_task
         FROM learning_evaluations WHERE round_id=$1 AND role=$2 AND split='evolve' AND ($3::uuid IS NULL OR id=$3)")
         .bind(round).bind(role).bind(id).fetch_optional(&mut **tx).await
 }
@@ -185,7 +187,7 @@ impl EvolveEvaluation {
 
     pub(super) fn summary(&self, full: bool) -> Value {
         let cases: BTreeMap<_, _> = self.report.cases.iter().map(|c| (&c.case_id, c)).collect();
-        json!({"score": self.score, "cases": cases.values().map(|case| case_summary(case, full)).collect::<Vec<_>>()})
+        json!({"score": self.score, "meanTaskTokens": self.mean_task_tokens, "cases": cases.values().map(|case| case_summary(case, full)).collect::<Vec<_>>()})
     }
 }
 
@@ -242,7 +244,7 @@ async fn render(tx: &mut Tx<'_>, round: &Pins, kind: Kind) -> Result<Input, sqlx
         .await?
         .filter(|evaluation| evaluation.scored(round.evolve_revision))
         .ok_or_else(|| invariant("Missing scored incumbent"))?;
-    let feedback = render_feedback(tx, round, &incumbent).await?;
+    let mut feedback = render_feedback(tx, round, &incumbent).await?;
     let history = history::render_history(tx, round).await?;
     let memory = memory::render_memory(
         tx,
@@ -251,9 +253,31 @@ async fn render(tx: &mut Tx<'_>, round: &Pins, kind: Kind) -> Result<Input, sqlx
         round.memory_revision,
     )
     .await?;
+    let incumbent_score = incumbent.score.unwrap_or(0.0);
+    let lineage = load_lineage_rounds(tx, round).await?;
+    let best_score = regularization::retained_best_score(
+        &lineage,
+        round.parent_version_id,
+        round.channel_revision,
+        incumbent_score,
+    );
+    let signals = regularization::compute_signals(
+        &history,
+        &parent.files,
+        round.evolve_revision,
+        incumbent_score,
+        best_score,
+        &incumbent.report,
+        incumbent.mean_task_tokens,
+    );
+    let (passing_cases, failing_cases) = regularization::case_split(&incumbent.report);
+    feedback["noiseBand"] = json!(signals.noise_band);
+    feedback["bestScore"] = json!(signals.best_score);
+    feedback["passingCaseIds"] = json!(passing_cases);
+    feedback["failingCaseIds"] = json!(failing_cases);
     let mut data = json!({
         "setting": round.setting, "harness": harness, "feedback": feedback,
-        "history": history, "improvementMemory": memory,
+        "history": history, "regularization": signals.to_json(), "improvementMemory": memory,
     });
     let status = match kind {
         Kind::Propose => return Ok(Input { data, parent }),
@@ -261,6 +285,7 @@ async fn render(tx: &mut Tx<'_>, round: &Pins, kind: Kind) -> Result<Input, sqlx
         Kind::Select => "evaluated",
     };
     let mut entries = Vec::new();
+    let mut inadmissible_entries = Vec::new();
     for candidate in candidates(tx, round.id)
         .await?
         .into_iter()
@@ -303,16 +328,91 @@ async fn render(tx: &mut Tx<'_>, round: &Pins, kind: Kind) -> Result<Input, sqlx
                 .filter(|case| !case_passes(case) && previously_passing.contains(&case.case_id))
                 .map(|case| &case.case_id)
                 .collect();
+            let adm = regularization::admissibility(
+                incumbent_score,
+                signals.best_score,
+                evaluation.score.unwrap_or(0.0),
+                signals.noise_band,
+                incumbent.mean_task_tokens,
+                evaluation.mean_task_tokens,
+            );
             evolve["regressed"] = json!(regressed);
             evolve["passed"] = json!(outcome.passed);
             evolve["total"] = json!(outcome.total);
+            evolve["deltaScore"] = json!(adm.delta_score);
+            evolve["deltaTaskTokens"] = json!(adm.delta_task_tokens);
+            evolve["admissible"] = json!(adm.admissible);
+            evolve["guardrailReason"] = json!(adm.guardrail_reason);
             entry["evolve"] = evolve;
             entry["screen"] = json!(candidate.screen);
+            if adm.admissible {
+                entries.push(entry);
+            } else {
+                inadmissible_entries.push(entry);
+            }
+            continue;
         }
         entries.push(entry);
     }
     data["candidates"] = json!(entries);
+    if matches!(kind, Kind::Select) && !inadmissible_entries.is_empty() {
+        data["inadmissibleCandidates"] = json!(inadmissible_entries);
+    }
     Ok(Input { data, parent })
+}
+
+async fn load_lineage_rounds(
+    tx: &mut Tx<'_>,
+    round: &Pins,
+) -> Result<Vec<regularization::LineageRound>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT r.parent_version_id, r.adopted_version_id, r.channel_revision, r.decision, r.reverted,
+                (SELECT e.score FROM learning_evaluations e
+                 WHERE e.round_id=r.id AND e.role='incumbent' AND e.split='evolve' AND e.status='scored'
+                 LIMIT 1) AS incumbent_score,
+                (SELECT e.score FROM learning_evaluations e
+                 WHERE e.round_id=r.id AND e.role='candidate' AND e.split='evolve' AND e.status='scored'
+                   AND e.sample=r.adopted_sample
+                 LIMIT 1) AS adopted_score
+         FROM learning_rounds r
+         WHERE (r.project_id, r.bundle_id) = ($1, $2)
+           AND r.number < $3
+           AND r.setting = $4
+           AND r.task_revision = $5
+           AND r.runtime IS NOT DISTINCT FROM $6
+           AND r.channel = $7
+         ORDER BY r.number DESC",
+    )
+    .bind(&round.project_id)
+    .bind(round.bundle_id)
+    .bind(round.number)
+    .bind(&round.setting)
+    .bind(round.evolve_revision)
+    .bind(&round.runtime)
+    .bind(&round.channel)
+    .fetch_all(&mut **tx)
+    .await
+}
+
+pub(super) async fn enqueue_select_if_admissible(
+    tx: &mut Tx<'_>,
+    round: &Pins,
+) -> Result<bool, sqlx::Error> {
+    let input = render(tx, round, Kind::Select).await?;
+    let has_admissible = input.data["candidates"]
+        .as_array()
+        .is_some_and(|entries| !entries.is_empty());
+    if !has_admissible {
+        return Ok(false);
+    }
+    sqlx::query("INSERT INTO learning_optimizer_calls(round_id,kind,sample,input_digest) VALUES($1,$2,$3,$4)")
+        .bind(round.id)
+        .bind(Kind::Select.name())
+        .bind(0i16)
+        .bind(digest(&input.data))
+        .execute(&mut **tx)
+        .await?;
+    Ok(true)
 }
 
 pub(super) fn stored<T: serde::de::DeserializeOwned>(value: &Value) -> Result<T, sqlx::Error> {
@@ -499,7 +599,14 @@ fn validate_select(content: &str, samples: &BTreeSet<i16>) -> Result<Selection, 
     let reason = match &mut output {
         Selection::Adopt { sample, reason } => {
             if !samples.contains(sample) {
-                return Err("Selection must name an evaluated sample".into());
+                let list = samples
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(format!(
+                    "Selection must name an admissible sample: [{list}]"
+                ));
             }
             reason
         }
@@ -606,6 +713,7 @@ async fn request(
         .as_array()
         .expect("candidate array")
         .iter()
+        .filter(|entry| !matches!(kind, Kind::Select) || entry["evolve"]["admissible"] == true)
         .map(|entry| entry["sample"].as_i64().expect("sample number") as i16)
         .collect();
     let output = call_with_retry(model, kind, data, |content| match kind {

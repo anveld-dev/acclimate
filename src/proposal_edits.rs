@@ -25,6 +25,16 @@ pub enum FileOp {
     Delete { path: String },
 }
 
+pub(crate) fn file_kind_for_path(path: &str) -> &'static str {
+    if path.starts_with("skills/") {
+        "skill"
+    } else if path.starts_with("memory/") {
+        "memory"
+    } else {
+        "instruction"
+    }
+}
+
 pub fn reconstruct(
     parent: &BundlePayload,
     changes: &Changes,
@@ -96,13 +106,7 @@ pub fn reconstruct(
                 candidate.files[index].text.clone_from(text)
             }
             (FileOp::Write { text, .. }, None) => {
-                let kind = if path.starts_with("skills/") {
-                    "skill"
-                } else if path.starts_with("memory/") {
-                    "memory"
-                } else {
-                    "instruction"
-                };
+                let kind = file_kind_for_path(path);
                 candidate.files.push(BundleFile {
                     path: path.clone(),
                     kind: kind.into(),

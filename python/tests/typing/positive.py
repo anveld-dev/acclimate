@@ -1,12 +1,10 @@
-"""Consumer of the public delivery and outcome annotations."""
-from typing import Literal, assert_type
+"""Consumer of the public delivery and release annotations."""
+from typing import assert_type
 
 from acclimate import (
     Acclimate,
     AcclimateClient,
     Job,
-    LearningJson,
-    LearningOutcomeReceipt,
     ApiError,
     TransportError,
     DeliveryError,
@@ -83,10 +81,8 @@ def listings(client: AcclimateClient, setup: BundleSetupRequest) -> None:
     assert_type(client.create_bundle_setup("p", setup, "key"), BundleSetup)
 
 
-def learning(client: AcclimateClient, input: LearningJson) -> None:
-    job = Acclimate.from_env().job("support", channel="stable", input=input)
+def learning(client: AcclimateClient) -> None:
+    job = Acclimate.from_env().job("support", channel="stable")
     assert_type(job, Job)
     assert_type(job.version, VerifiedVersion)
-    assert_type(job.outcome_id, str)
     assert_type(job.prepare(), PreparedDelivery)
-    assert_type(job.expect({"action": "refund"}), LearningOutcomeReceipt)

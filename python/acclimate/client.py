@@ -467,11 +467,6 @@ class AcclimateClient:
     def set_model_provider(self, workspace_id: str, body: ModelProviderRequest) -> ModelProvider:
         return self._request("PUT", self._workspace(workspace_id) + "/model-provider", body, _optional_key=True)
 
-    def report_learning_outcome(self, workspace_id: str, bundle_id: str, body: LearningOutcomeRequest,
-                                key: str | None = None) -> LearningOutcomeReceipt:
-        return self._request("POST", self._loop_path(workspace_id, bundle_id) + "/outcomes",
-                             body, body["outcomeId"] if key is None else key)
-
     def _connection(self, workspace_id: str, connection_id: str) -> str:
         return "/v1/workspaces/" + self._part(workspace_id) + "/connections/" + self._part(connection_id)
 

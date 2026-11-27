@@ -3,7 +3,6 @@
 import hashlib
 import itertools
 import json
-import uuid
 import os
 import secrets
 import shutil
@@ -489,18 +488,6 @@ class CentralLearning(unittest.TestCase):
         private_create = api("POST", "/tasks", {"input": marker, "grader": {"type": "exact", "expected": marker}},
                              machine=True)
         self.assertEqual(private_create, {"heldOutCount": 1})
-        outcome_ids = (str(uuid.uuid4()) for _ in itertools.count())
-        outcome_id = next(value for value in outcome_ids if held_out(value))
-        outcome = dict(outcomeId=outcome_id, input=marker, expected="correction", output="original",
-                       versionId=data["version"], digest=h.sql("SELECT digest FROM versions WHERE id='"
-                                                               + data["version"] + "'"))
-        for _ in range(2):
-            receipt = h.call("POST", base + "/outcomes", outcome, actor="app")
-            self.assertEqual(receipt["heldOutCount"], 1)
-            self.assertNotIn("caseId", receipt)
-            self.assertNotIn(marker, json.dumps(receipt))
-        poll(cards, lambda rows: any(r["outcomeId"] == outcome_id and r["output"] == "original"
-                                     and r["admission"] == "admitted" for r in rows))
         task = api("POST", "/tasks", {"input": marker, "grader": {"type": "exact", "expected": "wrong"}})
         self.assertEqual(task["split"], "held-out")
         tid = task["taskId"]
@@ -603,15 +590,33 @@ class CentralLearning(unittest.TestCase):
         h.call("PUT", base, dict(channel="stable", taskModel="task", judgeModel="judge",
                                   maxRoundsPerDay=2, setting=dict(domain="review", benchmark="gate")))
         counts = Counter()
-        while min(counts["evolve"], counts["held-out"]) < 20:
-            job = str(uuid.uuid4())
-            split = "held-out" if hashlib.sha256(job.encode()).digest()[0] < 128 else "evolve"
-            if counts[split] >= 20:
+        for idx in itertools.count(1):
+            if min(counts["evolve"], counts["held-out"]) >= 20:
+                break
+            target = "held-out" if counts["held-out"] < 20 else "evolve"
+            payload_bytes = (
+                json.dumps({"input": f"{target}-sentinel-{idx}", "expected": "checked"}) + "\n"
+            ).encode()
+            digest = hashlib.sha256(payload_bytes).hexdigest()
+            split = (
+                "held-out"
+                if hashlib.sha256(f"import:{digest}:row:1".encode()).digest()[0] < 128
+                else "evolve"
+            )
+            if split != target:
                 continue
             counts[split] += 1
-            h.call("POST", base + "/outcomes", dict(outcomeId=job, versionId=version["id"],
-                digest=version["digest"], input=f"{split}-sentinel-{counts[split]}", expected="checked",
-                output="unchecked"))
+            req = Request(
+                h.base + base + f"/tasks/import?filename=seed-{idx}.jsonl",
+                method="POST",
+                data=payload_bytes,
+                headers={
+                    "Content-Type": "application/x-ndjson",
+                    "Authorization": "Bearer " + h.tokens["operator"],
+                },
+            )
+            with urlopen(req) as response:
+                self.assertEqual(response.status, 200)
         start_worker(self.addCleanup, self.runner, self.image, token, internal)
         deadline = time.monotonic() + 1200
         while True:

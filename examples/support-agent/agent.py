@@ -1,18 +1,16 @@
-"""Answer one support request with the released bundle, and optionally record a correction.
+"""Answer one support request with the released bundle.
 
     python examples/support-agent/agent.py "I was charged twice this month."
-    python examples/support-agent/agent.py "I was charged twice this month." --expected corrected.txt
 """
 
 import argparse
 import json
 import os
-from pathlib import Path
 import sys
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from acclimate import Acclimate, ApiError, system_prompt
+from acclimate import Acclimate, system_prompt
 
 
 def setting(name: str) -> str:
@@ -42,7 +40,6 @@ def complete(system: str, request: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("request")
-    parser.add_argument("--expected", type=Path, help="a file holding the reply a person corrected")
     args = parser.parse_args()
 
     # Reads ACCLIMATE_URL, ACCLIMATE_WORKSPACE and ACCLIMATE_TOKEN.
@@ -53,7 +50,6 @@ def main() -> int:
     job = acclimate.job(
         os.environ.get("ACCLIMATE_BUNDLE_NAME", "Example agent"),
         channel=os.environ.get("ACCLIMATE_CHANNEL", "stable"),
-        input=args.request,
     )
     version = job.version
     # Send the bundle as the learning loop does, so the loop scores the prompt this job runs with.
@@ -61,20 +57,6 @@ def main() -> int:
     print(reply, flush=True)
     # Keep the version with the result, so you can tell later which instructions produced it.
     print(f"\nAnswered with version {version['version']['id']} ({version['version']['digest']}).", file=sys.stderr)
-
-    if args.expected:
-        # A person corrected the reply. Report what it should have been. The request becomes a
-        # learning task, graded against criteria the judge model drafts from the corrected reply.
-        expected = args.expected.read_text(encoding="utf-8").strip()
-        try:
-            receipt = job.expect(expected, output=reply, grading="criteria")
-        except ApiError as error:
-            if error.status == 404:
-                raise SystemExit("Learning is not set up for this bundle. Save its settings on the Learning tab first.") from None
-            raise
-        # The service chooses the split. A held-out task waits for a person to confirm its criteria.
-        split = "an evolve task" if receipt.get("taskId") else "a held-out task, to confirm on the Learning tab"
-        print(f"Recorded the correction as outcome {job.outcome_id}. It becomes {split}.", file=sys.stderr)
     return 0
 
 

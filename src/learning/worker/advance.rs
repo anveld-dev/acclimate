@@ -256,8 +256,11 @@ async fn evaluating(tx: &mut Tx<'_>, row: &LoopRow, round: &Pins) -> Result<(), 
     .fetch_one(&mut **tx)
     .await?;
     if evaluated {
-        optimizer::enqueue(tx, round, Kind::Select, 0).await?;
-        set_state(tx, round, "selecting").await
+        if optimizer::enqueue_select_if_admissible(tx, round).await? {
+            set_state(tx, round, "selecting").await
+        } else {
+            keep(tx, row, round, "no-admissible-candidates", None).await
+        }
     } else {
         keep(tx, row, round, "no-evaluated-candidates", None).await
     }

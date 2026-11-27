@@ -31,7 +31,6 @@ All bundle routes sit under `/v1/workspaces/{ws}/bundles/{b}/learning`.
 | `GET /blocked-versions` | List blocked digests, actors, notes, timestamps and the round that adopted each | read |
 | `DELETE /blocked-versions/{digest}` | Remove a block and record the action | promote |
 | `GET /usage` | Rounds, rollouts and tokens per day | read |
-| `POST /outcomes` | A production outcome from `job.expect()` | write |
 | `GET /memory` | Improvement memory at a revision | read |
 
 One workspace route is added: `GET` and `PUT /v1/workspaces/{ws}/model-provider`. It holds the base URL, the key and the allowed models. `PUT` needs a signed-in administrator. Both methods return `verification: {status, checkedAt, models: [{model, ok, usage, message}]}`. Saving resets status to `pending`, checkedAt to null and models to an empty list. Start, resume and new executor work require status `verified`. The key is write-only: `GET` returns whether one is set and never its value.
@@ -126,7 +125,7 @@ A set-aside `reason` is `no-reference` (no usable answer and no criteria) or `no
 
 ## Rights
 
-Machine tokens may have `read`, `write` and `promote`. Submitting a production outcome requires `write`.
+Machine tokens may have `read`, `write` and `promote`. Creating, importing or editing tasks requires `write`.
 
 **What each caller can read of held-out**
 
@@ -151,12 +150,12 @@ The task schema and cutover migration preserve version and memory history.
 
 | Column | Notes |
 | --- | --- |
-| `project_id`, `bundle_id`, `task_id` | Primary key. `task_id` keeps today's case ID format and values, so memory attempts that name cases stay valid. Outcome tasks keep `outcome:<id>`. |
-| `group` | The source conversation, the import's row group, the job ID of an outcome, or a near-duplicate cluster. The split is a function of the group and never changes. |
+| `project_id`, `bundle_id`, `task_id` | Primary key. `task_id` keeps today's case ID format and values, so memory attempts that name cases stay valid. |
+| `group` | The source conversation, the import's row group, or a near-duplicate cluster. The split is a function of the group and never changes. |
 | `input` | A string, a `{messages}` list, or other JSON |
 | `grader` | `{type: "exact", expected}` or `{type: "criteria", criteria, reference?}` |
-| `source` | `import`, `console` or `outcome` |
-| `author`, `outcome_id`, `version_id`, `output` | Provenance. An outcome records the delivered version and, when sent, the agent's own output. |
+| `source` | `import` or `console` |
+| `author` | Provenance for console-authored tasks. |
 | `confirmed_by` | The person who wrote or confirmed the reference or criteria. Required for a held-out task to be admitted. |
 | `admission` | `pending`, `admitted` or `set-aside`, with `admission_reason` |
 | `added_revision`, `retired_revision` | The same revision scheme as today's evolve cases. An edit retires the old row's content at one revision and adds the new content at the next, under the same `task_id`. |
@@ -194,18 +193,18 @@ Rollout rows are inserted in the same transaction that queues their evaluation. 
 | `learning_rounds` | Add `task_model`, `judge_model`, `runtime` (the [runtime identity](executor.md)), `trigger`, `incumbent_reused`. |
 | `learning_candidates` | Add `blocked-version` to the `drop_reason` check, which allows four values today. |
 
-### Migrations `0025` to `0027`
+### Migrations `0025` to `0028`
 
-`0025_import_history.sql` adds `created_at` and `outcome` to `learning_task_imports`, so imports list newest first and an outcome graded by criteria converts through a one-row import. `0026_round_failure_cause.sql` adds `error_message` to `learning_rollouts`, `failure_code`, `failure_message` and `failure_split` to `learning_rounds`, the `provider-unavailable` round reason and the `provider-unavailable` waiting value. `0027_provider_key_check.sql` adds `provider_key_check`, one value sealed under the provider encryption key so the service refuses a different key at startup.
+`0025_import_history.sql` adds `created_at` and `outcome` to `learning_task_imports`. `0026_round_failure_cause.sql` adds `error_message` to `learning_rollouts`, `failure_code`, `failure_message` and `failure_split` to `learning_rounds`, the `provider-unavailable` round reason and the `provider-unavailable` waiting value. `0027_provider_key_check.sql` adds `provider_key_check`, one value sealed under the provider encryption key so the service refuses a different key at startup. `0028_eval_driven_learning.sql` adds `mean_task_tokens` to `learning_evaluations` and `no-admissible-candidates` to the `learning_rounds` kept-reason constraint.
 
 ### Cutover
 
 Migration 0023 cancels active round work, pauses running loops and copies live and retired cases into the task tables. The service preserves round history and memory. It removes the application principal, held-out commitment, evaluation attempt ID and evaluation deadline. Rollout leases govern retries. Multiple candidate evaluations may be open in a round.
 
-The migration removes the Evaluate right from stored machine grants. Each evaluate grant becomes read and duplicate rights are removed. Set explicit write access on tokens that report outcomes and update static grants before restarting.
+The migration removes the Evaluate right from stored machine grants. Each evaluate grant becomes read and duplicate rights are removed. Update static grants before restarting.
 
 ## SDK
 
-Use the TypeScript or Python client for loop controls, tasks, trials, provider settings and usage. Production applications can report the expected answer and optional actual output for a pinned job with `job.expect()`.
+Use the TypeScript or Python client for loop controls, tasks, trials, provider settings and usage.
 
 Round summaries and detail include rollout progress, the revert outcome and both confirmed scores. Reading blocked digests uses `GET /blocked-versions`. Administrators or tokens with promote can remove a block with `DELETE /blocked-versions/{digest}`. Rollback requires the named adoption at the channel head and supports idempotent replay. Both mutations are audited. Provider updates can omit the stored key when keeping the same URL.

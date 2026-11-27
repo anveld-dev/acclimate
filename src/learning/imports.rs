@@ -492,12 +492,14 @@ async fn apply_conversion(
     id: Uuid,
     mut result: ConversionOutput,
 ) -> ApiResult<Vec<Value>> {
-    let (p,b,source,author,digest,outcome):(String,Uuid,String,String,String,Option<Value>)=sqlx::query_as("SELECT project_id,bundle_id,source,author,digest,outcome FROM learning_task_imports WHERE id=$1 FOR UPDATE")
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(db)?
-        .ok_or_else(||missing("Import not found"))?;
+    let (p, b, source, author, digest): (String, Uuid, String, String, String) = sqlx::query_as(
+        "SELECT project_id,bundle_id,source,author,digest FROM learning_task_imports WHERE id=$1 AND outcome IS NULL FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(db)?
+    .ok_or_else(|| missing("Import not found"))?;
     let mut states = std::collections::BTreeMap::new();
     for c in &result.cards {
         if c.group.trim().is_empty() || c.group.len() > 1024 {
@@ -541,7 +543,7 @@ async fn apply_conversion(
     }
     let mut cards = Vec::new();
     // The loop lock serializes duplicate checks and alias assignments across concurrent imports.
-    if !result.cards.is_empty() && outcome.is_none() {
+    if !result.cards.is_empty() {
         sqlx::query("SELECT FROM learning_loops WHERE (project_id,bundle_id)=($1,$2) FOR UPDATE")
             .bind(&p)
             .bind(b)
@@ -567,65 +569,37 @@ async fn apply_conversion(
     } else {
         tasks::revision(tx, &p, b).await?
     };
-    if let Some(outcome) = outcome {
-        // An outcome keeps its own input, expected answer, group and provenance. Only the
-        // criteria come from the conversion.
-        let outcome_id: Uuid = serde_json::from_value(outcome["outcomeId"].clone())
-            .map_err(|_| invalid("Invalid outcome conversion"))?;
-        let set_aside = !result.set_aside.is_empty();
-        for c in result.cards {
-            let group = outcome_id.to_string();
-            let split = Split::of(&group);
-            let mut task = Task::pending(c.input, c.grader, group, "outcome", &author);
-            task.task_id = format!("outcome:{outcome_id}");
-            task.outcome_id = Some(outcome_id);
-            task.version_id = serde_json::from_value(outcome["versionId"].clone()).ok();
-            task.output = outcome.get("output").cloned();
-            if !c.criteria_drafted {
-                task.confirmed_by = Some(author.clone());
-            }
-            task.added_revision = revision;
-            tasks::insert(tx, &p, b, split, &task, revision).await?;
-            let mut card = json!(task);
-            card["split"] = json!(split.name());
-            cards.push(card);
+    let assignments = import_groups(tx, &p, b, &digest, &result.cards).await?;
+    for c in result.cards {
+        let group = assignments[&format!("import:{digest}:{}", c.group)].clone();
+        let mut task = Task::pending(c.input, c.grader, group, "import", &author);
+        task.source_file = Some(source.clone());
+        task.source_row = Some(c.row);
+        if !c.criteria_drafted
+            && task
+                .grader
+                .get("expected")
+                .or_else(|| task.grader.get("reference"))
+                .is_some_and(|r| contains_reference(&material[&c.row], r))
+        {
+            task.confirmed_by = Some(author.clone());
         }
-        if set_aside {
-            keep_outcome(tx, id).await?;
-        }
-    } else {
-        let assignments = import_groups(tx, &p, b, &digest, &result.cards).await?;
-        for c in result.cards {
-            let group = assignments[&format!("import:{digest}:{}", c.group)].clone();
-            let mut task = Task::pending(c.input, c.grader, group, "import", &author);
-            task.source_file = Some(source.clone());
-            task.source_row = Some(c.row);
-            if !c.criteria_drafted
-                && task
-                    .grader
-                    .get("expected")
-                    .or_else(|| task.grader.get("reference"))
-                    .is_some_and(|r| contains_reference(&material[&c.row], r))
-            {
-                task.confirmed_by = Some(author.clone());
-            }
-            let split = Split::of(&task.group);
-            task.added_revision = revision;
-            tasks::validate(&task)?;
-            let mut card = json!(task);
-            card["split"] = json!(split.name());
-            cards.push(card);
-        }
-        for split in [Split::Evolve, Split::HeldOut] {
-            let batch: Vec<_> = cards
-                .iter()
-                .filter(|c| c["split"] == split.name())
-                .collect();
-            if !batch.is_empty() {
-                sqlx::query(&format!(r#"INSERT INTO {}(project_id,bundle_id,task_id,"group",input,grader,source,author,source_file,source_row,confirmed_by,added_revision)
-                    SELECT $1,$2,c->>'taskId',c->>'group',c->'input',c->'grader','import',c->>'author',c->>'sourceFile',(c->>'sourceRow')::bigint,c->>'confirmedBy',$3 FROM jsonb_array_elements($4) c"#,split.table()))
-                    .bind(&p).bind(b).bind(revision).bind(json!(batch)).execute(&mut **tx).await.map_err(db)?;
-            }
+        let split = Split::of(&task.group);
+        task.added_revision = revision;
+        tasks::validate(&task)?;
+        let mut card = json!(task);
+        card["split"] = json!(split.name());
+        cards.push(card);
+    }
+    for split in [Split::Evolve, Split::HeldOut] {
+        let batch: Vec<_> = cards
+            .iter()
+            .filter(|c| c["split"] == split.name())
+            .collect();
+        if !batch.is_empty() {
+            sqlx::query(&format!(r#"INSERT INTO {}(project_id,bundle_id,task_id,"group",input,grader,source,author,source_file,source_row,confirmed_by,added_revision)
+                SELECT $1,$2,c->>'taskId',c->>'group',c->'input',c->'grader','import',c->>'author',c->>'sourceFile',(c->>'sourceRow')::bigint,c->>'confirmedBy',$3 FROM jsonb_array_elements($4) c"#,split.table()))
+                .bind(&p).bind(b).bind(revision).bind(json!(batch)).execute(&mut **tx).await.map_err(db)?;
         }
     }
     let set_aside_count = result.set_aside.len() as i64;
@@ -639,111 +613,6 @@ async fn apply_conversion(
         .bind(id).bind(json!(updates)).execute(&mut **tx).await.map_err(db)?;
     Ok(cards)
 }
-
-/// Queue a one-row conversion for an outcome whose expected answer is judged against
-/// criteria. The conversion drafts the criteria, and the task is written when its result is
-/// applied, with the outcome's own input, expected answer, group and provenance.
-pub(super) async fn queue_outcome(
-    tx: &mut Tx<'_>,
-    project: &str,
-    bundle: Uuid,
-    author: &str,
-    outcome: Value,
-    input: &Value,
-    expected: &Value,
-) -> ApiResult<()> {
-    let material = json!({"input":input,"expected":expected,"grading":"criteria"});
-    if json!({"row":1,"source":"row:1","material":material})
-        .to_string()
-        .len()
-        > crate::executor::trials::CONVERSION_BYTES
-    {
-        return Err(invalid(
-            "Input and expected together must fit in 64 KiB when graded with criteria",
-        ));
-    }
-    let id = Uuid::new_v4();
-    let digest = format!(
-        "outcome:{}",
-        outcome["outcomeId"].as_str().unwrap_or_default()
-    );
-    sqlx::query("INSERT INTO learning_task_imports(id,project_id,bundle_id,author,source,format,row_count,digest,outcome) VALUES($1,$2,$3,$4,'outcome','rows',1,$5,$6)")
-        .bind(id)
-        .bind(project)
-        .bind(bundle)
-        .bind(author)
-        .bind(digest)
-        .bind(&outcome)
-        .execute(&mut **tx)
-        .await
-        .map_err(db)?;
-    sqlx::query(
-        "INSERT INTO learning_task_import_rows(import_id,row_number,material) VALUES($1,1,$2)",
-    )
-    .bind(id)
-    .bind(material)
-    .execute(&mut **tx)
-    .await
-    .map_err(db)?;
-    Ok(())
-}
-
-/// An outcome is never lost. When its conversion fails for good or sets its row aside, the
-/// outcome becomes an `exact` task from its own values, set aside as `not-converted`, so a
-/// person can add criteria to it. Does nothing for another import, or when the task exists.
-pub(crate) async fn keep_outcome(tx: &mut Tx<'_>, id: Uuid) -> ApiResult<()> {
-    let row: Option<(String, Uuid, String, Value, Value)> = sqlx::query_as(
-        "SELECT i.project_id,i.bundle_id,i.author,i.outcome,r.material FROM learning_task_imports i
-        JOIN learning_task_import_rows r ON r.import_id=i.id AND r.row_number=1
-        WHERE i.id=$1 AND i.outcome IS NOT NULL FOR UPDATE OF i",
-    )
-    .bind(id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(db)?;
-    let Some((p, b, author, outcome, material)) = row else {
-        return Ok(());
-    };
-    let outcome_id: Uuid = serde_json::from_value(outcome["outcomeId"].clone())
-        .map_err(|_| invalid("Invalid outcome conversion"))?;
-    let task_id = format!("outcome:{outcome_id}");
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT FROM learning_tasks WHERE (project_id,bundle_id,task_id)=($1,$2,$3)) OR EXISTS(SELECT FROM learning_held_out_tasks WHERE (project_id,bundle_id,task_id)=($1,$2,$3))")
-        .bind(&p).bind(b).bind(&task_id).fetch_one(&mut **tx).await.map_err(db)?;
-    if exists {
-        return Ok(());
-    }
-    let group = outcome_id.to_string();
-    let split = Split::of(&group);
-    let mut task = Task::pending(
-        material["input"].clone(),
-        json!({"type":"exact","expected":material["expected"]}),
-        group,
-        "outcome",
-        &author,
-    );
-    task.task_id = task_id;
-    task.outcome_id = Some(outcome_id);
-    task.version_id = serde_json::from_value(outcome["versionId"].clone()).ok();
-    task.output = outcome.get("output").cloned();
-    task.confirmed_by = Some(author);
-    let revision = tasks::revision(tx, &p, b).await?;
-    tasks::insert(tx, &p, b, split, &task, revision).await?;
-    tasks::set_admission(
-        tx,
-        &p,
-        b,
-        split,
-        &task.task_id,
-        revision,
-        "set-aside",
-        Some(NOT_CONVERTED),
-    )
-    .await?;
-    Ok(())
-}
-
-/// The admission reason of an outcome task kept after its conversion failed or set it aside.
-pub(crate) const NOT_CONVERTED: &str = "not-converted";
 
 /// The fifty most recent imports, each shaped like the single-import response plus its
 /// creation time and source. Set-aside rows are listed only to signed-in people.

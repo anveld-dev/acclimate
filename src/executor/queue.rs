@@ -55,14 +55,15 @@ pub(crate) async fn settle_round(
         AND NOT EXISTS(SELECT FROM learning_rollouts WHERE evaluation_id=e.id AND status<>'scored')
     ), tasks AS (
         SELECT l.evaluation_id,l.task_id,avg(l.score) AS mean,
+               avg(coalesce((l.tokens #>> '{task,input}')::double precision,0)+coalesce((l.tokens #>> '{task,output}')::double precision,0)) FILTER (WHERE l.tokens IS NOT NULL) AS mean_tokens,
                jsonb_agg(jsonb_build_object('score',l.score,'passed',l.passed) ||
                    CASE WHEN e.split='evolve' THEN jsonb_strip_nulls(jsonb_build_object('gatewayLog',learning_feedback_log(l.gateway_log),'reasons',l.reasons))
                         ELSE '{}'::jsonb END ORDER BY l.rollout) AS rollouts
         FROM ready e JOIN learning_rollouts l ON l.evaluation_id=e.id GROUP BY l.evaluation_id,l.task_id
     ), reports AS (
-        SELECT evaluation_id,avg(mean) score,jsonb_build_object('cases',jsonb_agg(jsonb_build_object('caseId',task_id,'rollouts',rollouts)
+        SELECT evaluation_id,avg(mean) score,avg(mean_tokens) AS mean_task_tokens,jsonb_build_object('cases',jsonb_agg(jsonb_build_object('caseId',task_id,'rollouts',rollouts)
             ORDER BY task_id COLLATE \"C\")) AS report FROM tasks GROUP BY evaluation_id
-    ) UPDATE learning_evaluations e SET status='scored',score=r.score,report=r.report FROM reports r WHERE e.id=r.evaluation_id")
+    ) UPDATE learning_evaluations e SET status='scored',score=r.score,mean_task_tokens=r.mean_task_tokens,report=r.report FROM reports r WHERE e.id=r.evaluation_id")
         .bind(round).execute(&mut **tx).await?;
     Ok(())
 }

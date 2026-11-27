@@ -71,6 +71,26 @@ async fn upgrade_removes_old_workflows_and_preserves_delivery() {
     let cutover:(String,i64,i64)=sqlx::query_as("SELECT pause_reason,task_revision,(SELECT count(*) FROM learning_tasks) FROM learning_loops")
         .fetch_one(&mut connection).await.unwrap();
     assert_eq!(cutover, ("tasks-required".into(), 2, 3));
+    let mean_tokens_column: (String, String) = sqlx::query_as(
+        "SELECT data_type, is_nullable FROM information_schema.columns
+         WHERE table_schema=current_schema() AND table_name='learning_evaluations'
+           AND column_name='mean_task_tokens'",
+    )
+    .fetch_one(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        mean_tokens_column,
+        ("double precision".into(), "YES".into())
+    );
+    let kept_reason_check: String = sqlx::query_scalar(
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint
+         WHERE conrelid='learning_rounds'::regclass AND conname='learning_round_kept_reason'",
+    )
+    .fetch_one(&mut connection)
+    .await
+    .unwrap();
+    assert!(kept_reason_check.contains("no-admissible-candidates"));
 
     assert_eq!(
         sqlx::query_scalar::<_, i64>(

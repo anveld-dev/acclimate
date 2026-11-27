@@ -78,13 +78,13 @@ No one needs to be present after Start.
 
 **You do:** nothing in a normal week. You act when a task is flagged or an alert arrives.
 
-### 8. Grow from production
+### 8. Expand the evaluation suite
 
-**Screen:** the Tasks page shows where each task came from: imported, written in the console, or reported from production.
+**Screen:** the Tasks page shows where each task came from: imported or written in the console.
 
-**You do, once:** call `job.expect(expected)` in your app when you know the correct answer for a real job. It needs a machine token with the `write` right.
+**You do:** import new evaluation batches (or add tasks via the console or API) when you uncover new failure classes or want broader coverage.
 
-**Automatic:** each outcome goes through the same admission check, is assigned to a split by its group and joins the task set. An outcome can land in held-out. New tasks are the evidence that triggers the next round. The delivered agent never writes tasks, criteria or references. An outcome is stored with its provenance.
+**Automatic:** new tasks go through the same admission check, are assigned to a split by group hash, and trigger the next round once enough evolve tasks change.
 
 ## Who does what
 
@@ -97,7 +97,7 @@ No one needs to be present after Start.
 | 5. Review | Reads, tries, clicks Start | Assigns the split, enforces the minimum |
 | 6. Rounds | — | Runs rounds, releases winners |
 | 7. Watch | Fixes flagged tasks, rolls back if needed | Flags tasks, alerts on any drop, reverts on a clear drop |
-| 8. Production | Adds `job.expect()` once | Admits outcomes as tasks |
+| 8. Iterate | Imports new eval batches when needed | Admits tasks and wakes waiting loops on new evidence |
 
 ## Month two
 

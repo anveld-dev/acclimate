@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Breaking
+
+- Removed production-correction outcomes (`POST /v1/workspaces/{workspaceId}/bundles/{bundleId}/learning/outcomes`, `AcclimateClient.reportLearningOutcome` / `report_learning_outcome`, `LearningOutcomeRequest`, `LearningOutcomeReceipt`, `LearningGrading`, and `job.expect()`). Evaluation suites are managed through task imports, the console, or the task API.
+- TypeScript `createAcclimate().job(bundle, options)` no longer accepts `input` or `outcomeId` and no longer exposes `job.outcomeId` or `job.expect()`.
+- Python `Acclimate.job(bundle, *, channel="stable")` no longer accepts `input` (passing `input=` raises `TypeError`) and `Job` no longer exposes `outcome_id` or `expect()`.
+
+### Added
+
+- Added RRSI-inspired learning loop guardrails: empirical repeat-rollout noise band (`noiseBand`), lineage-scoped `bestScore`, `passingCaseIds`/`failingCaseIds` regression guards, mean task-token tracking (`meanTaskTokens`) with a relative + absolute floor cost budget, stall/exploration/pruning signals (`regularization`), and automatic incumbent retention (`no-admissible-candidates`) when no evaluated candidate clears the guardrails.
+
 ## [0.3.0] - 2026-12-13
 
 ### Breaking

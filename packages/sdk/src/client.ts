@@ -8,7 +8,6 @@ import type {
   VersionMetadata, Workspace,
   LearningLoopRequest, LearningLoop, LearningRoundSummary, LearningRound, LearningMemory,
   LearningTaskRequest, LearningTaskEdit, LearningTaskPage, LearningTaskReceipt, LearningTaskRevision, LearningTrialReceipt, LearningTrial, LearningImport, LearningImportSummary, LearningTaskConfirmation, LearningTaskRecheck, BlockedLearningVersion, LearningUsage, LearningRollback, ModelProvider, ModelProviderRequest,
-  LearningOutcomeRequest, LearningOutcomeReceipt,
 } from './types.js';
 
 /** Error codes the Acclimate service returns, plus codes the client assigns to HTTP failures. */
@@ -511,9 +510,6 @@ export class AcclimateClient {
   }
   setModelProvider(workspaceId: string, body: ModelProviderRequest): Promise<ModelProvider> {
     return this.request('PUT', this.path(workspaceId, '/model-provider'), JSON.stringify(body), undefined, {}, false, false, true);
-  }
-  reportLearningOutcome(workspaceId: string, bundleId: string, body: LearningOutcomeRequest, key = body.outcomeId): Promise<LearningOutcomeReceipt> {
-    return this.request('POST', this.loopPath(workspaceId, bundleId) + '/outcomes', JSON.stringify(body), key);
   }
   private listing(options: ListOptions = {}): string {
     const query = new URLSearchParams();

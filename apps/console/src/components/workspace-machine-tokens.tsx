@@ -48,7 +48,7 @@ const RIGHT_SHORT_LABELS: Record<MachineTokenRight, string> = {
 /** What each right allows, as in the Rights table of the credentials reference. */
 const RIGHT_HINTS: Record<MachineTokenRight, string> = {
   read: 'Resolve a channel and read the released content.',
-  write: 'Add versions, import or edit tasks and report outcomes.',
+  write: 'Add versions and import or edit tasks.',
   promote: 'Release versions to channels and change learning settings.',
 };
 const STATUS_LABELS: Record<string, string> = {

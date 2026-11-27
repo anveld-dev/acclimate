@@ -24,21 +24,20 @@ The root entry point also exports every wire type, such as `Bundle`, `VersionMet
 
 ## Jobs
 
-`createAcclimate` is the shortest way to run a job on a released version, found by bundle name, and report its outcome.
+`createAcclimate` is the shortest way to run a job on a released version, found by bundle name.
 
 ```ts
 import { createAcclimate, systemPrompt } from '@anveld/acclimate-sdk';
 
 // Reads ACCLIMATE_URL, ACCLIMATE_WORKSPACE and ACCLIMATE_TOKEN.
 const acclimate = createAcclimate();
-const job = await acclimate.job('Support agent', { channel: 'stable', input: request });
+const job = await acclimate.job('Support agent', { channel: 'stable' });
 const reply = await runAgent(systemPrompt(job.version.payload), request);
-await job.expect(correctedReply, { output: reply });
 ```
 
 Send `systemPrompt(job.version.payload)` as your system message: it is the message a [learning rollout](/docs#how-a-rollout-runs-your-bundle) sends, so the loop scores the prompt your jobs run with.
 
-`createAcclimate` ignores `ACCLIMATE_CONNECTION` and sends no delivery receipts. Use a machine token with read, plus write if you call `expect`, and write and promote if you call `release` or `rollback`. `createAcclimate(options?)` takes these options:
+`createAcclimate` ignores `ACCLIMATE_CONNECTION` and sends no delivery receipts. Use a machine token with read, plus write and promote if you call `release` or `rollback`. `createAcclimate(options?)` takes these options:
 
 | Option | Default | Value |
 | --- | --- | --- |
@@ -55,20 +54,14 @@ On each call, `acclimate.job(bundleName, options)` lists every bundle in the wor
 | Option | Value |
 | --- | --- |
 | `channel` or `versionId` | Exactly one. `versionId` reruns a job on the version it first used. |
-| `input` | The job's input as JSON, which `expect` reports unless you pass another |
-| `outcomeId` | The outcome's UUID, random by default |
 
 | Job member | What it is |
 | --- | --- |
 | `version` | The verified version. Its metadata, with `id` and `digest`, is `version.version`, and its files are `version.payload.files`. |
-| `outcomeId` | The outcome's UUID |
 | `prepare(destination, options?)` | Writes the version's files into `destination` and returns `files` and `cleanup()` |
 | `prepare(nativePrepare)` | Passes the verified version to a plugin's `prepare` and returns its result |
-| `expect(expected, { input?, output?, grading? })` | Reports a production outcome and returns its receipt |
 
 `acclimate.release(bundleName, payload, { channel?, reason })` uploads `payload` as a child of the channel's current version and releases it on `channel`, `stable` by default. `acclimate.rollback(bundleName, { channel?, reason })` releases the version the channel served before its latest release. Both return `{ bundleId, channel, revision, version, changed }`. `changed` is false when the channel already served the same files. A channel that moved during the call throws `ApiError` with code `revision_conflict`.
-
-`grading` is `'exact'` or `'criteria'`, and any other value throws `AcclimateUsageError`. Without it, the service chooses as [How a row is graded](/docs/guides/learning-loop#how-a-row-is-graded) describes. The first valid `expect` call fixes the input, expected value and output, and a repeat sends the same outcome with the same ID, so it is safe to retry. [Report production outcomes](/docs/guides/learning-loop#report-production-outcomes) explains what the service does with an outcome.
 
 ## Client
 
@@ -151,9 +144,8 @@ Every method takes `workspaceId` first, then `bundleId` where the route has one.
 | Imports and trials | `importLearningTasks`, `getLearningImport`, `listLearningImports`, `tryLearningTask`, `getLearningTrial` |
 | Rounds and rollback | `listLearningRounds`, `getLearningRound`, `getLearningMemory`, `getLearningUsage`, `rollbackLearningRound`, `listBlockedLearningVersions`, `unblockLearningVersion` |
 | Model provider | `getModelProvider`, `setModelProvider` |
-| Outcomes | `reportLearningOutcome` |
 
-- `enrollLearningLoop` turns on learning or changes its settings. It, `pauseLearningLoop`, `resumeLearningLoop` and `stopLearningLoop` take an optional idempotency key. `reportLearningOutcome` uses the outcome ID as its key unless you pass one.
+- `enrollLearningLoop` turns on learning or changes its settings. It, `pauseLearningLoop`, `resumeLearningLoop` and `stopLearningLoop` take an optional idempotency key.
 - `listLearningTasks` takes `{ after, limit, split, source, admission, flagged, confirmed }`.
 - `importLearningTasks(workspaceId, bundleId, data, contentType, filename?)` takes the file's bytes as an `ArrayBuffer`. Send `text/plain`, `text/csv`, `application/x-ndjson`, `application/jsonl` or the xlsx type `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`. For another type the service uses the filename's extension (`csv`, `jsonl`, `xlsx` or `text`), or reads plain text without one.
 - `confirmLearningTasks`, `exportHeldOutTasks` and `setModelProvider` need a signed-in person, not a machine token.

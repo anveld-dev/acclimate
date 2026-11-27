@@ -535,10 +535,12 @@ async fn result(
         .await
         .map_err(db)?;
             if row.get::<Option<String>, _>("kind").as_deref() == Some("conversion") {
-                let failed: Option<Uuid> = sqlx::query_scalar("UPDATE learning_task_imports SET failure='Conversion failed after two attempts' WHERE conversion_trial=$1 AND EXISTS(SELECT FROM learning_rollouts WHERE lease_id=$2 AND status='failed') RETURNING id").bind(row.get::<Uuid,_>("trial_id")).bind(id).fetch_optional(&mut *tx).await.map_err(db)?;
-                if let Some(import) = failed {
-                    crate::learning::imports::keep_outcome(&mut tx, import).await?;
-                }
+                sqlx::query("UPDATE learning_task_imports SET failure='Conversion failed after two attempts' WHERE conversion_trial=$1 AND EXISTS(SELECT FROM learning_rollouts WHERE lease_id=$2 AND status='failed')")
+                    .bind(row.get::<Uuid, _>("trial_id"))
+                    .bind(id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(db)?;
             }
         }
         ResultBody::Converted {
@@ -642,10 +644,11 @@ async fn reject_conversion(
     tokens: Option<Value>,
 ) -> ApiResult<()> {
     sqlx::query("UPDATE learning_rollouts SET status='failed',error_code='invalid-conversion',tokens=$2,lease_token_hash=NULL WHERE lease_id=$1").bind(lease).bind(tokens).execute(&mut **tx).await.map_err(db)?;
-    let failed: Option<Uuid> = sqlx::query_scalar("UPDATE learning_task_imports SET failure='Executor returned invalid conversion material' WHERE conversion_trial=$1 RETURNING id").bind(trial).fetch_optional(&mut **tx).await.map_err(db)?;
-    if let Some(import) = failed {
-        crate::learning::imports::keep_outcome(tx, import).await?;
-    }
+    sqlx::query("UPDATE learning_task_imports SET failure='Executor returned invalid conversion material' WHERE conversion_trial=$1")
+        .bind(trial)
+        .execute(&mut **tx)
+        .await
+        .map_err(db)?;
     Ok(())
 }
 

@@ -8,7 +8,7 @@ The loop itself still follows the SIM paper ([arXiv 2611.18856](https://arxiv.or
 
 ## Components
 
-- **Tasks live in the service.** A task is an input plus an expected answer or plain-language criteria. Tasks come from material the user uploads in the console and from production outcomes reported with `job.expect()`. The service assigns the split and keeps custody of held-out tasks.
+- **Tasks live in the service.** A task is an input plus an expected answer or plain-language criteria. Tasks come from evaluation material imported via the console or API, or written in the console. The service assigns the split and keeps custody of held-out tasks.
 - **An executor runs rollouts.** A separate `acclimate-executor` container runs and grades each rollout. A gateway inside it is the only route to a model. Every rollout runs in a fresh sandbox with no network, from the first release. The first harness, `chat`, is a small built-in runner inside that sandbox. Grading happens outside it.
 - **The console is the way in.** Setup is a short path in the console, and the API mirrors every step. There is no repository layout, no GitHub app and no MCP surface in the first release.
 - **Rounds run when there is something to learn.** New evidence triggers a round. The loop idles when the task set is exhausted, and a per-bundle cap limits rounds per day.
@@ -22,7 +22,6 @@ Browser (console) ───────────────▶ API ──▶
                                     │        tasks, split, held-out custody,
 Your app                            │        rounds, rollout leases, memory,
   delivery            ◀──────────── │        provider key (encrypted)
-  job.expect() (optional) ────────▶ │
                                     ├─ worker: rounds, selection, release,
                                     │          alerts, rollback, revert
                                     ├─ optimizer ──▶ optimizer model

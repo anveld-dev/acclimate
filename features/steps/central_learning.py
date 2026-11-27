@@ -293,18 +293,6 @@ def evidence(context):
     assert refusal["error"]["code"] == "round-not-at-head"
 
 
-@when("a production job reports an outcome")
-def outcome(context):
-    sys.path.insert(0, str(ROOT / "python"))
-    from acclimate import Acclimate
-    w = context.world
-    client = Acclimate(w.h.base, w.h.project, w.h.tokens["other"], cache_dir=w.h.dir / "sdk-cache")
-    job = client.job("BDD bundle", input="Answer a production request")
-    job.expect("checked", output="unchecked")
-    cards = session(w, "GET", w.learning + "/tasks?source=outcome")["items"]
-    assert any(c["outcomeId"] == job.outcome_id and c["input"] == "Answer a production request" for c in cards)
-
-
 @then("I roll back the live round and stop through the API")
 def stop_api(context):
     w = context.world

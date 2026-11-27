@@ -340,12 +340,13 @@ async fn session(f: &Fixture, role: &str) -> String {
 
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL"]
-async fn task_custody_revisions_confirmation_and_outcomes() {
+async fn task_custody_revisions_and_confirmation() {
     let f = Fixture::new().await;
     f.enroll().await;
     for (method, suffix) in [
         ("GET", "/work"),
         ("POST", "/evolve-cases"),
+        ("POST", "/outcomes"),
         ("POST", "/evaluations/unused/start"),
         ("POST", "/evaluations/unused/report"),
     ] {
@@ -354,12 +355,6 @@ async fn task_custody_revisions_confirmation_and_outcomes() {
             404
         );
     }
-    assert_eq!(
-        f.req("POST", "/outcomes", "reader", None, json!({}))
-            .await
-            .0,
-        403
-    );
     assert_eq!(
         f.req("POST", "/resume", "admin", None, Value::Null).await.0,
         409
@@ -438,26 +433,6 @@ async fn task_custody_revisions_confirmation_and_outcomes() {
     .await
     .unwrap();
     assert_eq!(n, 2);
-
-    let job = (0..100)
-        .map(Uuid::from_u128)
-        .find(|id| Sha256::digest(id.to_string())[0] < 128)
-        .unwrap();
-    let mut outcome = json!({"outcomeId":job,"versionId":f.version,"digest":DIGEST,"input":input,"expected":null,"output":null});
-    assert_eq!(
-        f.req("POST", "/outcomes", "app", None, outcome.clone())
-            .await
-            .0,
-        400
-    );
-    outcome["output"] = json!("wrong");
-    let receipt = f.ok("POST", "/outcomes", "app", None, outcome).await;
-    assert!(receipt.get("caseId").is_none());
-    let export = f
-        .ok("GET", "/held-out-tasks/export", &person, None, Value::Null)
-        .await;
-    assert_eq!(export["items"][0]["group"], job.to_string());
-    assert_eq!(export["items"][0]["output"], "wrong");
 }
 
 #[tokio::test]

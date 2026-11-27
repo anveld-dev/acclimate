@@ -155,7 +155,7 @@ validatePayload(bundle.payload);
 void compatibilityIssues(bundle.payload, 'codex');
 void [AcclimateClient, prepareCodex(bundle), prepareClaude(bundle), pi(bundle), cursor(bundle)];
 declare const job: AcclimateJob;
-void [createAcclimate, job.prepare(prepareCodex), job.expect];
+void [createAcclimate, job.version, job.prepare(prepareCodex)];
 `,
   );
   run(process.execPath, ['consumer.mjs'], temp);

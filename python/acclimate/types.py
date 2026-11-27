@@ -287,7 +287,7 @@ class LearningRoundSummary(TypedDict):
                    "scoring_held_out", "completed", "failed", "stopped"]
     decision: Literal["adopted", "kept"] | None
     reason: Literal["selector-kept", "no-candidates", "no-survivors", "no-evaluated-candidates",
-                    "no-matching-executor", "channel-moved", "incumbent-evaluation-failed", "optimizer-unavailable",
+                    "no-admissible-candidates", "no-matching-executor", "channel-moved", "incumbent-evaluation-failed", "optimizer-unavailable",
                     "optimizer-context-too-large", "selector-unavailable", "provider-unavailable",
                     "stopped"] | None
     failureCause: NotRequired["LearningFailureCause | None"]
@@ -472,6 +472,7 @@ class LearningEvaluation(_LearningEvaluationIdentity):
     id: str
     status: LearningEvaluationStatus
     score: float | None
+    meanTaskTokens: NotRequired[float | None]
     cases: int
     reportedCases: int
     createdAt: str
@@ -503,26 +504,6 @@ class LearningRound(LearningRoundSummary):
     selection: LearningSelection | None
     candidates: list[LearningCandidate]
     evaluations: list[LearningEvaluation]
-
-
-LearningGrading = Literal["exact", "criteria"]
-
-
-class LearningOutcomeRequest(TypedDict):
-    output: NotRequired[LearningJson]
-    grading: NotRequired[LearningGrading]
-    outcomeId: str
-    versionId: str
-    digest: str
-    input: LearningJson
-    expected: LearningJson
-
-
-class LearningOutcomeReceipt(TypedDict):
-    outcomeId: str
-    taskId: NotRequired[str]
-    heldOutCount: NotRequired[int]
-    taskRevision: int
 
 
 class _LearningMemoryProvenance(LearningSetting):
@@ -765,9 +746,6 @@ __all__ = [
     "LearningEvaluationReport",
     "LearningEvaluation",
     "LearningRound",
-    "LearningGrading",
-    "LearningOutcomeRequest",
-    "LearningOutcomeReceipt",
     "LearningMemory",
     "LearningRoundPage",
 

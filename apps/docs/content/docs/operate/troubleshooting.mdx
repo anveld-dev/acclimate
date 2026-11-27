@@ -10,7 +10,6 @@ Text in backticks is the exact code or message you see. For every code, see [Err
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | An SDK call fails with `transport.unreachable` and `Could not reach the Acclimate service` while the stack runs | The shell does not trust the local certificate | Run `source .local/stack/env.sh` in that shell. See [Trust the local certificate](/docs/reference/local-stack#trust-the-local-certificate). |
-| `job.expect()` fails with HTTP 404 and `Learning loop not enrolled`, or the support agent example prints `Learning is not set up for this bundle` | Learning is off for the bundle | Save the settings on the bundle's **Learning** tab. See [Run a learning loop](/docs/guides/learning-loop). |
 | On Linux, the `Provider` line of `local:up` says `Verification failed` for a provider on `127.0.0.1` | The containers reach it as `host.docker.internal`, which on Linux is the Docker bridge address, such as `172.17.0.1` | Make the provider listen on the bridge address. See [Run learning rounds](/docs/reference/local-stack#run-learning-rounds). |
 
 ## Deployment

@@ -40,7 +40,7 @@ export const runReleaseOperation = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     setResponseHeader('Cache-Control', 'private, no-store');
     const { exactOperation } = await import('./exact-operation');
-    const { ApiError } = await import('@anveld/sdk');
+    const { ApiError } = await import('@anveld/acclimate-sdk');
     try {
       const env = bundleEnvironment(await requestEnvironment(), data.scope);
       if (env.CONSOLE_ALLOW_EDITS !== 'true')
@@ -58,7 +58,7 @@ export const runReleaseOperation = createServerFn({ method: 'POST' })
       )
         return { ok: false as const, message: 'Invalid release request.', uncertain: false };
       const root = `/v1/workspaces/${encodeURIComponent(data.scope.workspaceId)}/bundles/${encodeURIComponent(data.scope.bundleId)}/channels/${encodeURIComponent(data.scope.channel)}/releases`;
-      const promotion = await exactOperation<import('@anveld/sdk').Release>(env, {
+      const promotion = await exactOperation<import('@anveld/acclimate-sdk').Release>(env, {
         workspaceId: data.scope.workspaceId,
         operationPath: root,
         key: data.key,

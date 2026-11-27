@@ -1,7 +1,7 @@
 import { consoleEnvironment } from './console-fixture';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { DeliveryReceipt, Page } from '@anveld/sdk';
+import type { DeliveryReceipt, Page } from '@anveld/acclimate-sdk';
 import {
   integrationCommand,
   readConnectionsState,

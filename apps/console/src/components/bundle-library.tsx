@@ -11,7 +11,7 @@ import {
   validatePayload,
   type CompatibilityTarget,
   type CompatibilityIssue,
-} from '@anveld/sdk/validation';
+} from '@anveld/acclimate-sdk/validation';
 import {
   freezePending,
   loadPending,
@@ -35,7 +35,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { PageTitle } from './shared';
 import { ImportContent } from './import-content';
-import type { BundlePayload } from '@anveld/sdk';
+import type { BundlePayload } from '@anveld/acclimate-sdk';
 const targetLabels: Record<CompatibilityTarget, string> = {
   generic: 'Generic',
   codex: 'Codex',

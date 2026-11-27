@@ -1,20 +1,20 @@
-# @anveld/codex-plugin
+# @anveld/acclimate-codex-plugin
 
 Stage a verified Acclimate version where Codex discovers it: the instruction becomes `AGENTS.md`, skills go to `.agents/skills/<name>/` with their supporting files, and memory files go to `.acclimate/memory/`.
 
 ## Install
 
-Install the plugin tarball together with the matching `@anveld/sdk` tarball from the same release. The SDK is a peer (`^0.2.0`), so your app has one copy and `instanceof DeliveryError` works. This package has no Codex dependency; install `@openai/codex-sdk` yourself (the release was tested with 0.169.0).
+Install the plugin tarball together with the matching `@anveld/acclimate-sdk` tarball from the same release. The SDK is a peer (`^0.3.0`), so your app has one copy and `instanceof DeliveryError` works. This package has no Codex dependency; install `@openai/codex-sdk` yourself (the release was tested with 0.169.0).
 
 ```sh
-npm install "$release/anveld-sdk-0.2.0.tgz" "$release/anveld-codex-plugin-0.2.0.tgz"
+npm install "$release/anveld-acclimate-sdk-0.3.0.tgz" "$release/anveld-acclimate-codex-plugin-0.3.0.tgz"
 ```
 
 ## Use
 
 ```ts
 import { Codex } from '@openai/codex-sdk';
-import { prepare } from '@anveld/codex-plugin';
+import { prepare } from '@anveld/acclimate-codex-plugin';
 
 const prepared = await prepare(delivery); // client.prepare() output or a verified version
 try {

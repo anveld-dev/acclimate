@@ -5,7 +5,7 @@ export function basicDeliveryRecipes(selection: {
   channel: string;
 }) {
   const typescript = `import { readFile } from 'node:fs/promises';
-import { AcclimateClient } from '@anveld/sdk';
+import { AcclimateClient } from '@anveld/acclimate-sdk';
 
 for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_CONNECTION']) {
   if (!process.env[key]) throw new Error('Set ' + key);
@@ -52,7 +52,7 @@ export function agentConnectionRecipes(selection: {
 import { runAgent } from './application.mjs';
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';
-import { AcclimateClient } from '@anveld/sdk';
+import { AcclimateClient } from '@anveld/acclimate-sdk';
 
 for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_CONNECTION',
   'ACCLIMATE_JOB_DIR', 'AGENT_TASK']) {
@@ -139,7 +139,7 @@ export function deliveryRecipes(selection: {
   channel: string;
 }) {
   return {
-    typescript: `import { AcclimateClient, createReceiptReporter } from '@anveld/sdk';
+    typescript: `import { AcclimateClient, createReceiptReporter } from '@anveld/acclimate-sdk';
 
 export function createAppReporter() {
   const connectionId = process.env.ACCLIMATE_CONNECTION;
@@ -185,8 +185,8 @@ export function nativeDeliveryRecipe(
   selection: { workspaceId: string; bundleId: string; channel: string },
   runtime: 'codex' | 'claude' | 'pi' | 'cursor',
 ) {
-  return `import { AcclimateClient } from '@anveld/sdk';
-import { prepare } from '@anveld/${runtime}-plugin';
+  return `import { AcclimateClient } from '@anveld/acclimate-sdk';
+import { prepare } from '@anveld/acclimate-${runtime}-plugin';
 
 for (const key of ['ACCLIMATE_URL', 'ACCLIMATE_TOKEN', 'ACCLIMATE_CONNECTION']) {
   if (!process.env[key]) throw new Error('Set ' + key);

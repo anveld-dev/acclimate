@@ -16,7 +16,7 @@ import type {
   LearningMemory,
   LearningRound,
   LearningRoundSummary,
-} from '@anveld/sdk';
+} from '@anveld/acclimate-sdk';
 import { BundleLearning, learningTab, type LearningTab } from '../src/components/bundle-learning';
 import { TooltipProvider } from '../src/components/ui/tooltip';
 import { activeRoundStates } from '../src/lib/learning';

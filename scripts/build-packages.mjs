@@ -43,9 +43,9 @@ for (const name of ['sdk', 'codex-plugin', 'claude-plugin', 'pi-plugin', 'cursor
       else if (/\.(?:js|d\.ts)$/.test(entry.name)) {
         const text = await readFile(file, 'utf8');
         const updated = text
-          .replaceAll('../../sdk/src/types.js', '@anveld/sdk')
-          .replaceAll('../../sdk/src/cache.js', '@anveld/sdk')
-          .replaceAll('../../sdk/src/native-files.js', '@anveld/sdk/native-files');
+          .replaceAll('../../sdk/src/types.js', '@anveld/acclimate-sdk')
+          .replaceAll('../../sdk/src/cache.js', '@anveld/acclimate-sdk')
+          .replaceAll('../../sdk/src/native-files.js', '@anveld/acclimate-sdk/native-files');
         if (updated.includes('../../sdk/src/')) throw new Error(`Unmapped SDK import in ${file}`);
         await writeFile(file, updated);
       }

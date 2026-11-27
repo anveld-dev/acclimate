@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-12-13
+
+### Breaking
+
+- The SDK is now `@anveld/acclimate-sdk`. Add the `acclimate-` prefix to the four native plugin names under `@anveld` as well. Update dependency names and TypeScript imports when upgrading from `0.2.0`.
+
 ## [0.2.0] - 2026-12-13
 
 ### Breaking

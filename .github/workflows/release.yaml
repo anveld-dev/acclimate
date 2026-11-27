@@ -228,7 +228,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment:
       name: npm
-      url: https://www.npmjs.com/package/@anveld/sdk
+      url: https://www.npmjs.com/package/@anveld/acclimate-sdk
     permissions:
       contents: read
       id-token: write
@@ -259,8 +259,8 @@ jobs:
           fi
           # Publish the SDK before the plugins that depend on it.
           for package in sdk codex-plugin claude-plugin pi-plugin cursor-plugin; do
-            spec="@anveld/$package@$VERSION"
-            tarball="./anveld-$package-$VERSION.tgz"
+            spec="@anveld/acclimate-$package@$VERSION"
+            tarball="./anveld-acclimate-$package-$VERSION.tgz"
             if published=$(npm view "$spec" dist.integrity --json --prefer-online 2>/dev/null); then
               expected="sha512-$(openssl dgst -sha512 -binary "$tarball" | openssl base64 -A)"
               if ! jq -e --arg expected "$expected" '. == $expected or . == [$expected]' <<< "$published" >/dev/null; then

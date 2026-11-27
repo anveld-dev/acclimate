@@ -8,7 +8,7 @@ import {
   setupFailure,
   SetupValidationError,
 } from '../src/server/setup';
-import type { BundlePayload } from '@anveld/sdk';
+import type { BundlePayload } from '@anveld/acclimate-sdk';
 const env = {
   ...consoleEnvironment,
   CONSOLE_SERVICE_TOKEN: 'server-secret',

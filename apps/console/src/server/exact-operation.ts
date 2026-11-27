@@ -1,6 +1,6 @@
 import { validateOperationTarget } from '../lib/operation-target';
 import { createHash } from 'node:crypto';
-import { ApiError } from '@anveld/sdk';
+import { ApiError } from '@anveld/acclimate-sdk';
 import { requireSession, type Environment } from './selection';
 export type ExactRequest = {
   workspaceId: string;

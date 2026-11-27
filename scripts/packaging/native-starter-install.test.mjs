@@ -54,7 +54,7 @@ for (const nested of [false, true]) {
       const releaseRoot = await realpath(release);
       const metadata = JSON.parse(await readFile(path.join(releaseRoot, 'release-metadata.json'), 'utf8'));
       const sums = await readFile(path.join(releaseRoot, 'SHA256SUMS'), 'utf8');
-      const archives = names.map(name => path.join(releaseRoot, metadata.artifacts.find(item => item.package === `@anveld/${name}`).file));
+      const archives = names.map(name => path.join(releaseRoot, metadata.artifacts.find(item => item.package === `@anveld/acclimate-${name}`).file));
       for (const archive of archives) {
         const digest = createHash('sha256').update(await readFile(archive)).digest('hex');
         assert.ok(sums.split('\n').some(line => line.trim().split(/\s+/)[0] === digest && line.endsWith(path.basename(archive))), 'archive matches release checksums');
@@ -102,8 +102,8 @@ for (const nested of [false, true]) {
       }
 
       // A checkout symlink must not be mistaken for an installed release artifact.
-      await rm(path.join(app, 'node_modules/@anveld/codex-plugin'), { recursive: true });
-      await symlink(path.join(root, 'packages/codex-plugin'), path.join(app, 'node_modules/@anveld/codex-plugin'));
+      await rm(path.join(app, 'node_modules/@anveld/acclimate-codex-plugin'), { recursive: true });
+      await symlink(path.join(root, 'packages/codex-plugin'), path.join(app, 'node_modules/@anveld/acclimate-codex-plugin'));
       await assert.rejects(run(process.execPath, [path.join(app, 'verify-install.mjs'), 'codex']), /install.outside_consumer/);
     } finally { await rm(scratch, { recursive: true, force: true }); }
   });

@@ -43,7 +43,7 @@ export const CREDENTIAL_ENV = Object.freeze({
  * stages the verified version in a new private directory directly under the
  * worker's TMPDIR and returns `{ cwd, versionId, digest, instructionPath,
  * skillPaths, memoryFiles, cleanup }` (see `prepareNativeFiles` in
- * `@anveld/sdk/native-files`). `run(task)` runs one fresh turn in `task.context.cwd`
+ * `@anveld/acclimate-sdk/native-files`). `run(task)` runs one fresh turn in `task.context.cwd`
  * inside its own process group and resolves the `runRepositoryJob` result shape.
  * `identity` is JSON describing everything else that changes behavior.
  */
@@ -56,7 +56,7 @@ export function defineHarness({ name, prepare, run, identity = {} }) {
 }
 
 async function prepareReplay(version) {
-  const { prepareNativeFiles } = await import('@anveld/sdk/native-files');
+  const { prepareNativeFiles } = await import('@anveld/acclimate-sdk/native-files');
   const staged = await prepareNativeFiles(version, {
     mapping: { instructionPath: 'AGENTS.md', skillRoot: '.agents/skills', memoryRoot: '.acclimate/memory' },
     prefix: 'acclimate-replay-',
@@ -70,15 +70,15 @@ export async function installedHarness(name) {
   const run = (exportName) => ({ module: HERE, exportName });
   switch (name) {
     case 'codex':
-      return { name, prepare: (await import('@anveld/codex-plugin')).prepare, run: run('runCodexTask') };
+      return { name, prepare: (await import('@anveld/acclimate-codex-plugin')).prepare, run: run('runCodexTask') };
     case 'claude':
-      return { name, prepare: (await import('@anveld/claude-plugin')).prepare, run: run('runClaudeTask') };
+      return { name, prepare: (await import('@anveld/acclimate-claude-plugin')).prepare, run: run('runClaudeTask') };
     case 'pi':
-      return { name, prepare: (await import('@anveld/pi-plugin')).prepare, run: run('runPiTask') };
+      return { name, prepare: (await import('@anveld/acclimate-pi-plugin')).prepare, run: run('runPiTask') };
     case 'cursor':
-      return { name, prepare: (await import('@anveld/cursor-plugin')).prepare, run: run('runCursorTask') };
+      return { name, prepare: (await import('@anveld/acclimate-cursor-plugin')).prepare, run: run('runCursorTask') };
     case 'replay':
-      // The replay fake needs only @anveld/sdk: AGENTS.md/.agents/skills layout, no provider SDK.
+      // The replay fake needs only @anveld/acclimate-sdk: AGENTS.md/.agents/skills layout, no provider SDK.
       return { name, prepare: prepareReplay, run: run('runReplayTask') };
     default:
       throw new Error(`native.unsupported_harness: ${JSON.stringify(String(name))} (use one of ${BUILT_IN_HARNESSES.join(', ')} or { "name", "module" })`);
@@ -206,14 +206,14 @@ export async function freshSessionInputs(name, effectiveContext) {
       };
     case 'claude':
       return {
-        sessionOptions: (await import('@anveld/claude-plugin/native')).claudeSessionOptions(
+        sessionOptions: (await import('@anveld/acclimate-claude-plugin/native')).claudeSessionOptions(
           effectiveContext,
         ),
         memoryFiles: effectiveContext.memoryFiles,
       };
     case 'cursor':
       return {
-        sessionOptions: (await import('@anveld/cursor-plugin/native')).cursorLocalOptions(
+        sessionOptions: (await import('@anveld/acclimate-cursor-plugin/native')).cursorLocalOptions(
           effectiveContext,
         ),
         memoryFiles: effectiveContext.memoryFiles,
@@ -221,7 +221,7 @@ export async function freshSessionInputs(name, effectiveContext) {
     case 'pi':
       return {
         resourceLoader: await (
-          await import('@anveld/pi-plugin/native')
+          await import('@anveld/acclimate-pi-plugin/native')
         ).createPiResourceLoader(
           effectiveContext,
           effectiveContext.memoryFiles.map((file) => file.path),
@@ -308,7 +308,7 @@ export async function runClaudeTask({ context, signal, acknowledge, prompt, poli
   requirePrompt(prompt, 'claude');
   requireModel(policy, 'claude');
   const { query } = await import('@anthropic-ai/claude-agent-sdk');
-  const { claudeSessionOptions } = await import('@anveld/claude-plugin/native');
+  const { claudeSessionOptions } = await import('@anveld/acclimate-claude-plugin/native');
   const abortController = new AbortController();
   const onAbort = () => abortController.abort(signal.reason);
   signal?.addEventListener('abort', onAbort, { once: true });
@@ -364,7 +364,7 @@ export async function runCursorTask({ context, signal, acknowledge, prompt, poli
   requireModel(policy, 'cursor');
   if (!policy.env?.CURSOR_API_KEY) throw new Error('cursor.api_key_required');
   const { Agent } = await import('@cursor/sdk');
-  const { cursorLocalOptions } = await import('@anveld/cursor-plugin/native');
+  const { cursorLocalOptions } = await import('@anveld/acclimate-cursor-plugin/native');
   const agent = await Agent.create({
     apiKey: policy.env.CURSOR_API_KEY,
     model: { id: policy.model },
@@ -402,7 +402,7 @@ export async function runPiTask({ context, signal, acknowledge, prompt, policy }
   requirePrompt(prompt, 'pi');
   requireModel(policy, 'pi');
   const pi = await import('@earendil-works/pi-coding-agent');
-  const { createPiResourceLoader } = await import('@anveld/pi-plugin/native');
+  const { createPiResourceLoader } = await import('@anveld/acclimate-pi-plugin/native');
   const slash = policy.model.indexOf('/');
   if (slash < 1) throw new Error('pi.model_format: use provider/model-id');
   const modelRuntime = await pi.ModelRuntime.create({

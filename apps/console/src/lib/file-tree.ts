@@ -1,4 +1,4 @@
-import type { FileKind } from '@anveld/sdk';
+import type { FileKind } from '@anveld/acclimate-sdk';
 
 export type FileTreeItem = {
   id: string;

@@ -1,22 +1,22 @@
-# @anveld/claude-plugin
+# @anveld/acclimate-claude-plugin
 
 Stage a verified Acclimate version as a Claude Agent SDK project: the instruction becomes `CLAUDE.md`, skills go to `.claude/skills/<name>/` with their supporting files, and memory files go to `.acclimate/memory/`.
 
 ## Install
 
-Install the plugin tarball together with the matching `@anveld/sdk` tarball from the same release. The Acclimate SDK is a peer dependency. Install `@anthropic-ai/claude-agent-sdk` in your application to run Claude sessions.
+Install the plugin tarball together with the matching `@anveld/acclimate-sdk` tarball from the same release. The Acclimate SDK is a peer dependency. Install `@anthropic-ai/claude-agent-sdk` in your application to run Claude sessions.
 
 ```sh
-npm install "$release/anveld-sdk-0.2.0.tgz" "$release/anveld-claude-plugin-0.2.0.tgz" @anthropic-ai/claude-agent-sdk@^0.3.325
+npm install "$release/anveld-acclimate-sdk-0.3.0.tgz" "$release/anveld-acclimate-claude-plugin-0.3.0.tgz" @anthropic-ai/claude-agent-sdk@^0.3.325
 ```
 
 ## Use
 
 ```ts
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { AcclimateClient } from '@anveld/sdk';
-import { prepare } from '@anveld/claude-plugin';
-import { claudeSessionOptions } from '@anveld/claude-plugin/native';
+import { AcclimateClient } from '@anveld/acclimate-sdk';
+import { prepare } from '@anveld/acclimate-claude-plugin';
+import { claudeSessionOptions } from '@anveld/acclimate-claude-plugin/native';
 
 const delivery = await client.prepare({ workspaceId, bundleId, channel: 'stable', reporter });
 const prepared = await prepare(delivery); // or prepare(verifiedVersion) from resolveAndCache

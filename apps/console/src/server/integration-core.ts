@@ -1,6 +1,6 @@
 import { consoleClient } from './console-client';
 import { allPages } from './listing';
-import { ApiError } from '@anveld/sdk';
+import { ApiError } from '@anveld/acclimate-sdk';
 import type {
   AcclimateClient,
   DeliveryReceipt,
@@ -8,7 +8,7 @@ import type {
   ConnectionObservation,
   ConnectionCredential,
   Page,
-} from '@anveld/sdk';
+} from '@anveld/acclimate-sdk';
 import { requireSession, actorScope, type Environment } from './selection';
 
 export type IntegrationCommand =

@@ -42,13 +42,13 @@ export default defineConfig(async ({ command }): Promise<UserConfig> => {
       alias: [
         { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
         {
-          find: /^@anveld\/sdk\/validation$/,
+          find: /^@anveld\/acclimate-sdk\/validation$/,
           replacement: fileURLToPath(
             new URL('../../packages/sdk/src/validation.ts', import.meta.url),
           ),
         },
         {
-          find: /^@anveld\/sdk$/,
+          find: /^@anveld\/acclimate-sdk$/,
           replacement: fileURLToPath(new URL('../../packages/sdk/src/index.ts', import.meta.url)),
         },
       ],

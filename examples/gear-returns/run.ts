@@ -13,8 +13,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { AcclimateClient, defaultCacheDir, resolveAndCache, systemPrompt } from '@anveld/sdk';
-import type { LearningLoop } from '@anveld/sdk';
+import { AcclimateClient, defaultCacheDir, resolveAndCache, systemPrompt } from '@anveld/acclimate-sdk';
+import type { LearningLoop } from '@anveld/acclimate-sdk';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const NAME = process.env.ACCLIMATE_BUNDLE_NAME ?? 'Gear returns';

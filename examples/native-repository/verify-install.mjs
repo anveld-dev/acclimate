@@ -38,7 +38,7 @@ export async function verifyInstalledArtifacts(names, { codexSdk = false } = {})
   const boundary = path.join(consumer, 'node_modules') + path.sep;
   if (names.some(name => !harnesses.includes(name)))
     throw new Error(`install.unsupported_harness: use ${harnesses.join(', ')} or --all`);
-  const specifiers = ['@anveld/sdk', ...new Set(names.map(name => `@anveld/${name}-plugin`))];
+  const specifiers = ['@anveld/acclimate-sdk', ...new Set(names.map(name => `@anveld/acclimate-${name}-plugin`))];
   if (codexSdk) specifiers.push('@openai/codex-sdk');
   const results = [];
   let releaseVersion;
@@ -57,9 +57,9 @@ export async function verifyInstalledArtifacts(names, { codexSdk = false } = {})
     const manifest = JSON.parse(await readFile(path.join(installedDirectory, 'package.json'), 'utf8'));
     if (manifest.name !== specifier)
       throw new Error(`install.package_identity: ${specifier}. node_modules/${specifier} contains ${manifest.name}; reinstall the release tarball`);
-    if (specifier === '@anveld/sdk') releaseVersion = manifest.version;
+    if (specifier === '@anveld/acclimate-sdk') releaseVersion = manifest.version;
     else if (specifier.startsWith('@anveld/') && manifest.version !== releaseVersion)
-      throw new Error(`install.release_version_mismatch: ${specifier} ${manifest.version} with @anveld/sdk ${releaseVersion}. Install the SDK and plugin tarballs from the same release`);
+      throw new Error(`install.release_version_mismatch: ${specifier} ${manifest.version} with @anveld/acclimate-sdk ${releaseVersion}. Install the SDK and plugin tarballs from the same release`);
     if (specifier === '@openai/codex-sdk' && manifest.version !== '0.169.0')
       throw new Error(`install.codex_sdk_version: found ${manifest.version}, expected 0.169.0. Run npm install --prefix "${consumer}" --save-exact @openai/codex-sdk@0.169.0`);
     const api = await import(specifier);

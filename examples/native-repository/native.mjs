@@ -61,7 +61,7 @@ async function jobs([action, jobId, ...flags]) {
 async function checkBundle([file]) {
   if (!file) throw new UsageError('Pass a payload JSON file: { "schemaVersion": 1, "files": [...] } or a version with .payload.');
   const { config } = await loadConfig();
-  const { compatibilityIssues, validatePayload } = await import('@anveld/sdk');
+  const { compatibilityIssues, validatePayload } = await import('@anveld/acclimate-sdk');
   const parsed = JSON.parse(await readFile(path.resolve(file), 'utf8'));
   const payload = parsed?.payload ?? parsed;
   validatePayload(payload);

@@ -11,8 +11,8 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { AcclimateClient, ApiError, defaultCacheDir, resolveAndCache } from '@anveld/sdk';
-import type { BundlePayload, LearningLoop, LearningRoundSummary } from '@anveld/sdk';
+import { AcclimateClient, ApiError, defaultCacheDir, resolveAndCache } from '@anveld/acclimate-sdk';
+import type { BundlePayload, LearningLoop, LearningRoundSummary } from '@anveld/acclimate-sdk';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const NAME = process.env.ACCLIMATE_BUNDLE_NAME ?? 'Ticket triage';

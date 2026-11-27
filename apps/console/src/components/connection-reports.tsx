@@ -1,7 +1,7 @@
 import { ReceiptTime } from './receipt-time';
 import { StatusBadge } from './status-badge';
 import { useState, type ReactNode } from 'react';
-import type { DeliveryReceipt, Page } from '@anveld/sdk';
+import type { DeliveryReceipt, Page } from '@anveld/acclimate-sdk';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';

@@ -3,8 +3,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { Codex } from '@openai/codex-sdk';
-import { prepare } from '@anveld/codex-plugin';
-import type { VerifiedVersion } from '@anveld/sdk';
+import { prepare } from '@anveld/acclimate-codex-plugin';
+import type { VerifiedVersion } from '@anveld/acclimate-sdk';
 
 const model = 'gpt-6-luna';
 const instructionSecret = randomUUID();

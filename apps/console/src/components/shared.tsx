@@ -6,7 +6,7 @@ import { AlertCircle, Bookmark, Code2, FileText, Info } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import type { BundleFile, FileKind } from '@anveld/sdk';
+import type { BundleFile, FileKind } from '@anveld/acclimate-sdk';
 import type { ConsoleState } from '../server/channel';
 import { WorkspaceMenuButton } from './workspace-chrome';
 import { PageHeader } from './page-header';

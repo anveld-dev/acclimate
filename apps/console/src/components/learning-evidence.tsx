@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { LearningRound, LearningRollout } from '@anveld/sdk';
+import type { LearningRound, LearningRollout } from '@anveld/acclimate-sdk';
 import type { LearningScope } from '../lib/learning';
 import { Button } from './ui/button';
 import { learningRequest } from '../server/central-actions';

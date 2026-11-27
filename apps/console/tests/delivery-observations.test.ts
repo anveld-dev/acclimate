@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ConnectionObservation } from '@anveld/sdk';
+import type { ConnectionObservation } from '@anveld/acclimate-sdk';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readDeliveryObservationsState } from '../src/server/delivery-observations-core';

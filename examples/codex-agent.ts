@@ -1,7 +1,7 @@
 import { Codex } from '@openai/codex-sdk';
 import { resolve } from 'node:path';
-import { AcclimateClient, defaultCacheDir, resolveAndCache } from '@anveld/sdk';
-import { prepare } from '@anveld/codex-plugin';
+import { AcclimateClient, defaultCacheDir, resolveAndCache } from '@anveld/acclimate-sdk';
+import { prepare } from '@anveld/acclimate-codex-plugin';
 import { withNativeSessionInputs } from './native-session-lifetime.js';
 import {
   optionalReceipts,

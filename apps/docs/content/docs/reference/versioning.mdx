@@ -7,11 +7,11 @@ Here "release" means an Acclimate release, not the release of a bundle version t
 
 ## One version for every artifact
 
-Each Acclimate release has one `major.minor.patch` version. The service, console, executor and runner images, `@anveld/sdk`, the four plugin packages, the `acclimate-sdk` Python package and the starter archives all carry it, and the release check refuses artifacts whose versions differ.
+Each Acclimate release has one `major.minor.patch` version. The service, console, executor and runner images, `@anveld/acclimate-sdk`, the four plugin packages, the `acclimate-sdk` Python package and the starter archives all carry it, and the release check refuses artifacts whose versions differ.
 
 Git tags add a leading `v`, such as `v0.1.0`. Image tags and package versions do not, so the same release is `0.1.0` there. Pushing a tag builds the images for amd64 and arm64 and creates a GitHub Release with the package files.
 
-The `0.1.0` GitHub Release contains TypeScript packages under `@acclimate`. Starting with `0.2.0`, use `@anveld/sdk` and change any native plugin imports to `@anveld` as well.
+The `0.1.0` GitHub Release contains TypeScript packages under `@acclimate`. Version `0.2.0` moved them to `@anveld` with short names such as `@anveld/sdk`. Starting with `0.3.0`, use `@anveld/acclimate-sdk` and add the same `acclimate-` prefix to the native plugin names.
 
 ## What a version number promises
 

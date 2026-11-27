@@ -202,7 +202,7 @@ def main():
         (consumer / 'package.json').write_text('{"private":true,"type":"module"}')
         subprocess.run(['npm', 'run', 'build:packages'], cwd=ROOT, check=True)
         packed = subprocess.check_output(
-            ['npm', 'pack', '--json', '--offline', '--pack-destination', str(consumer), '--workspace', '@anveld/sdk'],
+            ['npm', 'pack', '--json', '--offline', '--pack-destination', str(consumer), '--workspace', '@anveld/acclimate-sdk'],
             cwd=ROOT, text=True,
         )
         [sdk] = json.loads(packed)

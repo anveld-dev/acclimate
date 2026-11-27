@@ -1,9 +1,9 @@
 import { consoleClient } from './console-client';
 import { allPages } from './listing';
-import { ApiError, validatePayload } from '@anveld/sdk';
+import { ApiError, validatePayload } from '@anveld/acclimate-sdk';
 import { exactOperation } from './exact-operation';
 import { setupRequest } from '../lib/content-operation';
-import type { BundleSetup, CompatibilityTarget, BundlePayload } from '@anveld/sdk';
+import type { BundleSetup, CompatibilityTarget, BundlePayload } from '@anveld/acclimate-sdk';
 import {
   actorScope,
   creationRecoveryServiceIdentity,

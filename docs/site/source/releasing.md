@@ -21,10 +21,10 @@ In GitHub Actions, select **release**, choose a branch or a matching release tag
 For an existing release tag or a registry-only retry, dispatch the workflow on that tag:
 
 ```sh
-gh workflow run release.yaml --ref v0.2.0 -f dry-run=false -f publish-registries=true
+gh workflow run release.yaml --ref v0.3.0 -f dry-run=false -f publish-registries=true
 ```
 
-The registry-only run rebuilds the package artifacts and checks them against `SHA256SUMS`. The `npm` job publishes `@anveld/sdk` first and then the four plugins, each with an npm provenance statement. A retry skips npm versions whose recorded integrity matches the tarball and fails if the integrity differs. The `pypi` job uploads the `acclimate-sdk` wheel with PEP 740 attestations and skips an existing upload.
+The registry-only run rebuilds the package artifacts and checks them against `SHA256SUMS`. The `npm` job publishes `@anveld/acclimate-sdk` first and then the four plugins, each with an npm provenance statement. A retry skips npm versions whose recorded integrity matches the tarball and fails if the integrity differs. The `pypi` job uploads the `acclimate-sdk` wheel with PEP 740 attestations and skips an existing upload.
 
 Nothing publishes without approval. Each job runs in a GitHub environment, `npm` or `pypi`. Before the first registry release, configure both:
 

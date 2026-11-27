@@ -105,7 +105,7 @@ export async function archiveStarters(root, output, metadata) {
       const packageFile = join(destination, 'package.json');
       try {
         const manifest = JSON.parse(await readFile(packageFile, 'utf8'));
-        if (manifest.dependencies?.['@anveld/sdk']) manifest.dependencies['@anveld/sdk'] = metadata.version;
+        if (manifest.dependencies?.['@anveld/acclimate-sdk']) manifest.dependencies['@anveld/acclimate-sdk'] = metadata.version;
         manifest.version = metadata.version;
         await writeFile(packageFile, JSON.stringify(manifest, null, 2) + '\n');
       } catch (error) { if (error.code !== 'ENOENT') throw error; }

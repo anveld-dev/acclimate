@@ -39,7 +39,7 @@ Acclimate versions your AI agent's instructions, skills and memory, delivers eac
 Your application runs its agent with its own model credentials. Learning runs in a separate `acclimate-executor` container and uses the model provider that each workspace configures. The service stores that provider's API key encrypted. [How Acclimate works](https://acclimate.anveld.dev/docs) covers what each part does and sees.
 
 ```ts
-import { createAcclimate, systemPrompt } from '@anveld/sdk';
+import { createAcclimate, systemPrompt } from '@anveld/acclimate-sdk';
 
 const acclimate = createAcclimate();
 const job = await acclimate.job('Gear returns', { channel: 'stable', input: request });

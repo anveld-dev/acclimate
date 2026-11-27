@@ -1,5 +1,5 @@
 import '@tanstack/react-start/server-only';
-import { AcclimateClient } from '@anveld/sdk';
+import { AcclimateClient } from '@anveld/acclimate-sdk';
 import { requireSession, type Environment } from './selection';
 /** Server-only browser transport: never substitute a machine token for a browser session. */
 export function consoleClient(env: Environment, fetcher: typeof fetch = fetch) {

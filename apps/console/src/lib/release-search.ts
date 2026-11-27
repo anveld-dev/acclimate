@@ -1,4 +1,4 @@
-import type { Release } from '@anveld/sdk';
+import type { Release } from '@anveld/acclimate-sdk';
 
 export function matchesRelease(item: Pick<Release, 'revision' | 'version'>, query: string) {
   const term = query.trim().toLowerCase();

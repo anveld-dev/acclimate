@@ -13,7 +13,7 @@ Install the SDK where your agent runs. Build it from a source checkout, use the 
 | The Python SDK | Python 3.11 or later |
 | Preparing files for a job | Linux or macOS, and a private local directory to stage the files in |
 
-`@anveld/sdk` is an ES module only. CommonJS code loads it with `await import('@anveld/sdk')`.
+`@anveld/acclimate-sdk` is an ES module only. CommonJS code loads it with `await import('@anveld/acclimate-sdk')`.
 
 ## Build from a source checkout
 
@@ -43,7 +43,7 @@ The build downloads the `flit_core` build backend unless your index or cache has
 
 ### Install the files
 
-Run this from your application's directory. `/absolute/path/to/release` is `artifacts/releases/<version>/` in your checkout, or the directory holding downloaded release files. A source build produces version 0.2.0 today.
+Run this from your application's directory. `/absolute/path/to/release` is `artifacts/releases/<version>/` in your checkout, or the directory holding downloaded release files. A source build produces version 0.3.0 today.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
@@ -51,7 +51,7 @@ Run this from your application's directory. `/absolute/path/to/release` is `arti
 The SDK tarball has no npm runtime dependencies.
 
 ```sh
-npm install --offline --ignore-scripts /absolute/path/to/release/anveld-sdk-0.2.0.tgz
+npm install --offline --ignore-scripts /absolute/path/to/release/anveld-acclimate-sdk-0.3.0.tgz
 ./node_modules/.bin/acclimate --help
 ```
 
@@ -60,7 +60,7 @@ npm install --offline --ignore-scripts /absolute/path/to/release/anveld-sdk-0.2.
 
 ```sh
 python3.11 -m venv .venv
-.venv/bin/python -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.2.0-py3-none-any.whl
+.venv/bin/python -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.3.0-py3-none-any.whl
 .venv/bin/python -m acclimate pull --help
 ```
 
@@ -75,11 +75,11 @@ Once the matching release is available on the registry for your language:
 <Tab value="TypeScript">
 
 ```sh
-npm install @anveld/sdk
+npm install @anveld/acclimate-sdk
 npx acclimate --help
 ```
 
-To run Codex, the Claude Agent SDK, Pi or Cursor on the delivered files, also install the matching plugin, such as `@anveld/codex-plugin` ([Choose a native integration](/docs/guides/coding-agents#choose-a-native-integration)).
+To run Codex, the Claude Agent SDK, Pi or Cursor on the delivered files, also install the matching plugin, such as `@anveld/acclimate-codex-plugin` ([Choose a native integration](/docs/guides/coding-agents#choose-a-native-integration)).
 
 </Tab>
 <Tab value="Python">

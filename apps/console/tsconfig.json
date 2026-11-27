@@ -12,8 +12,8 @@
     "resolveJsonModule": true,
     "types": ["vite/client", "node"],
     "paths": {
-      "@anveld/sdk": ["../../packages/sdk/src/index.ts"],
-      "@anveld/sdk/validation": ["../../packages/sdk/src/validation.ts"],
+      "@anveld/acclimate-sdk": ["../../packages/sdk/src/index.ts"],
+      "@anveld/acclimate-sdk/validation": ["../../packages/sdk/src/validation.ts"],
       "@/*": ["./src/*"]
     }
   },

@@ -7,7 +7,7 @@ Deliver versioned agent instructions, skills and memory to jobs with the Acclima
 Use the wheel from a GitHub release or build it from a checkout. Verify release artifacts against `SHA256SUMS` and install the wheel without an index. Registry installation with `pip install acclimate-sdk` requires a separate PyPI publication.
 
 ```sh
-python3.11 -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.2.0-py3-none-any.whl
+python3.11 -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.3.0-py3-none-any.whl
 ```
 
 To build a wheel from a checkout, run `python3.11 -m pip wheel --no-deps --wheel-dir /tmp/acclimate-wheel ./python` or `uv build --wheel --out-dir /tmp/acclimate-wheel ./python`. Neither writes build files into the checkout, and neither needs Node.js. Importing the package on Python 3.10 or earlier fails with a message naming the version found.

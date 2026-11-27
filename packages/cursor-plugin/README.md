@@ -1,8 +1,8 @@
-# @anveld/cursor-plugin
+# @anveld/acclimate-cursor-plugin
 
 ## Install
 
-Install the plugin tarball together with the matching `@anveld/sdk` tarball from the same release; the SDK is a `^0.2.0` peer, so your app keeps one copy. The `/native` entry needs the optional peer `@cursor/sdk` `^1.3.1` (Node 22.13 or later).
+Install the plugin tarball together with the matching `@anveld/acclimate-sdk` tarball from the same release; the SDK is a `^0.3.0` peer, so your app keeps one copy. The `/native` entry needs the optional peer `@cursor/sdk` `^1.3.1` (Node 22.13 or later).
 
 ## Cursor local SDK delivery
 

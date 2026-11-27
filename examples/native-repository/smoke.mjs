@@ -1,6 +1,6 @@
 // Exercise preparation from the installed SDK without provider credentials.
 import { readFile } from 'node:fs/promises';
-import { prepareFiles } from '@anveld/sdk';
+import { prepareFiles } from '@anveld/acclimate-sdk';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';

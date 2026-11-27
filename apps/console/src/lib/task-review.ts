@@ -1,4 +1,4 @@
-import type { LearningImportSummary, LearningTaskConfirmation } from '@anveld/sdk';
+import type { LearningImportSummary, LearningTaskConfirmation } from '@anveld/acclimate-sdk';
 import { describeLearning, type TaskCard } from './central-learning';
 
 export type TaskReviewCommand =

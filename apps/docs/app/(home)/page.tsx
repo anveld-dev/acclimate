@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 const github = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
 const example = `${github}/tree/main/examples/gear-returns`;
 
-const snippet = `import { createAcclimate, systemPrompt } from '@anveld/sdk';
+const snippet = `import { createAcclimate, systemPrompt } from '@anveld/acclimate-sdk';
 
 const acclimate = createAcclimate();
 const job = await acclimate.job('Gear returns', {

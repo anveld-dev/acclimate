@@ -11,7 +11,7 @@ import { ReceiptTime } from './receipt-time';
 import { Disclosure, DisclosureTrigger, DisclosureContent } from './ui/disclosure';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import type { DeliveryReceipt, ConnectionCredential, Page } from '@anveld/sdk';
+import type { DeliveryReceipt, ConnectionCredential, Page } from '@anveld/acclimate-sdk';
 import { Button } from './ui/button';
 import { DirectorySearch } from './ui/directory-search';
 import { ArrowUpRight, Check, ChevronRight, Plug, Plus } from 'lucide-react';

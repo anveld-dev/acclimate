@@ -1,4 +1,4 @@
-import { ApiError } from '@anveld/sdk';
+import { ApiError } from '@anveld/acclimate-sdk';
 import { consoleClient } from './console-client';
 import type { Environment } from './selection';
 import { describeLearning, type CentralRequest } from '../lib/central-learning';

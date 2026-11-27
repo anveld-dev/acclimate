@@ -2,8 +2,8 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "paths": {
-      "@anveld/sdk": ["../../packages/sdk/src/index.ts"],
-      "@anveld/sdk/learning": ["../../packages/sdk/src/learning/index.ts"]
+      "@anveld/acclimate-sdk": ["../../packages/sdk/src/index.ts"],
+      "@anveld/acclimate-sdk/learning": ["../../packages/sdk/src/learning/index.ts"]
     }
   },
   "include": ["./**/*.ts"]

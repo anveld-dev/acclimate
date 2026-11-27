@@ -1,6 +1,6 @@
 ---
 title: Install the SDKs
-description: Install the TypeScript SDK and plugins from npm, or install the Python SDK from a verified release wheel.
+description: Install the TypeScript SDK and plugins from npm or the Python SDK from PyPI. Use verified release files for offline installs.
 ---
 
 Install the SDK where your agent runs. Use the SDK version that matches your service's minor version. See [Versioning and compatibility](/docs/reference/versioning).
@@ -36,7 +36,15 @@ Install any plugin at the same version as the SDK. [Use a coding agent](/docs/gu
 
 ## Install the Python SDK
 
-The Python distribution is `acclimate-sdk`, imported as `acclimate`. It uses only the Python standard library. Install the [verified release wheel](#install-from-verified-release-files) while PyPI publication is pending, or build the wheel from a source checkout.
+The Python distribution is [`acclimate-sdk`](https://pypi.org/project/acclimate-sdk/), imported as `acclimate`. It uses only the Python standard library. These commands install the SDK for an Acclimate 0.3.0 service.
+
+```sh
+python3.11 -m venv .venv
+.venv/bin/python -m pip install acclimate-sdk==0.3.0
+.venv/bin/python -m acclimate pull --help
+```
+
+For offline installation, use the [verified release wheel](#install-from-verified-release-files).
 
 ## Build from a source checkout
 

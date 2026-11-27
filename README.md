@@ -88,7 +88,7 @@ Install the TypeScript SDK in your application from npm. This version matches an
 npm install @anveld/acclimate-sdk@0.3.0
 ```
 
-The Codex, Claude, Pi and Cursor plugins also ship under `@anveld`. See [Install the SDKs](https://acclimate.anveld.dev/docs/get-started/install) for all five npm names and the Python wheel.
+The Codex, Claude, Pi and Cursor plugins also ship under `@anveld`. The Python SDK is `acclimate-sdk` on PyPI. See [Install the SDKs](https://acclimate.anveld.dev/docs/get-started/install) for package links and commands.
 
 ## Examples
 

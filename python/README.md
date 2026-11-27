@@ -4,7 +4,13 @@ Deliver versioned agent instructions, skills and memory to jobs with the Acclima
 
 ## Install
 
-The distribution is `acclimate-sdk` and the import is `acclimate`. While PyPI publication is pending, download the wheel from a [GitHub Release](https://github.com/anveld-dev/acclimate/releases) or build it from a checkout. Verify release artifacts against `SHA256SUMS` before installing.
+The distribution is [`acclimate-sdk`](https://pypi.org/project/acclimate-sdk/) and the import is `acclimate`. Install the version that matches your Acclimate service.
+
+```sh
+python3.11 -m pip install acclimate-sdk==0.3.0
+```
+
+For offline installation, download the wheel from a [GitHub Release](https://github.com/anveld-dev/acclimate/releases) or build it from a checkout. Verify release artifacts against `SHA256SUMS` before installing.
 
 ```sh
 python3.11 -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.3.0-py3-none-any.whl

@@ -1,0 +1,910 @@
+/*
+ * Learning: an instrument panel. Ink on paper, 1px hairlines, tabular figures, and the signal
+ * colour reserved for where the loop is now: the live round, its current step, the held-out
+ * series and a regression that needs attention.
+ */
+
+.learning-page {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.learning-page > * {
+  min-width: 0;
+}
+
+/* Micro-labels: tracked mono capitals, as on the landing page's instrument panel. */
+.learning-eyebrow,
+.learning-fact dt,
+.learning-detail-row dt,
+.learning-ledger [data-slot='table-header'] [data-slot='table-head'],
+.score-name,
+.score-marker {
+  color: var(--muted-foreground);
+  font: 500 0.6875rem/1.2 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.learning-inline-link,
+.learning-fact-link,
+.learning-round-link,
+.learning-round-number {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--foreground);
+  font-size: var(--type-14);
+  text-decoration: underline 1px color-mix(in oklab, var(--foreground) 32%, transparent);
+  text-underline-offset: 4px;
+  transition: text-decoration-color 160ms ease;
+}
+.learning-inline-link {
+  display: inline;
+  font-weight: 500;
+}
+.learning-inline-link:hover,
+.learning-fact-link:hover,
+.learning-round-link:hover,
+.learning-round-number:hover {
+  text-decoration-color: var(--foreground);
+}
+.learning-fact-link svg,
+.learning-round-link svg {
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
+  transition:
+    translate 160ms ease,
+    color 160ms ease;
+}
+.learning-fact-link:hover svg,
+.learning-round-link:hover svg {
+  translate: 2px 0;
+  color: var(--foreground);
+}
+
+/* ---------- Toolbar: sub-tabs and a quiet refresh ---------- */
+
+.learning-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  min-width: 0;
+}
+.learning-refresh[data-slot='button'] {
+  margin-left: auto;
+  color: var(--muted-foreground);
+}
+.learning-refresh[data-slot='button']:hover {
+  color: var(--foreground);
+}
+.learning-refresh svg {
+  transition: rotate 420ms cubic-bezier(0.3, 0, 0.2, 1);
+}
+.learning-refresh:hover svg {
+  rotate: 180deg;
+}
+
+.learning-error {
+  padding: 12px 16px;
+  border: 0;
+  border-left: 3px solid var(--signal);
+  border-radius: 0;
+  font-size: var(--type-14);
+}
+
+/* ---------- Learning status ---------- */
+
+.learning-status-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 24px;
+  padding: 18px 20px 16px;
+}
+.learning-status-title {
+  flex: 1 1 30rem;
+  min-width: 0;
+}
+.learning-status-title h2 {
+  font: 600 var(--type-16) / var(--leading-16) var(--font-sans);
+  letter-spacing: -0.01em;
+}
+.learning-status-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin-top: 8px;
+}
+.learning-state {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.learning-state-message {
+  min-width: 0;
+  font-size: var(--type-14);
+  line-height: 1.5;
+}
+.learning-messages {
+  display: grid;
+  gap: 2px;
+}
+.learning-status-note {
+  flex: 1 1 18rem;
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-14);
+  line-height: 1.5;
+}
+.learning-status-head .panel-actions {
+  padding-top: 0;
+}
+
+/* The loop badge: a mono capital label with a state dot. */
+.learning-badge[data-slot='badge'] {
+  position: relative;
+  top: -1px;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font: 600 0.6875rem/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.learning-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.learning-badge[data-tone='success']::before {
+  background: var(--status-live);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--status-live) 22%, transparent);
+}
+
+/* ---------- Regression callout ---------- */
+
+.learning-alert[data-tone] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 32px;
+  padding: 16px 20px 16px 17px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-left: 3px solid var(--signal);
+  background: color-mix(in oklab, var(--signal) 4%, var(--card));
+  color: var(--foreground);
+}
+.learning-alert-copy {
+  flex: 1 1 32rem;
+  min-width: 0;
+}
+.learning-alert .learning-eyebrow {
+  color: var(--signal);
+}
+.learning-alert-lead {
+  margin-top: 6px;
+  font-size: var(--type-14);
+  line-height: 1.45;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.learning-alert-body {
+  max-width: 84ch;
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  font-size: var(--type-14);
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums;
+}
+.learning-alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.learning-alert-actions a[data-slot='button'] svg {
+  color: var(--muted-foreground);
+}
+
+/* ---------- Telemetry strip ---------- */
+
+.learning-facts {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  border-top: 1px solid var(--border);
+}
+.learning-fact {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+}
+.learning-facts .learning-fact {
+  padding: 14px 28px 15px 20px;
+}
+.learning-facts .learning-fact + .learning-fact {
+  border-left: 1px solid var(--border);
+}
+.learning-fact dd {
+  min-width: 0;
+  font-size: var(--type-14);
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+.learning-channel {
+  display: inline-block;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--muted);
+  font: 500 0.8125rem/1.45 var(--font-mono);
+}
+.learning-fact-link {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.learning-models {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.learning-models code {
+  display: inline-block;
+  max-width: 100%;
+  font: 400 0.8125rem/1.45 var(--font-mono);
+}
+.learning-models-join {
+  color: var(--muted-foreground);
+}
+.learning-fact-grid {
+  display: grid;
+  gap: 16px 24px;
+}
+@media (min-width: 640px) {
+  .learning-fact-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.learning-notes {
+  display: grid;
+  gap: 6px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  font-size: var(--type-14);
+  line-height: 1.55;
+}
+
+/* ---------- Active round tracker ---------- */
+
+.learning-round {
+  padding: 16px 20px 20px;
+  border-top: 1px solid var(--border);
+}
+.learning-round-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.learning-round-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+.learning-round-dot[data-live] {
+  background: var(--signal);
+}
+.learning-round-dot[data-live]::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  background: var(--signal-wash);
+  animation: learning-pulse 2.4s cubic-bezier(0.3, 0, 0.2, 1) infinite;
+}
+@keyframes learning-pulse {
+  0% {
+    scale: 0.5;
+    opacity: 1;
+  }
+  80%,
+  100% {
+    scale: 1.6;
+    opacity: 0;
+  }
+}
+.learning-round-link {
+  font-weight: 600;
+  text-decoration-color: transparent;
+}
+.learning-round-count {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font: 400 0.8125rem/1.4 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.learning-progress {
+  height: 2px;
+  margin-top: 12px;
+  background: var(--border);
+  overflow: hidden;
+}
+.learning-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--signal);
+  transition: width 600ms cubic-bezier(0.3, 0, 0.2, 1);
+}
+
+.learning-steps {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0 14px;
+  margin-top: 16px;
+  counter-reset: learning-step;
+}
+/* The index and status bar come from ::before, so each step's own text stays its first content. */
+.learning-steps > li {
+  counter-increment: learning-step;
+  min-width: 0;
+  padding-top: 10px;
+  border-top: 2px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: var(--type-13);
+  line-height: 1.4;
+}
+.learning-steps > li::before {
+  content: counter(learning-step, decimal-leading-zero);
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted-foreground);
+  font: 500 0.6875rem/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  opacity: 0.8;
+}
+.learning-steps > li[data-state='done'] {
+  border-top-color: var(--foreground);
+  color: var(--foreground);
+}
+.learning-steps > li[data-state='done']::before {
+  content: counter(learning-step, decimal-leading-zero) '  ✓';
+  white-space: pre;
+}
+.learning-steps > li[data-state='current'] {
+  border-top-color: var(--signal);
+  color: var(--foreground);
+  font-weight: 600;
+}
+.learning-steps > li[data-state='current']::before {
+  color: var(--signal);
+  opacity: 1;
+}
+
+/* ---------- Scores by round ---------- */
+
+.learning-scores .panel-body {
+  container-type: inline-size;
+}
+.score-empty {
+  padding: 18px 20px;
+  color: var(--muted-foreground);
+  font-size: var(--type-14);
+}
+.score-instrument {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.score-readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 18px 40px;
+  padding: 20px 20px 4px;
+}
+.score-figure {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.score-name {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.score-name .score-swatch {
+  margin-top: 0.35em;
+}
+.score-swatch {
+  flex: none;
+  width: 14px;
+  height: 2px;
+  background: var(--chart-1);
+}
+.score-figure[data-series='held-out'] .score-swatch {
+  background: var(--chart-2);
+}
+.score-num {
+  color: var(--foreground);
+  font-weight: 500;
+  font-size: 2.5rem;
+  line-height: 0.9;
+  letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums;
+}
+.score-num small {
+  margin-left: 0.04em;
+  font-size: 0.48em;
+  letter-spacing: -0.02em;
+  vertical-align: 0.74em;
+}
+.score-figure[data-series='held-out'] .score-num {
+  color: var(--signal);
+}
+.score-caption {
+  color: var(--muted-foreground);
+  font: 400 0.6875rem/1.3 var(--font-mono);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.score-caption b {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.score-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 2px;
+}
+.score-marker .score-swatch {
+  width: 0;
+  height: 12px;
+  border-left: 1px dashed var(--muted-foreground);
+  background: none;
+}
+
+/* Below ~38rem the chart scrolls rather than shrink its labels past legibility. */
+.score-plot {
+  min-width: 0;
+  padding: 8px 12px 4px 4px;
+  overflow-x: auto;
+  border-radius: 4px;
+}
+.score-plot:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.score-chart {
+  display: block;
+  width: 100%;
+  min-width: 38rem;
+  height: auto;
+  overflow: visible;
+}
+.score-chart text {
+  fill: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.score-grid line {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.score-grid[data-base] line {
+  stroke: color-mix(in oklab, var(--foreground) 28%, var(--card));
+}
+.score-axis line {
+  stroke: color-mix(in oklab, var(--foreground) 28%, var(--card));
+}
+.score-change line {
+  stroke: var(--muted-foreground);
+  stroke-dasharray: 2 4;
+  opacity: 0.55;
+}
+.score-change text {
+  font-size: 11px;
+}
+.score-series line {
+  stroke-width: 1.75;
+  stroke-linecap: round;
+}
+.score-node {
+  stroke: var(--card);
+  stroke-width: 2;
+}
+.score-halo {
+  stroke: none;
+  opacity: 0.14;
+}
+.score-series[data-series='evolve'] .score-halo {
+  opacity: 0.08;
+}
+
+.score-foot {
+  display: grid;
+  gap: 4px;
+  padding: 12px 20px 14px;
+  border-top: 1px solid var(--border);
+}
+.score-foot > p {
+  max-width: 96ch;
+  color: var(--muted-foreground);
+  font-size: var(--type-13);
+  line-height: 1.55;
+}
+.score-data > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding-block: 4px;
+  color: var(--foreground);
+  font-size: var(--type-14);
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+.score-data > summary::-webkit-details-marker {
+  display: none;
+}
+.score-data > summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-right: 2px;
+  border-right: 1.5px solid var(--muted-foreground);
+  border-bottom: 1.5px solid var(--muted-foreground);
+  rotate: -45deg;
+  transition: rotate 160ms ease;
+}
+.score-data[open] > summary::before {
+  rotate: 45deg;
+}
+.score-data-table {
+  max-height: 20rem;
+  margin-top: 6px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.score-data-table [data-slot='table-cell'],
+.score-data-table [data-slot='table-head'] {
+  padding-inline: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Wide panels: the readout becomes a column beside a full-width plot. */
+@container (min-width: 960px) {
+  .score-instrument {
+    grid-template-columns: 16rem minmax(0, 1fr);
+  }
+  .score-readout {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 20px;
+    padding: 18px 20px 16px;
+    border-right: 1px solid var(--border);
+  }
+  .score-marker {
+    margin-top: auto;
+  }
+  .score-plot {
+    padding: 16px 20px 4px 8px;
+  }
+  .score-foot {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---------- Rounds ledger ---------- */
+
+.learning-ledger [data-slot='table-header'] [data-slot='table-head'] {
+  height: 38px;
+  padding: 0 14px;
+  background: color-mix(in oklab, var(--muted) 60%, var(--card));
+}
+.learning-ledger [data-slot='table-header'] [data-slot='table-head']:first-child,
+.learning-ledger [data-slot='table-body'] [data-slot='table-head'] {
+  padding-left: 20px;
+}
+.learning-ledger [data-slot='table-row'] {
+  border-color: var(--border);
+}
+.learning-ledger [data-slot='table-body'] [data-slot='table-row']:hover {
+  background: color-mix(in oklab, var(--muted) 55%, var(--card));
+}
+.learning-ledger [data-slot='table-body'] [data-slot='table-head'],
+.learning-ledger [data-slot='table-body'] [data-slot='table-cell'] {
+  height: auto;
+  padding: 13px 14px;
+  vertical-align: top;
+  line-height: 1.5;
+}
+.learning-ledger [data-slot='table-body'] [data-slot='table-cell']:last-child {
+  padding-right: 20px;
+}
+.learning-round-number {
+  min-width: 2ch;
+  font: 600 var(--type-14) / 1.5 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.learning-col-trigger {
+  min-width: 10rem;
+  white-space: normal;
+  color: var(--muted-foreground);
+}
+.learning-col-outcome {
+  min-width: 12rem;
+  max-width: 22rem;
+  white-space: normal;
+}
+.learning-col-score,
+.learning-col-heldout {
+  font-family: var(--font-mono);
+  font-size: var(--type-13);
+}
+.learning-col-heldout {
+  max-width: 16rem;
+  white-space: normal;
+}
+.learning-score-from,
+.learning-score-arrow {
+  color: var(--muted-foreground);
+}
+.learning-score-to {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.learning-col-version {
+  min-width: 13rem;
+  white-space: normal;
+}
+.learning-col-ended {
+  color: var(--muted-foreground);
+}
+.learning-cell-note {
+  margin-top: 5px;
+  color: var(--muted-foreground);
+  font-size: var(--type-13);
+  line-height: 1.45;
+}
+.learning-version {
+  display: grid;
+  gap: 4px;
+}
+.learning-version-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.learning-sample {
+  color: var(--muted-foreground);
+}
+.learning-rollback > [data-slot='button'] {
+  height: 28px;
+  min-height: 0;
+  padding-inline: 10px;
+}
+.learning-empty {
+  padding: 18px 20px;
+  color: var(--muted-foreground);
+  font-size: var(--type-14);
+}
+
+/* ---------- Round detail ---------- */
+
+.learning-detail-body {
+  display: grid;
+  gap: 28px;
+  font-size: var(--type-14);
+  overflow-wrap: anywhere;
+}
+.learning-detail-list {
+  display: grid;
+}
+.learning-detail-row {
+  display: grid;
+  gap: 4px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.learning-detail-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.learning-detail-row:last-child {
+  padding-bottom: 0;
+}
+.learning-detail-row dt {
+  padding-top: 3px;
+}
+.learning-detail-row dd {
+  min-width: 0;
+  line-height: 1.55;
+}
+@media (min-width: 640px) {
+  .learning-detail-row {
+    grid-template-columns: 11rem minmax(0, 1fr);
+    gap: 20px;
+  }
+}
+.learning-candidates {
+  display: grid;
+  gap: 12px;
+}
+.learning-candidates > h3 {
+  font: 600 var(--type-16) / var(--leading-16) var(--font-sans);
+}
+.learning-candidate {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.learning-candidate[data-adopted] {
+  border-color: color-mix(in oklab, var(--foreground) 30%, var(--border));
+  box-shadow: inset 0 2px 0 var(--signal);
+}
+.learning-candidate-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.learning-candidate-head h4 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 600 var(--type-14) / 1.4 var(--font-sans);
+}
+.learning-candidate-release {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+}
+.learning-diff {
+  max-height: 16rem;
+  margin-top: 8px;
+  padding: 6px 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--muted) 50%, var(--card));
+  font: 400 0.8125rem/1.6 var(--font-mono);
+}
+.learning-diff > code {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  padding: 2px 12px 2px 10px;
+  border-left: 2px solid transparent;
+  white-space: pre;
+}
+.learning-diff > code[data-change='removed'] {
+  border-left-color: var(--tone-danger-fg);
+  background: color-mix(in oklab, var(--tone-danger-bg) 70%, transparent);
+}
+.learning-diff > code[data-change='added'] {
+  border-left-color: var(--tone-success-fg);
+  background: color-mix(in oklab, var(--tone-success-bg) 70%, transparent);
+}
+
+/* ---------- Narrow layouts ---------- */
+
+@media (max-width: 1100px) {
+  .learning-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px 14px;
+  }
+}
+@media (max-width: 860px) {
+  .learning-facts {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .learning-facts .learning-fact:nth-child(3) {
+    grid-column: 1 / -1;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+@media (max-width: 640px) {
+  .learning-status-head,
+  .learning-round,
+  .learning-notes {
+    padding-inline: 16px;
+  }
+  .learning-alert[data-tone] {
+    padding: 14px 16px 14px 13px;
+  }
+  .learning-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .learning-facts .learning-fact {
+    padding: 12px 16px;
+  }
+  .learning-facts .learning-fact + .learning-fact {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  .learning-round-count {
+    flex-basis: 100%;
+    margin-left: 18px;
+  }
+  /* A vertical timeline: the status bar runs down the left of each step. */
+  .learning-steps {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .learning-steps > li {
+    display: grid;
+    grid-template-columns: 2.25rem minmax(0, 1fr);
+    align-items: baseline;
+    padding: 6px 0 6px 12px;
+    border-top: 0;
+    border-left: 2px solid var(--border);
+  }
+  .learning-steps > li[data-state='done'] {
+    border-left-color: var(--foreground);
+  }
+  .learning-steps > li[data-state='current'] {
+    border-left-color: var(--signal);
+  }
+  .learning-steps > li::before {
+    margin: 0;
+  }
+  .learning-steps > li[data-state='done']::before {
+    content: counter(learning-step, decimal-leading-zero);
+  }
+  .learning-alert-actions {
+    width: 100%;
+  }
+  .score-readout,
+  .score-foot {
+    padding-inline: 16px;
+  }
+  .score-num {
+    font-size: 2.25rem;
+  }
+  .learning-ledger [data-slot='table-header'] [data-slot='table-head']:first-child,
+  .learning-ledger [data-slot='table-body'] [data-slot='table-head'] {
+    padding-left: 16px;
+  }
+}
+
+@media (pointer: coarse) {
+  .learning-inline-link {
+    display: inline-flex;
+  }
+  .learning-rollback > [data-slot='button'] {
+    height: auto;
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .learning-round-dot[data-live]::before {
+    animation: none;
+  }
+}

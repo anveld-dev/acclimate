@@ -4,6 +4,7 @@
 @import '@fontsource-variable/inter';
 @import './theme/tokens.css';
 @import './components/import-preview.css';
+@import './components/bundle-learning.css';
 
 @theme inline {
   --text-xs: var(--type-12);
@@ -123,6 +124,12 @@
   padding-inline-start: 10px;
   line-height: 1.4;
 }
+[data-slot='input']:hover:not(:disabled):not(:focus-visible),
+[data-slot='native-select']:hover:not(:disabled):not(:focus-visible),
+[data-slot='select-trigger']:hover:not(:disabled):not(:focus-visible),
+[data-slot='textarea']:hover:not(:disabled):not(:focus-visible) {
+  border-color: color-mix(in oklab, var(--input), var(--foreground) 24%);
+}
 [data-slot='native-select'] {
   padding-inline-end: 30px;
 }
@@ -210,13 +217,18 @@
 [data-slot='table-container'] {
   min-width: 0;
 }
+/* One column-header style for every table: a quiet band, small medium-weight labels. */
 [data-slot='table-head'] {
   height: 36px;
   padding-inline: 14px;
+}
+[data-slot='table-head'],
+.directory-heading {
   background: var(--muted);
   color: var(--muted-foreground);
-  font-size: var(--type-14);
-  font-weight: 500;
+  font-size: var(--type-13);
+  font-weight: 550;
+  letter-spacing: 0.005em;
 }
 [data-slot='table-cell'] {
   padding: 10px 14px;
@@ -225,6 +237,9 @@
 [data-slot='table-body'] [data-slot='table-head'] {
   background: transparent;
   color: var(--foreground);
+  font-size: var(--type-14);
+  font-weight: 500;
+  letter-spacing: normal;
 }
 [data-slot='table-cell']:first-child {
   font-weight: 500;
@@ -233,10 +248,23 @@
   border-color: var(--border);
 }
 [data-slot='badge'] {
-  padding: 3px 7px;
-  font-size: var(--type-14);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: var(--type-13);
   line-height: 1.35;
-  font-weight: 500;
+  font-weight: 550;
+}
+.acclimate-mark-level {
+  stroke: var(--signal);
+}
+/* Outside the rail the bench mark sits in the same ink square. */
+[data-slot='sheet-title'] > .acclimate-mark {
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  border-radius: 6px;
+  color: var(--primary-foreground);
+  background: var(--primary);
 }
 
 .workspace-shell {
@@ -355,6 +383,7 @@
   background: var(--sidebar-accent);
   color: var(--sidebar-accent-foreground);
   font-weight: 600;
+  box-shadow: inset 2px 0 var(--signal);
 }
 .workspace-switcher {
   padding-bottom: 12px;
@@ -477,7 +506,8 @@
 .workspace-panel {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--panel-radius);
+  box-shadow: var(--panel-shadow);
   overflow: hidden;
 }
 .workspace-panel .workspace-panel {
@@ -493,17 +523,17 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 14px 18px;
   border-bottom: 1px solid var(--border);
 }
 .panel-heading h2 {
   font-size: var(--type-14);
   line-height: 1.4;
   font-weight: 600;
-  letter-spacing: -0.2px;
+  letter-spacing: -0.01em;
 }
 .panel-heading p {
-  margin-top: 4px;
+  margin-top: 3px;
   font-size: var(--type-14);
   line-height: 1.5;
   color: var(--muted-foreground);
@@ -523,7 +553,7 @@
 .panel-body {
   display: grid;
   gap: 16px;
-  padding: 16px;
+  padding: 18px;
 }
 .panel-body-flush {
   padding: 0;
@@ -535,9 +565,9 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 12px 18px;
   border-top: 1px solid var(--border);
-  background: color-mix(in oklab, var(--muted) 45%, transparent);
+  background: color-mix(in oklab, var(--muted) 50%, var(--card));
 }
 .panel-footer > .panel-footer-note {
   margin-right: auto;
@@ -574,30 +604,34 @@
   font-size: var(--type-13, 0.8125rem);
   line-height: 1.5;
 }
+/* Secondary sections: a hairline segmented bar, the current section raised on the card. */
 .sub-tabs {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
   max-width: 100%;
   overflow-x: auto;
-  padding: 3px;
+  padding: 2px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--muted);
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--muted) 70%, var(--background));
   width: max-content;
 }
 .sub-tabs a {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   flex-shrink: 0;
   min-height: 30px;
   padding: 4px 12px;
-  border-radius: 6px;
+  border-radius: 5px;
   color: var(--muted-foreground);
   font-size: var(--type-14);
   font-weight: 500;
   white-space: nowrap;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
 }
 .sub-tabs a:hover {
   color: var(--foreground);
@@ -605,15 +639,22 @@
 .sub-tabs a[aria-current='page'] {
   background: var(--card);
   color: var(--foreground);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 1px 2px rgb(0 0 0 / 6%);
 }
 .sub-tab-count {
   min-width: 1.5em;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--foreground) 8%, transparent);
-  font-size: var(--type-12);
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--foreground) 7%, transparent);
+  color: var(--muted-foreground);
+  font: 500 var(--type-12) / 1.3 var(--font-mono);
+  font-variant-numeric: tabular-nums;
   text-align: center;
+}
+.sub-tabs a[aria-current='page'] .sub-tab-count {
+  color: var(--foreground);
 }
 .data-value {
   font-variant-numeric: tabular-nums;
@@ -803,7 +844,7 @@
   color: var(--accent-foreground);
 }
 .file-glyph-memory {
-  background: color-mix(in srgb, var(--muted) 85%, #c9d6d3);
+  background: var(--tone-info-bg);
   color: var(--foreground);
 }
 .kind-badge {
@@ -908,7 +949,7 @@
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--panel-radius);
   background: var(--card);
   overflow: hidden;
 }
@@ -1691,6 +1732,15 @@
   [data-slot='dialog-header'] {
     padding-right: 44px;
   }
+  /* Tab lists grow with their 44px triggers instead of letting them spill onto the next row. */
+  [data-slot='tabs-list'] {
+    height: auto;
+  }
+  /* Native disclosures ("Score data", attempts, reference answers) get a full touch row. */
+  .workspace-main summary:not([data-slot]) {
+    min-height: 44px;
+    padding-block: 12px;
+  }
 }
 .workspace-mobile-sheet .workspace-switcher-name {
   white-space: normal;
@@ -1708,10 +1758,11 @@
 
 /* Page titles and section titles have distinct roles inside the existing shell. */
 .workspace-main h1 {
-  font-family: var(--font-editorial);
+  font-family: var(--font-sans);
   font-size: var(--type-28);
   line-height: var(--leading-28);
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: -0.025em;
 }
 .workspace-main :is(h2, h3) {
   font: var(--section-heading);
@@ -1778,13 +1829,6 @@ time {
   margin-inline-start: auto;
   color: var(--muted-foreground);
   font-size: var(--type-13);
-}
-.directory-heading,
-.directory-table [data-slot='table-head'] {
-  background: var(--muted);
-  color: var(--muted-foreground);
-  font-size: var(--type-13);
-  font-weight: 550;
 }
 .directory-row,
 .directory-table [data-slot='table-body'] [data-slot='table-row'] {

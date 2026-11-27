@@ -43,7 +43,7 @@
 }
 .release-record-list {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--panel-radius);
   overflow: hidden;
   background: var(--card);
 }
@@ -58,7 +58,7 @@
   border-top: 1px solid var(--border);
 }
 .release-record-row.is-current-release {
-  box-shadow: inset 2px 0 var(--ring);
+  box-shadow: inset 2px 0 var(--signal);
   background: color-mix(in srgb, var(--accent) 20%, var(--card));
 }
 .release-track-marker {
@@ -242,9 +242,9 @@
 /* Release picker: the revision list beside the selected release. */
 .release-workbench {
   display: grid;
-  grid-template-columns: clamp(190px, 21%, 255px) minmax(0, 1fr);
+  grid-template-columns: clamp(224px, 22%, 260px) minmax(0, 1fr);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--panel-radius);
   overflow: hidden;
   background: var(--card);
 }
@@ -275,7 +275,7 @@
   width: 100%;
   padding: 12px;
   border-bottom: 1px solid var(--border);
-  border-left: 3px solid transparent;
+  border-left: 2px solid transparent;
   font-size: var(--type-14);
   cursor: pointer;
 }
@@ -302,7 +302,7 @@
 
 .release-picker-option[aria-pressed='true'] {
   background: var(--accent);
-  border-left-color: var(--primary);
+  border-left-color: var(--signal);
 }
 
 .release-picker-option:hover {

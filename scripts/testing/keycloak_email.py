@@ -102,7 +102,7 @@ def check_email_join(*, browser, admin_context, console_origin, issuer, project,
         record('Keycloak registration requires inbox verification before issuing an application session')
         verification=message_matching(lambda message: 'login-actions' in message['Text'])
         assert 'Verify email' in verification['HTML'] and 'Your Acclimate account' in verification['HTML']
-        assert 'background:#272b30' in verification['HTML']
+        assert 'background:#0a0a0a' in verification['HTML']
         check_email_layout(browser, verification, 'Verify email', 'verification', output)
         record('Keycloak verification uses the packaged email theme and its native signed link')
         urls=re.findall(r'https?://[^\s<>]+',verification['Text'])
@@ -158,7 +158,7 @@ def check_email_join(*, browser, admin_context, console_origin, issuer, project,
             recovery_page.locator('input[name="username"]').fill(recipient)
             recovery_page.locator('input[type="submit"], button[type="submit"]').click()
             reset=message_matching(lambda message: 'Reset password' in message.get('HTML','') and 'login-actions' in message['Text'])
-            assert 'Your Acclimate account' in reset['HTML'] and 'background:#272b30' in reset['HTML']
+            assert 'Your Acclimate account' in reset['HTML'] and 'background:#0a0a0a' in reset['HTML']
             check_email_layout(browser, reset, 'Reset password', 'password-reset', output)
             record('Keycloak password reset delivers a matching branded email with a text fallback')
         finally: recovery.close()

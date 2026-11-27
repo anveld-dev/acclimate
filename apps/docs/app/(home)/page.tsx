@@ -1,11 +1,13 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import type { ReactNode } from 'react';
+import { AcclimateMark } from '@/components/mark';
+import { githubUrl as github } from '@/lib/layout.shared';
 import { gitConfig } from '@/lib/shared';
 import { previewMetadata } from '@/lib/metadata';
-import { run, stages } from './climb';
-import { homeDescription, homeTitle, percent } from './copy';
+import { run } from './climb';
+import { homeDescription } from './copy';
 import { Climb } from './climb-chart';
+import { CodeBlock, type Snippet } from './code-block';
 import './landing.css';
 
 const pageTitle = 'Acclimate: agent instructions that improve themselves';
@@ -16,10 +18,17 @@ export const metadata: Metadata = {
   ...previewMetadata({ title: pageTitle, description: homeDescription, path: '/' }),
 };
 
-const github = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
-const example = `${github}/tree/main/examples/gear-returns`;
+const example = `${github}/tree/${gitConfig.branch}/examples/gear-returns`;
+const license = `${github}/blob/${gitConfig.branch}/LICENSE`;
+const paper = 'https://arxiv.org/abs/2611.18856';
 
-const snippet = `import { createAcclimate, systemPrompt } from '@anveld/acclimate-sdk';
+const sdk: Snippet[] = [
+  {
+    id: 'ts',
+    label: 'TypeScript',
+    title: 'agent.ts',
+    language: 'ts',
+    code: `import { createAcclimate, systemPrompt } from '@anveld/acclimate-sdk';
 
 const acclimate = createAcclimate();
 const job = await acclimate.job('Gear returns', {
@@ -29,135 +38,141 @@ const job = await acclimate.job('Gear returns', {
 const prompt = systemPrompt(job.version.payload);
 const reply = await runAgent(prompt, request);
 
-// A correction becomes a new task.
-await job.expect(correctedReply, { output: reply });`;
+// A correction becomes a new learning task.
+await job.expect(correctedReply, { output: reply });`,
+  },
+  {
+    id: 'py',
+    label: 'Python',
+    title: 'agent.py',
+    language: 'py',
+    code: `from acclimate import Acclimate, system_prompt
 
-const selfHost = `git clone ${github}.git
-cd acclimate
-deploy/init.sh --domain example.com \\
-  --email you@example.com
-docker compose up -d --build --wait`;
+acclimate = Acclimate.from_env()
+job = acclimate.job(
+    'Gear returns', channel='stable', input=request
+)
+prompt = system_prompt(job.version['payload'])
+reply = run_agent(prompt, request)
 
-const reasons = [
-  ['Release without a deploy', 'The next job runs the new version. Rolling back is one call.'],
-  ['Know what ran', 'Each job pins a version, identified by a digest of its exact bytes.'],
-  ['Improve automatically', 'The loop writes changes and reverts a release whose held-out score drops.'],
-  ['One honest limit', 'Learning scores one model call with no tools. It tunes the prompt, not tool use.'],
+# A correction becomes a new learning task.
+job.expect(corrected_reply, output=reply)`,
+  },
 ];
 
-// Minimal highlighting for the snippets: comments, strings, keywords, flags and commands.
-function highlight(code: string): ReactNode[] {
-  const pattern =
-    /(\/\/[^\n]*)|('[^'\n]*')|\b(import|from|const|await)\b|(--?[a-z-]+)|^(git|cd|deploy\/init\.sh|docker)\b/gm;
-  const out: ReactNode[] = [];
-  let last = 0;
-  for (const match of code.matchAll(pattern)) {
-    const index = match.index ?? 0;
-    if (index > last) out.push(code.slice(last, index));
-    const kind = match[1] ? 'comment' : match[2] ? 'string' : match[3] ? 'keyword' : match[4] ? 'flag' : 'command';
-    out.push(
-      <span key={index} className={`lp-tok-${kind}`}>
-        {match[0]}
-      </span>,
-    );
-    last = index + match[0].length;
-  }
-  out.push(code.slice(last));
-  return out;
-}
+const laptop: Snippet = {
+  id: 'laptop',
+  label: 'Terminal',
+  title: 'Run Acclimate locally',
+  language: 'sh',
+  code: `git clone ${github}.git
+cd acclimate
+npm run local:up`,
+};
 
-function Code({ name, code }: { name: string; code: string }) {
+function Arrow() {
   return (
-    <figure className="lp-code">
-      <figcaption>{name}</figcaption>
-      {/* Focusable so keyboard users can scroll a long line. */}
-      <pre tabIndex={0} aria-label={name}>
-        <code>{highlight(code)}</code>
-      </pre>
-    </figure>
+    <span className="lp-arrow" aria-hidden="true">
+      →
+    </span>
   );
 }
 
 export default function HomePage() {
-  const first = stages[0];
-  const final = stages[stages.length - 1];
   return (
     <div className="lp">
-      <section className="lp-hero lp-wrap">
-        <h1 className="lp-title">{homeTitle}</h1>
-        <p className="lp-lede">{homeDescription}</p>
-        <div className="lp-actions">
-          <Link href="/docs/get-started/quickstart" className="lp-button lp-button-primary">
-            Quickstart <span aria-hidden="true">→</span>
-          </Link>
-          <a href={github} className="lp-button">
-            GitHub
-          </a>
-          <p className="lp-meta">
-            Open source · Self-hosted · <a href={`${github}/releases/tag/v0.1.0`}>v0.1.0</a>
-          </p>
-        </div>
-      </section>
-
-      <section className="lp-section" aria-labelledby="proof-heading">
-        <div className="lp-wrap">
-          <Climb
-            head={
-              <>
-                <h2 id="proof-heading" className="lp-h2">
-                  {percent(first.passRate)} to {percent(final.passRate)} on tasks it never saw.
-                </h2>
-                <p className="lp-body">{run.story} Pick a batch to read what it released.</p>
-              </>
-            }
-            foot={
-              <p className="lp-fineprint">
-                {run.coverage} {run.missed} {run.details} <a href={example}>Reproduce it</a>
-              </p>
-            }
-          />
-        </div>
-      </section>
-
-      <section className="lp-section" aria-labelledby="git-heading">
-        <div className="lp-wrap lp-split">
-          <div>
-            <h2 id="git-heading" className="lp-h2">
-              Why not keep prompts in git?
-            </h2>
-            <p className="lp-body">Keep them there and publish from CI. Acclimate adds:</p>
-            <dl className="lp-reasons">
-              {reasons.map(([term, detail], index) => (
-                <div key={term}>
-                  <span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
-                  <dt>{term}</dt>
-                  <dd>{detail}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-          <Code name="agent.ts" code={snippet} />
-        </div>
-      </section>
-
-      <section className="lp-section lp-close" aria-labelledby="close-heading">
-        <div className="lp-wrap lp-split">
-          <div>
-            <h2 id="close-heading" className="lp-h2">
-              Run it on your own server.
-            </h2>
-            <div className="lp-actions">
-              <Link href="/docs/get-started/quickstart" className="lp-button lp-button-primary">
-                Try it on your laptop <span aria-hidden="true">→</span>
+      <section className="lp-hero" aria-labelledby="hero-heading">
+        <div className="lp-wrap lp-hero-grid">
+          <div className="lp-hero-text">
+            <p className="lp-eyebrow lp-hero-eyebrow lp-rise">Open source · Self-hosted</p>
+            <h1 id="hero-heading" className="lp-rise">
+              <span>Agent instructions</span> <span>that improve</span> <span>themselves.</span>
+            </h1>
+            <p className="lp-lede lp-rise">{homeDescription}</p>
+            <div className="lp-actions lp-rise">
+              <Link href="/docs/get-started/quickstart" className="lp-button">
+                Quickstart <Arrow />
               </Link>
-              <Link href="/docs/operate/self-host" className="lp-link">
-                Self-host guide
+              <Link href="/docs" className="lp-link">
+                Read the docs
               </Link>
             </div>
           </div>
-          <Code name="shell" code={selfHost} />
+
+          <figure className="lp-proof lp-rise" aria-labelledby="proof-label">
+            <Climb />
+            <figcaption className="lp-fine">
+              Synthetic data · {run.trainTasks} labelled tasks · {run.taskModel} ·{' '}
+              <a href={example}>examples/gear-returns</a>
+            </figcaption>
+          </figure>
         </div>
       </section>
+
+      <section className="lp-beat" aria-labelledby="how-heading">
+        <div className="lp-wrap lp-beat-grid">
+          <div className="lp-index">
+            <span className="lp-eyebrow">How it works</span>
+            <span className="lp-eyebrow">01 Release · 02 Correct · 03 Learn</span>
+          </div>
+          <h2 id="how-heading" className="lp-beat-title">
+            Release it like code. <span className="lp-soft">Teach it with corrections.</span>
+          </h2>
+          <div className="lp-beat-text">
+            <p className="lp-body">
+              Publish instructions, skills and memory as a versioned bundle. Each job fetches the
+              release on its channel and records the exact version it ran, so shipping takes no
+              deploy and rolling back is one call.
+            </p>
+            <p className="lp-body">
+              When someone fixes a reply, <code>job.expect()</code> turns it into a task. The loop,
+              after <a href={paper}>Self-Improvement Memory</a>, proposes candidate rewrites and
+              releases the one it picks. Held-out tasks score every release, and a confirmed drop
+              rolls it back automatically.
+            </p>
+            <p className="lp-aside">
+              Learning scores a single model call without tools, so it tunes the prompt, not
+              multi-step tool use.
+            </p>
+          </div>
+          <div className="lp-beat-code">
+            <CodeBlock snippets={sdk} />
+          </div>
+        </div>
+      </section>
+
+      <section className="lp-run" aria-labelledby="run-heading">
+        <div className="lp-wrap">
+          <p className="lp-eyebrow">Get started</p>
+          <h2 id="run-heading">
+            Run it on your laptop. <span className="lp-soft">Self-host it for your team.</span>
+          </h2>
+          <CodeBlock snippets={[laptop]} terminal />
+          <div className="lp-actions">
+            <Link href="/docs/get-started/quickstart" className="lp-button">
+              Quickstart <Arrow />
+            </Link>
+            <Link href="/docs/operate/self-host" className="lp-link">
+              Self-host guide
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <footer className="lp-footer">
+        <div className="lp-wrap lp-footer-row">
+          <Link href="/" className="lp-footer-brand">
+            <AcclimateMark className="lp-footer-mark" />
+            Acclimate
+          </Link>
+          <nav aria-label="Footer" className="lp-footer-links">
+            <Link href="/docs">Docs</Link>
+            <a href={github}>GitHub</a>
+            <a href={paper}>Paper</a>
+            <a href={license}>Apache-2.0</a>
+          </nav>
+        </div>
+      </footer>
     </div>
   );
 }

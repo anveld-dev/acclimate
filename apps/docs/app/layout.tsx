@@ -1,4 +1,4 @@
-import { Recursive } from 'next/font/google';
+import { Geist, JetBrains_Mono } from 'next/font/google';
 import { Provider } from '@/components/provider';
 import { appName, siteUrl } from '@/lib/shared';
 import { siteImageUrl } from '@/lib/metadata';
@@ -16,16 +16,23 @@ export const metadata: Metadata = {
   twitter: { card: 'summary_large_image', images: siteImageUrl },
 };
 
-// One variable family for the whole site: the MONO axis turns the sans into the code face.
-const recursive = Recursive({
+// Geist sets titles and reading, JetBrains Mono sets code and data. global.css maps these
+// variables to Tailwind's --font-sans and --font-mono.
+const sans = Geist({
   subsets: ['latin'],
-  axes: ['MONO', 'CASL'],
-  variable: '--font-recursive',
+  weight: ['400', '500', '600'],
+  variable: '--font-geist',
+});
+
+const mono = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  variable: '--font-jetbrains',
 });
 
 export default function Layout({ children }: LayoutProps<'/'>) {
   return (
-    <html lang="en" className={`${recursive.variable} ${recursive.className}`} suppressHydrationWarning>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
       <body className="flex flex-col min-h-screen">
         <Provider>{children}</Provider>
       </body>

@@ -168,7 +168,7 @@
 }
 
 .file-navigator .file-tree-row.is-selected {
-  box-shadow: inset 3px 0 var(--ring);
+  box-shadow: inset 2px 0 var(--signal);
 }
 .file-navigator .file-tree-row.is-selected:focus-visible {
   box-shadow: none;
@@ -238,9 +238,9 @@
   border-color: var(--border);
 }
 .file-navigator[data-collapsible='true'][data-compact='false'] .file-tree-row.is-selected {
-  color: var(--primary-foreground);
-  background: var(--primary);
-  box-shadow: none;
+  color: var(--accent-foreground);
+  background: var(--accent);
+  box-shadow: inset 2px 0 var(--signal);
 }
 .file-navigator[data-collapsible='true'][data-compact='false']
   .file-tree-row.is-selected

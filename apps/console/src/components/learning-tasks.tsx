@@ -576,7 +576,7 @@ function ImportMaterial({
           <Textarea
             id="learning-paste"
             name="paste"
-            className="min-h-28 font-mono text-[13px]"
+            className="min-h-28 font-mono text-sm"
             placeholder={pastePlaceholder}
             aria-describedby="learning-paste-hint"
           />
@@ -939,7 +939,7 @@ export function LearningTasks({
         }
       >
         <div role="group" aria-label="Filter tasks" className="list-toolbar">
-          <div className="flex h-8 items-center gap-2">
+          <div className="flex min-h-9 items-center gap-2">
             <label htmlFor="task-filter-split" className="text-sm text-muted-foreground">
               Split
             </label>
@@ -956,7 +956,7 @@ export function LearningTasks({
               <option value="held-out">Held-out</option>
             </NativeSelect>
           </div>
-          <div className="flex h-8 items-center gap-2">
+          <div className="flex min-h-9 items-center gap-2">
             <Checkbox
               id="task-filter-confirmation"
               checked={confirming}
@@ -969,7 +969,7 @@ export function LearningTasks({
               Needs confirmation
             </label>
           </div>
-          <div className="flex h-8 items-center gap-2">
+          <div className="flex min-h-9 items-center gap-2">
             <Checkbox
               id="task-filter-flagged"
               checked={flagged}
@@ -982,7 +982,7 @@ export function LearningTasks({
               Flagged only
             </label>
           </div>
-          <div className="flex h-8 items-center gap-2">
+          <div className="flex min-h-9 items-center gap-2">
             <label htmlFor="task-filter-admission" className="text-sm text-muted-foreground">
               Admission
             </label>
@@ -1000,7 +1000,7 @@ export function LearningTasks({
               <option value="set-aside">Set aside</option>
             </NativeSelect>
           </div>
-          <div className="flex h-8 items-center gap-2">
+          <div className="flex min-h-9 items-center gap-2">
             <label htmlFor="task-filter-source" className="text-sm text-muted-foreground">
               Task source
             </label>

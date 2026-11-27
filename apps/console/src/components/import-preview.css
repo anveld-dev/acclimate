@@ -67,7 +67,7 @@
 }
 .import-review li button[aria-pressed='true'] {
   background: var(--accent);
-  box-shadow: inset 3px 0 var(--ring);
+  box-shadow: inset 2px 0 var(--signal);
 }
 .import-review li button:hover {
   background: var(--muted);

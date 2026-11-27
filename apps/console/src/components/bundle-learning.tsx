@@ -4,7 +4,8 @@ import { describeLearning, selectedModels } from '../lib/central-learning';
 import { useModelProvider } from './use-model-provider';
 import { useBackgroundRefresh } from './use-background-refresh';
 import type { LearningRound, LearningLoop, LearningRoundSummary } from '@anveld/acclimate-sdk';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
+import { ArrowRight, RotateCw } from 'lucide-react';
 import { bundleHref } from '../navigation';
 import {
   FailureCause,
@@ -54,120 +55,221 @@ export function learningTab(search: Record<string, unknown>): LearningTab {
 
 type ReadyState = Extract<LearningState, { ok: true }>;
 
+const chart = { width: 840, height: 196, left: 72, right: 812, top: 14, bottom: 160 } as const;
+
+/** Whole points between two scores, signed, for the readout under each figure. */
+function pointsText(from: number, to: number) {
+  const points = Math.round((to - from) * 100);
+  return points === 0 ? 'level' : `${points > 0 ? '+' : '−'}${Math.abs(points)} pts`;
+}
+
+/** Round numbers to label on the x axis: every round when there are few, otherwise about six. */
+function roundTicks(first: number, last: number) {
+  if (last - first <= 12) return Array.from({ length: last - first + 1 }, (_, i) => first + i);
+  const step = Math.ceil((last - first) / 6);
+  const ticks: number[] = [];
+  for (let n = first; n < last; n += step) ticks.push(n);
+  if (last - ticks[ticks.length - 1] < step / 2) ticks.pop();
+  return [...ticks, last];
+}
+
 function ScoreCurves({ rounds }: { rounds: LearningRoundSummary[] }) {
   const completed = rounds
     .filter(({ state }) => state === 'completed')
     .sort((a, b) => a.number - b.number);
   if (!completed.some((round) => round.evolveScore !== null || round.heldOutScore !== null))
-    return <p className="text-sm text-muted-foreground">Scores appear as rounds complete.</p>;
+    return <p className="score-empty">Scores appear as rounds complete.</p>;
   const first = completed[0].number;
   const last = completed[completed.length - 1].number;
+  const span = chart.right - chart.left;
   const x = (number: number) =>
-    first === last ? 330 : 46 + ((number - first) / (last - first)) * 568;
-  const y = (value: number) => 180 - value * 156;
+    first === last
+      ? chart.left + span / 2
+      : chart.left + ((number - first) / (last - first)) * span;
+  const y = (value: number) => chart.bottom - value * (chart.bottom - chart.top);
   const series = [
-    { field: 'evolveScore', name: 'Evolve score', color: 'var(--chart-1)' },
-    { field: 'heldOutScore', name: 'Held-out score (monitoring only)', color: 'var(--chart-2)' },
+    { field: 'evolveScore', key: 'evolve', name: 'Evolve score', color: 'var(--chart-1)' },
+    {
+      field: 'heldOutScore',
+      key: 'held-out',
+      name: 'Held-out score (monitoring only)',
+      color: 'var(--chart-2)',
+    },
   ] as const;
+  const changes = completed.filter(
+    (round, index) => index > 0 && completed[index - 1].taskRevision !== round.taskRevision,
+  );
   return (
-    <div className="space-y-3">
-      <svg
-        viewBox="0 0 640 220"
-        role="img"
-        aria-label="Measured scores by completed round"
-        className="w-full max-w-4xl"
-      >
-        {[0, 0.25, 0.5, 0.75, 1].map((value) => (
-          <g key={value}>
-            <line x1="46" x2="614" y1={y(value)} y2={y(value)} stroke="var(--border)" />
-            <text x="4" y={y(value) + 4} fill="currentColor" fontSize="11">
-              {percent(value)}
-            </text>
-          </g>
-        ))}
-        <text x="46" y="205" fill="currentColor" fontSize="11">
-          Round {first}
-        </text>
-        {first !== last && (
-          <text x="614" y="205" textAnchor="end" fill="currentColor" fontSize="11">
-            Round {last}
-          </text>
-        )}
-        {series.map(({ field, name, color }) => (
-          <g key={field} fill={color} stroke={color}>
-            {completed.map((round, index) => {
-              const value = round[field];
-              if (value === null) return null;
-              const previous = completed[index - 1];
-              const previousValue = previous?.[field];
-              const changed = previous && previous.taskRevision !== round.taskRevision;
-              return (
-                <g key={round.id}>
-                  {changed && field === 'evolveScore' && (
-                    <line
-                      x1={x(round.number)}
-                      x2={x(round.number)}
-                      y1="24"
-                      y2="180"
-                      strokeDasharray="3 3"
-                    >
-                      <title>Task set changed</title>
-                    </line>
-                  )}
-                  {!changed && previousValue != null && previous.number + 1 === round.number && (
-                    <line
-                      x1={x(previous.number)}
-                      x2={x(round.number)}
-                      y1={y(previousValue)}
-                      y2={y(value)}
-                      strokeWidth="2"
-                    />
-                  )}
-                  <circle cx={x(round.number)} cy={y(value)} r="3">
-                    <title>{`Round ${round.number} · ${name} · ${percent(value)}`}</title>
-                  </circle>
-                </g>
-              );
-            })}
-          </g>
-        ))}
-      </svg>
-      <ul aria-label="Score series" className="flex flex-wrap gap-4 text-sm">
-        {series.map(({ name, color }) => (
-          <li key={name} className="flex items-center gap-2">
-            <span
-              aria-hidden="true"
-              className="size-2.5 rounded-full"
-              style={{ background: color }}
-            />
-            {name}
+    <div className="score-instrument">
+      <ul aria-label="Score series" className="score-readout">
+        {series.map(({ field, key, name }) => {
+          const measured = completed.filter((round) => round[field] !== null);
+          const latest = measured.at(-1);
+          const start = measured[0];
+          const value = latest?.[field] ?? null;
+          return (
+            <li key={key} className="score-figure" data-series={key}>
+              <span className="score-name">
+                <span aria-hidden="true" className="score-swatch" />
+                {name}
+              </span>
+              <span className="score-num">
+                {value === null ? (
+                  '—'
+                ) : (
+                  <>
+                    {Math.round(value * 100)}
+                    <small>%</small>
+                  </>
+                )}
+              </span>
+              <span className="score-caption">
+                {latest ? (
+                  <>
+                    Round {latest.number}
+                    {start && start !== latest && start[field] !== null && value !== null && (
+                      <>
+                        {' · '}
+                        <b>{pointsText(start[field], value)}</b> vs round {start.number}
+                      </>
+                    )}
+                  </>
+                ) : (
+                  'Not measured yet'
+                )}
+              </span>
+            </li>
+          );
+        })}
+        {changes.length > 0 && (
+          <li className="score-marker">
+            <span aria-hidden="true" className="score-swatch" />
+            Task set changed
           </li>
-        ))}
+        )}
       </ul>
-      <details>
-        <summary className="cursor-pointer text-sm">Score data</summary>
-        <div className="mt-2 max-h-80 overflow-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Round</TableHead>
-                {series.map(({ name }) => (
-                  <TableHead key={name}>{name}</TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {completed.map((round) => (
-                <TableRow key={round.id}>
-                  <TableHead scope="row">{round.number}</TableHead>
-                  <TableCell className="data-value">{scoreText(round.evolveScore)}</TableCell>
-                  <TableCell className="data-value">{scoreText(round.heldOutScore)}</TableCell>
+      {/* Below ~38rem the chart scrolls instead of shrinking its labels past legibility. */}
+      <div className="score-plot" role="region" aria-label="Score chart" tabIndex={0}>
+        <svg
+          viewBox={`0 0 ${chart.width} ${chart.height}`}
+          role="img"
+          aria-label="Measured scores by completed round"
+          className="score-chart"
+        >
+          {[0, 0.25, 0.5, 0.75, 1].map((value) => (
+            <g key={value} className="score-grid" data-base={value === 0 || undefined}>
+              <line x1={chart.left - 24} x2={chart.right + 16} y1={y(value)} y2={y(value)} />
+              <text x={chart.left - 32} y={y(value) + 4} textAnchor="end">
+                {percent(value)}
+              </text>
+            </g>
+          ))}
+          <g className="score-axis">
+            <text x={chart.left - 32} y={chart.height - 10} textAnchor="end">
+              Round
+            </text>
+            {roundTicks(first, last).map((number) => (
+              <g key={number}>
+                <line x1={x(number)} x2={x(number)} y1={chart.bottom} y2={chart.bottom + 5} />
+                <text x={x(number)} y={chart.height - 10} textAnchor="middle">
+                  {number}
+                </text>
+              </g>
+            ))}
+          </g>
+          {changes.map((round) => (
+            <g key={round.id} className="score-change">
+              <line x1={x(round.number)} x2={x(round.number)} y1={chart.top - 8} y2={chart.bottom}>
+                <title>Task set changed</title>
+              </line>
+              {changes.length <= 2 && (
+                <text x={x(round.number) + 6} y={chart.top - 2}>
+                  Task set changed
+                </text>
+              )}
+            </g>
+          ))}
+          {series.map(({ field, key, name, color }) => {
+            const measured = completed.filter((round) => round[field] !== null);
+            const latest = measured.at(-1);
+            return (
+              <g key={field} className="score-series" data-series={key} fill={color} stroke={color}>
+                {completed.map((round, index) => {
+                  const value = round[field];
+                  if (value === null) return null;
+                  const previous = completed[index - 1];
+                  const previousValue = previous?.[field];
+                  const changed = previous && previous.taskRevision !== round.taskRevision;
+                  return (
+                    !changed &&
+                    previousValue != null &&
+                    previous.number + 1 === round.number && (
+                      <line
+                        key={round.id}
+                        x1={x(previous.number)}
+                        x2={x(round.number)}
+                        y1={y(previousValue)}
+                        y2={y(value)}
+                      />
+                    )
+                  );
+                })}
+                {completed.map((round) => {
+                  const value = round[field];
+                  if (value === null) return null;
+                  const end = round === latest;
+                  return (
+                    <g key={round.id}>
+                      {end && (
+                        <circle className="score-halo" cx={x(round.number)} cy={y(value)} r="11" />
+                      )}
+                      <circle
+                        className="score-node"
+                        data-end={end || undefined}
+                        cx={x(round.number)}
+                        cy={y(value)}
+                        r={end ? 5.5 : 4.5}
+                      >
+                        <title>{`Round ${round.number} · ${name} · ${percent(value)}`}</title>
+                      </circle>
+                    </g>
+                  );
+                })}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <div className="score-foot">
+        <p>
+          Small held-out sets make scores noisy: with 20 tasks, one task that changes from pass to
+          fail moves the score by five points, so compare rounds that use the same task set.
+        </p>
+        <details className="score-data">
+          <summary>Score data</summary>
+          <div className="score-data-table">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Round</TableHead>
+                  {series.map(({ name }) => (
+                    <TableHead key={name}>{name}</TableHead>
+                  ))}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </details>
+              </TableHeader>
+              <TableBody>
+                {completed.map((round) => (
+                  <TableRow key={round.id}>
+                    <TableHead scope="row">{round.number}</TableHead>
+                    <TableCell className="data-value">{scoreText(round.evolveScore)}</TableCell>
+                    <TableCell className="data-value">{scoreText(round.heldOutScore)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </details>
+      </div>
     </div>
   );
 }
@@ -195,14 +297,14 @@ function LoopMessages({
 }) {
   const needed = loop.evolveTasksNeeded;
   return (
-    <div className="space-y-1 text-sm">
+    <div className="learning-messages">
       <p>
         {describeLearning(loop.status)} {loop.pauseReason && describeLearning(loop.pauseReason)}{' '}
         {loop.waiting && describeLearning(loop.waiting)}
         {loop.waiting === 'models-not-allowed' && (
           <>
             {' '}
-            <ConsoleLink className="underline" href={settingsHref}>
+            <ConsoleLink className="learning-inline-link" href={settingsHref}>
               Open learning settings
             </ConsoleLink>
           </>
@@ -231,7 +333,7 @@ function LoopMessages({
               Round {latest.number} failed. {latest.reason && describeLearning(latest.reason)}
             </>
           )}{' '}
-          <a className="underline" href={href(latest.id)}>
+          <a className="learning-inline-link" href={href(latest.id)}>
             Inspect round {latest.number}
           </a>
         </p>
@@ -240,7 +342,10 @@ function LoopMessages({
   );
 }
 
-/** The active round's steps in one wrapping line, with the current step marked. */
+/**
+ * The active round as a tracker: its link and scoring progress, then its six steps as a rail
+ * with the finished steps in ink and the current one in the signal colour.
+ */
 function ActiveRound({
   state,
   loop,
@@ -255,24 +360,54 @@ function ActiveRound({
   const active = loop.activeRound;
   if (!active) return null;
   const current = activeRoundStates.indexOf(active.state as (typeof activeRoundStates)[number]);
+  const evaluation = !progress ? state.activeEvaluation : null;
+  const ratio = progress
+    ? progress.total > 0
+      ? progress.scored / progress.total
+      : 0
+    : evaluation && evaluation.cases > 0
+      ? evaluation.reportedCases / evaluation.cases
+      : null;
+  const live = loop.status === 'running' && !loop.waiting;
   return (
-    <section aria-label="Active round" className="space-y-2 rounded-md border p-3 text-sm">
-      <p className="font-medium">
-        <a className="underline" href={href(active.id)}>
+    <section aria-label="Active round" className="learning-round">
+      <div className="learning-round-head">
+        <span className="learning-round-dot" data-live={live || undefined} aria-hidden="true" />
+        <a className="learning-round-link" href={href(active.id)}>
           Round {active.number}
+          <ArrowRight aria-hidden="true" />
         </a>
-      </p>
-      <ol className="flex list-inside list-decimal flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        {progress && (
+          <p className="learning-round-count">
+            {progress.scored} of {progress.total} rollouts scored
+            {ratio !== null && <span aria-hidden="true"> · {Math.round(ratio * 100)}%</span>}
+          </p>
+        )}
+        {evaluation && (
+          <p className="learning-round-count">
+            <span className="capitalize">{evaluation.role}</span>
+            {evaluation.sample !== null && ` sample ${evaluation.sample}`}
+            {' · '}
+            {evaluation.split === 'heldOut' ? 'Held-out monitoring' : 'Evolve'}
+            {' · '}
+            {describeLearning('evaluation.' + evaluation.status)}
+            {' · '}
+            {evaluation.reportedCases} of {evaluation.cases} cases reported
+          </p>
+        )}
+      </div>
+      {ratio !== null && (
+        <div className="learning-progress" aria-hidden="true">
+          <span style={{ width: `${Math.min(100, Math.max(0, ratio * 100))}%` }} />
+        </div>
+      )}
+      <ol className="learning-steps">
         {activeRoundStates.map((roundState, index) => (
           <li
             key={roundState}
             aria-current={active.state === roundState ? 'step' : undefined}
-            className={
-              active.state === roundState
-                ? 'font-medium text-foreground'
-                : index < current
-                  ? 'text-foreground/70'
-                  : undefined
+            data-state={
+              active.state === roundState ? 'current' : index < current ? 'done' : 'upcoming'
             }
           >
             {describeLearning('round.' + roundState)}
@@ -280,33 +415,16 @@ function ActiveRound({
           </li>
         ))}
       </ol>
-      {progress && (
-        <p>
-          {progress.scored} of {progress.total} rollouts scored
-        </p>
-      )}
-      {!progress && state.activeEvaluation && (
-        <p>
-          <span className="capitalize">{state.activeEvaluation.role}</span>
-          {state.activeEvaluation.sample !== null && ` sample ${state.activeEvaluation.sample}`}
-          {' · '}
-          {state.activeEvaluation.split === 'heldOut' ? 'Held-out monitoring' : 'Evolve'}
-          {' · '}
-          {describeLearning('evaluation.' + state.activeEvaluation.status)}
-          {' · '}
-          {state.activeEvaluation.reportedCases} of {state.activeEvaluation.cases} cases reported
-        </p>
-      )}
     </section>
   );
 }
 
-/** A label and value in the status panel's summary. */
+/** A label and value in the status panel's telemetry strip. */
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="min-w-0">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5">{children}</dd>
+    <div className="learning-fact">
+      <dt>{label}</dt>
+      <dd>{children}</dd>
     </div>
   );
 }
@@ -329,18 +447,16 @@ function RoundList({
   const [before, setBefore] = useState<number>();
   const page = rounds.filter(({ number }) => before === undefined || number < before).slice(0, 20);
   const last = page.at(-1)?.number;
-  if (!rounds.length) return <p className="p-4 text-sm text-muted-foreground">No rounds yet.</p>;
+  if (!rounds.length) return <p className="learning-empty">No rounds yet.</p>;
   const older = last !== undefined && rounds.some(({ number }) => number < last);
   return (
     <>
-      <Table>
+      <Table className="learning-ledger">
         <TableHeader>
           <TableRow>
             {['Round', 'Trigger', 'Outcome', 'Evolve score', 'Held-out', 'Version', 'Ended'].map(
               (label) => (
-                <TableHead key={label} className="px-3">
-                  {label}
-                </TableHead>
+                <TableHead key={label}>{label}</TableHead>
               ),
             )}
           </TableRow>
@@ -349,84 +465,82 @@ function RoundList({
           {page.map((round) => {
             const restores = history?.filter((entry) => entry.roundId === round.id) ?? [];
             return (
-              <TableRow key={round.id} className="align-top hover:bg-transparent">
-                <TableHead scope="row" className="h-auto px-3 py-3 align-top">
-                  <a className="underline" href={href(round.id)}>
+              <TableRow key={round.id} data-round-state={round.state}>
+                <TableHead scope="row">
+                  <a className="learning-round-number" href={href(round.id)}>
                     {round.number}
                   </a>
                 </TableHead>
-                <TableCell className="min-w-[10rem] px-3 py-3 align-top whitespace-normal">
+                <TableCell className="learning-col-trigger">
                   {round.trigger ? describeLearning(round.trigger) : '—'}
                 </TableCell>
-                <TableCell className="min-w-[12rem] max-w-[22rem] px-3 py-3 align-top whitespace-normal">
+                <TableCell className="learning-col-outcome">
                   <RoundOutcome round={round} />
                   {round.reason && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {describeLearning(round.reason)}
-                    </p>
+                    <p className="learning-cell-note">{describeLearning(round.reason)}</p>
                   )}
                   {round.state === 'failed' && round.failureCause && (
-                    <p className="mt-1 text-xs text-muted-foreground">
+                    <p className="learning-cell-note">
                       <FailureCause cause={round.failureCause} />
                     </p>
                   )}
                 </TableCell>
-                <TableCell className="data-value px-3 py-3 align-top">
+                <TableCell className="data-value learning-col-score">
                   {round.decision === 'adopted' && round.evolveScore !== null ? (
                     <>
-                      {scoreText(round.incumbentScore)} <span aria-hidden="true">→</span>
-                      <span className="sr-only">to</span> {percent(round.evolveScore)}
+                      <span className="learning-score-from">{scoreText(round.incumbentScore)}</span>{' '}
+                      <span aria-hidden="true" className="learning-score-arrow">
+                        →
+                      </span>
+                      <span className="sr-only">to</span>{' '}
+                      <span className="learning-score-to">{percent(round.evolveScore)}</span>
                     </>
                   ) : (
                     scoreText(round.incumbentScore)
                   )}
                 </TableCell>
-                <TableCell className="data-value max-w-[16rem] px-3 py-3 align-top whitespace-normal">
+                <TableCell className="data-value learning-col-heldout">
                   {round.heldOutError
                     ? round.adoptedVersionId
                       ? 'This version was released, but the regression check could not run.'
                       : describeLearning(round.heldOutError)
                     : scoreText(round.heldOutScore)}
                 </TableCell>
-                <TableCell className="min-w-[12rem] px-3 py-3 align-top whitespace-normal">
+                <TableCell className="learning-col-version">
                   {round.adoptedVersionId ? (
-                    <div className="space-y-1.5">
-                      <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <div className="learning-version">
+                      <div className="learning-version-row">
                         {round.adoptedSample !== null && (
-                          <span className="text-muted-foreground">
-                            Sample {round.adoptedSample}
-                          </span>
+                          <span className="learning-sample">Sample {round.adoptedSample}</span>
                         )}
                         <VersionId id={round.adoptedVersionId} />
-                      </p>
+                        {round.adoptedVersionId === head && rollback && (
+                          <span className="learning-rollback">
+                            <LearningConfirm
+                              label="Roll back"
+                              description={rollbackDescription}
+                              onConfirm={() => rollback(round.id)}
+                            />
+                          </span>
+                        )}
+                      </div>
                       {restores.map((entry) => (
-                        <p key={entry.time} className="text-xs text-muted-foreground">
+                        <p key={entry.time} className="learning-cell-note">
                           Previous version restored by {entry.actor} on{' '}
                           <ReceiptTime value={entry.time} />.
                         </p>
                       ))}
-                      {round.adoptedVersionId === head
-                        ? rollback && (
-                            <span className="[&>button]:h-7 [&>button]:px-2">
-                              <LearningConfirm
-                                label="Roll back"
-                                description={rollbackDescription}
-                                onConfirm={() => rollback(round.id)}
-                              />
-                            </span>
-                          )
-                        : manage &&
-                          !restores.length && (
-                            <p className="text-xs text-muted-foreground">
-                              Only the latest release can be rolled back.
-                            </p>
-                          )}
+                      {round.adoptedVersionId !== head && manage && !restores.length && (
+                        <p className="learning-cell-note">
+                          Only the latest release can be rolled back.
+                        </p>
+                      )}
                     </div>
                   ) : (
                     '—'
                   )}
                 </TableCell>
-                <TableCell className="px-3 py-3 align-top">
+                <TableCell className="learning-col-ended">
                   {round.endedAt ? <ReceiptTime value={round.endedAt} relative /> : '—'}
                 </TableCell>
               </TableRow>
@@ -466,6 +580,7 @@ export function BundleLearning({
   refresh: () => Promise<void>;
   tab?: LearningTab;
 }) {
+  const statusHeading = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -590,53 +705,140 @@ export function BundleLearning({
         )}
       </>
     );
+    const alert = loop?.alert;
+    const alertRound = alert && state.rounds.find((r) => r.id === alert.roundId);
+    const description = !loop
+      ? 'Learning tests changes to this bundle on your tasks and releases the ones that score better.'
+      : state.canManage && loop.status !== 'running'
+        ? `Starting learning lets the service release adopted changes to the ${loop.channel} channel automatically, without approval. You can roll back the current release.`
+        : `Adopted changes are released to the ${loop.channel} channel automatically.`;
+    const notes = loop && (
+      <>
+        {loop.status !== 'running' && noOptimizer && (
+          <p role="alert">
+            The service has no optimizer model. An operator must set ACCLIMATE_MODEL_ENDPOINT,
+            ACCLIMATE_MODEL_TOKEN and ACCLIMATE_MODEL on the service. On the local stack, export
+            them and run npm run local:up again.
+          </p>
+        )}
+        {loop.status !== 'running' && provider?.verification?.status !== 'verified' && (
+          <p>
+            {providerError ||
+              (provider?.verification?.status === 'failed'
+                ? 'Provider verification failed.'
+                : provider?.hasKey
+                  ? 'Provider verification is pending.'
+                  : 'Start requires a verified model provider.')}{' '}
+            <a className="learning-inline-link" href={providerHref}>
+              Check provider settings
+            </a>
+          </p>
+        )}
+        {(splitDeficit(evolve) > 0 || splitDeficit(held) > 0) && (
+          <p>
+            Start needs {splitDeficit(evolve)} more evolve and {splitDeficit(held)} more held-out
+            tasks, so that each score rests on at least 100 runs.{' '}
+            <ConsoleLink className="learning-inline-link" href={tabHref('tasks')}>
+              Add tasks
+            </ConsoleLink>
+          </p>
+        )}
+      </>
+    );
+    const hasNotes =
+      loop &&
+      ((loop.status !== 'running' &&
+        (noOptimizer || provider?.verification?.status !== 'verified')) ||
+        splitDeficit(evolve) > 0 ||
+        splitDeficit(held) > 0);
     return (
       <>
-        <Panel
-          title="Learning status"
-          description={
-            !loop
-              ? 'Learning tests changes to this bundle on your tasks and releases the ones that score better.'
-              : state.canManage && loop.status !== 'running'
-                ? `Starting learning lets the service release adopted changes to the ${loop.channel} channel automatically, without approval. You can roll back the current release.`
-                : `Adopted changes are released to the ${loop.channel} channel automatically.`
-          }
-          actions={controls || undefined}
-        >
-          {loop?.alert && (
-            <div role="alert" data-tone="danger" className="rounded-md border px-3 py-2 text-sm">
-              {loop.alert.kind === 'regression-check-incomplete' ? (
-                <>
-                  The regression check could not be completed for version{' '}
-                  <VersionId id={loop.alert.versionId} />.
-                </>
-              ) : (
-                <>
-                  {loop.alert.score < loop.alert.previousScore
-                    ? `Held-out score dropped from ${percent(loop.alert.previousScore)} to ${percent(loop.alert.score)}.`
-                    : 'Fewer held-out runs pass than before the release.'}{' '}
-                  {loop.alert.passRate !== undefined && loop.alert.previousPassRate !== undefined
-                    ? `Runs that meet every criterion went from ${percent(loop.alert.previousPassRate)} to ${percent(loop.alert.passRate)}, and `
-                    : ''}
-                  {loop.alert.flippedTasks} tasks changed from pass to fail.{' '}
-                  {loop.alert.reverted
-                    ? 'The service restored the previous version.'
-                    : 'The drop was below the limit for an automatic restore. Inspect the round and roll back if needed.'}
-                </>
-              )}{' '}
-              <a className="underline" href={roundHref(loop.alert.roundId)}>
-                Inspect round
-              </a>
-              {state.canManage &&
-                !(loop.alert.kind === undefined && loop.alert.reverted) &&
-                state.rounds.some(
-                  (r) =>
-                    r.id === loop.alert?.roundId &&
-                    r.adoptedVersionId !== null &&
-                    r.adoptedVersionId === state.channelHead,
-                ) && (
+        <section aria-labelledby={statusHeading} className="workspace-panel learning-status">
+          <header className="learning-status-head">
+            <div className="learning-status-title">
+              <h2 id={statusHeading}>Learning status</h2>
+              <div className="learning-status-line">
+                <div role="status" className="learning-state">
+                  <StatusBadge tone={badge.tone} className="learning-badge">
+                    {badge.label}
+                  </StatusBadge>
+                  <div className="learning-state-message">
+                    {loop ? (
+                      <LoopMessages
+                        loop={loop}
+                        latest={state.rounds[0]}
+                        href={roundHref}
+                        settingsHref={tabHref('settings')}
+                      />
+                    ) : (
+                      <p>
+                        Learning is not set up for this bundle.{' '}
+                        {state.canManage ? (
+                          <ConsoleLink className="learning-inline-link" href={tabHref('settings')}>
+                            Set up learning
+                          </ConsoleLink>
+                        ) : (
+                          'A workspace administrator can set up learning for this bundle.'
+                        )}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <p className="learning-status-note">{description}</p>
+              </div>
+            </div>
+            {controls && <div className="panel-actions">{controls}</div>}
+          </header>
+          {alert && (
+            <div role="alert" data-tone="danger" className="learning-alert">
+              <div className="learning-alert-copy">
+                <p className="learning-eyebrow">
+                  {alert.kind === 'regression-check-incomplete'
+                    ? 'Regression check incomplete'
+                    : alert.reverted
+                      ? 'Held-out regression · restored'
+                      : 'Held-out regression'}
+                  {alertRound && ` · Round ${alertRound.number}`}
+                </p>
+                {alert.kind === 'regression-check-incomplete' ? (
+                  <p className="learning-alert-lead">
+                    The regression check could not be completed for version{' '}
+                    <VersionId id={alert.versionId} />.
+                  </p>
+                ) : (
                   <>
-                    {' '}
+                    <p className="learning-alert-lead">
+                      {alert.score < alert.previousScore
+                        ? `Held-out score dropped from ${percent(alert.previousScore)} to ${percent(alert.score)}.`
+                        : 'Fewer held-out runs pass than before the release.'}
+                    </p>
+                    <p className="learning-alert-body">
+                      {alert.passRate !== undefined && alert.previousPassRate !== undefined
+                        ? `Runs that meet every criterion went from ${percent(alert.previousPassRate)} to ${percent(alert.passRate)}, and `
+                        : ''}
+                      {alert.flippedTasks} tasks changed from pass to fail.{' '}
+                      {alert.reverted
+                        ? 'The service restored the previous version.'
+                        : 'The drop was below the limit for an automatic restore. Inspect the round and roll back if needed.'}
+                    </p>
+                  </>
+                )}
+              </div>
+              <div className="learning-alert-actions">
+                <Button asChild variant="outline">
+                  <a href={roundHref(alert.roundId)}>
+                    Inspect round
+                    <ArrowRight aria-hidden="true" />
+                  </a>
+                </Button>
+                {state.canManage &&
+                  !(alert.kind === undefined && alert.reverted) &&
+                  state.rounds.some(
+                    (r) =>
+                      r.id === alert.roundId &&
+                      r.adoptedVersionId !== null &&
+                      r.adoptedVersionId === state.channelHead,
+                  ) && (
                     <LearningConfirm
                       label="Roll back this release"
                       description={rollbackDescription}
@@ -644,97 +846,45 @@ export function BundleLearning({
                       onConfirm={() =>
                         void submit({
                           action: 'rollback',
-                          body: { roundId: loop.alert?.roundId ?? '' },
+                          body: { roundId: alert.roundId },
                         })
                       }
                     />
-                  </>
-                )}
+                  )}
+              </div>
             </div>
           )}
-          <div role="status" className="flex flex-wrap items-start gap-3">
-            <StatusBadge tone={badge.tone} className="mt-0.5">
-              {badge.label}
-            </StatusBadge>
-            <div className="min-w-0 flex-1">
-              {loop ? (
-                <LoopMessages
-                  loop={loop}
-                  latest={state.rounds[0]}
-                  href={roundHref}
-                  settingsHref={tabHref('settings')}
-                />
-              ) : (
-                <p className="text-sm">
-                  Learning is not set up for this bundle.{' '}
-                  {state.canManage ? (
-                    <ConsoleLink className="underline" href={tabHref('settings')}>
-                      Set up learning
-                    </ConsoleLink>
-                  ) : (
-                    'A workspace administrator can set up learning for this bundle.'
-                  )}
-                </p>
-              )}
-            </div>
-          </div>
           {loop && (
-            <dl className="grid gap-3 text-sm sm:grid-cols-3">
-              <Fact label="Channel">{loop.channel}</Fact>
+            <dl className="learning-facts">
+              <Fact label="Channel">
+                <code className="learning-channel">{loop.channel}</code>
+              </Fact>
               <Fact label="Admitted tasks">
-                <ConsoleLink className="underline" href={tabHref('tasks')}>
-                  {evolve} evolve · {held} held-out
+                <ConsoleLink className="learning-fact-link" href={tabHref('tasks')}>
+                  <span>
+                    {evolve} evolve · {held} held-out
+                  </span>
+                  <ArrowRight aria-hidden="true" />
                 </ConsoleLink>
               </Fact>
               <Fact label="Models">
-                {loop.taskModel ?? '—'} · judged by {loop.judgeModel ?? '—'}
+                <span className="learning-models">
+                  <code>{loop.taskModel ?? '—'}</code>
+                  <span className="learning-models-join"> · judged by </span>
+                  <code>{loop.judgeModel ?? '—'}</code>
+                </span>
               </Fact>
             </dl>
           )}
-          {loop && loop.status !== 'running' && (
-            <div className="space-y-1 text-sm">
-              {noOptimizer && (
-                <p role="alert">
-                  The service has no optimizer model. An operator must set ACCLIMATE_MODEL_ENDPOINT,
-                  ACCLIMATE_MODEL_TOKEN and ACCLIMATE_MODEL on the service. On the local stack,
-                  export them and run npm run local:up again.
-                </p>
-              )}
-              {provider?.verification?.status !== 'verified' && (
-                <p>
-                  {providerError ||
-                    (provider?.verification?.status === 'failed'
-                      ? 'Provider verification failed.'
-                      : provider?.hasKey
-                        ? 'Provider verification is pending.'
-                        : 'Start requires a verified model provider.')}{' '}
-                  <a className="underline" href={providerHref}>
-                    Check provider settings
-                  </a>
-                </p>
-              )}
-            </div>
-          )}
-          {loop && (splitDeficit(evolve) > 0 || splitDeficit(held) > 0) && (
-            <p className="text-sm">
-              Start needs {splitDeficit(evolve)} more evolve and {splitDeficit(held)} more held-out
-              tasks, so that each score rests on at least 100 runs.{' '}
-              <ConsoleLink className="underline" href={tabHref('tasks')}>
-                Add tasks
-              </ConsoleLink>
-            </p>
-          )}
+          {hasNotes && <div className="learning-notes">{notes}</div>}
           {loop && <ActiveRound state={state} loop={loop} progress={progress} href={roundHref} />}
-        </Panel>
+        </section>
         {loop && (
           <>
-            <Panel
-              title="Scores by round"
-              description="Small held-out sets make scores noisy: with 20 tasks, one task that changes from pass to fail moves the score by five points, so compare rounds that use the same task set."
-            >
+            <Panel title="Scores by round" className="learning-scores" flush>
               <ScoreCurves rounds={state.rounds} />
             </Panel>
-            <Panel title="Rounds" flush>
+            <Panel title="Rounds" className="learning-rounds" flush>
               <RoundList
                 history={state.history}
                 head={state.channelHead}
@@ -831,7 +981,7 @@ export function BundleLearning({
       return (
         <Panel title="Learning setup" description="How this bundle learns from its tasks.">
           {loop ? (
-            <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <dl className="learning-fact-grid">
               <Fact label="Learning channel">{loop.channel}</Fact>
               <Fact label="Task model">{loop.taskModel ?? '—'}</Fact>
               <Fact label="Judge model">{loop.judgeModel ?? '—'}</Fact>
@@ -1065,8 +1215,8 @@ export function BundleLearning({
 
   const content = { overview, tasks, settings, memory }[tab];
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="learning-page">
+      <div className="learning-toolbar">
         {state.ok && (
           <SubTabs
             label="Learning sections"
@@ -1080,18 +1230,19 @@ export function BundleLearning({
           />
         )}
         <Button
-          variant="outline"
-          className="ml-auto"
+          variant="ghost"
+          className="learning-refresh"
           disabled={busy}
           onClick={() =>
             void refresh().catch(() => setError('Could not refresh the learning loop.'))
           }
         >
+          <RotateCw aria-hidden="true" />
           Refresh learning
         </Button>
       </div>
       {error && (
-        <p role="alert" data-tone="danger" className="rounded-md border px-4 py-3 text-sm">
+        <p role="alert" data-tone="danger" className="learning-error">
           {error}
         </p>
       )}

@@ -232,8 +232,8 @@ class DeploymentTests(unittest.TestCase):
                             target=source.parent/name
                         elif name.startswith('@/'):
                             target=ROOT/'apps/console/src'/name[2:]
-                        elif name=='@acclimate/sdk' or name.startswith('@acclimate/sdk/'):
-                            target=ROOT/'packages/sdk/src'/('index' if name=='@acclimate/sdk' else name[len('@acclimate/sdk/'):])
+                        elif name=='@anveld/sdk' or name.startswith('@anveld/sdk/'):
+                            target=ROOT/'packages/sdk/src'/('index' if name=='@anveld/sdk' else name[len('@anveld/sdk/'):])
                         else: continue
                         candidates=[target]
                         if target.suffix in ('.js','.mjs'): candidates.extend([target.with_suffix('.ts'),target.with_suffix('.tsx')])

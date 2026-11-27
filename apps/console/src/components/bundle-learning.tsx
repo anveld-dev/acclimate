@@ -3,7 +3,7 @@ import { NativeSelect } from './ui/native-select';
 import { describeLearning, selectedModels } from '../lib/central-learning';
 import { useModelProvider } from './use-model-provider';
 import { useBackgroundRefresh } from './use-background-refresh';
-import type { LearningRound, LearningLoop, LearningRoundSummary } from '@acclimate/sdk';
+import type { LearningRound, LearningLoop, LearningRoundSummary } from '@anveld/sdk';
 import { useEffect, useState, type ReactNode } from 'react';
 import { bundleHref } from '../navigation';
 import {

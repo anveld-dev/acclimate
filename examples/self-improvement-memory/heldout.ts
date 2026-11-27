@@ -1,5 +1,5 @@
-import { heldOutDigest } from '@acclimate/sdk/learning';
-import type { LearningEvolveCase } from '@acclimate/sdk';
+import { heldOutDigest } from '@anveld/sdk/learning';
+import type { LearningEvolveCase } from '@anveld/sdk';
 
 export type Case = LearningEvolveCase<string, string>;
 export function heldOut(cases: Case[]) {

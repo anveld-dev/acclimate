@@ -10,7 +10,7 @@ import {
   resolveAndCache,
   prepareFiles,
   createReceiptReporter,
-} from '@acclimate/sdk';
+} from '@anveld/sdk';
 const input = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const client = new AcclimateClient({
   baseUrl: input.baseUrl,
@@ -122,7 +122,7 @@ async function cleanup() {
 }
 async function native() {
   const bundle = await resolveAndCache(client, selection, policy);
-  const plugin = await import('@acclimate/' + input.plugin + '-plugin');
+  const plugin = await import('@anveld/' + input.plugin + '-plugin');
   const prepared = await plugin.prepare(bundle, {
     approvedMemoryPaths: input.approveMemory ? ['memory/team.md'] : [],
   });

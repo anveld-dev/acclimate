@@ -1,5 +1,5 @@
-import type { ConnectionObservation, Page } from '@acclimate/sdk';
-import { ApiError } from '@acclimate/sdk';
+import type { ConnectionObservation, Page } from '@anveld/sdk';
+import { ApiError } from '@anveld/sdk';
 import { consoleClient } from './console-client';
 import { publicReport } from './delivery-detail-core';
 import { allPages } from './listing';

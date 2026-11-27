@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { AcclimateClient, createReceiptReporter, resolveAndCache } from '@acclimate/sdk';
-import { prepare } from '@acclimate/codex-plugin';
+import { AcclimateClient, createReceiptReporter, resolveAndCache } from '@anveld/sdk';
+import { prepare } from '@anveld/codex-plugin';
 
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
 for (const pinned of config.pinned || []) {

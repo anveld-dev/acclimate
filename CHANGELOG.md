@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-12-13
+
+### Breaking
+
+- The TypeScript SDK and four native plugins now use the `@anveld` npm scope. Replace `@acclimate/sdk` with `@anveld/sdk` and change the scope in each plugin dependency and import to `@anveld`. The package entry points and the `acclimate` command keep their names within the new scope.
+
 ### Added
 
 - `examples/gear-returns/` teaches a returns agent a shop's nine-rule policy as tasks arrive in four batches, and scores each release on 60 test tasks the loop never sees. Its recorded run, 48% to 97%, is the chart on the docs home page. Run it with `npm run example:gear-returns`.

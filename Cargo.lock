@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "acclimate-executor"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "acclimate-provider-address",
  "axum",
@@ -19,14 +19,14 @@ dependencies = [
 
 [[package]]
 name = "acclimate-provider-address"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "reqwest",
 ]
 
 [[package]]
 name = "acclimate-service"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "acclimate-provider-address",
  "axum",

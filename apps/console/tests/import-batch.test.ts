@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { BundlePayload } from '@acclimate/sdk';
+import type { BundlePayload } from '@anveld/sdk';
 import { readImportBatch } from '../src/components/import-content';
 
 const existing: BundlePayload = {

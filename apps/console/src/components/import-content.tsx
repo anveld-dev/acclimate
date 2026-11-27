@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { fileKindForPath, validatePayload } from '@acclimate/sdk/validation';
-import type { BundleFile, BundlePayload } from '@acclimate/sdk';
+import { fileKindForPath, validatePayload } from '@anveld/sdk/validation';
+import type { BundleFile, BundlePayload } from '@anveld/sdk';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';

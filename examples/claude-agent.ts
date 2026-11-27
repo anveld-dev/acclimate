@@ -12,10 +12,10 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { Options, SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
-import { AcclimateClient, createReceiptReporter } from '@acclimate/sdk';
-import type { PreparedDelivery, VerifiedVersion } from '@acclimate/sdk';
-import { prepare } from '@acclimate/claude-plugin';
-import { claudeSessionOptions } from '@acclimate/claude-plugin/native';
+import { AcclimateClient, createReceiptReporter } from '@anveld/sdk';
+import type { PreparedDelivery, VerifiedVersion } from '@anveld/sdk';
+import { prepare } from '@anveld/claude-plugin';
+import { claudeSessionOptions } from '@anveld/claude-plugin/native';
 
 /** Explicit tool and sandbox policy. Record changes to it as a new runtime revision. */
 const sessionPolicy = {

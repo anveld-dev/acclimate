@@ -1,14 +1,14 @@
-# @acclimate/sdk
+# @anveld/sdk
 
 TypeScript SDK for Acclimate, a self-hosted service that versions and delivers agent instructions, skills and memory. Requires Node.js 22.22 or later on Linux or macOS.
 
 Install a verified SDK tarball from a GitHub release or a checkout build.
 
 ```sh
-npm install --offline --ignore-scripts /path/to/acclimate-sdk-0.1.0.tgz
+npm install --offline --ignore-scripts /path/to/anveld-sdk-0.2.0.tgz
 ```
 
-Verify release artifacts against `SHA256SUMS`. From a checkout, run `npm ci --ignore-scripts` and `npm run build:packages`, then run `npm pack --workspace @acclimate/sdk` to create the tarball. Registry installation with `npm install @acclimate/sdk` requires a separate registry publication.
+Verify release artifacts against `SHA256SUMS`. From a checkout, run `npm ci --ignore-scripts` and `npm run build:packages`, then run `npm pack --workspace @anveld/sdk` to create the tarball. Registry installation with `npm install @anveld/sdk` requires a separate registry publication.
 
 ## Production outcomes
 
@@ -17,7 +17,7 @@ An application with workspace write access can call `job.expect(expected, { inpu
 ## Start a job with its connection’s release
 
 ```ts
-import { AcclimateClient } from '@acclimate/sdk';
+import { AcclimateClient } from '@anveld/sdk';
 
 const client = new AcclimateClient({
   baseUrl: process.env.ACCLIMATE_URL!,
@@ -38,9 +38,9 @@ try {
 
 | Import | Use |
 | --- | --- |
-| `@acclimate/sdk` | Client, delivery, payload validation helpers. |
-| `@acclimate/sdk/validation` | Payload and native compatibility checks without Node file APIs. |
-| `@acclimate/sdk/native-files` | Inspect and prepare bundle files for native harnesses. |
+| `@anveld/sdk` | Client, delivery, payload validation helpers. |
+| `@anveld/sdk/validation` | Payload and native compatibility checks without Node file APIs. |
+| `@anveld/sdk/native-files` | Inspect and prepare bundle files for native harnesses. |
 
 The `acclimate` command saves, publishes and releases bundles: `acclimate pull`, `publish`, `release` and `rollback`. It reads `ACCLIMATE_URL`, `ACCLIMATE_WORKSPACE` and `ACCLIMATE_TOKEN`, takes a bundle name with `--bundle` and prints one JSON line. Run `acclimate --help` for the flags.
 

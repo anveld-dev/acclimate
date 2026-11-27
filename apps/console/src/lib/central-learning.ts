@@ -9,7 +9,7 @@ import type {
   LearningTaskRequest,
   LearningTaskEdit,
   LearningRollback,
-} from '@acclimate/sdk';
+} from '@anveld/sdk';
 export type CentralCommand =
   | { action: 'loop' | 'provider' | 'start' | 'pause' | 'stop' | 'tasks' | 'export' | 'usage' }
   | { action: 'evidence'; id: string; evaluation?: string }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { AcclimateClient, resolveAndCache, prepareFiles } from '@acclimate/sdk';
+import { AcclimateClient, resolveAndCache, prepareFiles } from '@anveld/sdk';
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const client = new AcclimateClient({baseUrl:config.baseUrl,token:config.token,scope:'operator',retries:0});
 const policy = {cacheDir:join(process.cwd(),'cache')};

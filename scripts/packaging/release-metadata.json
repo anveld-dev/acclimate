@@ -1,48 +1,48 @@
 {
   "schemaVersion": 1,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "artifacts": [
     {
-      "package": "@acclimate/sdk",
-      "version": "0.1.0",
+      "package": "@anveld/sdk",
+      "version": "0.2.0",
       "kind": "npm",
-      "file": "acclimate-sdk-0.1.0.tgz"
+      "file": "anveld-sdk-0.2.0.tgz"
     },
     {
-      "package": "@acclimate/codex-plugin",
-      "version": "0.1.0",
+      "package": "@anveld/codex-plugin",
+      "version": "0.2.0",
       "kind": "npm",
-      "file": "acclimate-codex-plugin-0.1.0.tgz"
+      "file": "anveld-codex-plugin-0.2.0.tgz"
     },
     {
-      "package": "@acclimate/claude-plugin",
-      "version": "0.1.0",
+      "package": "@anveld/claude-plugin",
+      "version": "0.2.0",
       "kind": "npm",
-      "file": "acclimate-claude-plugin-0.1.0.tgz"
+      "file": "anveld-claude-plugin-0.2.0.tgz"
     },
     {
-      "package": "@acclimate/pi-plugin",
-      "version": "0.1.0",
+      "package": "@anveld/pi-plugin",
+      "version": "0.2.0",
       "kind": "npm",
-      "file": "acclimate-pi-plugin-0.1.0.tgz"
+      "file": "anveld-pi-plugin-0.2.0.tgz"
     },
     {
-      "package": "@acclimate/cursor-plugin",
-      "version": "0.1.0",
+      "package": "@anveld/cursor-plugin",
+      "version": "0.2.0",
       "kind": "npm",
-      "file": "acclimate-cursor-plugin-0.1.0.tgz"
+      "file": "anveld-cursor-plugin-0.2.0.tgz"
     },
     {
       "package": "acclimate-sdk",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "kind": "wheel",
-      "file": "acclimate_sdk-0.1.0-py3-none-any.whl"
+      "file": "acclimate_sdk-0.2.0-py3-none-any.whl"
     }
   ],
   "starters": [
     {
       "name": "native-repository",
-      "file": "acclimate-native-repository-starter-0.1.0.tgz"
+      "file": "acclimate-native-repository-starter-0.2.0.tgz"
     }
   ],
   "prerequisites": {

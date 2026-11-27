@@ -3,8 +3,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { Codex, type Thread, type ThreadOptions } from '@openai/codex-sdk';
-import { prepare } from '@acclimate/codex-plugin';
-import type { VerifiedVersion } from '@acclimate/sdk';
+import { prepare } from '@anveld/codex-plugin';
+import type { VerifiedVersion } from '@anveld/sdk';
 
 const model = 'gpt-6-luna';
 function fixture(id: string, parentVersionId: string | null) {

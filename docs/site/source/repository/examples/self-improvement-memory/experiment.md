@@ -569,7 +569,7 @@ The workspace principal route, `GET /v1/workspaces/{workspaceId}/principal`, ret
 | [src/learning/memory.rs](../../src/learning/memory.rs) | `get`, `render_memory`, `write_back`, `resolve_problem`, `normalize_root_cause`, `root_cause_key`, `ROOT_CAUSE_MAX_BYTES`, `attempt_outcome` | memory.md |
 | [src/proposal_edits.rs](../../src/proposal_edits.rs) | `reconstruct` applies anchored `edits` and whole-file `files` within payload and target limits. `changed_files` identifies touched paths for scanning and memory. | optimizer.md |
 | [src/proposal_scanner.rs](../../src/proposal_scanner.rs) | `findings` reports named rules and fields for suspicious new content. | optimizer.md |
-| [@acclimate/sdk/learning](../../packages/sdk/src/learning/index.ts) | `serveLearningLoop`, `createLearningOutcomeReporter`, `addEvolveCases`, `heldOutDigest`, `defineLoop`, `exact`, `tests`, `openai`, `OpenAIHttpError`. Bins are `acclimate-learning` and `acclimate learn`. | evaluator-and-contracts.md |
+| [@anveld/sdk/learning](../../packages/sdk/src/learning/index.ts) | `serveLearningLoop`, `createLearningOutcomeReporter`, `addEvolveCases`, `heldOutDigest`, `defineLoop`, `exact`, `tests`, `openai`, `OpenAIHttpError`. Bins are `acclimate-learning` and `acclimate learn`. | evaluator-and-contracts.md |
 | [src/workspaces.rs](../../src/workspaces.rs) | `principal` resolves the caller's workspace identity and rights. | evaluator-and-contracts.md |
 | Console | `apps/console/src/components/bundle-learning.tsx`, `apps/console/src/server/learning-loop.ts` | evaluator-and-contracts.md |
 | Experiment | `examples/self-improvement-memory/`: `fixtures/w1/` from phase 2, the driver and `tests/` from phase 5 | experiment.md |

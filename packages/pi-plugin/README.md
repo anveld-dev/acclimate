@@ -1,17 +1,17 @@
-# @acclimate/pi-plugin
+# @anveld/pi-plugin
 
 Stage a verified Acclimate version for a Pi coding-agent session: the instruction becomes `AGENTS.md`, skills go to `.agents/skills/<name>/` with their supporting files, memory files go to `.acclimate/memory/`, and `resources` describes each staged file.
 
 ## Install
 
-Install the plugin tarball together with the matching `@acclimate/sdk` tarball from the same release (a `^0.1.0` peer). The `/native` entry needs the optional peer `@earendil-works/pi-coding-agent` `^1.5.2` and Node 22.19 or later; preparation alone does not load it.
+Install the plugin tarball together with the matching `@anveld/sdk` tarball from the same release (a `^0.2.0` peer). The `/native` entry needs the optional peer `@earendil-works/pi-coding-agent` `^1.5.2` and Node 22.19 or later; preparation alone does not load it.
 
 ## Use
 
 ```ts
 import { createAgentSession, ModelRuntime, SessionManager, SettingsManager } from '@earendil-works/pi-coding-agent';
-import { prepare } from '@acclimate/pi-plugin';
-import { createPiResourceLoader } from '@acclimate/pi-plugin/native';
+import { prepare } from '@anveld/pi-plugin';
+import { createPiResourceLoader } from '@anveld/pi-plugin/native';
 
 const prepared = await prepare(delivery); // client.prepare() output or a verified version
 try {

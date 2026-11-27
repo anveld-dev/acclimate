@@ -1,4 +1,4 @@
-import type { LearningCandidate, LearningMemory, LearningRoundSummary } from '@acclimate/sdk';
+import type { LearningCandidate, LearningMemory, LearningRoundSummary } from '@anveld/sdk';
 import { describeFailureCause, describeLearning } from '../lib/central-learning';
 import { ReceiptTime } from './receipt-time';
 import { TaskLink } from './learning-task-link';

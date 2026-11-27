@@ -21,15 +21,15 @@ In GitHub Actions, select **release**, choose a branch or a matching release tag
 For an existing release tag or a registry-only retry, dispatch the workflow on that tag:
 
 ```sh
-gh workflow run release.yaml --ref v0.1.0 -f dry-run=false -f publish-registries=true
+gh workflow run release.yaml --ref v0.2.0 -f dry-run=false -f publish-registries=true
 ```
 
-The registry-only run rebuilds the package artifacts and checks them against `SHA256SUMS`. The `npm` job publishes `@acclimate/sdk` first and then the four plugins, each with an npm provenance statement. A retry skips npm versions whose recorded integrity matches the tarball and fails if the integrity differs. The `pypi` job uploads the `acclimate-sdk` wheel with PEP 740 attestations and skips an existing upload.
+The registry-only run rebuilds the package artifacts and checks them against `SHA256SUMS`. The `npm` job publishes `@anveld/sdk` first and then the four plugins, each with an npm provenance statement. A retry skips npm versions whose recorded integrity matches the tarball and fails if the integrity differs. The `pypi` job uploads the `acclimate-sdk` wheel with PEP 740 attestations and skips an existing upload.
 
 Nothing publishes without approval. Each job runs in a GitHub environment, `npm` or `pypi`. Before the first registry release, configure both:
 
 1. In **Settings → Environments**, create `npm` and `pypi`, add the release maintainers as required reviewers, and limit deployments to `v*.*.*` tags.
 2. On PyPI, add a trusted publisher for the `acclimate-sdk` project: owner `anveld-dev`, repository `acclimate`, workflow `release.yaml`, environment `pypi`. For a project that doesn't exist yet, add it as a pending publisher. PyPI then needs no stored token.
-3. On npm, the first publication from CI of each `@acclimate` package needs a granular write token authorized for the scope. The token needs bypass 2FA for direct publication. Store it as the `NPM_TOKEN` secret of the `npm` environment for the bootstrap run. After the first release, add a trusted publisher to each package (repository `anveld-dev/acclimate`, workflow `release.yaml`, environment `npm`) with direct publishing allowed. Delete the secret and revoke the bootstrap token.
+3. On npm, the first publication from CI of each `@anveld` package needs a granular write token authorized for the scope. The token needs bypass 2FA for direct publication. Store it as the `NPM_TOKEN` secret of the `npm` environment for the bootstrap run. After the first release, add a trusted publisher to each package (repository `anveld-dev/acclimate`, workflow `release.yaml`, environment `npm`) with direct publishing allowed. Delete the secret and revoke the bootstrap token.
 
 npm provenance requires each published `package.json` to declare a `repository.url` that matches this repository.

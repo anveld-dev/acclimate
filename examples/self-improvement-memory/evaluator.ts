@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
-import { openai, type LearningLoopApp } from '@acclimate/sdk/learning';
-import type { VerifiedVersion } from '@acclimate/sdk';
+import { openai, type LearningLoopApp } from '@anveld/sdk/learning';
+import type { VerifiedVersion } from '@anveld/sdk';
 import {
   IntegrityError,
   ordered,

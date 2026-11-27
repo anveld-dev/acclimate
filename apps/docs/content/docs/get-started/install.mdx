@@ -3,7 +3,7 @@ title: Install the SDKs
 description: Install the TypeScript or Python SDK from a source checkout, or from its registry or verified release files once an Acclimate release is published.
 ---
 
-Install the SDK where your agent runs. The SDKs are not on npm or PyPI yet. Build them from a source checkout, or use the package files attached to each [GitHub Release](https://github.com/anveld-dev/acclimate/releases). Use the SDK version that matches your service's ([Versioning and compatibility](/docs/reference/versioning)).
+Install the SDK where your agent runs. Build it from a source checkout, use the package files attached to a [GitHub Release](https://github.com/anveld-dev/acclimate/releases), or install it from the registry once that version is available. Use the SDK version that matches your service's ([Versioning and compatibility](/docs/reference/versioning)).
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ Install the SDK where your agent runs. The SDKs are not on npm or PyPI yet. Buil
 | The Python SDK | Python 3.11 or later |
 | Preparing files for a job | Linux or macOS, and a private local directory to stage the files in |
 
-`@acclimate/sdk` is an ES module only. CommonJS code loads it with `await import('@acclimate/sdk')`.
+`@anveld/sdk` is an ES module only. CommonJS code loads it with `await import('@anveld/sdk')`.
 
 ## Build from a source checkout
 
@@ -43,7 +43,7 @@ The build downloads the `flit_core` build backend unless your index or cache has
 
 ### Install the files
 
-Run this from your application's directory. `/absolute/path/to/release` is `artifacts/releases/<version>/` in your checkout, or the directory holding downloaded release files. A source build produces version 0.1.0 today.
+Run this from your application's directory. `/absolute/path/to/release` is `artifacts/releases/<version>/` in your checkout, or the directory holding downloaded release files. A source build produces version 0.2.0 today.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
@@ -51,7 +51,7 @@ Run this from your application's directory. `/absolute/path/to/release` is `arti
 The SDK tarball has no npm runtime dependencies.
 
 ```sh
-npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0.1.0.tgz
+npm install --offline --ignore-scripts /absolute/path/to/release/anveld-sdk-0.2.0.tgz
 ./node_modules/.bin/acclimate --help
 ```
 
@@ -60,7 +60,7 @@ npm install --offline --ignore-scripts /absolute/path/to/release/acclimate-sdk-0
 
 ```sh
 python3.11 -m venv .venv
-.venv/bin/python -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.1.0-py3-none-any.whl
+.venv/bin/python -m pip install --no-index --no-deps /absolute/path/to/release/acclimate_sdk-0.2.0-py3-none-any.whl
 .venv/bin/python -m acclimate pull --help
 ```
 
@@ -69,17 +69,17 @@ python3.11 -m venv .venv
 
 ## Install from the registry
 
-Once an Acclimate release is on npm and PyPI:
+Once the matching release is available on the registry for your language:
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
 
 ```sh
-npm install @acclimate/sdk
+npm install @anveld/sdk
 npx acclimate --help
 ```
 
-To run Codex, the Claude Agent SDK, Pi or Cursor on the delivered files, also install the matching plugin, such as `@acclimate/codex-plugin` ([Choose a native integration](/docs/guides/coding-agents#choose-a-native-integration)).
+To run Codex, the Claude Agent SDK, Pi or Cursor on the delivered files, also install the matching plugin, such as `@anveld/codex-plugin` ([Choose a native integration](/docs/guides/coding-agents#choose-a-native-integration)).
 
 </Tab>
 <Tab value="Python">
@@ -97,7 +97,7 @@ The distribution is `acclimate-sdk`, imported as `acclimate`. On Python 3.10 or 
 </Tab>
 </Tabs>
 
-An Acclimate release can reach GitHub Releases before the registries. Until it does, install from the release files.
+An Acclimate release can reach GitHub Releases before the registries. Use the release files while registry publication is pending.
 
 ## Install from verified release files
 

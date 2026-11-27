@@ -65,7 +65,7 @@ def installed_initial(context):
     (directory/'native-tmp').mkdir(mode=0o700)
     (directory/'package.json').write_text('{"private":true,"type":"module"}')
     for name in ['sdk', 'codex-plugin']:
-        subprocess.run(['npm','pack','--offline','--pack-destination',str(directory),'--workspace','@acclimate/'+name],
+        subprocess.run(['npm','pack','--offline','--pack-destination',str(directory),'--workspace','@anveld/'+name],
                        cwd=ROOT, check=True, capture_output=True, text=True, timeout=30)
     tarballs = [str(path) for path in sorted(directory.glob('*.tgz'))]
     assert len(tarballs) == 2

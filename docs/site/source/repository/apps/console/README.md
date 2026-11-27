@@ -59,4 +59,4 @@ Add a missing primitive with `npx shadcn add <component> --cwd apps/console`, th
 
 Bundle pages share one scope header; collection pages use PageTitle. Data updates through the existing polling hooks. Keep refresh buttons out of routine page chrome, and preserve unsaved browser edits during background updates.
 
-Browser components import payload and native validators from `@acclimate/sdk/validation`. The main SDK entry includes Node filesystem helpers and belongs in server/app code. Check this boundary with the console behavior suite.
+Browser components import payload and native validators from `@anveld/sdk/validation`. The main SDK entry includes Node filesystem helpers and belongs in server/app code. Check this boundary with the console behavior suite.

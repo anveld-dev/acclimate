@@ -7,9 +7,9 @@
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Agent } from '@cursor/sdk';
-import { AcclimateClient } from '@acclimate/sdk';
-import { prepare } from '@acclimate/cursor-plugin';
-import { cursorLocalOptions } from '@acclimate/cursor-plugin/native';
+import { AcclimateClient } from '@anveld/sdk';
+import { prepare } from '@anveld/cursor-plugin';
+import { cursorLocalOptions } from '@anveld/cursor-plugin/native';
 import { optionalReceipts, settleOptional } from './optional-receipts.js';
 
 if (!process.argv.includes('--live')) throw new Error('Pass --live to request a paid Cursor session.');

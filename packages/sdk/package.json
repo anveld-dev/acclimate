@@ -1,6 +1,6 @@
 {
-  "name": "@acclimate/sdk",
-  "version": "0.1.0",
+  "name": "@anveld/sdk",
+  "version": "0.2.0",
   "description": "TypeScript SDK for delivering versioned agent instructions, skills and memory.",
   "keywords": [
     "agents",

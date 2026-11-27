@@ -25,7 +25,7 @@ export async function releaseMetadata(root) {
   }
   for (const manifest of manifests)
     for (const [name, range] of Object.entries(manifest.peerDependencies ?? {}))
-      if (!name.startsWith('@acclimate/')) nativePeers[name] = rootManifest.devDependencies?.[name] ?? range;
+      if (!name.startsWith('@anveld/')) nativePeers[name] = rootManifest.devDependencies?.[name] ?? range;
   return {
     schemaVersion: 1,
     version,

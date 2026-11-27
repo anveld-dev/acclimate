@@ -1,4 +1,4 @@
-import type { ConnectionObservation, Page } from '@acclimate/sdk';
+import type { ConnectionObservation, Page } from '@anveld/sdk';
 import { consoleClient } from './console-client';
 import { allPages } from './listing';
 import { requireSession, type Environment } from './selection';

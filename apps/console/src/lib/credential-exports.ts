@@ -1,4 +1,4 @@
-import type { ConnectionCredentialKind } from '@acclimate/sdk';
+import type { ConnectionCredentialKind } from '@anveld/sdk';
 
 /** Quote a value for a POSIX shell: single quotes, with each embedded quote closed and escaped. */
 export function shellQuote(value: string): string {

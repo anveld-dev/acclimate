@@ -16,6 +16,6 @@ Run `npm run lint` from the repository root before handing off a change. Use a f
 Run `npm run typecheck` and the relevant behavior tests for your change. See [development checks](docs/development.md#checks) for the integration suites.
 
 - Await or return promises that affect request completion, storage, or cleanup. When starting intentional background work, handle rejection where the work starts.
-- Use public `@acclimate` entries in the console and installable starters. Keep optional provider SDKs behind the plugin's native entry and use the installed-consumer checks when changing package exports.
+- Use public `@anveld` entries in the console and installable starters. Keep optional provider SDKs behind the plugin's native entry and use the installed-consumer checks when changing package exports.
 - Review React hook dependency warnings in the files you change. Existing warnings are advisory because those effects control request and recovery lifecycles.
 - Regenerate checked-in site exports when the docs check reports drift. Run `python3 scripts/build_docs.py` with the dependencies in `scripts/docs-requirements.txt` installed.

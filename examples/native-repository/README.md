@@ -4,12 +4,12 @@ Use the native repository helpers to run an installed coding agent against a tas
 
 Node 22.22+, npm 10+ and Linux/macOS (POSIX) are required. Download the starter archive, the SDK and plugin tarballs, the release manifest and `SHA256SUMS` from a GitHub Release, or build them from a source checkout with `npm run pack:verify`, which writes them to `artifacts/releases/<version>/`. Verify `SHA256SUMS` in that release directory before extraction. Keep the included private `package.json` and `.npmrc`: the manifest establishes the application boundary even when extracted beneath another npm workspace, and `.npmrc` turns off install scripts, audit and fund messages, saves exact versions and installs optional platform packages. Its empty dependency list deliberately performs no implicit registry resolution.
 
-Use absolute paths for both directories and the already verified artifacts. Install the SDK and whichever plugin you use together, from the same release directory. The commands use version 0.1.0, which a source checkout builds today:
+Use absolute paths for both directories and the already verified artifacts. Install the SDK and whichever plugin you use together, from the same release directory. The commands use version 0.2.0, which a source checkout builds today:
 
 ```sh
 release=/absolute/path/to/verified-release
 app=/absolute/path/to/native-repository-starter
-npm install --prefix "$app" --offline "$release/acclimate-sdk-0.1.0.tgz" "$release/acclimate-codex-plugin-0.1.0.tgz"
+npm install --prefix "$app" --offline "$release/anveld-sdk-0.2.0.tgz" "$release/anveld-codex-plugin-0.2.0.tgz"
 node "$app/verify-install.mjs" codex
 ```
 

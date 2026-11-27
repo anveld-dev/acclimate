@@ -1,8 +1,14 @@
 # @anveld/acclimate-cursor-plugin
 
+Stage a verified Acclimate version for a local Cursor agent.
+
 ## Install
 
-Install the plugin tarball together with the matching `@anveld/acclimate-sdk` tarball from the same release; the SDK is a `^0.3.0` peer, so your app keeps one copy. The `/native` entry needs the optional peer `@cursor/sdk` `^1.3.1` (Node 22.13 or later).
+Install the plugin and its peer `@anveld/acclimate-sdk` at the same version. Install the optional `@cursor/sdk` peer when using the `/native` entry.
+
+```sh
+npm install @anveld/acclimate-sdk@0.3.0 @anveld/acclimate-cursor-plugin@0.3.0 @cursor/sdk@1.3.1
+```
 
 ## Cursor local SDK delivery
 

@@ -38,8 +38,6 @@ import {
   linkedTask,
   needsConfirmation as awaitsConfirmation,
   pageSize,
-  pasteHelp,
-  pasteLabel,
   recheckQueued,
   recheckSummary,
   scoreText,
@@ -66,8 +64,6 @@ const codeBlock =
   'rounded-md border bg-muted/40 px-3 py-2 font-mono text-[13px] leading-relaxed whitespace-pre-wrap break-words';
 const sectionLabel = 'text-xs font-medium text-muted-foreground';
 const maxImportBytes = 64 * 1024 * 1024;
-const pastePlaceholder =
-  'Customer: Can I pause my subscription?\nAgent: Yes, for up to three months.\n---\nCustomer: How do I export my data?\nAgent: Open Settings, then Exports.';
 
 function admissionBadge(card: TaskCard): { label: string; tone: StatusTone } {
   if (awaitsConfirmation(card)) return { label: 'Needs your confirmation', tone: 'warning' };
@@ -513,18 +509,15 @@ function ImportMaterial({
           const form = e.currentTarget;
           const data = new FormData(form);
           const file = data.get('file') as File;
-          const paste = String(data.get('paste')).trim();
+          if (!file?.size) {
+            report('Choose a file to import.');
+            return;
+          }
           if (file.size > maxImportBytes) {
             report('Imports must fit in 64 MiB.');
             return;
           }
-          if (Boolean(file?.size) === Boolean(paste)) {
-            report('Choose a file or paste conversations, not both.');
-            return;
-          }
-          const format = file?.size
-            ? mediaTypes[file.name.split('.').at(-1)!.toLowerCase()]
-            : 'text/plain';
+          const format = mediaTypes[file.name.split('.').at(-1)!.toLowerCase()];
           if (!format) {
             report('Choose an XLSX, CSV, JSONL or text file.');
             return;
@@ -534,12 +527,12 @@ function ImportMaterial({
             report('');
             const params = new URLSearchParams({
               ...scope,
-              filename: file.size ? file.name : 'conversations.txt',
+              filename: file.name,
             });
             const response = await fetch('/learning-import?' + params, {
               method: 'POST',
               headers: { 'content-type': format },
-              body: file.size ? file : paste,
+              body: file,
             });
             if (!response.ok)
               throw Error(
@@ -568,15 +561,6 @@ function ImportMaterial({
             describedBy="learning-file-hint"
             fileName={fileName}
             onFileName={setFileName}
-          />
-        </Field>
-        <Field label={pasteLabel} htmlFor="learning-paste" hint={pasteHelp}>
-          <Textarea
-            id="learning-paste"
-            name="paste"
-            className="min-h-28 font-mono text-sm"
-            placeholder={pastePlaceholder}
-            aria-describedby="learning-paste-hint"
           />
         </Field>
       </form>

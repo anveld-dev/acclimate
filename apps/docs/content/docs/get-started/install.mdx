@@ -1,9 +1,9 @@
 ---
 title: Install the SDKs
-description: Install the TypeScript or Python SDK from a source checkout, or from its registry or verified release files once an Acclimate release is published.
+description: Install the TypeScript SDK and plugins from npm or the Python SDK from PyPI. Use verified release files for offline installs.
 ---
 
-Install the SDK where your agent runs. Build it from a source checkout, use the package files attached to a [GitHub Release](https://github.com/anveld-dev/acclimate/releases), or install it from the registry once that version is available. Use the SDK version that matches your service's ([Versioning and compatibility](/docs/reference/versioning)).
+Install the SDK where your agent runs. Use the SDK version that matches your service's minor version. See [Versioning and compatibility](/docs/reference/versioning).
 
 ## Prerequisites
 
@@ -14,6 +14,37 @@ Install the SDK where your agent runs. Build it from a source checkout, use the 
 | Preparing files for a job | Linux or macOS, and a private local directory to stage the files in |
 
 `@anveld/acclimate-sdk` is an ES module only. CommonJS code loads it with `await import('@anveld/acclimate-sdk')`.
+
+## Install from the registry
+
+The TypeScript SDK and all four plugins are public on npm. For an Acclimate 0.3.0 service, run this from your application's directory.
+
+```sh
+npm install @anveld/acclimate-sdk@0.3.0
+npx acclimate --help
+```
+
+| Package | Use |
+| --- | --- |
+| [`@anveld/acclimate-sdk`](https://www.npmjs.com/package/@anveld/acclimate-sdk) | TypeScript SDK and `acclimate` CLI |
+| [`@anveld/acclimate-codex-plugin`](https://www.npmjs.com/package/@anveld/acclimate-codex-plugin) | Codex |
+| [`@anveld/acclimate-claude-plugin`](https://www.npmjs.com/package/@anveld/acclimate-claude-plugin) | Claude Agent SDK |
+| [`@anveld/acclimate-pi-plugin`](https://www.npmjs.com/package/@anveld/acclimate-pi-plugin) | Pi |
+| [`@anveld/acclimate-cursor-plugin`](https://www.npmjs.com/package/@anveld/acclimate-cursor-plugin) | Cursor |
+
+Install any plugin at the same version as the SDK. [Use a coding agent](/docs/guides/coding-agents#install) has the commands for each integration.
+
+## Install the Python SDK
+
+The Python distribution is [`acclimate-sdk`](https://pypi.org/project/acclimate-sdk/), imported as `acclimate`. It uses only the Python standard library. These commands install the SDK for an Acclimate 0.3.0 service.
+
+```sh
+python3.11 -m venv .venv
+.venv/bin/python -m pip install acclimate-sdk==0.3.0
+.venv/bin/python -m acclimate pull --help
+```
+
+For offline installation, use the [verified release wheel](#install-from-verified-release-files).
 
 ## Build from a source checkout
 
@@ -43,7 +74,7 @@ The build downloads the `flit_core` build backend unless your index or cache has
 
 ### Install the files
 
-Run this from your application's directory. `/absolute/path/to/release` is `artifacts/releases/<version>/` in your checkout, or the directory holding downloaded release files. A source build produces version 0.3.0 today.
+Run this from your application's directory. `/absolute/path/to/release` is `artifacts/releases/<version>/` in your checkout, or the directory holding downloaded release files. The examples use version 0.3.0.
 
 <Tabs items={['TypeScript', 'Python']}>
 <Tab value="TypeScript">
@@ -67,41 +98,7 @@ python3.11 -m venv .venv
 </Tab>
 </Tabs>
 
-## Install from the registry
-
-Once the matching release is available on the registry for your language:
-
-<Tabs items={['TypeScript', 'Python']}>
-<Tab value="TypeScript">
-
-```sh
-npm install @anveld/acclimate-sdk
-npx acclimate --help
-```
-
-To run Codex, the Claude Agent SDK, Pi or Cursor on the delivered files, also install the matching plugin, such as `@anveld/acclimate-codex-plugin` ([Choose a native integration](/docs/guides/coding-agents#choose-a-native-integration)).
-
-</Tab>
-<Tab value="Python">
-
-The SDK uses only the standard library and needs no Node.js.
-
-```sh
-python3.11 -m venv .venv
-.venv/bin/python -m pip install acclimate-sdk
-.venv/bin/python -m acclimate pull --help
-```
-
-The distribution is `acclimate-sdk`, imported as `acclimate`. On Python 3.10 or earlier, the import fails with a message that names the version it found.
-
-</Tab>
-</Tabs>
-
-An Acclimate release can reach GitHub Releases before the registries. Use the release files while registry publication is pending.
-
 ## Install from verified release files
-
-Once an Acclimate release is published:
 
 1. Choose a version on the [GitHub Releases page](https://github.com/anveld-dev/acclimate/releases).
 2. Download `manifest.json`, `SHA256SUMS` and every file that `SHA256SUMS` lists into one directory.

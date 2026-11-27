@@ -11,7 +11,7 @@ Each Acclimate release has one `major.minor.patch` version. The service, console
 
 Git tags add a leading `v`, such as `v0.1.0`. Image tags and package versions do not, so the same release is `0.1.0` there. Pushing a tag builds the images for amd64 and arm64 and creates a GitHub Release with the package files.
 
-The `0.1.0` GitHub Release contains TypeScript packages under `@acclimate`. Version `0.2.0` moved them to `@anveld` with short names such as `@anveld/sdk`. Starting with `0.3.0`, use `@anveld/acclimate-sdk` and add the same `acclimate-` prefix to the native plugin names.
+Version `0.3.0` publishes the TypeScript SDK and plugins under the [`@anveld/acclimate-*` names](/docs/get-started/install#install-from-the-registry). When upgrading from `0.2.0`, update your npm dependencies and imports from `@anveld/sdk` to `@anveld/acclimate-sdk` and add `acclimate-` to each plugin's package name. Apply the same change to subpath imports such as `/validation` and `/native`. The `0.1.0` GitHub Release used the earlier `@acclimate` scope.
 
 ## What a version number promises
 

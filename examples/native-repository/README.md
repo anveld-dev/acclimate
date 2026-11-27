@@ -2,9 +2,17 @@
 
 Use the native repository helpers to run an installed coding agent against a task and a frozen repository snapshot. This starter stages verified version content, retains the agent’s edits and lets your grader test the solution against the original repository inputs.
 
-Node 22.22+, npm 10+ and Linux/macOS (POSIX) are required. Download the starter archive, the SDK and plugin tarballs, the release manifest and `SHA256SUMS` from a GitHub Release, or build them from a source checkout with `npm run pack:verify`, which writes them to `artifacts/releases/<version>/`. Verify `SHA256SUMS` in that release directory before extraction. Keep the included private `package.json` and `.npmrc`: the manifest establishes the application boundary even when extracted beneath another npm workspace, and `.npmrc` turns off install scripts, audit and fund messages, saves exact versions and installs optional platform packages. Its empty dependency list deliberately performs no implicit registry resolution.
+Node 22.22+, npm 10+ and Linux/macOS (POSIX) are required. Download the starter archive and checksummed files from a [GitHub Release](https://github.com/anveld-dev/acclimate/releases), or build them with `npm run pack:verify` into `artifacts/releases/<version>/`. Verify `SHA256SUMS` before extraction. Keep the included private `package.json` and `.npmrc`. The manifest establishes the application boundary even when extracted beneath another npm workspace. The npm settings save exact versions, install optional platform packages and turn off install scripts, audit and fund messages.
 
-Use absolute paths for both directories and the already verified artifacts. Install the SDK and whichever plugin you use together, from the same release directory. The commands use version 0.3.0, which a source checkout builds today:
+Install the Acclimate SDK and the plugin for your agent at the same version as the starter. This example uses the Codex plugin from npm.
+
+```sh
+app=/absolute/path/to/native-repository-starter
+npm install --prefix "$app" @anveld/acclimate-sdk@0.3.0 @anveld/acclimate-codex-plugin@0.3.0
+node "$app/verify-install.mjs" codex
+```
+
+For an offline installation, use the SDK and plugin tarballs from the verified release directory.
 
 ```sh
 release=/absolute/path/to/verified-release

@@ -2,13 +2,19 @@
 
 TypeScript SDK for Acclimate, a self-hosted service that versions and delivers agent instructions, skills and memory. Requires Node.js 22.22 or later on Linux or macOS.
 
-Install a verified SDK tarball from a GitHub release or a checkout build.
+Install the version that matches your Acclimate service from npm.
+
+```sh
+npm install @anveld/acclimate-sdk@0.3.0
+```
+
+For offline installation, use a verified SDK tarball from a [GitHub Release](https://github.com/anveld-dev/acclimate/releases) or a checkout build.
 
 ```sh
 npm install --offline --ignore-scripts /path/to/anveld-acclimate-sdk-0.3.0.tgz
 ```
 
-Verify release artifacts against `SHA256SUMS`. From a checkout, run `npm ci --ignore-scripts` and `npm run build:packages`, then run `npm pack --workspace @anveld/acclimate-sdk` to create the tarball. Registry installation with `npm install @anveld/acclimate-sdk` requires a separate registry publication.
+Verify release artifacts against `SHA256SUMS`. From a checkout, run `npm ci --ignore-scripts` and `npm run build:packages`, then run `npm pack --workspace @anveld/acclimate-sdk` to create the tarball.
 
 ## Production outcomes
 

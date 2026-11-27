@@ -8,7 +8,7 @@
     "docs/design/improvement.md": "786bab66e369f18a74141771e9e7c302e56a732e45eeff0b2bf1ab5ead71b18f",
     "docs/design/service.md": "a9f7e1701d5442ea41f99dd0bbf1855610e2a16061ca274caa90cf8d790a8b9e",
     "docs/getting-started.md": "51533f7c6bc970b354b83d7ba4e6214d3e5cd4d40c6f23073ffb261baf9a58d1",
-    "docs/development.md": "8fb0259ee51af12f146b28d971376c5c62ef6f0445c4243f69816d610f9f8bb6",
+    "docs/development.md": "ed9b3c2502f3933aac1e41cd50ca1f2a143aaa5949811c85ba561ae472809087",
     "docs/architecture/README.md": "49962dab3c30b07aedc59ba8f9c82553a1db1bef9ec1616c855e9befb22bf889",
     "docs/architecture/contracts.md": "4ba9786898c8c9d46cc912110b335df1d2ea80ccd0125f49dd31463ed6f13d47",
     "docs/architecture/server.md": "29fe15d1b46701521df89aa9650a60a803a7054e64582b414d3ceb7967344e8e",
@@ -43,7 +43,7 @@
     "docs/architecture/central-learning/removal.md": "62d3b45834100df26a1c50eea87c0c8b81d08f598df05ce5dc1018a00fae2d43",
     "docs/architecture/central-learning/tasks-and-grading.md": "563c73d70d3e183c3a31e706b51168b926547717170119d197aebb8ea96054e3",
     "docs/architecture/ci-pull-request-security.md": "650c2f1f739e385a5f29776ee2a476ab345396aa4c684da55ef16053b7342e81",
-    "examples/native-repository/README.md": "3f94aa029c7653358ffa0acd8e52a83c8ce038ba8aa4199bffa8c3c1d04e80de",
+    "examples/native-repository/README.md": "fdccaaec9a8f969a87eb2e16e1dca9c084b9ffb7d79981d347f51b7b1915c5a8",
     "examples/self-improvement-memory/experiment.md": "6a010b6c8244005e9f8e995d76dcdf9990f95adc4587fb8fe70bffd239f6bb25",
     "features/README.md": "38d264dc5f2dde2f8597a192dd2baaea59575f80ef975254d3de82d4bc5fd6e6"
   }

@@ -4,7 +4,11 @@ Stage a verified Acclimate version for a Pi coding-agent session: the instructio
 
 ## Install
 
-Install the plugin tarball together with the matching `@anveld/acclimate-sdk` tarball from the same release (a `^0.3.0` peer). The `/native` entry needs the optional peer `@earendil-works/pi-coding-agent` `^1.5.2` and Node 22.19 or later; preparation alone does not load it.
+Install the plugin and its peer `@anveld/acclimate-sdk` at the same version. Install the optional `@earendil-works/pi-coding-agent` peer when using the `/native` entry.
+
+```sh
+npm install @anveld/acclimate-sdk@0.3.0 @anveld/acclimate-pi-plugin@0.3.0 @earendil-works/pi-coding-agent@1.5.2
+```
 
 ## Use
 

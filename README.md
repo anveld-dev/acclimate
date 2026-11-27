@@ -82,6 +82,14 @@ Configure a model provider for the workspace and import about 50 tasks, so that 
 
 The SDK fetches and verifies the released version when your application starts a job, and prepares files for agent SDKs such as Codex or the Claude Agent SDK. In the console, **App setup** shows the client configuration for a bundle and channel. See [Deliver content to jobs](https://acclimate.anveld.dev/docs/guides/deliver-content) and the [native repository starter](examples/native-repository/README.md).
 
+Install the TypeScript SDK in your application from npm. This version matches an Acclimate 0.3.0 service.
+
+```sh
+npm install @anveld/acclimate-sdk@0.3.0
+```
+
+The Codex, Claude, Pi and Cursor plugins also ship under `@anveld`. The Python SDK is `acclimate-sdk` on PyPI. See [Install the SDKs](https://acclimate.anveld.dev/docs/get-started/install) for package links and commands.
+
 ## Examples
 
 Programs you can run against the local stack. The [examples index](examples/README.md) lists what each one needs.

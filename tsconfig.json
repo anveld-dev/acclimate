@@ -17,7 +17,10 @@
       "@anveld/acclimate-cursor-plugin": ["./packages/cursor-plugin/src/index.ts"],
       "@anveld/acclimate-cursor-plugin/native": ["./packages/cursor-plugin/src/native.ts"],
       "@anveld/acclimate-pi-plugin": ["./packages/pi-plugin/src/index.ts"],
-      "@anveld/acclimate-pi-plugin/native": ["./packages/pi-plugin/src/native.ts"]
+      "@anveld/acclimate-pi-plugin/native": ["./packages/pi-plugin/src/native.ts"],
+      "@anveld/acclimate-ai-sdk-plugin": ["./packages/ai-sdk-plugin/src/index.ts"],
+      "@anveld/acclimate-openai-agents-plugin": ["./packages/openai-agents-plugin/src/index.ts"],
+      "@anveld/acclimate-langchain-plugin": ["./packages/langchain-plugin/src/index.ts"]
     },
     "types": ["node"]
   },

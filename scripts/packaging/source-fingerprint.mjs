@@ -4,7 +4,9 @@ import { join } from 'node:path';
 
 const roots = [
   'packages/sdk/src', 'packages/codex-plugin/src', 'packages/claude-plugin/src',
-  'packages/pi-plugin/src', 'packages/cursor-plugin/src', 'python/acclimate',
+  'packages/pi-plugin/src', 'packages/cursor-plugin/src',
+  'packages/ai-sdk-plugin/src', 'packages/openai-agents-plugin/src', 'packages/langchain-plugin/src',
+  'python/acclimate',
   'examples/native-repository',
   'scripts/packaging', 'src', 'migrations',
 ];
@@ -12,11 +14,15 @@ const manifests = [
   'LICENSE', 'python/LICENSE',
   'packages/sdk/LICENSE', 'packages/codex-plugin/LICENSE', 'packages/claude-plugin/LICENSE',
   'packages/pi-plugin/LICENSE', 'packages/cursor-plugin/LICENSE',
+  'packages/ai-sdk-plugin/LICENSE', 'packages/openai-agents-plugin/LICENSE', 'packages/langchain-plugin/LICENSE',
   'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json',
   'packages/sdk/package.json', 'packages/codex-plugin/package.json',
   'packages/claude-plugin/package.json', 'packages/pi-plugin/package.json',
-  'packages/cursor-plugin/package.json', 'python/pyproject.toml', 'Cargo.toml', 'Cargo.lock',
-  'packages/cursor-plugin/README.md', 'python/README.md',
+  'packages/cursor-plugin/package.json', 'packages/ai-sdk-plugin/package.json',
+  'packages/openai-agents-plugin/package.json', 'packages/langchain-plugin/package.json',
+  'python/pyproject.toml', 'Cargo.toml', 'Cargo.lock',
+  'packages/cursor-plugin/README.md', 'packages/ai-sdk-plugin/README.md',
+  'packages/openai-agents-plugin/README.md', 'packages/langchain-plugin/README.md', 'python/README.md',
   'scripts/build-packages.mjs', 'scripts/check-python-package.py',
   'scripts/productization/qualify.py', 'scripts/testing/production.py',
 ];

@@ -16,6 +16,8 @@ Other paths inside the package are private and can change in any Acclimate relea
 | | Delivery: `systemPrompt`, `resolveAndCache`, `prepareFiles`, `defaultCacheDir`, `verifyPayloadBytes`, `validatePayload`, `fileKindForPath`, `payloadDigest` |
 | | Receipts: `createReceiptReporter` |
 | | Compatibility: `compatibilityIssues`, `assertCompatible` |
+| | Skills and prompts: `extractBundleSkills`, `selectApprovedMemory`, `renderBundlePrompt`, `createSkillLookup` |
+| | Telemetry: `telemetryAttributes`, `telemetryMetadata` |
 | | Errors: `AcclimateError`, `AcclimateUsageError`, `TransportError`, `ApiError`, `DeliveryError`, `TaskExecutionError`, `InfrastructureError` |
 | `@anveld/acclimate-sdk/validation` | `validatePayload`, `fileKindForPath`, `DeliveryError`, `compatibilityIssues`, `assertCompatible`, for checking a payload without the client |
 | `@anveld/acclimate-sdk/native-files` | `prepareNativeFiles`, `nativeSource` and `transcriptTail`, for plugin authors |
@@ -164,6 +166,12 @@ Every method takes `workspaceId` first, then `bundleId` where the route has one.
 | `compatibilityIssues(payload, target)` | List the rules a payload breaks for `codex`, `claude`, `pi` or `cursor`. `generic` has none. |
 | `assertCompatible(payload, target)` | Throw when `compatibilityIssues` finds any |
 | `prepareNativeFiles(version, { mapping, prefix, target })` | Write a version in another agent SDK's layout. See [Map an agent SDK without a plugin](/docs/guides/coding-agents#map-an-agent-sdk-without-a-plugin). |
+| `extractBundleSkills` | Parse `skills/<name>/SKILL.md` manifests and supporting files from a bundle payload |
+| `selectApprovedMemory` | Filter bundle memory files to an approved list (or return all when omitted) |
+| `renderBundlePrompt` | Render a system prompt with optional skill omission and approved memory filtering |
+| `createSkillLookup` | Build progressive-disclosure `listSkills()` and `readSkill(name, filePath?)` helpers for app agent frameworks |
+| `telemetryAttributes` | Build OpenTelemetry-compatible `acclimate.*` attributes from a verified version or delivery |
+| `telemetryMetadata` | Return a flat string/boolean metadata record for framework trace APIs |
 
 ## Errors
 

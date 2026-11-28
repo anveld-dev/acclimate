@@ -28,3 +28,18 @@ export { createAcclimate } from './jobs.js';
 export type { AcclimateJob, AcclimateOptions, JobOptions } from './jobs.js';
 export { payloadDigest } from './release.js';
 export type { ReleaseOptions, ReleaseResult, RollbackOptions } from './release.js';
+export {
+  extractBundleSkills,
+  selectApprovedMemory,
+  renderBundlePrompt,
+  createSkillLookup,
+} from './skills.js';
+export type {
+  BundleSkill,
+  BundleSkillFile,
+  RenderBundlePromptOptions,
+  SkillSummary,
+  SkillLookup,
+} from './skills.js';
+export { telemetryAttributes, telemetryMetadata } from './telemetry.js';
+export type { AcclimateTelemetryAttributes } from './telemetry.js';

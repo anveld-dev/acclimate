@@ -32,7 +32,16 @@ async function verifyLocalImports(directory, distributionRoot = resolve(director
 // Compile with the repository's NodeNext configuration, then give each package its
 // own self-contained output tree. The source tree's relative cross-package imports
 // become the supported SDK package entry points in the distribution.
-for (const name of ['sdk', 'codex-plugin', 'claude-plugin', 'pi-plugin', 'cursor-plugin']) {
+for (const name of [
+  'sdk',
+  'codex-plugin',
+  'claude-plugin',
+  'pi-plugin',
+  'cursor-plugin',
+  'ai-sdk-plugin',
+  'openai-agents-plugin',
+  'langchain-plugin',
+]) {
   const output = join('packages', name, 'dist');
   await rm(output, { recursive: true, force: true });
   await cp(join('dist', 'packages', name, 'src'), output, { recursive: true });
@@ -45,6 +54,8 @@ for (const name of ['sdk', 'codex-plugin', 'claude-plugin', 'pi-plugin', 'cursor
         const updated = text
           .replaceAll('../../sdk/src/types.js', '@anveld/acclimate-sdk')
           .replaceAll('../../sdk/src/cache.js', '@anveld/acclimate-sdk')
+          .replaceAll('../../sdk/src/skills.js', '@anveld/acclimate-sdk')
+          .replaceAll('../../sdk/src/telemetry.js', '@anveld/acclimate-sdk')
           .replaceAll('../../sdk/src/native-files.js', '@anveld/acclimate-sdk/native-files');
         if (updated.includes('../../sdk/src/')) throw new Error(`Unmapped SDK import in ${file}`);
         await writeFile(file, updated);

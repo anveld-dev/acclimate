@@ -1,0 +1,32 @@
+{
+  "name": "@anveld/acclimate-ai-sdk-plugin",
+  "version": "0.3.0",
+  "description": "Acclimate integration for the Vercel AI SDK.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anveld-dev/acclimate.git",
+    "directory": "packages/ai-sdk-plugin"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "peerDependencies": {
+    "@anveld/acclimate-sdk": "^0.3.0"
+  }
+}

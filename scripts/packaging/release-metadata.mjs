@@ -1,7 +1,16 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
-export const packageNames = ['sdk', 'codex-plugin', 'claude-plugin', 'pi-plugin', 'cursor-plugin'];
+export const packageNames = [
+  'sdk',
+  'codex-plugin',
+  'claude-plugin',
+  'pi-plugin',
+  'cursor-plugin',
+  'ai-sdk-plugin',
+  'openai-agents-plugin',
+  'langchain-plugin',
+];
 
 /** Public build metadata only. Checksums are added after actual artifact creation. */
 export async function releaseMetadata(root) {

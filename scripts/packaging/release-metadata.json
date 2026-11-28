@@ -33,6 +33,24 @@
       "file": "anveld-acclimate-cursor-plugin-0.3.0.tgz"
     },
     {
+      "package": "@anveld/acclimate-ai-sdk-plugin",
+      "version": "0.3.0",
+      "kind": "npm",
+      "file": "anveld-acclimate-ai-sdk-plugin-0.3.0.tgz"
+    },
+    {
+      "package": "@anveld/acclimate-openai-agents-plugin",
+      "version": "0.3.0",
+      "kind": "npm",
+      "file": "anveld-acclimate-openai-agents-plugin-0.3.0.tgz"
+    },
+    {
+      "package": "@anveld/acclimate-langchain-plugin",
+      "version": "0.3.0",
+      "kind": "npm",
+      "file": "anveld-acclimate-langchain-plugin-0.3.0.tgz"
+    },
+    {
       "package": "acclimate-sdk",
       "version": "0.3.0",
       "kind": "wheel",

@@ -120,6 +120,16 @@ The learning methods are the snake_case forms of the [TypeScript learning method
 | `resolve_and_cache(client, workspace_id, bundle_id, *, cache_dir, channel=None, version_id=None, offline=None, max_cache_bytes=20971520, reporter=None)` | Resolve and verify a version without writing job files |
 | `prepare_files(version, destination)` | Write a verified version's files into a private directory |
 | `validate_payload(payload)` | Check a bundle payload without calling the service |
+| `extract_bundle_skills(payload)` | Parse `skills/<name>/SKILL.md` manifests and supporting files from a bundle payload |
+| `select_approved_memory(payload, approved_memory_paths=None)` | Filter bundle memory files to an approved list (or return all when omitted) |
+| `render_bundle_prompt(payload, *, include_skills=True, approved_memory_paths=None)` | Render a system prompt with optional skill omission and approved memory filtering |
+| `SkillLookup(payload)` | Build progressive-disclosure `list_skills()` and `read_skill(name, file_path=None)` helpers |
+| `telemetry_attributes(source)` | Build OpenTelemetry-compatible `acclimate.*` attributes from a verified version or delivery |
+
+## Async client and framework integrations
+
+- `AsyncAcclimateClient`, `AsyncAcclimate`, `AsyncJob`, and `AsyncPreparedDelivery` provide `asyncio`-compatible wrappers over the synchronous client and delivery helpers with zero third-party dependencies.
+- `acclimate.integrations` ships zero-dependency adapters for Claude Agent SDK (`acclimate.integrations.claude`), OpenAI Agents SDK (`acclimate.integrations.openai_agents`), LangChain / LangGraph (`acclimate.integrations.langchain`), and PydanticAI (`acclimate.integrations.pydantic_ai`).
 
 ## Receipts
 

@@ -98,6 +98,18 @@
     "./cursor-plugin": {
       "types": "./dist/packages/cursor-plugin/src/index.d.ts",
       "import": "./dist/packages/cursor-plugin/src/index.js"
+    },
+    "./ai-sdk-plugin": {
+      "types": "./dist/packages/ai-sdk-plugin/src/index.d.ts",
+      "import": "./dist/packages/ai-sdk-plugin/src/index.js"
+    },
+    "./openai-agents-plugin": {
+      "types": "./dist/packages/openai-agents-plugin/src/index.d.ts",
+      "import": "./dist/packages/openai-agents-plugin/src/index.js"
+    },
+    "./langchain-plugin": {
+      "types": "./dist/packages/langchain-plugin/src/index.d.ts",
+      "import": "./dist/packages/langchain-plugin/src/index.js"
     }
   },
   "engines": {

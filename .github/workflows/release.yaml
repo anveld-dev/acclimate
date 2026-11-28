@@ -258,7 +258,7 @@ jobs:
             provenance=(--provenance)
           fi
           # Publish the SDK before the plugins that depend on it.
-          for package in sdk codex-plugin claude-plugin pi-plugin cursor-plugin; do
+          for package in sdk codex-plugin claude-plugin pi-plugin cursor-plugin ai-sdk-plugin openai-agents-plugin langchain-plugin; do
             spec="@anveld/acclimate-$package@$VERSION"
             tarball="./anveld-acclimate-$package-$VERSION.tgz"
             if published=$(npm view "$spec" dist.integrity --json --prefer-online 2>/dev/null); then
